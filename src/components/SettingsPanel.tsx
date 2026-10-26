@@ -1271,7 +1271,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </div>
               </div>
             )}
-            <div className="settings-nav-group-label">{lang === "zh" ? "日常" : "Essentials"}</div>
+                        <div className="settings-nav-group-label">{lang === "zh" ? "通用与外观" : "General & appearance"}</div>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`}
               aria-current={activeTab === "general" ? "page" : undefined} onClick={() => setActiveTab("general")}>
               <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}
@@ -1280,58 +1280,66 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               aria-current={activeTab === "appearance" ? "page" : undefined} onClick={() => setActiveTab("appearance")}>
               <span className="sidebar-icon"><Palette size={16} /></span>{lang === "zh" ? "外观" : "Appearance"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "security" ? "active" : ""}`}
-              aria-current={activeTab === "security" ? "page" : undefined} onClick={() => setActiveTab("security")}>
-              <span className="sidebar-icon"><Shield size={16} /></span>{lang === "zh" ? "安全" : "Security"}
-            </button>
-            <div className="settings-nav-group-label">{lang === "zh" ? "项目与 Git" : "Project & Git"}</div>
-            <button className={`settings-sidebar-item ${activeTab === "git" ? "active" : ""}`}
-              aria-current={activeTab === "git" ? "page" : undefined} onClick={() => setActiveTab("git")}>
-              <span className="sidebar-icon"><GitBranchIcon size={16} /></span>{lang === "zh" ? "Git" : "Git"}
-            </button>
-<button className={`settings-sidebar-item ${activeTab === "environment" ? "active" : ""}`}
-              aria-current={activeTab === "environment" ? "page" : undefined} onClick={() => setActiveTab("environment")}>
-<span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "环境" : "Environment"}
-</button>
-<button className={`settings-sidebar-item ${activeTab === "worktree" ? "active" : ""}`}
-              aria-current={activeTab === "worktree" ? "page" : undefined} onClick={() => setActiveTab("worktree")}>
-<span className="sidebar-icon"><FolderTree size={16} /></span>{lang === "zh" ? "工作树" : "Worktree"}
-</button>
-<div className="settings-nav-group-label">{lang === "zh" ? "知识与自动化" : "Knowledge & automation"}</div>
-<button className={`settings-sidebar-item ${activeTab === "knowledge" ? "active" : ""}`}
-              aria-current={activeTab === "knowledge" ? "page" : undefined} onClick={() => setActiveTab("knowledge")}>
-<span className="sidebar-icon"><BookOpenIcon size={16} /></span>{lang === "zh" ? "知识" : "Knowledge"}
-</button>
-<button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`}
-              aria-current={activeTab === "automation" ? "page" : undefined} onClick={() => setActiveTab("automation")}>
-<span className="sidebar-icon"><Bot size={16} /></span>{lang === "zh" ? "自动化" : "Automation"}
-</button>
-<div className="settings-nav-group-label">{lang === "zh" ? "模型与能力" : "Models & capabilities"}</div>
-<button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`}
+            <div className="settings-nav-group-label">{lang === "zh" ? "模型与运行" : "Models & runtime"}</div>
+            <button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`}
               aria-current={activeTab === "multimodal" ? "page" : undefined} onClick={() => setActiveTab("multimodal")}>
-<span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
-</button>
-<button className={`settings-sidebar-item ${activeTab === "voice" ? "active" : ""}`}
+              <span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "voice" ? "active" : ""}`}
               aria-current={activeTab === "voice" ? "page" : undefined} onClick={() => setActiveTab("voice")}>
-<span className="sidebar-icon"><Mic size={16} /></span>{lang === "zh" ? "语音" : "Voice"}
-</button>
-<button className={`settings-sidebar-item ${activeTab === "ollama" ? "active" : ""}`}
+              <span className="sidebar-icon"><Mic size={16} /></span>{lang === "zh" ? "语音" : "Voice"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "ollama" ? "active" : ""}`}
               aria-current={activeTab === "ollama" ? "page" : undefined} onClick={() => setActiveTab("ollama")}>
-<span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "Ollama" : "Ollama"}
-</button>
+              <span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "Ollama" : "Ollama"}
+            </button>
             <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`}
               aria-current={activeTab === "tools" ? "page" : undefined} onClick={() => setActiveTab("tools")}>
               <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
             </button>
-            <div className="settings-nav-group-label">{lang === "zh" ? "人格与设备" : "Persona & devices"}</div>
+            <div className="settings-nav-group-label">{lang === "zh" ? "对话与知识" : "Chat & knowledge"}</div>
+            <button className={`settings-sidebar-item ${activeTab === "knowledge" ? "active" : ""}`}
+              aria-current={activeTab === "knowledge" ? "page" : undefined} onClick={() => setActiveTab("knowledge")}>
+              <span className="sidebar-icon"><BookOpenIcon size={16} /></span>{lang === "zh" ? "知识" : "Knowledge"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`}
+              aria-current={activeTab === "automation" ? "page" : undefined} onClick={() => setActiveTab("automation")}>
+              <span className="sidebar-icon"><Bot size={16} /></span>{lang === "zh" ? "自动化" : "Automation"}
+            </button>
             <button className={`settings-sidebar-item ${activeTab === "persona" ? "active" : ""}`}
               aria-current={activeTab === "persona" ? "page" : undefined} onClick={() => setActiveTab("persona")}>
               <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "人设" : "Persona"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "memory-checkup" ? "active" : ""}`}
+              aria-current={activeTab === "memory-checkup" ? "page" : undefined} onClick={() => setActiveTab("memory-checkup")}>
+              <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "记忆体检" : "Memory checkup"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`}
+              aria-current={activeTab === "codegraph" ? "page" : undefined} onClick={() => setActiveTab("codegraph")}>
+              <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
+            </button>
+            <div className="settings-nav-group-label">{lang === "zh" ? "工具与权限" : "Tools & permissions"}</div>
+            <button className={`settings-sidebar-item ${activeTab === "security" ? "active" : ""}`}
+              aria-current={activeTab === "security" ? "page" : undefined} onClick={() => setActiveTab("security")}>
+              <span className="sidebar-icon"><Shield size={16} /></span>{lang === "zh" ? "安全" : "Security"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "computer" ? "active" : ""}`}
               aria-current={activeTab === "computer" ? "page" : undefined} onClick={() => setActiveTab("computer")}>
               <span className="sidebar-icon"><MousePointer2 size={16} /></span>{lang === "zh" ? "电脑操作" : "Computer Use"}
             </button>
+            <button className={`settings-sidebar-item ${activeTab === "git" ? "active" : ""}`}
+              aria-current={activeTab === "git" ? "page" : undefined} onClick={() => setActiveTab("git")}>
+              <span className="sidebar-icon"><GitBranchIcon size={16} /></span>{lang === "zh" ? "Git" : "Git"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "environment" ? "active" : ""}`}
+              aria-current={activeTab === "environment" ? "page" : undefined} onClick={() => setActiveTab("environment")}>
+              <span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "环境" : "Environment"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "worktree" ? "active" : ""}`}
+              aria-current={activeTab === "worktree" ? "page" : undefined} onClick={() => setActiveTab("worktree")}>
+              <span className="sidebar-icon"><FolderTree size={16} /></span>{lang === "zh" ? "工作树" : "Worktree"}
+            </button>
+            <div className="settings-nav-group-label">{lang === "zh" ? "连接与设备" : "Connections & devices"}</div>
             <button className={`settings-sidebar-item ${activeTab === "wechat" ? "active" : ""}`}
               aria-current={activeTab === "wechat" ? "page" : undefined} onClick={() => setActiveTab("wechat")}>
               <span className="sidebar-icon"><MessageCircle size={16} /></span>{lang === "zh" ? "微信 ClawBot" : "WeChat ClawBot"}
@@ -1340,55 +1348,23 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               aria-current={activeTab === "phone" ? "page" : undefined} onClick={() => setActiveTab("phone")}>
               <span className="sidebar-icon"><Smartphone size={16} /></span>{lang === "zh" ? "连接手机" : "Phone Link"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`}
-              aria-current={activeTab === "codegraph" ? "page" : undefined} onClick={() => setActiveTab("codegraph")}>
-              <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
-            </button>
             <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`}
               aria-current={activeTab === "pet" ? "page" : undefined} onClick={() => setActiveTab("pet")}>
               <span className="sidebar-icon"><PawPrint size={16} /></span>{lang === "zh" ? "宠物" : "Pet"}
             </button>
-            {/* P2 #35: Usage stats tab */}
-            <div className="settings-nav-group-label">{lang === "zh" ? "数据与洞察" : "Insights"}</div>
+            <div className="settings-nav-group-label">{lang === "zh" ? "高级与帮助" : "Advanced & help"}</div>
             <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`}
               aria-current={activeTab === "usage" ? "page" : undefined} onClick={() => setActiveTab("usage")}>
               <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "用量统计" : "Usage"}
             </button>
-            {/* 性能面板：从主对话区域顶部 tab 移入设置 */}
             <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`}
               aria-current={activeTab === "performance" ? "page" : undefined} onClick={() => setActiveTab("performance")}>
               <span className="sidebar-icon"><Activity size={16} /></span>{lang === "zh" ? "性能" : "Performance"}
             </button>
-            {/* 记忆体检：与「记忆管理」面板共用同一套数据层（MemoryService），这里只做分组/梳理视图 */}
-            <button className={`settings-sidebar-item ${activeTab === "memory-checkup" ? "active" : ""}`}
-              aria-current={activeTab === "memory-checkup" ? "page" : undefined} onClick={() => setActiveTab("memory-checkup")}>
-              <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "记忆体检" : "Memory checkup"}
-            </button>
-            {/**
-             * 第 197 轮：**「高级」与「帮助」移到最后**（用户要求）。
-             *
-             * 原先它们排在「宠物」之后、「用量统计」之前 —— 夹在日常功能中间。
-             * 这两项都属于"偶尔才去一次"的：高级是实验性/分层开关，帮助是文档入口。
-             * 放到列表末尾后，日常区（通用→外观→…→宠物/用量/性能）连成一片，
-             * 不常用的收在最后，符合"从常用到不常用"的阅读顺序。
-             *
-             * ⚠️ 只动了**渲染顺序**：`activeTab` 的取值、"更多"折叠逻辑、
-             * 以及各分区自身的实现都没动 —— 所以不影响任何跳转（例如侧栏/标题栏的
-             * "打开设置"仍然落到 `general`）。
-             *
-             * 第 231 波更正：这一段原来还写着「性能的跳转仍然先设 performance」——
-             * 那句说的是 `App.tsx` 传给侧栏的一个**死 prop**（从 `7d768d3f` 起 Sidebar
-             * 函数体一次都没读过它），本轮已随死 prop 一起删掉。现在进「性能」面板的
-             * 正当入口是**底部页签**（`BottomPanelTabs` 的「性能」 ⇒ `setBottomTab("perf")`）；
-             * 设置里的「性能」分区仍然自己可达，只是不再有「从侧栏跳进来」这条路。
-             * 判据：`src/test/sidebar-user-settings-click.test.ts` 的 `PERFENTRY-231-1..4`。
-             */}
-            <div className="settings-nav-group-label">{lang === "zh" ? "系统" : "System"}</div>
             <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`}
               aria-current={activeTab === "advanced" ? "page" : undefined} onClick={() => setActiveTab("advanced")}>
               <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "高级" : "Advanced"}
             </button>
-            <div className="settings-nav-group-label">{lang === "zh" ? "帮助" : "Help"}</div>
             <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`}
               aria-current={activeTab === "help" ? "page" : undefined} onClick={() => setActiveTab("help")}>
               <span className="sidebar-icon"><HelpCircle size={16} /></span>{lang === "zh" ? "帮助" : "Help"}

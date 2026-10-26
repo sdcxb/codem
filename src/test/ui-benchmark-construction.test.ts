@@ -125,12 +125,12 @@ describe('UI 对标施工合同', () => {
     expect(block(codemUi, '.settings-sidebar')).toContain('width: var(--settings-side-width)')
   })
 
-  it('P2-1b：设置整页视图有返回、8 组导航、26px 子导航、900 内容列', () => {
+  it('P2-1b：设置整页视图有返回、6 组导航、26px 子导航、900 内容列', () => {
     const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')
     expect(settings).toContain('fullPage')
     expect(settings).toContain('settings-page')
     expect(settings).toContain('settings-back')
-    expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(8)
+    expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(6)
     expect(settings).toContain('settings-page-head')
     expect(settings).toContain('activeTabDef')
     expect(settings).toContain('settings-subnav')
