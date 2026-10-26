@@ -1298,6 +1298,30 @@ setStepTooltipLocked(false);
             }
             // 本回合末尾若停在机器提醒（verify-nudge / completion-nudges）且
             // 后面没有 assistant 回应，就不能显示“任务完成”。
+            let turnToolCount = 0;
+            const turnGeneratedFiles = new Set<string>();
+            for (let i = effectiveIdx; i >= 0; i--) {
+              const turnMsg = displayMessages[i];
+              if (turnMsg.role === "user" && !isMachineInjectedMessage(turnMsg)) break;
+              turnToolCount += turnMsg.toolCalls?.length ?? 0;
+              for (const file of turnMsg.generatedFiles ?? []) turnGeneratedFiles.add(file);
+            }
+            const summaryMessage = [...displayMessages.slice(0, effectiveIdx + 1)]
+              .reverse()
+              .find((m) =>
+                m.role === "assistant" &&
+                typeof m.content === "string" &&
+                /本轮摘要/.test(m.content)
+              );
+            const summaryMatch = summaryMessage?.content?.match(
+              /本轮摘要[^\n]*\n+([\s\S]*?)(?=\n#{1,6}\s|$)/
+            );
+            const turnSummaryText = (summaryMatch?.[1] ?? "")
+              .replace(/\*\*/g, "")
+              .replace(/\s*🔎[^\n]*/g, "")
+              .replace(/\s*⚠️这一轮[^\n]*/g, "")
+              .replace(/^\s*-\s*/gm, "• ")
+              .trim();
             let turnHasUnverifiedNudge = false;
             for (let i = effectiveIdx + 1; i < displayMessages.length; i++) {
               const nextMsg = displayMessages[i];
@@ -1385,6 +1409,12 @@ canEdit={!isSessionStreaming}
                 by using groupLastIdx for boundary detection. */}
 {isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
+                <span className={`task-complete-badge${turnHasUnverifiedNudge ? " is-warning" : ""}`}>
+                  {turnHasUnverifiedNudge ? <AlertTriangle className="icon-sm" /> : <Check size={14} />}
+                  {turnHasUnverifiedNudge
+                    ? (lang === "zh" ? "待验证" : "Needs verification")
+                    : (lang === "zh" ? "任务完成" : "Done")}
+                </span>
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1409,6 +1439,31 @@ canEdit={!isSessionStreaming}
                     <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
                   </Tooltip>
                 )}
+              </div>
+            )}
+            {isTurnEnd && isTurnWithResponse && !isSessionStreaming &&
+              (turnHasUnverifiedNudge || (turnSummaryText && turnToolCount > 0)) && (
+              <div className={`turn-summary-card${turnHasUnverifiedNudge ? " is-warning" : ""}`}>
+                <div className="turn-summary-head">
+                  {turnHasUnverifiedNudge
+                    ? <AlertTriangle className="icon-sm" />
+                    : <Check className="icon-sm" />}
+                  <span className="turn-summary-title">
+                    {turnHasUnverifiedNudge
+                      ? (lang === "zh" ? "本轮待验证" : "Needs verification")
+                      : (lang === "zh" ? "执行记录已生成" : "Run record ready")}
+                  </span>
+                  <span className="turn-summary-meta">
+                    {turnToolCount > 0 ? `${turnToolCount} ${lang === "zh" ? "个工具" : "tools"}` : ""}
+                    {turnToolCount > 0 && turnGeneratedFiles.size > 0 ? " · " : ""}
+                    {turnGeneratedFiles.size > 0 ? `${turnGeneratedFiles.size} ${lang === "zh" ? "个文件" : "files"}` : ""}
+                  </span>
+                </div>
+                <div className="turn-summary-body">
+                  {turnHasUnverifiedNudge && !turnSummaryText
+                    ? (lang === "zh" ? "最后一步后没有运行验证，上方改动未经证实。" : "No verification ran after the last edit.")
+                    : turnSummaryText}
+                </div>
               </div>
             )}
             </React.Fragment>

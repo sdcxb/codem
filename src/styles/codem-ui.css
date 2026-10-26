@@ -1280,7 +1280,7 @@
   width: 100%;
   height: 32px;
   gap: var(--space-3);
-  padding: 0 var(--space-5);
+  padding: 0 var(--space-9);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
