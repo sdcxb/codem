@@ -151,11 +151,11 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
       >
         {/* Header */}
         <div
+          className="task-center-header"
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "16px 20px",
             borderBottom: "1px solid var(--border-primary)",
             flexShrink: 0,
           }}

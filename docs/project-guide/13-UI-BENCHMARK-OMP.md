@@ -410,6 +410,35 @@ P3       Hub/Dream 形状与背景气质
 - `css-contract` 2976 类、`scan-ui` 0/0；
 - 全量 **737 文件：735 通过 / 2 既有失败**、**8525 用例通过**。
 
+#### 0.11 第 210 轮：真 hash 路由、26px 子导航、P2-4/P3 收尾
+
+已落：
+
+- **设置真 hash 路由**：打开设置 `history.pushState(..., "#settings")`；关闭 `replaceState` 回原 hash/路径；监听 `hashchange/popstate`；刷新 `#settings` 直接恢复设置页。仍是 App 内页面视图，但刷新/后退语义成立，不再只是换 class。
+- **26px 子导航**：左侧 8 组不重复；内容区顶部新增当前组 tab pills（26px、12px icon、`aria-selected`），切组/搜索时跟随 `activeTab` 自动换组。
+- **P2-4 其余页头**：任务中心 `.task-center-header`、用量 `.usage-stats-header`、知识 `.notebook-manager-header` 统一 44px；设置页之前已是 44px。
+- **P3 动效/形状**：`--duration-fast/normal/slow` 150/200/300 → **120/180/250**；Hub active 底 15% → **14%**。密度 compact 已有“控件 -4px”档，未再硬缩全局 `--space-*`（会改坏所有页面，留到 P3 逐组件密度）。
+- **P2-6 未实现，给出施工设计而不是假页面**：Home/Agent Hub/Capabilities/Models 属于产品功能，不是纯 UI；见下方“P2-6 设计”。
+
+判据：
+
+- `ui-benchmark-construction` 增加 hash 路由、26px 子导航、P2-4 三页头、P3 动效/Hub；
+- `css-contract` 2979 类、`scan-ui` 0/0；
+- 全量 **737 文件：735 通过 / 2 既有失败**、**8527 用例通过**。
+
+#### P2-6 设计（未实现，产品级）
+
+对标 OMP：Home 是“最近 + 推荐 + 能力入口”的卡片列表，Agent Hub 是“列表 + 详情”，Capabilities/Models 是“可搜索卡片 + 详情”。Codem 已有真实数据源，不需要新后端：
+
+| 页面 | 数据源 | 结构 | 关键判据 |
+|---|---|---|---|
+| Home | `useProjectStore.currentProject`、`SessionStorage.listSessions`、`getModelProfileManager().getActiveProfile()`、插件注册表 | 44px 页头 + 最近会话 5 条 + 继续任务 + 能力卡（模型/技能/MCP/插件） | 空项目、无会话、加载失败三态；不能用假数据 |
+| Agent Hub | `AgentProfileStorage`、`subagentTasks`、`TaskCenter` 的委派数据 | 左列表（搜索/状态过滤）+ 右详情（角色/slot/最近任务） | 选中态、空列表、运行中状态；不许复制 OMP 的 10 项全局 nav |
+| Capabilities | 插件/Skill/MCP 注册表（现有 `PluginManager`/`SkillManager`/`McpManager`） | 分组卡片 + 搜索 + 详情抽屉 | 已启用/未安装/不可用三态；点击直达现有管理器 |
+| Models | `getConfiguredApiModels`、`ModelProfile.slots`、free-model 可用性 | 来源分组 + 角色徽标 + 详情（上下文/模态/价格/可用性） | 未知模型折叠；角色必须来自档案槽位，不猜 |
+
+实现顺序：先 `#home` 路由和 `PageHeader`，再 Agent Hub 复用 TaskCenter 数据，最后 Capabilities/Models 只做“入口 + 详情”，不重写现有管理器。URL 统一 `#home / #agents / #capabilities / #models`，返回栈复用本轮 hash 机制。验收：1600/1280/1024 三档、空/加载/错误三态、键盘焦点、搜索直达。
+
 ---
 
 ## 1. 证据与方法

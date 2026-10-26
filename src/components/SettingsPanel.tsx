@@ -793,6 +793,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       tabs: [{ id: "help", zh: "帮助", en: "Help", icon: HelpCircle }],
     },
   ];
+  const activeGroup = SETTINGS_TAB_GROUPS.find((group) => group.tabs.some((tab) => tab.id === activeTab)) ?? SETTINGS_TAB_GROUPS[0];
   // 由搜索词过滤出的匹配 tab（空 = 全部显示）
   const searchFilteredTabs = useMemo(() => {
     const q = settingsSearch.trim().toLowerCase();
@@ -1366,6 +1367,24 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           </div>
 
           <div className="settings-content" ref={contentFade.ref} style={contentFade.style}>
+          <div className="settings-subnav" role="tablist" aria-label={lang === "zh" ? "设置子页" : "Settings tabs"}>
+            {activeGroup.tabs.map((tab) => {
+              const Icon = tab.icon;
+              const selected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  className={`settings-subnav-pill ${selected ? "active" : ""}`}
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveTab(tab.id as any)}
+                >
+                  <Icon />
+                  {lang === "zh" ? tab.zh : tab.en}
+                </button>
+              );
+            })}
+          </div>
           {activeTab === "general" && (
           <>
           <div className="settings-mode-switch">

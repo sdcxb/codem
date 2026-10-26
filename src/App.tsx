@@ -618,11 +618,50 @@ setGlobalCwd(currentProject?.path || "");
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
   // P3 #46: Mobile sidebar drawer
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
-  const [showSettings, setShowSettings] = useState(false);
+  // P2-1：设置是应用内页面视图，同时用 #settings 保留刷新/后退语义。
+  const [showSettings, setShowSettings] = useState(() =>
+    typeof window !== "undefined" && window.location.hash === "#settings"
+  );
+  const settingsHashBefore = useRef<string>("");
   const [settingsInitialTab, setSettingsInitialTab] = useState<string>("general");
+
+  // P2-1：设置页与浏览器 hash 同步；刷新 #settings 可直接回到设置页。
+  useEffect(() => {
+    const syncFromHash = () => setShowSettings(window.location.hash === "#settings");
+    window.addEventListener("hashchange", syncFromHash);
+    window.addEventListener("popstate", syncFromHash);
+    return () => {
+      window.removeEventListener("hashchange", syncFromHash);
+      window.removeEventListener("popstate", syncFromHash);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (showSettings) {
+      if (window.location.hash !== "#settings") {
+        settingsHashBefore.current = window.location.hash;
+        try {
+          window.history.pushState({ settings: true }, "", "#settings");
+        } catch {
+          /* 非浏览器宿主（测试/受限 WebView）没有 history 时仍保持应用内视图 */
+        }
+      }
+      return;
+    }
+    if (window.location.hash === "#settings") {
+      const previous = settingsHashBefore.current || window.location.pathname + window.location.search;
+      try {
+        window.history.replaceState(null, "", previous || "#");
+      } catch {
+        /* 同上 */
+      }
+      settingsHashBefore.current = "";
+    }
+  }, [showSettings]);
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [showMcpManager, setShowMcpManager] = useState(false);

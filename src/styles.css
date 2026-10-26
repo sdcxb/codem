@@ -301,9 +301,10 @@
   color-scheme: dark;
 
   /* Animation durations */
-  --duration-fast: 150ms;
-  --duration-normal: 200ms;
-  --duration-slow: 300ms;
+  /* P3：统一动效刻度 120 / 180 / 250（与 OMP 的快节奏对齐，不再 150/200/300 三档散着走）。 */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 250ms;
   /* Per-component durations (from apple-design / emil-design-eng standards) */
   --duration-press: 120ms;        /* button :active feedback */
   --duration-tooltip: 150ms;      /* tooltips, small popovers */
@@ -11361,11 +11362,17 @@ border-bottom: 1px solid var(--accent);
   background: var(--bg-secondary);
 }
 
+.task-center-header {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+}
+
 .usage-stats-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-6) var(--space-8);
+  min-height: 44px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-primary);
 }
 
@@ -13041,7 +13048,8 @@ border-color: var(--text-muted);
 }
 
 .notebook-manager-header {
-  padding: var(--space-8);
+  min-height: 44px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }

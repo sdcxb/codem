@@ -15,7 +15,7 @@
   --backdrop-blob-1: color-mix(in srgb, var(--hub-color-primary) 30%, transparent);
   --backdrop-blob-2: color-mix(in srgb, #58a6ff 25%, transparent);
   --hub-color-primary-hover: #e56000;
-  --hub-color-primary-muted: rgba(255, 107, 0, 0.15);
+  --hub-color-primary-muted: rgba(255, 107, 0, 0.14);
   --hub-text-main: #e0e0e0;
   --hub-text-muted: #888888;
   --hub-text-success: #4ade80;

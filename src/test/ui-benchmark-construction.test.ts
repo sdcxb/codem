@@ -15,6 +15,7 @@ const ROOT = join(__dirname, '..', '..')
 const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
 const codemUi = readFileSync(join(ROOT, 'src/styles/codem-ui.css'), 'utf8')
 const dream = readFileSync(join(ROOT, 'src/styles/skin-dream.css'), 'utf8')
+const hub = readFileSync(join(ROOT, 'src/styles/skin-hub.css'), 'utf8')
 const settings = readFileSync(join(ROOT, 'src/components/SettingsPanel.tsx'), 'utf8')
 const tooltip = readFileSync(join(ROOT, 'src/components/ui/tooltip.tsx'), 'utf8')
 const reasoning = readFileSync(join(ROOT, 'src/components/ReasoningRow.tsx'), 'utf8')
@@ -99,14 +100,35 @@ describe('UI 对标施工合同', () => {
     expect(block(codemUi, '.settings-sidebar')).toContain('width: 220px')
   })
 
-  it('P2-1b：设置整页视图有返回、8 组导航、900 内容列', () => {
+  it('P2-1b：设置整页视图有返回、8 组导航、26px 子导航、900 内容列', () => {
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')
     expect(settings).toContain('fullPage')
     expect(settings).toContain('settings-page')
     expect(settings).toContain('settings-back')
     expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(8)
+    expect(settings).toContain('settings-subnav')
     expect(codemUi).toContain('.settings-page-overlay')
     expect(codemUi).toContain('.settings-page .settings-content')
     expect(codemUi).toContain('max-width: 900px')
+    expect(block(codemUi, '.settings-subnav-pill')).toContain('height: 26px')
+    // 真 hash 路由：刷新/后退可恢复设置页，而不是只换一个 class
+    expect(app).toContain('window.location.hash === "#settings"')
+    expect(app).toContain('window.history.pushState')
+  })
+
+  it('P3：动效 120/180/250，Hub active 14%', () => {
+    expect(css).toContain('--duration-fast: 120ms')
+    expect(css).toContain('--duration-normal: 180ms')
+    expect(css).toContain('--duration-slow: 250ms')
+    expect(hub).toContain('--hub-color-primary-muted: rgba(255, 107, 0, 0.14)')
+  })
+
+  it('P2-4：任务中心/用量/知识页头收到 44px', () => {
+    const task = readFileSync(join(ROOT, 'src/components/TaskCenter.tsx'), 'utf8')
+    expect(task).toContain('className="task-center-header"')
+    expect(block(css, '.task-center-header')).toContain('min-height: 44px')
+    expect(block(css, '.usage-stats-header')).toContain('min-height: 44px')
+    expect(block(css, '.notebook-manager-header')).toContain('min-height: 44px')
   })
 
   it('P2-2：右栏 1440 默认展开，1440 宽 360，≤1280 自动收起', () => {
