@@ -608,15 +608,34 @@ setGlobalCwd(currentProject?.path || "");
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // P2-2：1280 以上默认展开右侧 Inspector；≤1100 自动收起，避免挤压正文列。
+  const RIGHT_RAIL_SETTING = "codem-right-rail-open";
   const [rightRailOpen, setRightRailOpen] = useState(() =>
     typeof window !== "undefined" && window.innerWidth >= 1280
   );
+  const rightRailPrefLoaded = useRef(false);
+  const [rightRailHydrated, setRightRailHydrated] = useState(false);
+
+  // DB 就绪后只读一次用户上次的显式状态；没有记录才沿用宽度默认值。
+  useEffect(() => {
+    if (!dbReady || rightRailPrefLoaded.current) return;
+    rightRailPrefLoaded.current = true;
+    const saved = getSetting(RIGHT_RAIL_SETTING);
+    if (saved === "1" || saved === "true") setRightRailOpen(true);
+    else if (saved === "0" || saved === "false") setRightRailOpen(false);
+    setRightRailHydrated(true);
+  }, [dbReady]);
+
+  // 用户每次显式开关（或窄窗自动收起）都写回；启动过程不覆盖。
+  useEffect(() => {
+    if (!dbReady || !rightRailHydrated) return;
+    setSetting(RIGHT_RAIL_SETTING, rightRailOpen ? "1" : "0");
+  }, [dbReady, rightRailHydrated, rightRailOpen]);
+
   useEffect(() => {
     const onResize = () => {
-      // 启动时窗口可能先是小尺寸、随后才最大化；只在 resize 里“收起”会导致
-      // 右栏永远停在 36px 折叠条。跨过阈值时两侧都要恢复。
+      // resize 只负责“太窄必须收起”；不再因为窗口变大就擅自展开，
+      // 否则用户上次关掉的右栏会在下一次 resize/最大化时自己回来。
       if (window.innerWidth <= 1100) setRightRailOpen(false);
-      else if (window.innerWidth >= 1280) setRightRailOpen(true);
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
