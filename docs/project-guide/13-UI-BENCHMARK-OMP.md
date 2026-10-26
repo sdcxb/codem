@@ -22,7 +22,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 **本方案的目标不是变成 OMP，而是把 Codem 收敛成一套自己的、同样克制的语法。** 优先级：
 
-1. **P0（先做，风险低、观感提升最大）**：Composer 卡片化、文档宽度收窄、暗色 token 提亮、静态面去阴影、焦点单环、设置选中态变柔、聊天内标题降级。
+1. **P0（先做，风险低、观感提升最大）**：Composer 卡片化、文档宽度收窄、暗色 token 提亮、静态面去阴影、焦点单环、设置选中态变柔、聊天内标题降级、三皮肤 token 对齐、用户气泡保留原版。
 2. **P1（组件级）**：命令面板、模型角色菜单、侧栏/文件树密度、工具行、设置分组行、菜单/弹层、空态。
 3. **P2（布局级，需产品拍板）**：设置从弹窗改为整页、右侧 Inspector 常驻、底部面板、页面级导航。
 4. **P3（持续）**：三皮肤 token 对齐、对比度、动效、截图契约。
@@ -40,11 +40,11 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 7 | 模型菜单按角色分组 + 选中 check + 隐藏未知 | 现在是 10 行模型名 + `【未知】` | 首屏 ≤7 行；每行三要素 |
 | 8 | 侧栏/树密度：260 / 34 / 30 / 26；Git 字母 | 现在偏大、pill 吵 | 40 行滚动；hover 截图 |
 | 9 | 工具去“每张卡”边框，改行 + 状态轨 | 连续调用像一叠盒子 | 5 个工具连续截图 |
-| 10 | 用户气泡去阴影；实底用专用 bubble token | 阴影让静态消息“浮起来”；全局 on-accent 不能动 | 暗/亮/三皮肤对比度 + 专用 token 断言 |
+| 10 | 用户气泡保留原版半透明紫 + 轻阴影 | 用户 review：原版比 OMP 实底更精致 | 与原版截图并排；暗/亮/三皮肤对比度 |
 
 ### 0.2 HTML 预演验证（2026-10-26）
 
-> 先按 P0 + P1 做了一版可运行的 HTML，再拿它和 OMP 实拍对照；**下面 8 条是对原方案的修正**，不是补充说明。
+> 先按 P0 + P1 做了一版可运行的 HTML，再拿它和 OMP 实拍对照；**下面这些是对原方案的修正**，不是补充说明。
 > 文件：[`docs/design/ui-benchmark-mock.html`](../design/ui-benchmark-mock.html)
 > 预览：[dark](../design/ui-benchmark-mock-dark.jpg) / [light](../design/ui-benchmark-mock-light.jpg) / [settings](../design/ui-benchmark-mock-settings.jpg) / [cmdk](../design/ui-benchmark-mock-cmdk.jpg)
 
@@ -52,7 +52,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 |---|---|
 | 1600 宽下 `260 + 820 + 400` 成立；正文 820 不挤，右栏 400 够放 Changes/检查/预览 | 右栏目标从 420–460 收到 **400**；1440 宽右栏 360、正文 780；**≤1280 隐藏右栏**；≤900 隐藏侧栏 |
 | Composer 820×112（带上下文 chips）看起来成立；再加 36px queue dock 后，与 OMP 的 composer + task dock 总高度接近 | Composer 目标 **112–124**，不是无限压到 96；chips 只在有上下文时显示；queue 贴 Composer 上方 |
-| 用户气泡**实底 accent** 在暗色成立，但必须用独立 `--bubble-bg/--bubble-text` | **不要改全局 `--text-on-accent`**；新增气泡专用 token；亮色保持淡紫 |
+| 用户 review：**原版半透明紫**比 OMP 实底更精致 | **保留 `--message-bubble-user` 15%/25% + 轻阴影**；不采用 OMP 实底；补 24px 用户头像 |
 | 设置整页（左 220 + 内容 900）成立，但**没有 OMP 的全局页头**，看起来像独立页面 | 设置整页保留 back + 标题，**不复制 OMP 的 10 项全局 nav**；P2 先做 A/B，不通过就退回 900px 弹窗 |
 | 模型菜单 9 个角色放在 340×500 会盖住半屏；OMP 的 9 个角色约 420 高 | 菜单 **340×460**，**最多 7 行可见 + 内部滚动**；`@tag`/模型/强度三要素保留 |
 | 命令面板 660×600、4 组 13 条能放完；OMP 是 6 组可滚动 | 首屏保证 **4 组（最近/推荐/页面/面板）**；配置与项目组按高度追加，不为了“像 OMP”硬塞 |
@@ -68,6 +68,126 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - OMP 的底部 240 面板、顶部页面导航是它 IA 的一部分；Codem 只做“按需底栏 + 返回式设置页”，不照搬。
 - OMP 侧栏 272 / 右栏 480 的比例来自它 768 文档列；Codem 820 文档列下用 400 右栏更稳。
 - 预演是静态 HTML，不能证明真实组件的滚动、虚拟列表、焦点陷阱、IME、拖拽；这些必须在 Phase 0 用真机 CDP 验。
+
+### 0.3 第二轮深度复查：状态、IA 与可访问性
+
+> 触发：用户 review 指出“用户消息原版这个紫色更精致”。这说明第一轮把 OMP 的**实底气泡**当成目标，属于**过度对标**。第二轮不再只改颜色，补上第一轮没覆盖的状态、IA、键盘、DPI、代码阅读与性能问题。
+
+#### 0.3.1 立即修正：用户气泡保留 Codem 原版半透明紫
+
+- 原版令牌：暗色 `--message-bubble-user: rgba(124,108,240,.15)`、`--message-bubble-user-border: rgba(124,108,240,.25)`、`--shadow-bubble: 0 1px 3px rgba(0,0,0,.2)`；亮色 `.08/.16` + 极轻阴影。
+- **结论：不采用 OMP 的实底 accent 气泡。** Codem 的半透明紫 + 细边 + 轻阴影更精致，也更适合中文正文；OMP 实底只适合它自己的对比体系。
+- 预演直接用原版 `.15/.25`，不再为了看清而 +5%；真机实拍如果确实偏暗，再以 +3% 为上限微调。
+- 保留 24px 用户头像（原版 `user-msg-avatar`）、14/14/4/14 圆角、10/16 内边距、14px 正文字号。
+- 不再新增 `--bubble-bg/--bubble-text` 实底 token；只保留/微调现有 `--message-bubble-user*`，避免两套气泡语义。
+
+#### 0.3.2 状态矩阵：第一轮只做了“默认 + running”
+
+| 状态 | 视觉反馈 | 现有实现（不要重写） | 验收 |
+|---|---|---|---|
+| 空会话 | 欢迎语 + 快捷入口 + 输入焦点 | `ChatPanel` empty-state / quick access | 不显示空白大页；输入框自动聚焦 |
+| 历史加载 / 不可用 | 骨架或状态行 + 重试 | `messages-loading` / `messages-unavailable` | 不闪“空会话”；可重试 |
+| 流式：connecting / receiving / tools | 状态行 + 计时 + 停止按钮；正文光标 | `StreamingTimer` / `StreamingWaitIndicator` / cancel | 三阶段文案不同；停止可立即取消 |
+| 等待审批 | 行内审批卡或弹窗；风险色 + 允许一次/始终/拒绝 | `PermissionPresetSelector` / approval 逻辑 | 不把“待审批”演成“运行中”；Esc 不误放行 |
+| 队列 / guidance | Composer 上方 36px dock；可编辑/删除 | `guidanceMessages` / queue | 无队列时**不显示** dock |
+| 工具 running / done / error | 左状态轨 + 文案 + 图标；错误可展开 | `ToolCallCard` / `toolStatus` | 不只靠颜色；错误有重试/复制 |
+| 回合完成 / 错误 | 完成行或 ErrorCard；不假装成功 | `ErrorCard` / turn footer | 失败不显示“任务完成” |
+| 断线 / 重连 | 顶部状态条 + 禁用发送 | `connection-lost` banner | 不丢当前草稿；重连后恢复 |
+| Composer：focus / IME / drag / attachment / disabled | 单环、组合输入、拖拽遮罩、附件 chip、禁用提示 | `compositionJustEndedRef` / `isDragOver` / `blurFolded` | 中文回车不误发；拖拽不闪 |
+| 命令面板：空 / 无结果 / 加载 | 空态文案 + 清除搜索 | `cmdk`（新建） | 不显示空白列表 |
+| 设置：搜索无结果 / 保存失败 | 空态 + “未确认保存” | `settingsSearch` / `saveFailure` | 不把失败演成“已保存” |
+| 模型菜单：无模型 / 未知 | 空态 + “配置 Provider”入口 | `model-picker` | 不铺 10 行 `【未知】` |
+
+**执行要求**：每个新组件至少覆盖 **default / hover / focus-visible / disabled / loading / error / empty** 七态中的相关项；不能只交一张静态主图。
+
+#### 0.3.3 设置 IA：23 个分区不能压成 8 个平铺项
+
+`SettingsPanel.tsx` 现有 **23 个 tab**；`SETTINGS_TAB_INDEX` 只索引了 22 个，**漏了 `memory-checkup`（记忆体检）**，搜索找不到。整页化前必须先修这个索引，否则“搜索设置”会继续漏项。
+
+建议的两级 IA（左 8 组，右组内 2–5 个 tab）：
+
+| 左组 | 组内 tab |
+|---|---|
+| 通用与外观 | general、appearance |
+| 模型与运行 | ollama、multimodal、voice |
+| 对话与知识 | knowledge、persona、memory-checkup |
+| 工具与权限 | security、tools、computer |
+| 连接与设备 | git、environment、worktree、wechat、phone |
+| 自动化与统计 | automation、performance、usage |
+| 实验与扩展 | codegraph、pet、advanced |
+| 帮助 | help |
+
+- 左组只负责“找方向”；右侧用 26px 子导航 pills 切换具体 tab；搜索仍直接跳到 tab，并自动展开所属组。
+- **保留显式保存**（现有 `handleSave` + `saveFailure`），不要改成自动保存；整页底部固定保存栏，失败必须显示“未确认保存”。
+- 如果产品不接受整页：退回 **900px 弹窗**，同样使用两级 IA；不要把 23 项硬塞进 760px 单列。
+
+#### 0.3.4 键盘 / IME / ARIA
+
+- **焦点陷阱**：命令面板、设置页、模态打开时把焦点移入；Esc 关闭后**还给触发按钮**；Tab 不逃逸。
+- **快捷键**：`Ctrl+K` 命令面板、`Ctrl+B` 侧栏、`Ctrl+J` 底栏、`Ctrl+,` 设置、`Esc` 关闭最上层；不要和输入框冲突。
+- **IME**：输入法组合期间 Enter 不能发送。现有 `compositionJustEndedRef` + `nativeEvent.isComposing` 已修过，改 Composer 时**不得删/绕过**；验收要真打中文。
+- **ARIA**：palette `role=dialog aria-modal`；设置页签 `aria-selected`；树 `aria-selected`；流式/审批/toast 用 `aria-live=polite`；图标按钮要有 `aria-label`。
+- **目标尺寸**：24px 下限；树行 22px 图标用伪元素扩热区；不要只靠 hover 才可操作。
+
+#### 0.3.5 视口 / DPI / 密度
+
+| 维度 | 必测 |
+|---|---|
+| 视口 | 1280×800、1440×900、1600×1000、1920×1080、2560×1440 |
+| 缩放 | 100% / 125% / 150% / 200% |
+| 密度 | compact 0.85 / standard 1 / cozy 1.15 |
+| 极端内容 | 超长无空格 URL、长中文标题、20 行表格、200 行工具输出 |
+
+- 125% 下 1px 边框可能“消失”，不要用 0.5px；2px 焦点环必须仍然完整。
+- 密度只缩间距/控件，不缩字号；compact 下控件不低于 24px。
+- 2560 宽不能把正文拉成 1400；仍以 820 为上限。
+
+#### 0.3.6 字体与中文排版
+
+- Alimama 方圆体是品牌资产，但必须有 **`font-display: swap` + Segoe UI/微软雅黑 fallback**；字体未加载时正文不能从 14 掉到 13、行高不能跳。验收：禁用字体文件后截图，布局偏移 ≤1px。
+- 中文正文 14px / 1.7；界面 12–13；元信息 **不低于 11px**（10.5 只用于数字/英文标签，不用于中文句子）。
+- 时间、token、费用用 `font-variant-numeric: tabular-nums`；不要把 560 字重当唯一层级（fallback 字体可能没有 560，会回落到 400/700）。
+- 长 URL/路径用 `overflow-wrap:anywhere` + 横向滚动，普通中文段落用 `text-wrap: pretty`；不要全站 `word-break: break-all`。
+- 代码 12px / 1.7，行号 10.5 mono；中文注释与代码同宽，不额外缩小。
+
+#### 0.3.7 对比度 / 三皮肤
+
+- 目标：正文 ≥7:1；次要 ≥4.5:1；弱文字 ≥4.5:1；禁用 ≥3:1；accent 上的文字 ≥4.5:1。
+- **Dream 的 6 个缺失 token（success/warning/error/info/dropdown-bg/text-on-accent）必须在新组件之前补齐**；否则 P1 的 Composer/设置会先在 Dream 里坏掉。这是顺序问题，不是 P3 收尾。
+- Hub 橙色 active/警告色要单独测；不要用“橙色文字 + 浅橙底”低于 4.5。
+- 不只靠颜色：diff 用 +/−，Git 用字母，状态用图标/文字。
+
+#### 0.3.8 代码 / Diff / 表格
+
+- 代码块：12px / 1.7，最大高 360，头部 sticky，复制/换行切换，横向滚动不撑破文档列。
+- Diff：行高 18–20，+/- 双通道；新增/删除底色不超过 10%；长行横向滚动；不整页横向溢出。
+- 表格：12px，表头 11/600，行高 32，sticky 表头，横向滚动；不要斑马纹 + 外框 + 阴影三层。
+- Markdown 标题仍按 16/15/14；代码内的标题不参与。
+
+#### 0.3.9 Composer / 面板的条件状态
+
+- queue dock **只在有队列时显示**；summary card **只在本轮有摘要时显示**。预演为了展示一直显示，落地必须条件渲染。
+- 流式中发送按钮变“停止/排队”双态；空输入禁用；附件 chip 可删；拖拽有遮罩；错误在输入区内联提示，不弹大 toast。
+- 右栏/底栏的拖拽手柄 4px、双击复位、键盘可调；折叠状态持久化；底栏 34/190，不做常驻 240。
+- 右栏不再放第二棵文件树；Changes / 检查 / 预览三块即可。
+
+#### 0.3.10 性能与实现约束
+
+- `styles.css` 已 21.5k 行；每阶段新增 CSS **≤300 行**，优先改现有块，不复制一套新组件样式。
+- 不新增 `!important`（当前基线 50 处）；不新增硬编码颜色（scan-ui 会抓）；不写 `transition: all`。
+- 消息列表已有 `content-visibility`；不要给每条消息加阴影/模糊/大面积 `backdrop-filter`。
+- 不引入新依赖；截图/契约用现有 Edge CDP + Node WebSocket。
+- 每阶段产物：代码 + 截图 + computed 契约 + 体积/行数变化；超过预算先拆阶段。
+
+#### 0.3.11 对阶段的调整
+
+| 原计划 | 调整 |
+|---|---|
+| P0 只做 token/Composer/设置 | 加 **P0-7 三皮肤 token 对齐**（Dream 6 项 + `memory-checkup` 索引）和 **P0-8 用户气泡保留原版** |
+| P1 只做组件外观 | 每个组件必须交 **状态矩阵**（0.3.2）中的相关状态，不只交主图 |
+| P2 设置整页 | 先做 **两级 IA**（0.3.3）；不通过就 900px 弹窗，不硬上整页 |
+| P3 再做 Dream | **前移**：Dream token 在 P0-7 完成；P3 只做 Hub/Dream 形状/背景气质 |
+| 验收只截 1600 | 加 1280/1920、125%/150%、空/审批/错误三态；像素差之外加 IME/焦点陷阱实测 |
 
 ---
 
@@ -175,7 +295,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 浮层阴影 | 大多 none（border-float） | `shadow-raise-3` | 菜单/对话框 none；toast/task dock 保留 |
 | 输入卡阴影 | none | `0 2px 4px + 0 4px 12px` | **none**；用 1px 边框 + 柔光焦点 |
 
-> 不要把 `--shadow-*` 全删。OMP 也有 81 处非 none 阴影，但只用在**暂时浮起**的东西（任务 dock、toast）。Codem 的问题是**静态的输入卡、设置弹窗、用户气泡也在投影**，导致“所有东西都在飘”。
+> 不要把 `--shadow-*` 全删。OMP 也有 81 处非 none 阴影，但只用在**暂时浮起**的东西（任务 dock、toast）。Codem 的问题是**静态的输入卡、设置弹窗**在投影；用户气泡的 `0 1px 3px` 是轻分层，可以保留（用户已明确喜欢原版气泡）。
 
 ### 3.4 布局 / 控件
 
@@ -260,7 +380,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 | 元素 | OMP | Codem 当前 | 差距 | 动作 |
 |---|---|---|---|---|
-| 用户气泡 | 暗色**实底 accent** + 深色字；亮色 `#eee9ff` + 主文字；圆角 16/16/6/16；无阴影；max 78% | accent 15% 底 + 1px 边 + 阴影；圆角 14px；max 75%；有头像 | Codem 更“软”，但不够聚焦 | P1：先去掉阴影；实底用 **`--bubble-bg/--bubble-text` 专用 token**，不改全局 `--text-on-accent` |
+| 用户气泡 | 暗色**实底 accent** + 深色字；亮色 `#eee9ff` + 主文字；圆角 16/16/6/16；无阴影；max 78% | 暗色 15% 紫底 + 25% 紫边 + `0 1px 3px` 轻阴影；亮色 8%/16%；圆角 14px；max 75%；有头像 | **Codem 更精致；OMP 实底不采用** | P1：保留原版半透明紫 + 轻阴影；只补 24px 头像/微调边框 |
 | 助手正文 | 14px / 1.75；无气泡；768 列 | 14px / 22.4；无气泡；907 列 | Codem 过宽、行高略紧 | **P0：820 列 + 1.7 行高** |
 | 消息头 | 11px 元信息；角色 badge 18px；名字 12px | 13px，opacity .8；约 24px 头像 | Codem 头重 | P1：元信息 11、名字 12、头像 20 |
 | Markdown 标题 | h1/h2/h3 全 14 semibold | 20/18/16/14 | Codem 标题过大 | **P0：16/15/14** |
@@ -424,9 +544,9 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 ## 6. 优化方案（按阶段执行）
 
-### 6.1 P0：视觉地基（1–2 天，不改 IA）
+### 6.1 P0：视觉地基（2–3 天，不改 IA）
 
-目标：只改“看起来贵不贵”的底层，不动功能结构；每一步可单独回滚。
+目标：只改“看起来贵不贵”的底层，不动功能结构；每一步可单独回滚。**P0-7/P0-8 是第二轮新增**：三皮肤 token 与设置搜索索引必须先补齐，否则后面的组件会在 Dream 里坏掉、搜索会继续漏“记忆体检”。
 
 #### P0-1 Composer 卡片化
 
@@ -547,7 +667,36 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 一条含 h1/h2/h3 的消息截图；标题不再抢正文。
 - 与 OMP 的“文档式标题”对照，但不强求全 14。
 
+#### P0-7 三皮肤 token 对齐 + 设置搜索索引（0.5 天）
+
+**文件**：`src/styles/skin-dream.css`、`src/components/SettingsPanel.tsx`。
+
+- Dream 补 `--success / --warning / --error / --info / --dropdown-bg / --text-on-accent` 六个 token；否则 P1 的 Composer/设置会先在 Dream 里坏掉。
+- `SETTINGS_TAB_INDEX` 补 `["memory-checkup", ["记忆体检", "memory", "体检"]]`；当前 23 个 tab 只索引了 22 个。
+- 不加新组件；只补 token 与搜索元数据。
+
+**验收**：
+
+- Dream 下状态色/浮层底不再落回默认档；`记忆体检` 能被搜索到并跳转。
+- `npx tsc --noEmit` + 设置搜索相关判据通过。
+
+#### P0-8 用户气泡保留原版（0.2 天）
+
+**文件**：`src/styles.css`（`--message-bubble-user*` / `.user-msg-avatar`）。
+
+- 保留暗色 `rgba(124,108,240,.15)` / `.25` / `0 1px 3px`；亮色 `.08/.16`。
+- 补 24px 用户头像（原版 `user-msg-avatar`），与气泡顶对齐。
+- **不改全局 `--text-on-accent`，不新增实底气泡 token**。
+- 详细验收见 P1-5；P0 只做 token/头像，不重排消息结构。
+
+**验收**：
+
+- 与用户原版截图并排；气泡底色、边框、阴影一致或更轻。
+- 头像 24px；长文本换行不溢出；暗/亮两档通过。
+
 ### 6.2 P1：关键组件（3–5 天）
+
+> **第二轮新增要求**：每个组件至少交 0.3.2 状态矩阵里的相关状态（空/流式/审批/错误/禁用/加载），不能只交 default 主图。命令面板、模型菜单、Composer、设置页各至少 2 个非默认态截图。
 
 #### P1-1 命令面板改成“命令中心”
 
@@ -627,17 +776,23 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 错误/运行中状态仍一眼可见（左侧轨 + 状态文字）。
 - Diff/终端仍可读，不因去框丢对比。
 
-#### P1-5 用户气泡 / 消息头
+#### P1-5 用户气泡：保留原版半透明紫（用户已明确偏好）
 
-- 暗色**不要直接** `background: var(--accent); color: var(--text-on-accent);`：Codem 的 `--text-on-accent` 是白色，实底会掉对比度。
-- 方案 A（低风险）：保持 15% 淡紫底 + 主文字色，**只去掉 `--shadow-bubble`**，边框降到 20%。
-- 方案 B（预演采用）：**新增 `--bubble-bg/--bubble-text` 专用 token**，暗色 `#9e8cfc / #14111f`，亮色 `#eee9ff / #2a2440`；**不要改全局 `--text-on-accent`**（否则主按钮白字会掉对比度）。
-- 消息头：11px 元信息，名字 12，头像 20；不要 13px + 24px 头像。
+> 参考图：[原版用户气泡](../design/reference-user-bubble.png)。
+
+- **不采用 OMP 的实底 accent 气泡**；保留 Codem 原版：
+  - 暗色：`rgba(124,108,240,.15)` 底、`rgba(124,108,240,.25)` 边、`0 1px 3px rgba(0,0,0,.2)` 轻阴影；
+  - 亮色：`rgba(107,92,231,.08)` 底、`rgba(107,92,231,.16)` 边、极轻阴影。
+- 预演直接用原版 `.15/.25`；实拍如果确实偏暗，再以 +3% 为上限微调，不要默认提亮。
+- 保留 24px 用户头像（原版 `user-msg-avatar`）；圆角 14/14/4/14；padding 10/16；正文 14px。
+- 不改全局 `--text-on-accent`；不新增实底 `--bubble-bg/--bubble-text` 的第二套语义。
+- 消息头：11px 元信息，名字 12；不要 13px。
 
 **验收**：
 
-- 暗色气泡白字对比度 ≥4.5:1；亮色气泡主文字 ≥7:1。
-- 气泡宽度 78%，不与正文列冲突。
+- 与用户提供的原版截图并排：底色不亮于原版、文字对比度 ≥4.5:1、边框可见但不抢。
+- 24px 头像与气泡顶对齐；气泡宽度 78%，长文本换行不溢出。
+- 暗色/亮色/Hub/Dream 各一张；不出现“亮紫实底 + 深色字”的 OMP 版本。
 
 #### P1-6 设置行组 + 菜单/弹层
 
@@ -665,7 +820,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 ### 6.3 P2：布局与页面（5–8 天，需产品拍板）
 
-1. **设置整页化（决策门）**：新增 `SettingsPage` 路由/视图，复用现有 23 分区；页头 44 + 左 220 导航 + 内容 900；保留 back + 标题，**不复制 OMP 的 10 项全局 nav**。风险：状态/快捷键/测试；先做 A/B 截图；不通过就退回 **900px 弹窗**。
+1. **设置整页化（决策门）**：新增 `SettingsPage` 路由/视图，复用现有 23 分区；**必须用 0.3.3 的两级 IA**（左 8 组 + 右 26px 子导航），页头 44 + 左 220 导航 + 内容 900；保留 back + 标题，**不复制 OMP 的 10 项全局 nav**。先修 `memory-checkup` 搜索索引、保留显式保存与 `saveFailure`。风险：状态/快捷键/测试；先做 A/B 截图；不通过就退回 **900px 弹窗**。
 2. **右侧 Inspector 常驻**：项目会话默认展开 **400px**，复用 `PanelSidebar` 的 Files/Git/Changes；1440 宽 360，≤1280 收起；Composer/正文列仍 820。
 3. **底部面板**：默认 **34px 折叠**；终端按需展开 **190px**；不做 OMP 的常驻 240；与右侧 Inspector 不重复。
 4. **页面级导航**：仅对设置/任务中心/知识/用量等“全屏页”加 44px 页头 + 图标 nav；不要动聊天主区。
@@ -689,8 +844,8 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 在改任何视觉之前，先加一个**可重复的对照/验收脚手架**：
 
-1. **固定状态**：`workbench-dark`、`workbench-light`、`settings-dark`、`settings-light`、`cmd-k`、`model-menu`、`empty`、`running`、`error`。
-2. **固定视口/DPR**：1600×1000 @1x（WebView2 用 CDP `Emulation.setDeviceMetricsOverride` 强制 1x，避免 DPR 2 原图）。
+1. **固定状态**：`workbench-dark`、`workbench-light`、`streaming-dark`、`approval-dark`、`empty-dark`、`error-dark`、`settings-dark`、`settings-search-empty`、`cmd-k`、`cmd-k-empty`、`model-menu`、`model-empty`、`hub`、`dream`。
+2. **固定视口/DPR**：1600×1000、1280×800、1920×1080，各 @1x；另抽 1600×1000 @125%/150% 验证 1px 边框与 2px 焦点环（WebView2 用 CDP `Emulation.setDeviceMetricsOverride` 强制，避免混入系统缩放）。
 3. **固定数据**：用隔离数据副本 + 固定会话；不要用用户当前会话（会变）。
 4. **固定操作序列**：启动 → 等待 `#root`/首屏 → 关闭引导 → 打开目标 → 截图。
 5. **产出**：
@@ -699,7 +854,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
    - `contact-sheet.jpg`（before/after/OMP 三列）。
 6. **不引入重依赖**：用 Edge CDP + Node 24 的 WebSocket；截图用 `Page.captureScreenshot`，不要为截图引入 Playwright 到产品依赖。
 
-**Phase 0 的验收**：同一状态连拍 3 次，像素差 <0.1%；computed.json 稳定；这才说明工具可信。
+**Phase 0 的验收**：同一状态连拍 3 次，像素差 <0.1%；computed.json 稳定；125% 下 1px 边框不消失、2px 焦点环完整；中文输入法组合期间按 Enter 不发送。这才说明工具可信。
 
 ### 7.2 机器契约（比“看着像”可靠）
 
@@ -708,8 +863,12 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 ```json
 {
   "version": 1,
-  "viewports": [{ "width": 1600, "height": 1000, "dpr": 1 }],
-  "states": ["workbench-dark", "workbench-light", "settings-dark", "cmd-k"],
+  "viewports": [
+    { "width": 1600, "height": 1000, "dpr": 1 },
+    { "width": 1280, "height": 800, "dpr": 1 },
+    { "width": 1920, "height": 1080, "dpr": 1 }
+  ],
+  "states": ["workbench-dark", "workbench-light", "streaming-dark", "approval-dark", "empty-dark", "error-dark", "settings-dark", "settings-search-empty", "cmd-k", "cmd-k-empty", "model-menu", "model-empty"],
   "selectors": {
     ".input-card-container": {
       "maxWidth": "820px",
@@ -747,10 +906,10 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **token/契约**：更新 `ui-benchmark-contract.json` 与 `docs/ui-spec.md`（如涉及新 token）。
 3. **截图**：`before/` + `after/` + `contact-sheet`；放 `docs/evidence/ui-benchmark-<phase>-<date>/`，附 README（来源/操作/读数）。
 4. **机器结果**：`npm run audit:docs`、`npx tsc --noEmit`、相关判据；CSS 改动跑 `css-contract.mjs --check`。
-5. **人工签字**：12 项检查表（见 7.4）逐项打勾；不签不合并。
+5. **人工签字**：18 项检查表（见 7.4）逐项打勾；不签不合并。
 6. **回滚点**：一个阶段一个 commit；出问题 `git revert` 该 commit，不要手删半套 CSS。
 
-### 7.4 人工验收 12 项（每阶段都看）
+### 7.4 人工验收 18 项（每阶段都看）
 
 - [ ] 边框只有一种浓度（主/次/分隔），没有“边框 + 阴影 + 内线”三层。
 - [ ] 同一屏只有一种焦点环；输入框、按钮、树、菜单各自只有一圈。
@@ -762,8 +921,14 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - [ ] 选中态是**软底 + 主文字/强调文字**，不是整块实心紫。
 - [ ] 菜单/弹窗没有重阴影；需要浮起的只有 toast/任务 dock。
 - [ ] 空态/加载/错误有统一形态，不是每个页面一套。
-- [ ] 键盘 Tab 一圈走完，焦点始终可见；Esc 能关浮层。
+- [ ] 键盘 Tab 一圈走完，焦点始终可见；Esc 能关浮层，关闭后焦点回到触发按钮。
 - [ ] 三皮肤（默认/Hub/梦幻）都看一遍；Dream 的状态色/浮层底没有落回默认档。
+- [ ] 中文输入法组合期间按 Enter 不发送；组合结束后再按才发送。
+- [ ] 125% 缩放下 1px 边框仍可见、2px 焦点环不被裁；2560 宽正文仍 ≤820。
+- [ ] 无队列时不显示 queue dock；无摘要时不显示 summary card；空态/审批/错误都有真实状态，不是占位文案。
+- [ ] 设置“记忆体检”可被搜索到；保存失败显示“未确认保存”，不显示已保存。
+- [ ] 用户气泡保持原版半透明紫（15%/25% + 轻阴影 + 24px 头像），没有变成 OMP 实底。
+- [ ] 不只靠颜色：diff 有 +/−、Git 有字母、状态有图标/文字。
 
 ### 7.5 建议的提交粒度
 
@@ -775,6 +940,8 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | P0-3 | `style(theme): lift dark text + soften borders` | 只改 dark token |
 | P0-4 | `fix(a11y): single focus ring` | 只改焦点 |
 | P0-5 | `style(settings): soft active + grouped rows` | 只改设置 |
+| P0-7 | `fix(theme): dream tokens + settings search index` | 只补 token/索引 |
+| P0-8 | `style(chat): keep original purple user bubble` | 只改气泡/头像 |
 | P1-1 | `feat(cmdk): grouped command center` | 只改命令面板 |
 | P1-2 | `feat(model): role-based picker` | 只改模型菜单 |
 | P1-3 | `style(sidebar): density + tree status` | 只改侧栏/树 |
@@ -801,7 +968,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 10 个页面的一级导航 | Codem 的功能入口在侧栏/任务中心/设置，直接搬会变成第二套 IA |
 | 24px 文件树行 | 中文 12px 在 24px 行里可读，但 Codem 树有 git 徽章/操作按钮；26px 更稳 |
 | 768px 硬文档列 | Codem 有表格/PPT/代码 diff；820 更合适，且表格允许全宽 |
-| 用户气泡实底 accent | 只在暗色成立；亮色要淡紫；三皮肤都要测对比度 |
+| OMP 实底 accent 用户气泡 | 用户明确偏好 Codem 原版半透明紫；实底只在 OMP 对比体系成立，不照搬 |
 | 所有静态面去阴影 | OMP 的 toast/task dock 仍有阴影；Codem 要保留“浮起”语义，只去掉静态面的 |
 | 模型角色 `@default/@plan/...` | 这是 OMP Runtime 的概念；Codem 的角色要按自己的 provider/agent 模型映射 |
 | 页面级 Time Travel | 依赖 OMP checkpoint 语义；Codem 有 session_events/恢复，但不等价 |

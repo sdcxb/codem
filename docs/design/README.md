@@ -16,7 +16,7 @@ start docs\design\ui-benchmark-mock.html
 
 - `Dark` / `Light`：默认皮肤；
 - `Hub` / `Dream`：另外两套皮肤的形状/配色预演；
-- `设置`：整页设置（P2 目标）；
+- `设置`：整页设置 + 两级子导航（全部/应用/编辑器/启动/通知，P2 目标）；
 - `Ctrl K`：命令面板；
 - `模型`：模型角色菜单。
 
@@ -49,10 +49,11 @@ docs/design/ui-benchmark-mock.html?panel=1&clean=1
 | `ui-benchmark-mock-light.jpg` | 默认 light 工作台 |
 | `ui-benchmark-mock-settings.jpg` | 整页设置 |
 | `ui-benchmark-mock-cmdk.jpg` | 命令面板 |
+| `reference-user-bubble.png` | 用户提供的原版用户气泡参考（只作颜色/边框/头像对照） |
 
 ## 边界
 
-- 数据是 mock，不代表真实运行数据；
+- 数据是 mock，不代表真实运行数据；用户气泡保留 Codem 原版半透明紫（预览即 15%/25% 原版令牌）。
 - 交互只覆盖视觉状态（主题/皮肤/设置/命令面板/模型菜单/底部面板），不是产品行为；
 - 真实落地时必须按 `13` 的 Phase 0 截图 + computed contract 验收，不能以这个 HTML 的像素为准；
 - Hub/Dream 只验证“同一套形状换色”是否成立，最终仍以产品皮肤 token 为准。
