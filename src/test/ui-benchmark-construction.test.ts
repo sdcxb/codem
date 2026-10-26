@@ -128,6 +128,8 @@ describe('UI 对标施工合同', () => {
     expect(settings).toContain('settings-page')
     expect(settings).toContain('settings-back')
     expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(8)
+    expect(settings).toContain('settings-page-head')
+    expect(settings).toContain('activeTabDef')
     expect(settings).toContain('settings-subnav')
     expect(codemUi).toContain('.settings-page-overlay')
     expect(codemUi).toContain('padding: var(--chrome-height) 0 0')

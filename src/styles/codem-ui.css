@@ -2665,6 +2665,17 @@ body.resizing-columns * {
   flex: 1;
   min-height: 0;
 }
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.settings-main > .settings-content {
+  flex: none;
+  overflow: visible;
+}
 .settings-page .settings-content {
   max-width: 900px;
   width: 100%;
@@ -2768,6 +2779,27 @@ body.resizing-columns * {
   height: 16px;
 }
 /* P2-1：组内 26px 子导航 pills；组由左侧 8 组负责，右侧只切当前组 tab。 */
+.settings-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: var(--space-2) 0 var(--space-4);
+}
+.settings-page-head h1 {
+  margin: 0 0 var(--space-2);
+  font-size: calc(var(--fs-lg) + 6px);
+  line-height: var(--lh-compact);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--ls-tight);
+  color: var(--text-primary);
+}
+.settings-page-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-reading);
+}
+
 .settings-subnav {
   position: sticky;
   top: 0;
@@ -2776,7 +2808,7 @@ body.resizing-columns * {
   gap: var(--space-2);
   margin: 0 0 var(--space-3);
   padding: var(--space-1) 0 var(--space-2);
-  background: var(--surface-1);
+  background: var(--bg-primary);
   border-bottom: 1px solid var(--border-secondary);
 }
 .settings-subnav-pill {
@@ -2789,7 +2821,7 @@ body.resizing-columns * {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .settings-subnav-pill svg {

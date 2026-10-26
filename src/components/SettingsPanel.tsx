@@ -793,7 +793,19 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       tabs: [{ id: "help", zh: "帮助", en: "Help", icon: HelpCircle }],
     },
   ];
+  const SETTINGS_GROUP_DESC: Record<string, { zh: string; en: string }> = {
+    essentials: { zh: "应用外观、启动行为与通知。", en: "Appearance, startup behavior and notifications." },
+    project: { zh: "项目、Git 与工作树相关设置。", en: "Project, Git and worktree settings." },
+    knowledge: { zh: "知识、记忆与自动化能力。", en: "Knowledge, memory and automation." },
+    models: { zh: "模型、语音、工具与本地推理。", en: "Models, voice, tools and local inference." },
+    persona: { zh: "人设、电脑操作与外部设备。", en: "Persona, computer use and connected devices." },
+    insights: { zh: "用量、性能与记忆体检。", en: "Usage, performance and memory checkup." },
+    system: { zh: "高级系统选项。", en: "Advanced system options." },
+    help: { zh: "帮助与关于。", en: "Help and about." },
+  };
   const activeGroup = SETTINGS_TAB_GROUPS.find((group) => group.tabs.some((tab) => tab.id === activeTab)) ?? SETTINGS_TAB_GROUPS[0];
+  const activeTabDef = activeGroup.tabs.find((tab) => tab.id === activeTab);
+  const activeGroupDesc = SETTINGS_GROUP_DESC[activeGroup.id] ?? SETTINGS_GROUP_DESC.essentials;
   // 由搜索词过滤出的匹配 tab（空 = 全部显示）
   const searchFilteredTabs = useMemo(() => {
     const q = settingsSearch.trim().toLowerCase();
@@ -1383,7 +1395,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
           </div>
 
+          <div className="settings-main">
           <div className="settings-content" ref={contentFade.ref} style={contentFade.style}>
+          <header className="settings-page-head">
+            <div>
+              <h1>{lang === "zh" ? activeTabDef?.zh : activeTabDef?.en}</h1>
+              <p>{lang === "zh" ? activeGroupDesc.zh : activeGroupDesc.en}</p>
+            </div>
+          </header>
           <div className="settings-subnav" role="tablist" aria-label={lang === "zh" ? "设置子页" : "Settings tabs"}>
             {activeGroup.tabs.map((tab) => {
               const Icon = tab.icon;
@@ -2942,6 +2961,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     />
   </div>
 )}
+          </div>
           </div>
         </div>
 

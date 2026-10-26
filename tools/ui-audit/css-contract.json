@@ -15431,6 +15431,13 @@
     "min-height": "52px",
     "padding": "var(--space-2) var(--space-6)"
   },
+  "settings-main": {
+    "display": "flex",
+    "flex": "1",
+    "flex-direction": "column",
+    "min-width": "0",
+    "overflow-y": "auto"
+  },
   "settings-mode-switch": {
     "margin-bottom": "var(--space-8)"
   },
@@ -15495,6 +15502,12 @@
     "max-height": "none",
     "max-width": "100vw",
     "width": "100vw"
+  },
+  "settings-page-head": {
+    "align-items": "flex-start",
+    "display": "flex",
+    "justify-content": "space-between",
+    "margin": "var(--space-2) 0 var(--space-4)"
   },
   "settings-page-overlay": {
     "align-items": "stretch",
@@ -15600,7 +15613,7 @@
     "width": "100%"
   },
   "settings-subnav": {
-    "background": "var(--surface-1)",
+    "background": "var(--bg-primary)",
     "border-bottom": "1px solid var(--border-secondary)",
     "display": "flex",
     "flex-wrap": "wrap",
@@ -15618,7 +15631,7 @@
     "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "inline-flex",
-    "font-size": "var(--fs-xs)",
+    "font-size": "var(--fs-sm)",
     "gap": "var(--space-1)",
     "height": "26px",
     "padding": "0 var(--space-3)"
