@@ -1,0 +1,1905 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-skin="default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codem · UI benchmark mock</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "AlimamaFangYuanTi", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    --titlebar-h: 44px;
+    --sidebar-w: 260px;
+    --inspector-w: 400px;
+    --doc-w: 820px;
+    --bg: #101318;
+    --bg-sidebar: #0d0f12;
+    --surface: #17191d;
+    --surface-2: #1d2025;
+    --surface-3: #23262c;
+    --text: #e6e7ea;
+    --text-2: #a7abb4;
+    --text-3: #8b909a;
+    --text-4: #6f7681;
+    --border: rgba(255,255,255,.09);
+    --border-strong: rgba(255,255,255,.14);
+    --border-soft: rgba(255,255,255,.055);
+    --accent: #8f7cf5;
+    --accent-hover: #9d8cff;
+    --accent-soft: rgba(143,124,245,.14);
+    --accent-border: rgba(143,124,245,.42);
+    --bubble-bg: #9e8cfc;
+    --bubble-text: #14111f;
+    --success: #46b983;
+    --warning: #e0a23c;
+    --error: #f06568;
+    --info: #5da9e0;
+    --radius-6: 6px;
+    --radius-8: 8px;
+    --radius-12: 12px;
+    --radius-14: 14px;
+    --radius-16: 16px;
+    --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  }
+  body[data-theme="light"] {
+    --bg: #fbfbfc;
+    --bg-sidebar: #f4f4f6;
+    --surface: #ffffff;
+    --surface-2: #f7f7f9;
+    --surface-3: #efeff2;
+    --text: #1a1d23;
+    --text-2: #4e5560;
+    --text-3: #6d7480;
+    --text-4: #8b909a;
+    --border: rgba(20,24,32,.10);
+    --border-strong: rgba(20,24,32,.16);
+    --border-soft: rgba(20,24,32,.06);
+    --accent: #6555e0;
+    --accent-hover: #5546cc;
+    --accent-soft: rgba(101,85,224,.09);
+    --accent-border: rgba(101,85,224,.34);
+    --bubble-bg: #eee9ff;
+    --bubble-text: #2a2440;
+    --success: #137a52;
+    --warning: #8f5a05;
+    --error: #c0272c;
+    --info: #1f6ba3;
+  }
+  body[data-skin="hub"] {
+    --bg: #0f0c09;
+    --bg-sidebar: #140f0a;
+    --surface: #1c1712;
+    --surface-2: #241c14;
+    --surface-3: #2d2319;
+    --text: #f5efe8;
+    --text-2: #b8aaa0;
+    --text-3: #8e7f74;
+    --text-4: #6f6258;
+    --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.14);
+    --accent: #ff6b00;
+    --accent-hover: #ff7d1f;
+    --accent-soft: rgba(255,107,0,.14);
+    --accent-border: rgba(255,107,0,.4);
+    --bubble-bg: #ff7a1a;
+    --bubble-text: #1a0f05;
+    --success: #69c08b;
+    --warning: #e0a23c;
+    --error: #f06568;
+    --info: #7db6d8;
+  }
+  body[data-skin="dream"] {
+    --bg: #f7eef1;
+    --bg-sidebar: rgba(255,255,255,.56);
+    --surface: rgba(255,255,255,.78);
+    --surface-2: rgba(255,255,255,.58);
+    --surface-3: rgba(255,255,255,.42);
+    --text: #4a3038;
+    --text-2: #6d4c57;
+    --text-3: #8b6670;
+    --text-4: #a17f88;
+    --border: rgba(90,58,68,.12);
+    --border-strong: rgba(90,58,68,.2);
+    --accent: #c65d7b;
+    --accent-hover: #b34d6a;
+    --accent-soft: rgba(198,93,123,.1);
+    --accent-border: rgba(198,93,123,.3);
+    --bubble-bg: #f3d3dd;
+    --bubble-text: #5a3a44;
+    --success: #4d8c6b;
+    --warning: #a6702a;
+    --error: #b34d5a;
+    --info: #5b7fa6;
+  }
+  body[data-skin="dream"] {
+    background:
+      radial-gradient(900px 500px at 12% 0%, rgba(255,255,255,.9), transparent 60%),
+      radial-gradient(760px 520px at 92% 8%, rgba(243,211,221,.8), transparent 62%),
+      linear-gradient(145deg, #fbf5f7 0%, #f4e6eb 52%, #f8eff2 100%);
+  }
+  body[data-skin="dream"] .app::after {
+    content: "";
+    position: fixed;
+    right: 40px; bottom: -70px;
+    width: 260px; height: 260px;
+    border: 1px solid rgba(198,93,123,.16);
+    border-radius: 50%;
+    box-shadow: 0 0 0 26px rgba(198,93,123,.04), 0 0 0 52px rgba(198,93,123,.025);
+    pointer-events: none;
+    opacity: .55;
+    z-index: 0;
+  }
+  body[data-skin="dream"] .app > .titlebar,
+  body[data-skin="dream"] .app > .body { position: relative; z-index: 1; }
+  button, input, textarea, select { font: inherit; }
+  button { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  textarea:focus-visible, input:focus-visible { outline: none; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
+  [hidden] { display: none !important; }
+  .icon {
+    width: 16px; height: 16px; display: block; flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .icon-sm { width: 14px; height: 14px; }
+  .icon-lg { width: 18px; height: 18px; }
+  .muted { color: var(--text-3); }
+  .mono { font-family: var(--font-mono); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  ::selection { background: rgba(143,124,245,.35); color: var(--text); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  .app { height: 100%; display: flex; flex-direction: column; position: relative; }
+
+  /* ---------- titlebar ---------- */
+  .titlebar {
+    height: var(--titlebar-h);
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: relative;
+    z-index: 30;
+  }
+  .brand {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px 0 4px;
+    border: 0;
+    background: transparent;
+    border-radius: 7px;
+    cursor: default;
+  }
+  .brand:hover { background: var(--surface-2); }
+  .brand-logo {
+    width: 22px; height: 22px;
+    border-radius: 7px;
+    background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #3b2b8f));
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -.04em;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  body[data-skin="hub"] .brand-logo { color: #1a0f05; }
+  body[data-skin="dream"] .brand-logo { color: #fff; }
+  .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+  .menus { display: flex; align-items: center; gap: 1px; margin-left: 2px; }
+  .menu-btn {
+    height: 28px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12px;
+    cursor: default;
+  }
+  .menu-btn:hover { background: var(--surface-2); color: var(--text); }
+  .mode-pill {
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 11px;
+  }
+  .mode-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .tb-right { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+  .icon-btn {
+    width: 28px; height: 28px;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    flex: none;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+  .icon-btn.active { background: var(--accent-soft); color: var(--accent); }
+  .tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+  .win-btn {
+    width: 30px; height: 28px;
+    display: grid; place-items: center;
+    border: 0; border-radius: 5px;
+    background: transparent; color: var(--text-3);
+    cursor: default;
+    font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .win-btn:hover { background: var(--surface-2); color: var(--text); }
+  .win-btn.close:hover { background: #c42b1c; color: #fff; }
+
+  /* ---------- app body ---------- */
+  .body { flex: 1; min-height: 0; display: flex; }
+  .sidebar {
+    width: var(--sidebar-w);
+    flex: none;
+    border-right: 1px solid var(--border);
+    background: var(--bg-sidebar);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .ws-row {
+    height: 44px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 10px 4px;
+  }
+  .ws-btn {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    cursor: default;
+    text-align: left;
+  }
+  .ws-btn:hover { background: var(--surface-2); }
+  .ws-icon {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    color: var(--text-2);
+    display: grid; place-items: center;
+    flex: none;
+  }
+  .ws-name { font-size: 12.5px; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-meta { font-size: 10.5px; color: var(--text-3); }
+  .ws-add { width: 26px; height: 26px; border-radius: 6px; }
+  .side-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 10px; }
+  .nav-list { display: flex; flex-direction: column; gap: 1px; }
+  .nav-item {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: default;
+    flex: none;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent); }
+  .nav-item .icon { color: var(--text-3); }
+  .nav-item.active .icon { color: var(--accent); }
+  .nav-badge {
+    margin-left: auto;
+    min-width: 17px; height: 17px;
+    padding: 0 5px;
+    display: grid; place-items: center;
+    border-radius: 5px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin: 7px 0 9px;
+    padding: 6px 0 2px;
+    border-top: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .tool {
+    height: 43px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 10.5px;
+    cursor: default;
+  }
+  .tool:hover { background: var(--surface-2); color: var(--text); }
+  .tool .icon { width: 17px; height: 17px; }
+  .side-sec { margin-top: 7px; }
+  .sec-head {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 7px;
+    color: var(--text-3);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .04em;
+  }
+  .sec-head .icon-btn { margin-left: auto; width: 22px; height: 22px; opacity: 0; }
+  .side-sec:hover .sec-head .icon-btn { opacity: 1; }
+  .side-list { display: flex; flex-direction: column; gap: 1px; }
+  .session {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12px;
+    text-align: left;
+    cursor: default;
+    flex: none;
+    min-width: 0;
+  }
+  .session:hover { background: var(--surface-2); color: var(--text); }
+  .session.active { background: var(--accent-soft); color: var(--text); }
+  .session.active .s-title { color: var(--accent); font-weight: 560; }
+  .s-icon { color: var(--text-3); }
+  .session.active .s-icon { color: var(--accent); }
+  .s-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .s-time { margin-left: auto; color: var(--text-4); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .session .s-actions { display: none; margin-left: auto; gap: 1px; }
+  .session:hover .s-time { display: none; }
+  .session:hover .s-actions { display: flex; }
+  .s-actions .icon-btn { width: 20px; height: 20px; }
+  .proj {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12px;
+    text-align: left;
+    cursor: default;
+    min-width: 0;
+  }
+  .proj:hover { background: var(--surface-2); color: var(--text); }
+  .proj .icon { color: var(--accent); width: 15px; height: 15px; }
+  .proj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj-count { margin-left: auto; color: var(--text-4); font-size: 10.5px; }
+  .proj-actions { display: none; margin-left: auto; gap: 1px; }
+  .proj:hover .proj-count { display: none; }
+  .proj:hover .proj-actions { display: flex; }
+  .proj-actions .icon-btn { width: 20px; height: 20px; }
+  .file-tree { padding: 0 0 4px; }
+  .tree-row {
+    width: 100%;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 6px 0 calc(6px + var(--depth, 0) * 13px);
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 11.5px;
+    text-align: left;
+    cursor: default;
+  }
+  .tree-row:hover { background: var(--surface-2); color: var(--text); }
+  .tree-row .tw { width: 12px; height: 12px; color: var(--text-4); flex: none; }
+  .tree-row .fi { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+  .tree-row[data-dir] .fi { color: var(--accent); }
+  .tree-row .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-row .fstat { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; flex: none; }
+  .tree-row .fstat.m { color: var(--warning); }
+  .tree-row .fstat.a { color: var(--success); }
+  .tree-row .fstat.u { color: var(--info); }
+  .side-foot {
+    flex: none;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-top: 1px solid var(--border);
+  }
+  .user-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 650;
+    flex: none;
+  }
+  .user-meta { min-width: 0; flex: 1; }
+  .user-name { font-size: 12px; font-weight: 560; }
+  .user-status { font-size: 10.5px; color: var(--text-3); }
+  .side-foot .icon-btn { width: 26px; height: 26px; }
+
+  /* ---------- main ---------- */
+  .main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .workbench { flex: 1; min-height: 0; display: flex; }
+  .chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .chat-head {
+    height: 48px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .chat-title-wrap { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .chat-title { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+  .chat-chevron { width: 18px; height: 18px; color: var(--text-3); }
+  .model-chip {
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+    padding: 0 8px;
+    border: 1px solid var(--accent-border);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 550;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .chat-meta { margin-left: 6px; display: inline-flex; align-items: center; gap: 5px; color: var(--text-4); font-size: 10.5px; white-space: nowrap; }
+  .chat-meta .sep { color: var(--border-strong); }
+  .chat-actions { margin-left: auto; display: flex; align-items: center; gap: 1px; }
+  .chat-actions .icon-btn { width: 28px; height: 28px; }
+  .chat-actions .divider { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin: 0 5px 0 3px; }
+
+  .conversation { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 8px; }
+  .doc { width: 100%; max-width: var(--doc-w); margin: 0 auto; }
+  .system-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 3px 0 3px 10px;
+    border-left: 2px solid var(--border-strong);
+    margin: 0 0 18px;
+    color: var(--text-3);
+    font-size: 11.5px;
+    line-height: 1.55;
+  }
+  .system-note .icon { margin-top: 1px; color: var(--text-4); }
+  .system-note a { color: var(--accent); text-decoration: none; margin-left: 5px; }
+  .msg { margin-bottom: 20px; }
+  .msg-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    color: var(--text-3);
+    font-size: 11px;
+  }
+  .avatar {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    display: inline-grid;
+    place-items: center;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 9.5px;
+    font-weight: 700;
+    flex: none;
+  }
+  .msg-name { color: var(--text); font-size: 12px; font-weight: 600; }
+  .msg-time { color: var(--text-4); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+  .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .msg-head { justify-content: flex-end; }
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--bubble-bg);
+    color: var(--bubble-text);
+    font-size: 14px;
+    line-height: 1.65;
+    word-break: break-word;
+    box-shadow: none;
+  }
+  .bubble .bubble-role {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    margin-right: 6px;
+    border-radius: 5px;
+    background: rgba(20,17,31,.14);
+    color: inherit;
+    font-size: 9.5px;
+    font-weight: 700;
+    vertical-align: -3px;
+  }
+  .md { color: var(--text); font-size: 14px; line-height: 1.7; }
+  .md p { margin: 0 0 10px; }
+  .md p:last-child { margin-bottom: 0; }
+  .md h2 { margin: 18px 0 8px; font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -.01em; }
+  .md h2:first-child { margin-top: 0; }
+  .md ol, .md ul { margin: 8px 0 12px; padding-left: 20px; }
+  .md li { margin: 5px 0; }
+  .md strong { font-weight: 600; color: var(--text); }
+  .md code {
+    padding: 1px 4px;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .tool-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    margin: 10px 0 0;
+    padding: 0 8px;
+    border-left: 2px solid var(--info);
+    border-radius: 0 7px 7px 0;
+    background: var(--surface);
+    font-size: 12px;
+  }
+  .tool-row .icon { color: var(--info); }
+  .tool-name { color: var(--text); font-weight: 600; }
+  .tool-cmd {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .tool-status { color: var(--info); font-size: 10.5px; font-weight: 550; }
+  .tool-diff { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .tool-diff .add { color: var(--success); }
+  .tool-diff .del { color: var(--error); margin-left: 4px; }
+  .tool-chev { color: var(--text-3); margin-left: 2px; }
+  .tool-panel {
+    margin: 0 0 10px;
+    padding: 8px 10px 9px;
+    border-left: 2px solid color-mix(in srgb, var(--info) 42%, transparent);
+    border-radius: 0 8px 8px 0;
+    background: var(--surface);
+  }
+  .tool-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    color: var(--text-3);
+    font-size: 10.5px;
+  }
+  .tool-panel-head .mono { color: var(--text-4); }
+  .tool-panel pre {
+    margin: 0;
+    overflow-x: auto;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    white-space: pre;
+  }
+  .tool-panel .err { color: var(--error); }
+  .tool-panel .ok { color: var(--success); }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 9px 0 13px;
+    color: var(--text-3);
+    font-size: 11.5px;
+  }
+  .spinner {
+    width: 12px; height: 12px;
+    border: 1.5px solid color-mix(in srgb, var(--info) 30%, transparent);
+    border-top-color: var(--info);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-line .step { color: var(--text-4); font-size: 10.5px; }
+  .status-line .status-link { margin-left: auto; color: var(--accent); font-size: 10.5px; text-decoration: none; }
+  .turn-foot { display: flex; align-items: center; gap: 8px; color: var(--text-4); font-size: 10.5px; }
+  .turn-foot .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+  .turn-foot .grow { flex: 1; }
+  .turn-foot .icon-btn { width: 22px; height: 22px; opacity: 0; }
+  .msg:hover .turn-foot .icon-btn { opacity: 1; }
+  .summary-card {
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+  }
+  .sum-head { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 11.5px; font-weight: 560; }
+  .sum-head .icon { color: var(--success); }
+  .sum-head .meta { margin-left: auto; color: var(--text-4); font-size: 10px; font-weight: 400; }
+  .sum-body { margin-top: 4px; color: var(--text-3); font-size: 11.5px; line-height: 1.55; }
+  .sum-body code {
+    padding: 0 3px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+
+  /* ---------- composer ---------- */
+  .composer-region { flex: none; padding: 8px 24px 10px; background: var(--bg); position: relative; }
+  .queue-dock {
+    max-width: var(--doc-w);
+    height: 36px;
+    margin: 0 auto 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .q-ico {
+    width: 20px; height: 20px;
+    display: grid; place-items: center;
+    border-radius: 5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    flex: none;
+  }
+  .q-main { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+  .q-title { color: var(--text); font-weight: 560; white-space: nowrap; }
+  .q-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+  .q-edit { margin-left: auto; height: 22px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: var(--accent); font-size: 10.5px; cursor: pointer; }
+  .q-edit:hover { background: var(--accent-soft); }
+  .composer {
+    width: 100%;
+    max-width: var(--doc-w);
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-14);
+    box-shadow: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .composer.running { border-color: color-mix(in srgb, var(--info) 62%, var(--border-strong)); }
+  .composer:focus-within {
+    border-color: var(--accent-border);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
+                0 0 18px 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .composer-ctx { display: flex; flex-wrap: wrap; gap: 5px; padding: 7px 12px 0; }
+  .ctx-chip {
+    height: 21px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border-radius: 5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+  .composer-input {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    max-height: 160px;
+    padding: 6px 14px 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .composer-input::placeholder { color: var(--text-4); }
+  .composer-bar { display: flex; align-items: center; gap: 4px; min-height: 38px; padding: 3px 8px 7px; }
+  .composer-bar .icon-btn { width: 24px; height: 24px; border-radius: 6px; }
+  .composer-bar .icon-btn .icon { width: 15px; height: 15px; }
+  .pill {
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .pill:hover { background: var(--surface-2); color: var(--text); }
+  .pill .icon { width: 14px; height: 14px; }
+  .pill.access { background: color-mix(in srgb, var(--warning) 9%, transparent); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 22%, transparent); }
+  .pill.access .icon { color: var(--warning); }
+  .composer-right { margin-left: auto; display: flex; align-items: center; gap: 3px; }
+  .pill.model { color: var(--text-2); }
+  .pill.model strong { color: var(--text); font-weight: 560; font-size: 11px; }
+  .pill.standard { color: var(--text-3); }
+  .send-wrap { display: flex; align-items: stretch; height: 28px; margin-left: 2px; }
+  .send-main {
+    width: 27px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px 0 0 7px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  .send-main:hover { background: var(--accent-hover); }
+  .send-more {
+    width: 14px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-left: 1px solid rgba(0,0,0,.22);
+    border-radius: 0 7px 7px 0;
+    background: var(--accent);
+    color: rgba(255,255,255,.86);
+    cursor: pointer;
+  }
+  .send-more:hover { background: var(--accent-hover); }
+  .send-main .icon, .send-more .icon { width: 13px; height: 13px; }
+  .composer-foot {
+    max-width: var(--doc-w);
+    margin: 5px auto 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-4);
+    font-size: 10.5px;
+  }
+  .composer-foot .right { margin-left: auto; }
+  .composer-foot .lock { color: var(--success); }
+
+  /* ---------- inspector ---------- */
+  .inspector {
+    width: var(--inspector-w);
+    flex: none;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .inspector-head {
+    height: 40px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ins-tab {
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 11.5px;
+    cursor: default;
+  }
+  .ins-tab:hover { color: var(--text); }
+  .ins-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .ins-tab .icon { width: 14px; height: 14px; }
+  .ins-badge {
+    min-width: 15px; height: 15px; padding: 0 4px;
+    display: grid; place-items: center;
+    border-radius: 4px;
+    background: var(--surface-3);
+    color: var(--text-3);
+    font-size: 9.5px;
+  }
+  .ins-head-actions { margin-left: auto; display: flex; gap: 1px; }
+  .ins-head-actions .icon-btn { width: 24px; height: 24px; }
+  .inspector-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+  .ins-summary {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 2px 2px 9px;
+    color: var(--text-3);
+    font-size: 10.5px;
+  }
+  .ins-summary .add { color: var(--success); font-family: var(--font-mono); font-size: 10.5px; }
+  .ins-summary .del { color: var(--error); font-family: var(--font-mono); font-size: 10.5px; }
+  .ins-summary .grow { flex: 1; }
+  .file-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    min-height: 43px;
+    padding: 5px 4px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .file-row:hover { background: var(--surface-2); border-radius: 6px; }
+  .fstat { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; }
+  .fstat.m { color: var(--warning); }
+  .fstat.a { color: var(--success); }
+  .file-main { min-width: 0; }
+  .file-name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-path { font-size: 10.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+  .file-diff { font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap; }
+  .file-diff .add { color: var(--success); }
+  .file-diff .del { color: var(--error); margin-left: 4px; }
+  .ins-section { margin-top: 15px; }
+  .ins-sec-head { display: flex; align-items: center; gap: 6px; margin: 0 2px 7px; color: var(--text-3); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 29px;
+    padding: 3px 4px;
+    font-size: 11.5px;
+    color: var(--text-2);
+  }
+  .check-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .check-dot.ok { background: var(--success); }
+  .check-dot.fail { background: var(--error); }
+  .check-dot.idle { background: var(--text-4); }
+  .check-row .status { margin-left: auto; font-size: 10.5px; color: var(--text-4); }
+  .check-row .status.ok { color: var(--success); }
+  .check-row .status.fail { color: var(--error); }
+  .diff-preview {
+    margin-top: 3px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface-2);
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.55;
+  }
+  .diff-line { display: flex; gap: 6px; padding: 2px 7px; white-space: pre; color: var(--text-3); }
+  .diff-line .ln { width: 18px; flex: none; text-align: right; color: var(--text-4); }
+  .diff-line.add { background: color-mix(in srgb, var(--success) 9%, transparent); color: color-mix(in srgb, var(--success) 82%, var(--text)); }
+  .diff-line.del { background: color-mix(in srgb, var(--error) 8%, transparent); color: color-mix(in srgb, var(--error) 82%, var(--text)); }
+  .inspector-foot {
+    flex: none;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 14px;
+    border-top: 1px solid var(--border);
+    color: var(--text-4);
+    font-size: 10.5px;
+  }
+
+  /* ---------- bottom panel ---------- */
+  .bottom-panel {
+    flex: none;
+    height: 190px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .bp-head {
+    height: 30px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    color: var(--text-2);
+    font-size: 11px;
+  }
+  .bp-head .icon { color: var(--text-3); }
+  .bp-sub { color: var(--text-4); font-size: 10px; }
+  .bp-actions { margin-left: auto; display: flex; gap: 1px; }
+  .bp-actions .icon-btn { width: 22px; height: 22px; }
+  .bp-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 7px 14px 10px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  .bp-body .ok { color: var(--success); }
+  .bp-body .err { color: var(--error); }
+  .bp-body .dim { color: var(--text-4); }
+
+  /* ---------- bottom bar ---------- */
+  .bottom-bar {
+    flex: none;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 0 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .bottom-tab {
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    border-top: 2px solid transparent;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 11px;
+    cursor: default;
+  }
+  .bottom-tab:hover { color: var(--text); }
+  .bottom-tab.active { color: var(--text); border-top-color: var(--accent); }
+  .bottom-tab .icon { width: 14px; height: 14px; }
+  .bottom-actions { margin-left: auto; display: flex; gap: 1px; }
+  .bottom-actions .icon-btn { width: 24px; height: 24px; }
+
+  /* ---------- settings page ---------- */
+  .settings-view {
+    position: fixed;
+    top: var(--titlebar-h);
+    left: 0; right: 0; bottom: 0;
+    z-index: 25;
+    display: flex;
+    background: var(--bg);
+  }
+  .settings-side {
+    width: 220px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 10px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-sidebar);
+  }
+  .settings-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 6px;
+    border: 0;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 11.5px;
+    cursor: pointer;
+    border-radius: 6px;
+    width: fit-content;
+  }
+  .settings-back:hover { background: var(--surface-2); color: var(--text); }
+  .settings-side h2 { margin: 10px 6px 8px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .settings-search {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 2px 12px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text-3);
+    font-size: 11px;
+    background: var(--surface);
+  }
+  .settings-search .icon { width: 14px; height: 14px; }
+  .settings-nav { display: flex; flex-direction: column; gap: 1px; }
+  .set-nav-item {
+    height: 31px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: default;
+  }
+  .set-nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .set-nav-item.active { background: var(--accent-soft); color: var(--accent); }
+  .set-nav-item .icon { width: 15px; height: 15px; color: var(--text-3); }
+  .set-nav-item.active .icon { color: var(--accent); }
+  .settings-side-foot { margin-top: auto; padding: 10px 7px 2px; color: var(--text-4); font-size: 10px; line-height: 1.5; }
+  .settings-main { flex: 1; min-width: 0; overflow-y: auto; padding: 28px 34px 40px; }
+  .settings-content { max-width: 900px; margin: 0 auto; }
+  .settings-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+  .settings-head h1 { margin: 0 0 3px; font-size: 22px; line-height: 1.3; font-weight: 600; letter-spacing: -.02em; }
+  .settings-head p { margin: 0; color: var(--text-3); font-size: 11.5px; line-height: 1.55; }
+  .settings-head .btn { margin-left: auto; }
+  .btn {
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--surface-2); color: var(--text); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.ghost { background: transparent; }
+  .set-group { margin-bottom: 18px; }
+  .set-group h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .set-group .desc { margin: -3px 0 9px; color: var(--text-3); font-size: 10.5px; }
+  .set-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .set-row {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .set-row:last-child { border-bottom: 0; }
+  .set-main { min-width: 0; flex: 1; }
+  .set-label { font-size: 12.5px; font-weight: 500; }
+  .set-label .tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-4);
+    font-size: 9.5px;
+    line-height: 15px;
+    vertical-align: 1px;
+    font-weight: 400;
+  }
+  .set-desc { margin-top: 1px; color: var(--text-3); font-size: 10.5px; }
+  .set-control { flex: none; display: flex; align-items: center; gap: 7px; }
+  .select {
+    width: 200px;
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .select .icon { width: 13px; height: 13px; color: var(--text-3); }
+  .seg { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); }
+  .seg button {
+    height: 24px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 11px;
+    cursor: default;
+  }
+  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.16); }
+  .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border); position: relative; }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .15s ease;
+  }
+  .switch.on::after { transform: translateX(14px); }
+  .settings-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    padding-top: 4px;
+  }
+
+  /* ---------- command palette ---------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(5,7,10,.48);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 110px;
+  }
+  .palette {
+    width: 660px;
+    max-width: calc(100vw - 40px);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-16);
+    background: var(--surface);
+    box-shadow: 0 24px 80px rgba(0,0,0,.42), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+    overflow: hidden;
+  }
+  .palette-search { height: 48px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+  .palette-search .icon { color: var(--text-3); width: 18px; height: 18px; }
+  .palette-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: 14px; }
+  .palette-search input::placeholder { color: var(--text-4); }
+  .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-4); font-family: var(--font-mono); font-size: 9.5px; line-height: 1; }
+  .palette-list { max-height: 570px; overflow-y: auto; padding: 6px 6px 8px; }
+  .pal-group { padding: 5px 8px 4px; margin-top: 3px; color: var(--text-4); font-size: 10px; font-weight: 600; letter-spacing: .05em; }
+  .pal-item {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    border-radius: 6px;
+    color: var(--text-2);
+    font-size: 12px;
+    cursor: default;
+  }
+  .pal-item .icon { width: 15px; height: 15px; color: var(--text-3); }
+  .pal-item:hover { background: var(--surface-2); color: var(--text); }
+  .pal-item.sel { background: var(--accent-soft); color: var(--text); }
+  .pal-item.sel .icon { color: var(--accent); }
+  .pal-item .meta { color: var(--text-4); font-size: 10.5px; }
+  .pal-item .shortcut { margin-left: auto; }
+  .palette-foot { height: 30px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--border); color: var(--text-4); font-size: 10px; }
+  .palette-foot .right { margin-left: auto; }
+
+  /* ---------- model menu ---------- */
+  .model-menu {
+    position: absolute;
+    right: 24px;
+    bottom: calc(100% - 2px);
+    width: 340px;
+    max-height: 460px;
+    overflow-y: auto;
+    padding: 5px;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 16px 42px rgba(0,0,0,.35);
+    z-index: 45;
+  }
+  .mm-head { padding: 4px 8px 5px; color: var(--text-4); font-size: 10px; font-weight: 600; letter-spacing: .05em; }
+  .mm-item {
+    min-height: 40px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 16px;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    cursor: default;
+  }
+  .mm-item:hover { background: var(--surface-2); }
+  .mm-item.sel { background: var(--accent-soft); }
+  .mm-ico { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-3); color: var(--text-3); }
+  .mm-item.sel .mm-ico { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .mm-role { font-size: 12px; color: var(--text); font-weight: 560; display: flex; align-items: center; gap: 5px; }
+  .mm-tag { color: var(--accent); font-family: var(--font-mono); font-size: 9.5px; font-weight: 400; }
+  .mm-model { margin-top: 1px; color: var(--text-3); font-size: 10.5px; }
+  .mm-check { color: var(--accent); display: none; }
+  .mm-item.sel .mm-check { display: block; }
+  .mm-sep { height: 1px; background: var(--border); margin: 5px 6px; }
+  .mm-more { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 8px; color: var(--text-3); font-size: 11px; border-radius: 6px; }
+  .mm-more:hover { background: var(--surface-2); color: var(--text); }
+  .mm-foot { padding: 6px 8px 4px; color: var(--text-4); font-size: 9.5px; border-top: 1px solid var(--border-soft); margin-top: 3px; }
+
+  /* ---------- mock controls ---------- */
+  .mock-controls {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  }
+  .mock-controls button {
+    height: 24px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .mock-controls button:hover { background: var(--surface-2); color: var(--text); }
+  .mock-controls .sep { width: 1px; height: 14px; background: var(--border); margin: 0 2px; }
+  html.clean .mock-controls { display: none; }
+
+  @media (max-width: 1440px) {
+    body { --inspector-w: 360px; --doc-w: 780px; }
+    .chat-meta { display: none; }
+  }
+  @media (max-width: 1280px) {
+    body { --inspector-w: 0px; --doc-w: 780px; }
+    .inspector { display: none; }
+    .sidebar { width: 240px; }
+  }
+  @media (max-width: 900px) {
+    body { --doc-w: 100%; }
+    .sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a9 9 0 0 1 18 0Z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13Z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></symbol>
+  <symbol id="i-tasks" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0V7ZM12 16v5"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3ZM19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 4A3.5 3.5 0 0 0 6 7.5c0 .6.1 1.1.4 1.6A3.5 3.5 0 0 0 5 12.5 3.5 3.5 0 0 0 8.5 16H10v-3M14.5 4A3.5 3.5 0 0 1 18 7.5c0 .6-.1 1.1-.4 1.6a3.5 3.5 0 0 1 1.4 3.4A3.5 3.5 0 0 1 15.5 16H14v-3M9.5 4v3M14.5 4v3M10 16v4M14 16v4"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9 13h.01M15 13h.01M9 17h6M2 12v3M22 12v3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5M12 17h8"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-5-5Z"/><path d="M14 2v5h5"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v2a4 4 0 0 0 4 4h4M18 8v2a4 4 0 0 1-4 4h-2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 6"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+  <symbol id="i-slash" viewBox="0 0 24 24"><path d="M17 4 7 20"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 3 8 7 10 4-2 7-5.4 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5M12 17h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.3-2L20 12M4 12l2.6 5a7 7 0 0 0 11.3-2"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6Z"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.7"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 12 8-12 8V4Z"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l3 3M14 9l2 2"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z"/></symbol>
+  <symbol id="i-sliders-2" viewBox="0 0 24 24"><path d="M4 6h6M14 6h6M4 12h10M18 12h2M4 18h3M11 18h9"/><circle cx="12" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <header class="titlebar">
+    <button class="brand" title="Codem">
+      <span class="brand-logo">C</span>
+      <span class="brand-name">Codem</span>
+    </button>
+    <nav class="menus" aria-label="应用菜单">
+      <button class="menu-btn">文件</button>
+      <button class="menu-btn">编辑</button>
+      <button class="menu-btn">视图</button>
+      <button class="menu-btn">帮助</button>
+    </nav>
+    <button class="mode-pill" title="执行模式"><span class="mode-dot"></span>本地处理</button>
+    <div class="tb-right">
+      <button class="icon-btn" title="搜索 (Ctrl+K)" data-action="cmdk"><svg class="icon"><use href="#i-search"/></svg></button>
+      <button class="icon-btn" title="设置" data-action="settings"><svg class="icon"><use href="#i-settings"/></svg></button>
+      <button class="icon-btn" title="切换主题" data-action="theme" id="themeBtn"><svg class="icon"><use href="#i-sun"/></svg></button>
+      <button class="icon-btn" title="终端"><svg class="icon"><use href="#i-terminal"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="win-btn" title="最小化">—</button>
+      <button class="win-btn" title="最大化">▢</button>
+      <button class="win-btn close" title="关闭">×</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside class="sidebar" aria-label="侧栏">
+      <div class="ws-row">
+        <button class="ws-btn">
+          <span class="ws-icon"><svg class="icon icon-sm"><use href="#i-folder"/></svg></span>
+          <span class="ws-name">mimo-gui</span>
+          <span class="ws-meta">main</span>
+          <svg class="icon icon-sm" style="margin-left:auto;color:var(--text-3)"><use href="#i-chevron-down"/></svg>
+        </button>
+        <button class="icon-btn ws-add" title="新建对话"><svg class="icon"><use href="#i-plus"/></svg></button>
+      </div>
+
+      <div class="side-scroll">
+        <nav class="nav-list" aria-label="主导航">
+          <button class="nav-item"><svg class="icon"><use href="#i-message"/></svg><span>新对话</span></button>
+          <button class="nav-item"><svg class="icon"><use href="#i-book"/></svg><span>知识笔记本</span></button>
+          <button class="nav-item"><svg class="icon"><use href="#i-tasks"/></svg><span>任务管理</span><span class="nav-badge">3</span></button>
+        </nav>
+
+        <div class="tool-grid" aria-label="工具">
+          <button class="tool"><svg class="icon"><use href="#i-plug"/></svg><span>MCP</span></button>
+          <button class="tool"><svg class="icon"><use href="#i-sparkles"/></svg><span>技能</span></button>
+          <button class="tool"><svg class="icon"><use href="#i-brain"/></svg><span>记忆</span></button>
+          <button class="tool"><svg class="icon"><use href="#i-bot"/></svg><span>智能体</span></button>
+        </div>
+
+        <section class="side-sec">
+          <div class="sec-head"><span>对话</span><button class="icon-btn" title="新建对话"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button></div>
+          <div class="side-list">
+            <button class="session active"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">对话 42</span><span class="s-time">now</span><span class="s-actions"><span class="icon-btn"><svg class="icon icon-sm"><use href="#i-more"/></svg></span></span></button>
+            <button class="session"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">对话 40</span><span class="s-time">2h</span></button>
+            <button class="session"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">对话 39</span><span class="s-time">3h</span></button>
+            <button class="session"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">协调者 · 重建</span><span class="s-time">5h</span></button>
+          </div>
+          <div class="sec-head" style="margin-top:7px"><span>更早</span></div>
+          <div class="side-list">
+            <button class="session"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">对话 37</span><span class="s-time">1d</span></button>
+            <button class="session"><svg class="icon icon-sm s-icon"><use href="#i-message"/></svg><span class="s-title">对话 35</span><span class="s-time">1d</span></button>
+          </div>
+        </section>
+
+        <section class="side-sec">
+          <div class="sec-head"><span>项目</span><button class="icon-btn" title="新增项目"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button></div>
+          <div class="side-list">
+            <button class="proj"><svg class="icon"><use href="#i-folder"/></svg><span class="proj-name">codem-lifecycle-r1</span><span class="proj-count">12</span><span class="proj-actions"><span class="icon-btn"><svg class="icon icon-sm"><use href="#i-plus"/></svg></span></span></button>
+            <button class="proj"><svg class="icon"><use href="#i-folder"/></svg><span class="proj-name">codem-site-goal</span><span class="proj-count">8</span></button>
+            <button class="proj"><svg class="icon"><use href="#i-folder"/></svg><span class="proj-name">mimo-gui</span><span class="proj-count">42</span></button>
+          </div>
+        </section>
+
+        <section class="side-sec">
+          <div class="sec-head"><span>文件</span><span style="margin-left:auto;font-weight:400;color:var(--text-4);font-size:9.5px">mimo-gui</span></div>
+          <div class="file-tree">
+            <button class="tree-row" data-dir><svg class="icon tw"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-folder"/></svg><span class="fname">src</span></button>
+            <button class="tree-row" style="--depth:1"><svg class="icon tw" style="visibility:hidden"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-file"/></svg><span class="fname">App.tsx</span><span class="fstat m">M</span></button>
+            <button class="tree-row" style="--depth:1"><svg class="icon tw" style="visibility:hidden"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-file"/></svg><span class="fname">styles.css</span><span class="fstat m">M</span></button>
+            <button class="tree-row" data-dir style="--depth:1"><svg class="icon tw"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-folder"/></svg><span class="fname">components</span></button>
+            <button class="tree-row" style="--depth:2"><svg class="icon tw" style="visibility:hidden"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-file"/></svg><span class="fname">InputArea.tsx</span><span class="fstat m">M</span></button>
+            <button class="tree-row" style="--depth:2"><svg class="icon tw" style="visibility:hidden"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-file"/></svg><span class="fname">SettingsPanel.tsx</span></button>
+            <button class="tree-row" data-dir><svg class="icon tw"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-folder"/></svg><span class="fname">docs</span></button>
+            <button class="tree-row" style="--depth:1"><svg class="icon tw" style="visibility:hidden"><use href="#i-chevron-right"/></svg><svg class="icon fi"><use href="#i-file"/></svg><span class="fname">13-UI-BENCHMARK-OMP.md</span><span class="fstat a">A</span></button>
+          </div>
+        </section>
+      </div>
+
+      <div class="side-foot">
+        <div class="user-avatar">C</div>
+        <div class="user-meta"><div class="user-name">Codem</div><div class="user-status">本地用户 · 已同步</div></div>
+        <button class="icon-btn" title="设置" data-action="settings"><svg class="icon icon-sm"><use href="#i-settings"/></svg></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="workbench">
+        <section class="chat" aria-label="对话">
+          <header class="chat-head">
+            <button class="icon-btn" title="收起侧栏"><svg class="icon"><use href="#i-layout"/></svg></button>
+            <div class="chat-title-wrap">
+              <span class="chat-title">对话 42</span>
+              <svg class="icon chat-chevron"><use href="#i-chevron-down"/></svg>
+            </div>
+            <button class="model-chip"><span class="mode-dot" style="background:var(--accent)"></span>deepseek-flash<svg class="icon" style="width:11px;height:11px"><use href="#i-chevron-down"/></svg></button>
+            <span class="chat-meta">12 轮 <span class="sep">·</span> 42% 上下文 <span class="sep">·</span> main</span>
+            <div class="chat-actions">
+              <button class="icon-btn" title="子代理"><svg class="icon"><use href="#i-users"/></svg></button>
+              <button class="icon-btn" title="右侧检查器"><svg class="icon"><use href="#i-panel"/></svg></button>
+              <span class="divider"></span>
+              <button class="icon-btn" title="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+              <span class="status-dot" title="就绪"></span>
+            </div>
+          </header>
+
+          <div class="conversation" id="conversation">
+            <div class="doc">
+              <div class="system-note">
+                <svg class="icon icon-sm"><use href="#i-clock"/></svg>
+                <span>上下文已压缩 70% → 40%，保留最近 12 轮与全部工具结果。<a href="#">查看详情</a></span>
+              </div>
+
+              <article class="msg user">
+                <div class="msg-head"><span class="msg-time">14:02</span><span class="msg-name">你</span></div>
+                <div class="bubble">文档写完了。再跑一遍 typecheck，输出贴我，TS2322 一并修掉。</div>
+              </article>
+
+              <article class="msg assistant">
+                <div class="msg-head"><span class="avatar">C</span><span class="msg-name">Codem</span><span class="msg-time">14:02</span></div>
+                <div class="md">
+                  <p>先定位 <code>src/index.ts</code> 的类型错误，再跑完整检查。</p>
+                  <h2>处理顺序</h2>
+                  <ol>
+                    <li>读取 <code>tsconfig</code> 与报错文件，确认 <code>string</code> / <code>number</code> 的来源。</li>
+                    <li>只改类型收窄，不动调用方的业务分支。</li>
+                    <li>跑 <code>npm run typecheck</code> 与相关单测，贴出结果。</li>
+                  </ol>
+
+                  <div class="tool-row">
+                    <svg class="icon icon-sm"><use href="#i-terminal"/></svg>
+                    <span class="tool-name">Bash</span>
+                    <span class="tool-cmd">npm run typecheck</span>
+                    <span class="tool-status">运行中</span>
+                    <span class="tool-diff"><span class="add">+12</span><span class="del">−3</span></span>
+                    <svg class="icon icon-sm tool-chev"><use href="#i-chevron-up"/></svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head"><svg class="icon icon-sm"><use href="#i-terminal"/></svg><span class="mono">cwd D:/Project/mimo-gui</span></div>
+                    <pre><span class="ok">$</span> npm run typecheck
+&gt; tsc --noEmit
+<span class="err">src/index.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.</span></pre>
+                  </div>
+
+                  <div class="status-line">
+                    <span class="spinner"></span>
+                    <span>正在运行 <code style="padding:0;border:0;background:transparent;color:var(--text-2)">npm run check</code></span>
+                    <span class="step">第 5/7 步 · 3 个文件已更改</span>
+                    <a class="status-link" href="#">查看</a>
+                  </div>
+
+                  <p>错误不在类型声明，而在 <code>parsePort()</code> 的返回值：调用方把 <code>string</code> 直接赋给了 <code>number</code>。我会在解析处收窄，不动下游分支。</p>
+
+                  <div class="turn-foot">
+                    <span>1 轮</span><span class="dot"></span><span>2 步</span><span class="dot"></span><span>工具 0.6s</span>
+                    <span class="grow"></span>
+                    <button class="icon-btn" title="复制"><svg class="icon icon-sm"><use href="#i-copy"/></svg></button>
+                    <button class="icon-btn" title="重新生成"><svg class="icon icon-sm"><use href="#i-refresh"/></svg></button>
+                  </div>
+
+                  <div class="summary-card">
+                    <div class="sum-head"><svg class="icon icon-sm"><use href="#i-check"/></svg><span>修复草案已生成</span><span class="meta">2 个文件 · 等待检查</span></div>
+                    <div class="sum-body"><code>src/index.ts</code> 收窄 <code>parsePort()</code> 返回值；<code>src/styles.css</code> 调整输入卡与消息列宽。检查通过后自动收尾。</div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="composer-region">
+            <div class="queue-dock">
+              <span class="q-ico"><svg class="icon icon-sm"><use href="#i-clock"/></svg></span>
+              <div class="q-main"><span class="q-title">已排队 1 条</span><span class="q-text">修完后跑一下单测，失败的发我。</span></div>
+              <button class="q-edit">编辑</button>
+            </div>
+            <div class="composer running" id="composer">
+              <div class="composer-ctx">
+                <span class="ctx-chip"><svg class="icon" style="width:11px;height:11px"><use href="#i-folder"/></svg>mimo-gui</span>
+                <span class="ctx-chip"><svg class="icon" style="width:11px;height:11px"><use href="#i-file"/></svg>src/index.ts</span>
+              </div>
+              <textarea class="composer-input" rows="1" placeholder="输入消息…  @ 提及文件  / 命令"></textarea>
+              <div class="composer-bar">
+                <button class="icon-btn" title="添加"><svg class="icon"><use href="#i-plus"/></svg></button>
+                <button class="icon-btn" title="附件"><svg class="icon"><use href="#i-paperclip"/></svg></button>
+                <button class="icon-btn" title="提及文件"><svg class="icon"><use href="#i-at"/></svg></button>
+                <button class="icon-btn" title="命令"><svg class="icon"><use href="#i-slash"/></svg></button>
+                <button class="icon-btn" title="图片"><svg class="icon"><use href="#i-image"/></svg></button>
+                <button class="pill access"><svg class="icon"><use href="#i-shield"/></svg>完全访问<svg class="icon" style="width:10px;height:10px"><use href="#i-chevron-down"/></svg></button>
+                <div class="composer-right">
+                  <button class="pill model" data-action="model"><strong>deepseek-flash</strong><svg class="icon" style="width:11px;height:11px"><use href="#i-chevron-down"/></svg></button>
+                  <button class="pill standard">标准<svg class="icon" style="width:10px;height:10px"><use href="#i-chevron-down"/></svg></button>
+                  <div class="send-wrap"><button class="send-main" title="发送"><svg class="icon"><use href="#i-arrow-up"/></svg></button><button class="send-more" title="更多发送选项"><svg class="icon"><use href="#i-chevron-down"/></svg></button></div>
+                </div>
+              </div>
+            </div>
+            <div class="composer-foot"><span><span class="lock">●</span> 本地处理 · 数据不出设备</span><span class="right">Enter 发送 · Shift+Enter 换行</span></div>
+
+            <div class="model-menu" id="modelMenu" hidden>
+              <div class="mm-head">任务角色</div>
+              <div class="mm-item sel"><span class="mm-ico"><svg class="icon"><use href="#i-sparkles"/></svg></span><div><div class="mm-role">Default <span class="mm-tag">@default</span></div><div class="mm-model">DeepSeek V4.1 · 标准</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-zap"/></svg></span><div><div class="mm-role">Fast <span class="mm-tag">@fast</span></div><div class="mm-model">DeepSeek Flash · Low</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-brain"/></svg></span><div><div class="mm-role">Thinking <span class="mm-tag">@thinking</span></div><div class="mm-model">DeepSeek R1 · High</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-eye"/></svg></span><div><div class="mm-role">Vision <span class="mm-tag">@vision</span></div><div class="mm-model">Qwen VL · 标准</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-code"/></svg></span><div><div class="mm-role">Architect <span class="mm-tag">@plan</span></div><div class="mm-model">Claude Sonnet · High</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-git"/></svg></span><div><div class="mm-role">Commit <span class="mm-tag">@commit</span></div><div class="mm-model">Claude Haiku · 标准</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-tasks"/></svg></span><div><div class="mm-role">Subtask <span class="mm-tag">@task</span></div><div class="mm-model">GPT-5 mini · Low</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-shield"/></svg></span><div><div class="mm-role">Advisor <span class="mm-tag">@advisor</span></div><div class="mm-model">GPT-5.2 · Medium</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-item"><span class="mm-ico"><svg class="icon"><use href="#i-eye"/></svg></span><div><div class="mm-role">Review <span class="mm-tag">@review</span></div><div class="mm-model">Claude Sonnet · 标准</div></div><svg class="icon mm-check"><use href="#i-check"/></svg></div>
+              <div class="mm-sep"></div>
+              <div class="mm-more"><svg class="icon icon-sm"><use href="#i-more"/></svg>更多模型与自定义角色</div>
+              <div class="mm-foot">当前使用 deepseek-flash · 仅影响本会话</div>
+            </div>
+          </div>
+
+          <div class="bottom-panel" id="bottomPanel" hidden>
+            <div class="bp-head"><svg class="icon icon-sm"><use href="#i-terminal"/></svg><span>终端</span><span class="bp-sub">zsh · mimo-gui</span><div class="bp-actions"><button class="icon-btn" id="bpClose" title="收起"><svg class="icon icon-sm"><use href="#i-chevron-down"/></svg></button></div></div>
+            <div class="bp-body"><pre><span class="ok">$</span> npm run typecheck
+&gt; tsc --noEmit
+<span class="err">src/index.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.</span>
+
+<span class="dim">$</span> git diff --stat
+ src/index.ts   | 4 ++--
+ src/styles.css | 8 ++++----
+ 2 files changed, 6 insertions(+), 6 deletions(-)</pre></div>
+          </div>
+
+          <div class="bottom-bar">
+            <button class="bottom-tab active" data-panel="terminal"><svg class="icon"><use href="#i-terminal"/></svg>终端</button>
+            <button class="bottom-tab"><svg class="icon"><use href="#i-alert"/></svg>问题<span style="color:var(--text-4);font-size:10px">0</span></button>
+            <button class="bottom-tab"><svg class="icon"><use href="#i-list"/></svg>日志</button>
+            <div class="bottom-actions"><button class="icon-btn" title="更多"><svg class="icon"><use href="#i-more"/></svg></button><button class="icon-btn" title="收起"><svg class="icon"><use href="#i-chevron-down"/></svg></button></div>
+          </div>
+        </section>
+
+        <aside class="inspector" aria-label="右侧检查器">
+          <div class="inspector-head">
+            <button class="ins-tab active"><svg class="icon"><use href="#i-git"/></svg>改动</button>
+            <button class="ins-tab"><svg class="icon"><use href="#i-folder"/></svg>文件</button>
+            <button class="ins-tab"><svg class="icon"><use href="#i-users"/></svg>子代理<span class="ins-badge">2</span></button>
+            <div class="ins-head-actions"><button class="icon-btn" title="收起"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
+          </div>
+          <div class="inspector-body">
+            <div class="ins-summary"><span>最近一轮</span><span class="add">+128</span><span class="del">−14</span><span class="grow"></span><span>3 个文件</span></div>
+
+            <div class="file-row">
+              <span class="fstat m">M</span>
+              <div class="file-main"><div class="file-name">src/index.ts</div><div class="file-path">src/</div></div>
+              <div class="file-diff"><span class="add">+42</span><span class="del">−8</span></div>
+            </div>
+            <div class="file-row">
+              <span class="fstat m">M</span>
+              <div class="file-main"><div class="file-name">src/styles.css</div><div class="file-path">src/</div></div>
+              <div class="file-diff"><span class="add">+86</span><span class="del">−6</span></div>
+            </div>
+            <div class="file-row">
+              <span class="fstat a">A</span>
+              <div class="file-main"><div class="file-name">13-UI-BENCHMARK-OMP.md</div><div class="file-path">docs/project-guide/</div></div>
+              <div class="file-diff"><span class="add">+128</span></div>
+            </div>
+
+            <div class="ins-section">
+              <div class="ins-sec-head">本轮检查</div>
+              <div class="check-row"><span class="check-dot ok"></span><span>TypeScript</span><span class="status ok">通过</span></div>
+              <div class="check-row"><span class="check-dot fail"></span><span>单元测试</span><span class="status fail">2 失败</span></div>
+              <div class="check-row"><span class="check-dot idle"></span><span>构建</span><span class="status">未运行</span></div>
+            </div>
+
+            <div class="ins-section">
+              <div class="ins-sec-head">上下文</div>
+              <div class="check-row"><span class="check-dot ok"></span><span>已用 42%</span><span class="status">12 轮</span></div>
+              <div class="check-row"><span class="check-dot idle"></span><span>压缩阈值 70%</span><span class="status">自动</span></div>
+            </div>
+
+            <div class="ins-section">
+              <div class="ins-sec-head">预览 · src/index.ts</div>
+              <div class="diff-preview">
+                <div class="diff-line"><span class="ln">10</span><span>const port = parsePort(env.PORT);</span></div>
+                <div class="diff-line del"><span class="ln">11</span><span>-const value: number = port;</span></div>
+                <div class="diff-line add"><span class="ln">11</span><span>+const value = Number(port);</span></div>
+                <div class="diff-line"><span class="ln">12</span><span>if (!Number.isFinite(value)) {</span></div>
+                <div class="diff-line"><span class="ln">13</span><span>  throw new Error("invalid port");</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="inspector-foot"><svg class="icon icon-sm"><use href="#i-git"/></svg><span>main</span><span style="margin-left:auto">3 个文件 · 2 个目录</span></div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Settings page (P2 target) -->
+<section class="settings-view" id="settingsView" hidden>
+  <aside class="settings-side">
+    <button class="settings-back" data-action="back"><svg class="icon icon-sm"><use href="#i-arrow-left"/></svg>返回工作台</button>
+    <h2>设置</h2>
+    <div class="settings-search"><svg class="icon"><use href="#i-search"/></svg><span>搜索设置…</span></div>
+    <nav class="settings-nav">
+      <button class="set-nav-item active"><svg class="icon"><use href="#i-settings"/></svg>通用</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-sun"/></svg>外观</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-sparkles"/></svg>模型与 Provider</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-message"/></svg>对话与上下文</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-shield"/></svg>工具与权限</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-book"/></svg>知识与记忆</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-globe"/></svg>连接与设备</button>
+      <button class="set-nav-item"><svg class="icon"><use href="#i-sliders-2"/></svg>高级</button>
+    </nav>
+    <div class="settings-side-foot">设置会即时保存<br>部分能力由插件提供</div>
+  </aside>
+  <main class="settings-main">
+    <div class="settings-content">
+      <header class="settings-head">
+        <div><h1>通用</h1><p>应用外观、启动行为与通知。这里不出现模型与 Provider 配置。</p></div>
+        <button class="btn ghost"><svg class="icon icon-sm"><use href="#i-refresh"/></svg>恢复默认</button>
+      </header>
+
+      <section class="set-group">
+        <h3>应用</h3>
+        <div class="set-card">
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">界面语言<span class="tag">用户</span></div><div class="set-desc">界面文案语言；概念术语保留英文。</div></div>
+            <div class="set-control"><div class="select"><span>简体中文</span><svg class="icon"><use href="#i-chevron-down"/></svg></div></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">主题</div><div class="set-desc">跟随系统或固定亮/暗；即时生效。</div></div>
+            <div class="set-control"><div class="seg"><button class="on">深色</button><button>浅色</button><button>跟随</button></div></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">信息密度</div><div class="set-desc">紧凑 / 标准 / 宽松，调整全局间距。</div></div>
+            <div class="set-control"><div class="seg"><button>紧凑</button><button class="on">标准</button><button>宽松</button></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="set-group">
+        <h3>编辑器</h3>
+        <div class="set-card">
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">编辑器字体</div><div class="set-desc">代码块、终端与文件预览使用的等宽字体。</div></div>
+            <div class="set-control"><div class="select"><span>Cascadia Code</span><svg class="icon"><use href="#i-chevron-down"/></svg></div></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">编辑器字号</div><div class="set-desc">只影响代码与终端，不影响聊天正文。</div></div>
+            <div class="set-control"><div class="seg"><button>12</button><button class="on">13</button><button>14</button></div></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">自动保存</div><div class="set-desc">编辑文件后 800ms 自动写入；关闭后需 Ctrl+S。</div></div>
+            <div class="set-control"><span class="switch on"></span></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">平滑光标</div><div class="set-desc">光标移动使用短过渡；低性能设备可关闭。</div></div>
+            <div class="set-control"><span class="switch"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="set-group">
+        <h3>启动</h3>
+        <div class="set-card">
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">启动时恢复最近项目</div><div class="set-desc">关闭后启动停留在工作台首页。</div></div>
+            <div class="set-control"><span class="switch on"></span></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">启动时恢复最近会话</div><div class="set-desc">仅冷启动且无驻留 Runtime 时生效。</div></div>
+            <div class="set-control"><span class="switch on"></span></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">记住面板布局</div><div class="set-desc">侧栏宽度、底部面板与右侧检查器状态。</div></div>
+            <div class="set-control"><span class="switch on"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="set-group">
+        <h3>通知</h3>
+        <div class="set-card">
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">任务完成通知</div><div class="set-desc">窗口失焦时，长任务完成发送系统通知。</div></div>
+            <div class="set-control"><span class="switch on"></span></div>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-label">长任务提醒</div><div class="set-desc">超过 5 分钟的任务，在标题栏显示进度。</div></div>
+            <div class="set-control"><span class="switch"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="settings-footer"><button class="btn ghost">取消</button><button class="btn primary"><svg class="icon icon-sm"><use href="#i-check"/></svg>保存设置</button></div>
+    </div>
+  </main>
+</section>
+
+<!-- Command palette -->
+<div class="overlay" id="cmdkOverlay" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="命令面板">
+    <div class="palette-search"><svg class="icon"><use href="#i-search"/></svg><input id="cmdkInput" placeholder="搜索命令、页面或会话…" autocomplete="off"><span class="kbd">Esc</span></div>
+    <div class="palette-list">
+      <div class="pal-group">最近会话</div>
+      <div class="pal-item sel"><svg class="icon"><use href="#i-message"/></svg><span>对话 42</span><span class="meta">mimo-gui</span><span class="shortcut kbd">Ctrl 1</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-message"/></svg><span>对话 40</span><span class="meta">codem-site-goal</span><span class="shortcut kbd">Ctrl 2</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-message"/></svg><span>协调者 · 重建</span><span class="meta">mimo-gui</span><span class="shortcut kbd">Ctrl 3</span></div>
+
+      <div class="pal-group">推荐操作</div>
+      <div class="pal-item"><svg class="icon"><use href="#i-plus"/></svg><span>新建对话</span><span class="meta">当前项目</span><span class="shortcut kbd">Ctrl N</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-folder"/></svg><span>打开本地文件夹</span><span class="meta">作为项目</span><span class="shortcut kbd">Ctrl O</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-clock"/></svg><span>会话历史</span><span class="meta">搜索全部会话</span><span class="shortcut kbd">Ctrl H</span></div>
+
+      <div class="pal-group">页面导航</div>
+      <div class="pal-item"><svg class="icon"><use href="#i-layout"/></svg><span>工作台</span><span class="meta">当前页面</span><span class="shortcut kbd">Ctrl 1</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-tasks"/></svg><span>任务中心</span><span class="meta">3 个进行中</span><span class="shortcut kbd">Ctrl 2</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-book"/></svg><span>知识笔记本</span><span class="meta">最近更新</span><span class="shortcut kbd">Ctrl 3</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span><span class="meta">通用 / 外观 / 模型</span><span class="shortcut kbd">Ctrl ,</span></div>
+
+      <div class="pal-group">面板与视图</div>
+      <div class="pal-item"><svg class="icon"><use href="#i-panel"/></svg><span>切换右侧检查器</span><span class="meta">改动 / 文件 / 子代理</span><span class="shortcut kbd">Ctrl B</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-terminal"/></svg><span>打开终端</span><span class="meta">底部面板</span><span class="shortcut kbd">Ctrl J</span></div>
+      <div class="pal-item"><svg class="icon"><use href="#i-sun"/></svg><span>切换主题</span><span class="meta">深色 / 浅色</span><span class="shortcut kbd">Ctrl T</span></div>
+    </div>
+    <div class="palette-foot"><span class="kbd">↑</span><span class="kbd">↓</span><span>选择</span><span class="kbd">↵</span><span>运行</span><span class="right"><span class="kbd">Esc</span> 关闭</span></div>
+  </div>
+</div>
+
+<div class="mock-controls">
+  <button data-action="dark">Dark</button>
+  <button data-action="light">Light</button>
+  <button data-action="hub">Hub</button>
+  <button data-action="dream">Dream</button>
+  <span class="sep"></span>
+  <button data-action="settings">设置</button>
+  <button data-action="cmdk">Ctrl K</button>
+  <button data-action="model">模型</button>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const body = document.body;
+  const settingsView = $("#settingsView");
+  const cmdkOverlay = $("#cmdkOverlay");
+  const modelMenu = $("#modelMenu");
+  const composer = $("#composer");
+
+  function setTheme(theme) {
+    body.dataset.theme = theme;
+    if (body.dataset.skin === "hub" && theme === "light") body.dataset.skin = "default";
+    if (body.dataset.skin === "dream" && theme === "dark") body.dataset.skin = "default";
+    $("#themeBtn").innerHTML = theme === "dark"
+      ? '<svg class="icon"><use href="#i-sun"/></svg>'
+      : '<svg class="icon"><use href="#i-moon"/></svg>';
+  }
+  function setSkin(skin) {
+    body.dataset.skin = skin;
+    if (skin === "hub") setTheme("dark");
+    else if (skin === "dream") setTheme("light");
+    else setTheme(body.dataset.theme || "dark");
+  }
+  function openSettings() { settingsView.hidden = false; }
+  function closeSettings() { settingsView.hidden = true; }
+  function openCmdk() { cmdkOverlay.hidden = false; $("#cmdkInput").focus(); }
+  function closeCmdk() { cmdkOverlay.hidden = true; }
+  function openModel() { modelMenu.hidden = false; }
+  function closeModel() { modelMenu.hidden = true; }
+
+  document.addEventListener("click", (e) => {
+    const action = e.target.closest("[data-action]")?.dataset.action;
+    if (!action) return;
+    if (action === "settings") openSettings();
+    if (action === "back") closeSettings();
+    if (action === "cmdk") openCmdk();
+    if (action === "model") openModel();
+    if (action === "theme") setTheme(body.dataset.theme === "dark" ? "light" : "dark");
+    if (action === "dark") { body.dataset.skin = "default"; setTheme("dark"); }
+    if (action === "light") { body.dataset.skin = "default"; setTheme("light"); }
+    if (action === "hub") setSkin("hub");
+    if (action === "dream") setSkin("dream");
+  });
+
+  cmdkOverlay.addEventListener("click", (e) => { if (e.target === cmdkOverlay) closeCmdk(); });
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdk(); }
+    if (e.key === "Escape") { closeCmdk(); closeModel(); if (!settingsView.hidden) closeSettings(); }
+  });
+
+  // Deep-link states for screenshots.
+  const params = new URLSearchParams(location.search);
+  if (params.get("theme")) setTheme(params.get("theme"));
+  if (params.get("skin")) setSkin(params.get("skin"));
+  if (params.get("view") === "settings") openSettings();
+  if (params.get("overlay") === "cmdk") openCmdk();
+  if (params.get("overlay") === "model") openModel();
+  if (params.get("clean") === "1") document.documentElement.classList.add("clean");
+  if (params.get("focus") === "1") $(".composer-input").focus();
+  if (params.get("panel") === "1") $("#bottomPanel").hidden = false;
+
+  const bottomPanel = $("#bottomPanel");
+  document.querySelectorAll("[data-panel]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      bottomPanel.hidden = !bottomPanel.hidden;
+      tab.classList.toggle("active", !bottomPanel.hidden);
+    });
+  });
+  $("#bpClose").addEventListener("click", () => {
+    bottomPanel.hidden = true;
+    document.querySelector("[data-panel]")?.classList.remove("active");
+  });
+</script>
+</body>
+</html>
