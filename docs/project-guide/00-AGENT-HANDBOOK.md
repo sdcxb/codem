@@ -193,6 +193,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 ```powershell
 npx tsc --noEmit                          # 0
+npm run audit:docs                        # 版本/必读文档/BOM/索引/章节
 npx vitest run <相关判据>                  # 先单跑
 npx vitest run                            # 全量（知道基线，别被 2 条未跟踪失败骗）
 node tools/audit/scan-report-sites.mjs --check   # 267 = 267
@@ -225,6 +226,7 @@ node tools/audit/knip-gate.mjs            # 未使用导出不许增长
 | 现在做到哪、哪些没验、下一步 | `09-CURRENT-STATE.md` |
 | 大富翁插件 / Godot 重制 | `10-GAME-AND-PROTOTYPE.md` |
 | 怎么把项目交接给新模型/新 Agent | `11-HANDOFF-PROMPT.md`（可直接复制的开场白 + 验收问题） |
+| 发版时怎么保证文档不过期 | `12-DOC-MAINTENANCE.md`（`docs:sync` / `audit:docs` 流程） |
 
 ---
 

@@ -172,6 +172,7 @@ node .preview-shot\_gate-evidence.mjs                                  # 收尾�
 
 ## 7. 发版（摘要，细节以 `docs/RELEASE-GUIDE.md` 为准）
 
+0. **文档基线**：`npm run docs:sync` → 按输出清单更新 `docs/project-guide/{README,00,01,09}` 与 CHANGELOG/PROJECT-GUIDE → `npm run audit:docs` ✓（`verify` / `audit` 已含这道门禁；`.github/` 当前被忽略，CI 可选）
 1. 三处版本号：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` ✓
 2. `CHANGELOG.md` 顶部加 `## [x.y.z]` 段 ✓（**面向用户**的说明，不写内部编号 ✗）
 3. 构建 + 签名（见 §3）✓ → 生成并校验 `latest.json` ✓

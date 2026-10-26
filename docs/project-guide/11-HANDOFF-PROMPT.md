@@ -42,6 +42,7 @@ pwd
 git status -sb
 git log --oneline -3
 npx tsc --noEmit
+npm run audit:docs
 
 读完先不要改代码。用不超过 10 行回答我：
 1) 这个项目一句话是什么、技术栈是什么；

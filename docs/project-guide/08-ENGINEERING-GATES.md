@@ -124,6 +124,7 @@ Duration    148.65s
 | 门禁 | 命令 | 当前基线/期望 |
 |---|---|---|
 | 类型 | `npx tsc --noEmit` | 0 错误 |
+| 文档新鲜度 | `npm run audit:docs` | 版本/必读文档/BOM/索引/章节；版本变了文档没跟上会红 |
 | 全量测试 | `npx vitest run` | 8497 通过 / 17 跳过 / 2 未跟踪失败 |
 | 上报点分诊 | `node tools/audit/scan-report-sites.mjs --check` | 267 = 267（三数相等：扫描/登记/缓存） |
 | 变异产物 | `node tools/mutate/check-artifacts.mjs` | 65+ 波、`restored=true`、未过期 |
@@ -199,6 +200,10 @@ node tools\release\verify-update-manifest.mjs --remote # 比对 GitHub 上的 sh
 ```
 
 ### 5.4 发布
+
+> **发版前先同步文档**（在版本号三处改完之后）：`npm run docs:sync` → 按输出清单手改 `README/00/01/09` 与 `CHANGELOG/PROJECT-GUIDE` → `npm run audit:docs`。
+> `verify` / `audit` 已包含 `audit:docs`；版本变了文档没跟上会直接红。详见 `12-DOC-MAINTENANCE.md`。
+> （本仓 `.github/` 目前被 `.gitignore` 忽略；若以后启用 CI，把 `npm run audit:docs` 加进去即可。）
 
 ```powershell
 gh release create vX.Y.Z --title "Codem vX.Y.Z" --notes-file <说明文件>

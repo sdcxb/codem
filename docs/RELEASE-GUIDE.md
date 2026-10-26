@@ -4,7 +4,7 @@
 
 ## 标准发布流程
 
-### 1. 版本号
+### 1. 版本号 + 文档基线（同一提交）
 
 修改三处（`src-tauri/Cargo.lock` 由构建自动更新，需单独 commit）：
 
@@ -13,6 +13,26 @@
 - `src-tauri/Cargo.toml` → `[package] version`
 
 同步更新 `CHANGELOG.md`（顶部加 `## [x.y.z] - 日期` 条目）、`docs/PROJECT-GUIDE.md` 版本历史。
+
+**然后刷新文档基线**（2026-10-26 起）：
+
+```powershell
+npm run docs:sync
+# 按输出清单手改：
+#   docs/project-guide/README.md          版本 / 发布 / HEAD / 测试基线
+#   docs/project-guide/00-AGENT-HANDBOOK.md 基线表
+#   docs/project-guide/01-PRODUCT-OVERVIEW.md 版本 / 规模
+#   docs/project-guide/09-CURRENT-STATE.md §1/§3/§5/§7
+#   CHANGELOG.md、docs/PROJECT-GUIDE.md 版本表
+npm run audit:docs
+```
+
+- `docs:sync` 只刷新 `docs/project-guide/BASELINE.json` 并打印手改清单；**不改叙述性正文**，也不跑测试。
+- `audit:docs` 是硬门禁：版本不一致 / 必读文档缺失 / 文档带 BOM / README 索引缺失 / 09 章节缺失 → exit 1。
+- `npm run verify`、`npm run audit` 都已包含 `audit:docs`；不要绕过。
+- 本仓 `.github/` 目前被 `.gitignore` 忽略；若以后启用 CI，把 `npm run audit:docs` 接到 CI 即可。
+- **用户看的 Release Notes 不写“更新文档”**——这是维护者流程，写在本指南与门禁里即可。
+- 文档更新必须和版本号在**同一个发布提交**里；不要等发版后再补。
 
 ### 2. 构建 + 签名（关键）
 

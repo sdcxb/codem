@@ -75,6 +75,7 @@
 | `09-CURRENT-STATE.md` | 版本/发布/工作区/测试基线、未完成项、文档债、下一步 | 中 | 每个版本 |
 | `10-GAME-AND-PROTOTYPE.md` | 内置大富翁插件、Godot 2.5D 重制、未跟踪资产边界 | 中 | 游戏线变化时 |
 | `11-HANDOFF-PROMPT.md` | **复制给新模型/新 Agent 的交接话术 + 验收问题 + 按任务加读** | 短 | 交接方式变化时 |
+| `12-DOC-MAINTENANCE.md` | 文档也是发版物：发版同步流程、`docs:sync`/`audit:docs`、历史文档处理 | 短 | 门禁/流程变化时 |
 
 > 说明：本目录在 `docs/` 的子目录下，不受仓库根 `.gitignore` 的 `docs/*.md` 规则影响（已用 `git check-ignore` 验证），可以直接入库。
 

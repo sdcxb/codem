@@ -13,7 +13,7 @@ C:\mimo-gui\
 ├─ src-tauri\               Tauri v2 / Rust（约 2.2 万行 + codem-db 1 万行）
 ├─ config\                  插件装配清单（codem.base.yml / codem.desktop.yml）
 ├─ tools\                   审计 / 变异 / 评测 / 发布 / UI 审计 / 维护 / 迁移 / 基准
-├─ docs\                    文档（根级 173 份 .md + 本套 12 份；约 309 MB；含大量历史稿与游戏美术）
+├─ docs\                    文档（根级 173 份 .md + 本套文档；约 309 MB；含大量历史稿与游戏美术）
 ├─ scripts\                 PowerShell / Node 运维脚本
 ├─ public\                  Vite 静态资源
 ├─ icos\、src-tauri\icons\  应用图标
@@ -247,7 +247,7 @@ src-tauri\
 
 ### 5.3 `docs/`
 
-- 根级 173 份 `.md`（另加本套 13 份）；共 137 份被 git 跟踪；目录总计约 309 MB（含大量 PNG/JPG 游戏美术）。
+- 根级 173 份 `.md` + 本套文档；具体跟踪数用 `git ls-files docs` 查；目录总计约 309 MB（含大量 PNG/JPG 游戏美术）。
 - **当前真源**：`docs/project-guide/`（本套）。
 - **历史但仍有用**：`docs/HANDOVER-2026-10-17.md`（三条主动脉/陷阱）、`docs/RELEASE-GUIDE.md`、`docs/manuals/*`。
 - **功能叶子库**：`docs/CODEM-FEATURES.md`、根目录 `项目功能树-全量.md`。
