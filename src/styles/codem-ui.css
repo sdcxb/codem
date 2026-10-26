@@ -2613,7 +2613,19 @@ body.resizing-columns * {
   box-shadow: none;
 }
 .settings-content {
-  background: transparent !important;
+  /* P1-7：内容区收成一张行组卡；行与行之间只留 1px 分隔，不再让每个字段裸飘。 */
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}
+.settings-content > .setting-group {
+  padding: var(--space-3) 0;
+}
+.settings-content > .setting-group + .setting-group {
+  border-top: 1px solid var(--border-secondary);
+}
+.settings-content > .settings-divider {
+  margin: var(--space-2) 0;
 }
 
 /* ========== T-QA-018: Keyboard focus-visible accessibility ========== */

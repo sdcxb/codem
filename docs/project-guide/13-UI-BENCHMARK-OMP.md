@@ -352,6 +352,22 @@ P3       Hub/Dream 形状与背景气质
 - `css-contract` 快照更新（2972 类），`scan-ui` 0/0；
 - 全量 **737 文件：735 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8520 用例通过；`tools/mutate` 的 `free-model-routing-206` 已按新锚点重跑并更新结果。
 
+#### 0.8 第 207 轮 P1-7/P1-8 施工记录（2026-10-26）
+
+已落：
+
+- **P1-7 设置行组**：`.settings-content` 收成一张 `--surface-1` 行组卡（1px border、`--radius-lg`、12px 内边距）；直接子级 `.setting-group` 变成 12px 上下行，行间只留 1px `--border-secondary` 分隔。没有逐 tab 套 card，避免 23 个设置页的表单流被改乱。
+- **P1-7 菜单**：`.app-menu-surface / .dropdown-menu / .context-menu` 统一 `min-width:240px`、`--radius-md`、1px border、**无阴影**；菜单项最小高度 28。`popover-shell` 不跟着全局拍平（它承载的不只是菜单，避免影响浮层层次）。
+- **P1-7 模态/提示**：`.modal-panel` 去掉 popover 阴影，保留 16px 圆角与 border；Tooltip 默认延迟 500ms、字号 11px。
+- **P1-8 空态/错误**：继续走既有共享 `.empty-hint`（83 个消费者 + 5 个修饰）与 `ui/StatusBanner`（4 档 tone、retry、role=alert）。**没有新建第二套 EmptyState 组件**：现有共享类已经是唯一实现，另起组件会造成重复；判据 COND-1/1b、content-state-components 继续守。
+- **边界**：设置行 label 13 已是现状；`desc 11 / control 200` 没有全局硬套——23 个 tab 的 control 有下拉、路径、按钮组、模型列表，强行 200 会截断；留到逐 tab 的 P2 整页重排。模态主按钮 28 同理，未全局改，避免影响已有 34px 按钮的点击区。
+
+判据：
+
+- `ui-benchmark-construction` 增加 P1-7（设置卡/菜单/模态/Tooltip）与 P1-8（共享 Empty/StatusBanner）两条；
+- `css-contract` 快照更新（2972 类），`scan-ui` 0/0；
+- 全量 **737 文件：735 通过 / 2 既有失败**、8522 用例通过。
+
 ---
 
 ## 1. 证据与方法

@@ -2,9 +2,20 @@ import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "../../lib/utils";
 
-const TooltipProvider = TooltipPrimitive.Provider;
+/** P1-7：浮层提示统一 500ms，避免各入口吃 Radix 的 700ms 默认。 */
+const TooltipProvider = ({
+  delayDuration = 500,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) => (
+  <TooltipPrimitive.Provider delayDuration={delayDuration} {...props} />
+);
 
-const Tooltip = TooltipPrimitive.Root;
+const Tooltip = ({
+  delayDuration = 500,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) => (
+  <TooltipPrimitive.Root delayDuration={delayDuration} {...props} />
+);
 
 const TooltipTrigger = TooltipPrimitive.Trigger;
 

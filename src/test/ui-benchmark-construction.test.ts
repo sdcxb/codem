@@ -16,6 +16,7 @@ const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
 const codemUi = readFileSync(join(ROOT, 'src/styles/codem-ui.css'), 'utf8')
 const dream = readFileSync(join(ROOT, 'src/styles/skin-dream.css'), 'utf8')
 const settings = readFileSync(join(ROOT, 'src/components/SettingsPanel.tsx'), 'utf8')
+const tooltip = readFileSync(join(ROOT, 'src/components/ui/tooltip.tsx'), 'utf8')
 const reasoning = readFileSync(join(ROOT, 'src/components/ReasoningRow.tsx'), 'utf8')
 const bubble = readFileSync(join(ROOT, 'src/components/MessageBubble.tsx'), 'utf8')
 
@@ -87,6 +88,29 @@ describe('UI 对标施工合同', () => {
     }
     expect(settings).toContain('["memory-checkup"')
     expect(settings).toContain('"记忆体检"')
+  })
+
+  it('P1-7：设置内容一张行组卡，菜单/模态统一无阴影，Tooltip 500ms/11px', () => {
+    const settingsContent = block(codemUi, '.settings-content')
+    expect(settingsContent).toContain('background: var(--surface-1) !important')
+    expect(settingsContent).toContain('border: 1px solid var(--border-primary)')
+    expect(settingsContent).toContain('border-radius: var(--radius-lg)')
+    expect(block(css, '.settings-content')).toContain('padding: var(--space-6)')
+    expect(block(css, '.settings-content')).toContain('gap: var(--space-3)')
+    expect(block(codemUi, '.settings-content > .setting-group')).toContain('padding: var(--space-3) 0')
+    expect(codemUi).toContain('.settings-content > .setting-group + .setting-group')
+
+    expect(css).toContain('min-width: 240px')
+    expect(block(css, '.app-menu-item')).toContain('min-height: 28px')
+    expect(block(css, '.modal-panel')).toContain('box-shadow: none')
+    expect(block(css, '.tooltip-content')).toContain('font-size: var(--fs-xs)')
+    expect(tooltip).toContain('delayDuration = 500')
+  })
+
+  it('P1-8：空态与错误继续走共享 Empty/StatusBanner，不另起一套', () => {
+    expect(css).toContain('.empty-hint')
+    expect(css).toContain('.status-banner')
+    expect(css).toContain('.status-banner-retry')
   })
 
   it('P1-5：用户气泡保留原版半透明紫，不改成 OMP 实底', () => {

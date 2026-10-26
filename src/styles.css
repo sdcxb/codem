@@ -1088,13 +1088,28 @@ justify-content: flex-start;
   -webkit-backdrop-filter: var(--blur-medium);
 }
 
+.app-menu-surface,
+.dropdown-menu,
+.context-menu {
+  /* P1-7：菜单统一窄面板 / 无阴影 / 与浮层同一边框。 */
+  min-width: 240px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.app-menu-item,
+.dropdown-menu-item {
+  min-height: 28px;
+}
+
 .app-menu-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-5);
   width: 100%;
-  min-height: var(--control-dense);
+  min-height: 28px;
   padding: var(--space-2) var(--space-4);
   border: 0;
   border-radius: var(--radius-sm);
@@ -5186,11 +5201,11 @@ background: var(--bg-secondary);
 
 .settings-content {
   flex: 1;
-  padding: var(--space-9);
+  padding: var(--space-6);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-3);
   /* 窄容器自适应：设置面板 760px ↔ 95vw，行内"输入 + 按钮"在窄档必须换行而不是被挤扁。
      判据 NARROW-4/5。容器放在**内容列**（不是 .settings-panel）：避免 layout containment
      影响弹窗自身的绝对定位子元素。 */
@@ -12079,7 +12094,7 @@ border-bottom: 1px solid var(--accent);
 .tooltip-content {
   z-index: var(--z-tooltip);
   padding: var(--space-3) var(--space-5);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   line-height: var(--lh-ui);
   background: var(--tooltip-bg);
   color: var(--tooltip-text);
@@ -17164,7 +17179,8 @@ color: var(--accent, #7c6cf0);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-popover);
+  /* P1-7：模态改用 border-float，不再叠 popover 阴影。 */
+  box-shadow: none;
 }
 
 /* ==========================================================================
