@@ -2585,6 +2585,18 @@ body.resizing-columns * {
   backdrop-filter: blur(var(--glass-blur-subtle));
   -webkit-backdrop-filter: blur(var(--glass-blur-subtle));
 }
+.settings-nav-group-label {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+}
+.settings-nav-group-label:first-child {
+  padding-top: 0;
+}
+
 .settings-sidebar-item {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -2612,6 +2624,68 @@ body.resizing-columns * {
   font-weight: 500 !important;
   box-shadow: none;
 }
+/* P2-1：设置整页视图（不是居中弹窗）。 */
+.settings-page-overlay {
+  padding: 0;
+  background: var(--bg-primary);
+  align-items: stretch;
+  justify-content: stretch;
+}
+.settings-page {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--bg-primary);
+  box-shadow: none;
+}
+.settings-page .settings-header {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+.settings-page .settings-body {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+}
+.settings-page .settings-content {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+.settings-page .settings-footer {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  flex-shrink: 0;
+}
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.settings-back:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.settings-back svg {
+  width: 16px;
+  height: 16px;
+}
+
 .settings-content {
   /* P1-7：内容区收成一张行组卡；行与行之间只留 1px 分隔，不再让每个字段裸飘。 */
   background: var(--surface-1) !important;

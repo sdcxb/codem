@@ -99,6 +99,16 @@ describe('UI 对标施工合同', () => {
     expect(block(codemUi, '.settings-sidebar')).toContain('width: 220px')
   })
 
+  it('P2-1b：设置整页视图有返回、8 组导航、900 内容列', () => {
+    expect(settings).toContain('fullPage')
+    expect(settings).toContain('settings-page')
+    expect(settings).toContain('settings-back')
+    expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(8)
+    expect(codemUi).toContain('.settings-page-overlay')
+    expect(codemUi).toContain('.settings-page .settings-content')
+    expect(codemUi).toContain('max-width: 900px')
+  })
+
   it('P2-2：右栏 1440 默认展开，1440 宽 360，≤1280 自动收起', () => {
     const right = readFileSync(join(ROOT, 'src/components/RightSidebar.tsx'), 'utf8')
     const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')

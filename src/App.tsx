@@ -5624,6 +5624,7 @@ onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
 <SlotBridge name="app.settings" fallback={SettingsPanel}
 onClose={() => { setSettingsInitialTab("general"); setShowSettings(false); }}
 initialTab={settingsInitialTab}
+fullPage
 onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true); }}
           onUsageStats={() => { setShowSettings(false); setShowUsageStats(true); }}
           setShowOnboardingReplay={(v) => { setShowOnboardingReplay(v); setShowSettings(false); }}
