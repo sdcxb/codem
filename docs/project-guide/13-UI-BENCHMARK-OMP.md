@@ -437,7 +437,14 @@ P3       Hub/Dream 形状与背景气质
 - `TaskCenter`（delegation/subagents/teams/… 8 tab）
 - `ModelProfilePanel`（模型槽位）+ `ModelSelector`
 
-缺的只是 Home / Agent Hub / Capabilities / Models 四个**聚合视图**。P2-6 只做只读聚合 + 深链，任何写操作都打开原管理器；不复制 registry、市场、安装器、连接器、编辑表单。
+**但“有页面”不等于“该再做聚合页”。** 设置左栏负责配置，主侧栏已经负责导航；如果聚合页只是把同一组入口再排一遍，就是重复造轮子。
+
+修正结论：
+
+- **默认不做 Home / Agent Hub / Capabilities / Models 四个页面。**
+- 先把聚合降级为**命令中心/侧栏深链**：插件、技能、MCP、智能体、任务中心、模型档案各加一个“打开原管理器”的命令/角标。
+- 只有当“跨域运营总览”被证明有独立价值（需要你处理的插件 error、MCP 断连、待审批任务、不可用模型），才考虑 Home/Capabilities；Agent Hub 与 Models 页面默认取消。
+- 任何页面方案都只读聚合 + 深链，写操作回原管理器；不复制 registry、市场、安装器、连接器、编辑表单。
 
 详见 [14-P26-AND-DENSITY.md](14-P26-AND-DENSITY.md) 第 1–3 节；URL 统一 `#home / #agents / #capabilities / #models`，返回栈复用本轮 hash 机制。
 
