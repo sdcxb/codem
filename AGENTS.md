@@ -172,15 +172,15 @@ node .preview-shot\_gate-evidence.mjs                                  # 收尾�
 
 ## 7. 发版（摘要，细节以 `docs/RELEASE-GUIDE.md` 为准）
 
-0. **文档基线**：`npm run docs:sync` → 按输出清单更新 `docs/project-guide/{README,00,01,09}` 与 CHANGELOG/PROJECT-GUIDE → `npm run audit:docs` ✓（`verify` / `audit` 已含这道门禁；`.github/` 当前被忽略，CI 可选）
 1. 三处版本号：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` ✓
-2. `CHANGELOG.md` 顶部加 `## [x.y.z]` 段 ✓（**面向用户**的说明，不写内部编号 ✗）
-3. 构建 + 签名（见 §3）✓ → 生成并校验 `latest.json` ✓
-4. `gh release create vX.Y.Z --title "Codem vX.Y.Z" --notes-file <说明文件>` + 上传 5 个资产 ✓
-5. **发布说明用标准样式** ✓：`发布日期/类型/下载 → 本版要点 → 对标结果（通过多少真实任务、
+2. **文档基线**（版本号改完后）：`npm run docs:sync` → 按输出清单更新 `docs/project-guide/{README,00,01,09}` 与 CHANGELOG/PROJECT-GUIDE → `npm run audit:docs` ✓（`verify` / `audit` 已含这道门禁；`.github/` 当前被忽略，CI 可选）
+3. `CHANGELOG.md` 顶部加 `## [x.y.z]` 段 ✓（**面向用户**的说明，不写内部编号 ✗）
+4. 构建 + 签名（见 §3）✓ → 生成并校验 `latest.json` ✓
+5. `gh release create vX.Y.Z --title "Codem vX.Y.Z" --notes-file <说明文件>` + 上传 5 个资产 ✓
+6. **发布说明用标准样式** ✓：`发布日期/类型/下载 → 本版要点 → 对标结果（通过多少真实任务、
    哪些方面优于/齐平/仍弱于 DSH）→ 健壮性 → 变更 → 升级说明 → 已知问题 → 校验` ✓
    **不许**出现：测试轮数/对数/通过率、"采样波动"、服务端占比、波次号、内部任务编号 ✗
-6. ⚠️ **只发稳定版** ✓：**1.0 之前的全部** + `v1.16.43` + `v1.16.210` + 最新稳定版 ✓；
+7. ⚠️ **只发稳定版** ✓：**1.0 之前的全部** + `v1.16.43` + `v1.16.210` + 最新稳定版 ✓；
    重建旧 release 会**抢走 `Latest`** ✗ ⇒ 建完必须 `gh release edit <最新稳定版> --latest` 抢回来，
    并复核 `verify-update-manifest.mjs --remote` ✓。
 

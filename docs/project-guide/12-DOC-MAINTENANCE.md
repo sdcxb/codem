@@ -91,8 +91,8 @@ npm run verify
 | `npm run verify` | 覆盖 + knip + jscpd + **文档门禁** |
 | `npm run audit` | 结构审计整链 + **文档门禁** |
 | `.github/workflows/ci.yml`（可选） | 若仓库启用 CI，可在 push/PR 时跑 `npm run audit:docs`；**注意本仓 `.github/` 目前被 `.gitignore` 忽略，不是仓库保证** |
-| `docs/RELEASE-GUIDE.md` | 发版规程第 0 步 |
-| `AGENTS.md` §7 | 发版摘要第 0 步 |
+| `docs/RELEASE-GUIDE.md` | 发版规程第 1 步（版本号 + 文档基线） |
+| `AGENTS.md` §7 | 发版摘要第 2 步（版本号之后） |
 | `docs/project-guide/08-ENGINEERING-GATES.md` | 构建发布章节的固定动作 |
 | `docs/project-guide/11-HANDOFF-PROMPT.md` | 新 Agent 接手时先跑一次 `audit:docs` |
 
