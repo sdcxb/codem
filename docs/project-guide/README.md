@@ -119,7 +119,7 @@
 
 | 你改了什么 | 必须更新 |
 |---|---|
-| 版本号 / 发布 | `09-CURRENT-STATE.md` §1、`docs/PROJECT-GUIDE.md` 的版本表（判据 `VERSION-4` 守着） |
+| 版本号 / 发布 | `09-CURRENT-STATE.md` §1、`docs/PROJECT-GUIDE.md` 版本表、`npm run docs:sync` + `audit:docs`（见 `12`） |
 | 新增/删除 core 子域、关键文件 | `02-CODE-MAP.md` |
 | 主链路（发送/工具/流式/压缩/审批/子代理/项目） | `03-RUNTIME-FLOWS.md` |
 | 用户可见功能 | `04-FEATURE-MODULES.md` + `CHANGELOG.md` |
@@ -129,10 +129,11 @@
 | 门禁 / 命令 / 构建发布 | `08-ENGINEERING-GATES.md` |
 | 未完成项 / 新坑 | `09-CURRENT-STATE.md` + `docs/HANDOFF-NEXT-SESSION.md` |
 
-两条硬要求：
+三条硬要求：
 
 1. 中文引号统一用 `「」`（尤其写进 JS/PS 脚本时）；
-2. 新文档必须是 **UTF-8 无 BOM**（`no-bom.test.ts` 会扫全仓）。
+2. 新文档必须是 **UTF-8 无 BOM**（`no-bom.test.ts` 会扫全仓）；
+3. **版本号一变，先跑 `npm run docs:sync`，按提示更新后跑 `npm run audit:docs`**（`verify`/`audit` 已含；见 `12-DOC-MAINTENANCE.md`）。
 
 ---
 
