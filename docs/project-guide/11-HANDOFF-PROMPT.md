@@ -20,7 +20,7 @@
 5. docs/project-guide/09-CURRENT-STATE.md
 
 如果任务涉及对话/工具/上下文，加读 docs/project-guide/03-RUNTIME-FLOWS.md；
-涉及 UI 加读 05-UI-UX.md；涉及存储加读 06-DATA-STORAGE.md；涉及 Rust 加读 07-BACKEND-IPC.md；
+涉及 UI 加读 05-UI-UX.md；要做系统性 UI 优化再加 13-UI-BENCHMARK-OMP.md；涉及存储加读 06-DATA-STORAGE.md；涉及 Rust 加读 07-BACKEND-IPC.md；
 涉及大富翁/Godot 加读 10-GAME-AND-PROTOTYPE.md。
 
 硬规则（违反会被判据或用户挡住）：
@@ -88,7 +88,7 @@ npm run audit:docs
 |---|---|---|
 | 修对话/工具/流式 bug | 00、02、03、08、09 | 06（落库） |
 | 加工具/改审批 | 00、02、03、08 | 07（Rust 命令面） |
-| 改设置/UI/皮肤 | 00、02、05、08、09 | 03（事件） |
+| 改设置/UI/皮肤 | 00、02、05、08、09 | 03（事件）；系统性优化加 13（对标/验收） |
 | 改存储/迁移 | 00、02、06、08、09 | 07（引擎/authorizer） |
 | 改 Rust/IPC | 00、02、07、08、09 | 03（调用方） |
 | 项目工作台 | 00、02、03、09 | `docs/manuals/PROJECT-MODE.md`、`docs/PROJECTS-MVP-REVIEW.md` |

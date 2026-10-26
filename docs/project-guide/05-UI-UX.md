@@ -313,3 +313,4 @@ input-wrapper
 4. 涉及三皮肤：default/hub/dream 都走一遍；涉及窄容器：320/384/480/576/760 五档。
 5. 涉及交互：补真渲染探针或 `@testing-library` 用例；不要只写源码级断言。
 6. 涉及删除/隐藏入口：同步 `bottom-tab-entries.ts` 与 `bottom-tab-entry-ratchet` 判据。
+7. 要做系统性视觉优化：先读 `13-UI-BENCHMARK-OMP.md` 的 Phase 0（截图/契约工具）与对应 P 段；不要直接改全局 token。

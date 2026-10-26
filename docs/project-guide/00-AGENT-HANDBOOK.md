@@ -227,6 +227,7 @@ node tools/audit/knip-gate.mjs            # 未使用导出不许增长
 | 大富翁插件 / Godot 重制 | `10-GAME-AND-PROTOTYPE.md` |
 | 怎么把项目交接给新模型/新 Agent | `11-HANDOFF-PROMPT.md`（可直接复制的开场白 + 验收问题） |
 | 发版时怎么保证文档不过期 | `12-DOC-MAINTENANCE.md`（`docs:sync` / `audit:docs` 流程） |
+| 要做 UI/UX 优化（对标 OMP Studio） | `13-UI-BENCHMARK-OMP.md`（全要素对照 + P0/P1/P2 + 验收） |
 
 ---
 
