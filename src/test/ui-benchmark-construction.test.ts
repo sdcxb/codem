@@ -100,6 +100,7 @@ describe('UI 对标施工合同', () => {
     expect(block(css, '.sidebar-tool-item')).toContain('height: 43px')
     expect(sidebar).toContain('sidebar-session-time')
     expect(sidebar).toContain('MessageSquare')
+    expect(sidebar).toContain('sidebar-project-count')
     expect(sidebar).not.toContain('<FileExplorer')
     expect(block(css, '.sidebar-project .sidebar-sessions')).toContain('border-left')
   })

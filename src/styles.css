@@ -1907,6 +1907,18 @@ flex-shrink: 0;
   opacity: 1;
 }
 
+.sidebar-project-count {
+  margin-left: auto;
+  padding-right: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-project-header:is(:hover, :focus-visible) .sidebar-project-count {
+  display: none;
+}
+
 .sidebar-project-btn:is(:hover, :focus-visible) {
   background: var(--accent);
   border-color: var(--accent);

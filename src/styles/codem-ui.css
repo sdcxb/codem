@@ -1275,17 +1275,19 @@
 }
 
 .tool-group-header-inline {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
+  height: 32px;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-5);
-  border: none;
-  background: transparent;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
   cursor: pointer;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   transition: var(--transition-color);
-  border-radius: var(--radius);
 }
 
 .tool-group-header-inline:is(:hover, :focus-visible) {
@@ -1298,6 +1300,7 @@
 }
 
 .tool-group-count-inline {
+  margin-left: auto;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }

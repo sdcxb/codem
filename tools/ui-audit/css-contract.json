@@ -15757,6 +15757,13 @@
     "transition": "var(--transition-color)",
     "width": "24px"
   },
+  "sidebar-project-count": {
+    "color": "var(--text-muted)",
+    "font-size": "var(--fs-2xs)",
+    "font-variant-numeric": "tabular-nums",
+    "margin-left": "auto",
+    "padding-right": "var(--space-1)"
+  },
   "sidebar-project-header": {
     "align-items": "center",
     "border-radius": "var(--radius-sm)",
@@ -19327,23 +19334,26 @@
   },
   "tool-group-count-inline": {
     "color": "var(--text-muted)",
-    "font-variant-numeric": "tabular-nums"
+    "font-variant-numeric": "tabular-nums",
+    "margin-left": "auto"
   },
   "tool-group-errors-inline": {
     "color": "var(--error)"
   },
   "tool-group-header-inline": {
     "align-items": "center",
-    "background": "transparent",
-    "border": "none",
-    "border-radius": "var(--radius)",
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-sm)",
     "color": "var(--text-secondary)",
     "cursor": "pointer",
-    "display": "inline-flex",
+    "display": "flex",
     "font-size": "var(--fs-sm)",
     "gap": "var(--space-3)",
-    "padding": "var(--space-2) var(--space-5)",
-    "transition": "var(--transition-color)"
+    "height": "32px",
+    "padding": "0 var(--space-5)",
+    "transition": "var(--transition-color)",
+    "width": "100%"
   },
   "tool-group-running-inline": {
     "color": "var(--accent)"

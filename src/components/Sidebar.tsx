@@ -869,6 +869,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                     <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                     <span className="sidebar-project-icon">{project.pinned ? <Pin size={14} style={{ color: "var(--accent)" }} /> : <Folder size={14} />}</span>
                     <OverflowText className="sidebar-project-name">{project.name}</OverflowText>
+                    <span className="sidebar-project-count">{projectSessions.length}</span>
                     <button
                       className="sidebar-project-btn"
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
