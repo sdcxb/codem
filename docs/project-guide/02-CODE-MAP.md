@@ -247,7 +247,7 @@ src-tauri\
 
 ### 5.3 `docs/`
 
-- 根级 173 份 `.md`（另加本套 12 份）；原 124 份被 git 跟踪（本套 12 份待提交）；目录总计约 309 MB（含大量 PNG/JPG 游戏美术）。
+- 根级 173 份 `.md`（另加本套 12 份）；共 136 份被 git 跟踪；目录总计约 309 MB（含大量 PNG/JPG 游戏美术）。
 - **当前真源**：`docs/project-guide/`（本套）。
 - **历史但仍有用**：`docs/HANDOVER-2026-10-17.md`（三条主动脉/陷阱）、`docs/RELEASE-GUIDE.md`、`docs/manuals/*`。
 - **功能叶子库**：`docs/CODEM-FEATURES.md`、根目录 `项目功能树-全量.md`。
