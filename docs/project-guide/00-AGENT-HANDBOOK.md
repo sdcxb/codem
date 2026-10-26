@@ -224,6 +224,7 @@ node tools/audit/knip-gate.mjs            # 未使用导出不许增长
 | 测试/审计/变异/评测/发布/改造配方 | `08-ENGINEERING-GATES.md` |
 | 现在做到哪、哪些没验、下一步 | `09-CURRENT-STATE.md` |
 | 大富翁插件 / Godot 重制 | `10-GAME-AND-PROTOTYPE.md` |
+| 怎么把项目交接给新模型/新 Agent | `11-HANDOFF-PROMPT.md`（可直接复制的开场白 + 验收问题） |
 
 ---
 
