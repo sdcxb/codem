@@ -29,6 +29,7 @@ start docs\design\ui-benchmark-mock.html
 ?overlay=cmdk|model
 ?panel=1          # 展开底部终端面板
 ?focus=1          # 聚焦 Composer
+?think=1          # 展开思考块
 ?clean=1          # 隐藏 mock 控制条，用于截图
 ```
 
@@ -49,6 +50,7 @@ docs/design/ui-benchmark-mock.html?panel=1&clean=1
 | `ui-benchmark-mock-light.jpg` | 默认 light 工作台 |
 | `ui-benchmark-mock-settings.jpg` | 整页设置 |
 | `ui-benchmark-mock-cmdk.jpg` | 命令面板 |
+| `ui-benchmark-mock-think.jpg` | 思考块展开（`?think=1`） |
 | `reference-user-bubble.png` | 用户提供的原版用户气泡参考（只作颜色/边框/头像对照） |
 
 ## 边界

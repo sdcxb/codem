@@ -563,6 +563,39 @@
   }
   .msg-name { color: var(--text); font-size: 12px; font-weight: 600; }
   .msg-time { color: var(--text-4); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+  .think-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 26px;
+    margin: 0 0 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-align: left;
+  }
+  .think-row .icon { width: 14px; height: 14px; flex: none; opacity: .9; }
+  .think-title { flex: none; font-size: 11.5px; font-weight: 600; }
+  .think-meta { flex: none; color: var(--text-4); font-size: 10.5px; }
+  .think-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11px; }
+  .think-chev { width: 12px; height: 12px; flex: none; color: var(--text-4); transition: transform .15s ease; }
+  .think-row[aria-expanded="true"] .think-chev { transform: rotate(90deg); }
+  .think-body {
+    margin: 0 0 10px 20px;
+    padding: 8px 12px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    border-radius: 0 8px 8px 0;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    max-height: 220px;
+    overflow: auto;
+  }
+  .think-body code { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
   .msg.user .msg-head { justify-content: flex-end; }
   .user-line {
@@ -1567,6 +1600,16 @@
               <article class="msg assistant">
                 <div class="msg-head"><span class="avatar">C</span><span class="msg-name">Codem</span><span class="msg-time">14:02</span></div>
                 <div class="md">
+                  <button class="think-row" id="thinkToggle" aria-expanded="false">
+                    <svg class="icon"><use href="#i-brain"/></svg>
+                    <span class="think-title">思考</span>
+                    <span class="think-meta">18s · 1,240 字</span>
+                    <span class="think-summary">先确认 string / number 的来源，再决定只收窄声明还是调用方</span>
+                    <svg class="icon think-chev"><use href="#i-chevron-right"/></svg>
+                  </button>
+                  <div class="think-body" id="thinkBody" hidden>先定位报错来源：<code>src/index.ts(12,5)</code> 的 value 被推断为 string。
+再确认 <code>parsePort()</code> 的返回类型与调用方期望，避免只改声明。
+最后跑 typecheck 与单测；失败时保留原始输出，不吞错。</div>
                   <p>先定位 <code>src/index.ts</code> 的类型错误，再跑完整检查。</p>
                   <h2>处理顺序</h2>
                   <ol>
@@ -1969,6 +2012,15 @@
       });
     });
   });
+
+  const thinkToggle = $("#thinkToggle");
+  const thinkBody = $("#thinkBody");
+  const setThink = (open) => {
+    thinkBody.hidden = !open;
+    thinkToggle.setAttribute("aria-expanded", String(open));
+  };
+  thinkToggle.addEventListener("click", () => setThink(thinkBody.hidden));
+  if (params.get("think") === "1") setThink(true);
 </script>
 </body>
 </html>

@@ -41,6 +41,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 8 | 侧栏/树密度：260 / 34 / 30 / 26；Git 字母 | 现在偏大、pill 吵 | 40 行滚动；hover 截图 |
 | 9 | 工具去“每张卡”边框，改行 + 状态轨 | 连续调用像一叠盒子 | 5 个工具连续截图 |
 | 10 | 用户气泡保留原版半透明紫 + 轻阴影 | 用户 review：原版比 OMP 实底更精致 | 与原版截图并排；暗/亮/三皮肤对比度 |
+| 11 | 思考块保留 Codem 的“整体一段”，先做活人感 | OMP 是 per-think 分段卡；Codem 数据模型只有一段 `message.reasoning` | 流式中最新行、完成后首行、展开全文；不按空行伪造分段 |
 
 ### 0.2 HTML 预演验证（2026-10-26）
 
@@ -62,6 +63,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 工具行 + 左状态轨成立，但代码面板与卡片同色会糊 | 代码面板用 `--surface-2`，工具行用 `--surface`；不要加外框 |
 | 暗色 `#101318` 比 OMP `#121519` 还黑一档 | 保留 `#101318` 作为 Codem 底色；如果实拍仍偏黑，再试 `#111419`，不要直接复制 OMP |
 | 设置 active 14% 在暗色成立；20% 明显成块 | P0-5 的 14% 保持；**删掉被覆盖的旧实心规则** |
+| Codem 的 `message.reasoning` 是**一整段**，OMP 的 `ThinkCard` 是 per-think 时间线卡 | **不照搬 OMP 分段**：P1-6 保留整体模型，做“最新行/首行 + 展开全文 + 跟随最新”；真分段需要 `reasoningSegments` 数据模型，放 P2 可选 |
 
 **预演没有解决的问题**（不要假装已经解决）：
 
@@ -88,6 +90,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 空会话 | 欢迎语 + 快捷入口 + 输入焦点 | `ChatPanel` empty-state / quick access | 不显示空白大页；输入框自动聚焦 |
 | 历史加载 / 不可用 | 骨架或状态行 + 重试 | `messages-loading` / `messages-unavailable` | 不闪“空会话”；可重试 |
 | 流式：connecting / receiving / tools | 状态行 + 计时 + 停止按钮；正文光标 | `StreamingTimer` / `StreamingWaitIndicator` / cancel | 三阶段文案不同；停止可立即取消 |
+| 思考块：collapsed / streaming / expanded | 最新行跟随 + 字数 + 展开全文 + 光标；历史默认折叠 | `ReasoningRow`（单块 `message.reasoning`） | 流式中不跳首行；展开后不每帧重置滚动；不伪造分段 |
 | 等待审批 | 行内审批卡或弹窗；风险色 + 允许一次/始终/拒绝 | `PermissionPresetSelector` / approval 逻辑 | 不把“待审批”演成“运行中”；Esc 不误放行 |
 | 队列 / guidance | Composer 上方 36px dock；可编辑/删除 | `guidanceMessages` / queue | 无队列时**不显示** dock |
 | 工具 running / done / error | 左状态轨 + 文案 + 图标；错误可展开 | `ToolCallCard` / `toolStatus` | 不只靠颜色；错误有重试/复制 |
@@ -794,7 +797,41 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 24px 头像与气泡顶对齐；气泡宽度 78%，长文本换行不溢出。
 - 暗色/亮色/Hub/Dream 各一张；不出现“亮紫实底 + 深色字”的 OMP 版本。
 
-#### P1-6 设置行组 + 菜单/弹层
+#### P1-6 思考块：保留“整体一段”，但做成活的
+
+> 预演：[收起态](../design/ui-benchmark-mock-dark.jpg) / [展开态](../design/ui-benchmark-mock-think.jpg)；HTML 里用 `?think=1` 打开。
+
+**现状（先看清楚，不要按 OMP 重写）**
+
+- 数据：`Message.reasoning?: string`（`src/core/llm/types.ts:102`）——一条 assistant 消息只有**一段** reasoning；`ReasoningRow` 只接收 `text` + `running`。
+- 位置：`MessageBubble` 先渲染正文（约 789 行），再渲染 `ReasoningRow`（约 871 行），最后才是 `toolCalls`（约 876 行）。所以现在是“回答 → 思考 → 工具回执”，不是 OMP 的“思考卡 → 工具卡 → 回答”时间线。
+- 已有能力：流式时 `latestLine` 跟随 + 摘要自动滚到末尾；展开后整段正文 + 光标；历史默认折叠。**基础已经像样，不需要换成 OMP 的 `ThinkCard` 结构。**
+
+**P1 目标：一个块，但要有“活着”的感觉**
+
+- **位置**：移到 `msg-head` 之后、正文之前；正文之后仍是工具组。形成“思考（折叠）→ 正文 → 工具回执”的稳定顺序。不要声称这是真实时间线。
+- **折叠行**：26px；brain 14；`思考` 11.5/600 accent；`18s · 1,240 字` 10.5 muted；summary 11px 单行 ellipsis；chevron 12。
+  - 流式 summary 用 `latestLine`；完成后用 `firstLine`；空文本显示“（无摘要）”。
+  - 流式中标题 `思考中...` + brain pulse，但不要和 `StreamingTimer` 抢同一个 spinner。
+- **展开体**：13px / 1.65，`max-height: 360`，内部滚动；`surface-2` 底；左 2px accent 40% 轨；radius `0 8 8 0`；padding 8/12；流式末尾 6×13 光标。
+- **跟随**：只有用户位于底部时才 auto-follow 最新；用户上滚后停止跟随并显示“回到最新”小按钮，不要每帧抢滚动。
+- **折叠策略**：流式默认展开；用户手动收起后**不因新 token 重开**；完成后保持用户选择；历史默认折叠。现有 `reasoningAutoCollapsedRef` 逻辑保留，只改位置与样式。
+- **长文本**：≥400 行用分块 + `content-visibility`，不要一帧重排整段；展开体内部滚动。
+- **a11y**：toggle `aria-expanded` / `aria-controls`；正文 `role="region"` + `aria-label="思考过程"`；不要对每个 token 做 `aria-live`，只对“思考中/完成”节流播报。
+
+**明确不做**
+
+- 不按空行/句号把一段 reasoning 切成多张“ThinkCard”——那是**伪造时间线**，会误导用户以为思考和工具是交替发生的。
+- P1 不改数据库/事件协议；`message.reasoning` 仍是一段。
+
+**验收**：
+
+- 流式：summary 跟随最新行；展开体光标可见；用户上滚后不跳。
+- 完成：summary 首行；`18s · 1,240 字`；折叠/展开状态保持。
+- 历史：默认折叠；展开完整；长文本在 360 内滚动。
+- 位置：在正文之前、工具之前；和 OMP 并排看，明确“我们是一个块，不是多张卡”。
+
+#### P1-7 设置行组 + 菜单/弹层
 
 - 设置行按 `group card + divider` 重排；label 13/desc 11/control 200。
 - 菜单统一 240 宽、item 28、radius 9、border-float、无 shadow；选中 accent 软底。
@@ -807,7 +844,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 菜单在 320 宽窗口不溢出；Esc/外点关闭。
 - 模态在 760 高窗口内 footer 可见（不滚动到底才能保存）。
 
-#### P1-7 空态 / 加载 / 错误统一
+#### P1-8 空态 / 加载 / 错误统一
 
 - 新建 `EmptyState` 组件：icon 28、标题 14/600、描述 12/muted、动作 28 按钮；居中，最大宽 360。
 - 替换 `empty-hint` 的 19 种 padding / 7 种字号（历史债）。
@@ -824,6 +861,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **右侧 Inspector 常驻**：项目会话默认展开 **400px**，复用 `PanelSidebar` 的 Files/Git/Changes；1440 宽 360，≤1280 收起；Composer/正文列仍 820。
 3. **底部面板**：默认 **34px 折叠**；终端按需展开 **190px**；不做 OMP 的常驻 240；与右侧 Inspector 不重复。
 4. **页面级导航**：仅对设置/任务中心/知识/用量等“全屏页”加 44px 页头 + 图标 nav；不要动聊天主区。
+5. **分段思考时间线（可选，需数据模型）**：如果产品明确要 OMP 的 per-think 卡，必须先把 `message.reasoning: string` 升级为 `reasoningSegments[]`（含 `stepId/toolCallId/startedAt/endedAt`），由 agent loop 在 `reasoning_delta` 边界写入；只对新会话启用、旧消息回退单块；不按空行猜分段。成本 2–4 天 + DB/事件契约测试，不在 P1 做。
 5. **Home/Agent Hub/Capabilities/Models**：按 OMP 的“列表 + 详情/卡片”重构；这是产品功能，不是纯 UI，需单独立项。
 
 ### 6.4 P3：皮肤与持续治理
@@ -844,7 +882,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 在改任何视觉之前，先加一个**可重复的对照/验收脚手架**：
 
-1. **固定状态**：`workbench-dark`、`workbench-light`、`streaming-dark`、`approval-dark`、`empty-dark`、`error-dark`、`settings-dark`、`settings-search-empty`、`cmd-k`、`cmd-k-empty`、`model-menu`、`model-empty`、`hub`、`dream`。
+1. **固定状态**：`workbench-dark`、`workbench-light`、`streaming-dark`、`think-open`、`approval-dark`、`empty-dark`、`error-dark`、`settings-dark`、`settings-search-empty`、`cmd-k`、`cmd-k-empty`、`model-menu`、`model-empty`、`hub`、`dream`。
 2. **固定视口/DPR**：1600×1000、1280×800、1920×1080，各 @1x；另抽 1600×1000 @125%/150% 验证 1px 边框与 2px 焦点环（WebView2 用 CDP `Emulation.setDeviceMetricsOverride` 强制，避免混入系统缩放）。
 3. **固定数据**：用隔离数据副本 + 固定会话；不要用用户当前会话（会变）。
 4. **固定操作序列**：启动 → 等待 `#root`/首屏 → 关闭引导 → 打开目标 → 截图。
@@ -868,7 +906,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
     { "width": 1280, "height": 800, "dpr": 1 },
     { "width": 1920, "height": 1080, "dpr": 1 }
   ],
-  "states": ["workbench-dark", "workbench-light", "streaming-dark", "approval-dark", "empty-dark", "error-dark", "settings-dark", "settings-search-empty", "cmd-k", "cmd-k-empty", "model-menu", "model-empty"],
+  "states": ["workbench-dark", "workbench-light", "streaming-dark", "think-open", "approval-dark", "empty-dark", "error-dark", "settings-dark", "settings-search-empty", "cmd-k", "cmd-k-empty", "model-menu", "model-empty"],
   "selectors": {
     ".input-card-container": {
       "maxWidth": "820px",
@@ -906,10 +944,10 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **token/契约**：更新 `ui-benchmark-contract.json` 与 `docs/ui-spec.md`（如涉及新 token）。
 3. **截图**：`before/` + `after/` + `contact-sheet`；放 `docs/evidence/ui-benchmark-<phase>-<date>/`，附 README（来源/操作/读数）。
 4. **机器结果**：`npm run audit:docs`、`npx tsc --noEmit`、相关判据；CSS 改动跑 `css-contract.mjs --check`。
-5. **人工签字**：18 项检查表（见 7.4）逐项打勾；不签不合并。
+5. **人工签字**：19 项检查表（见 7.4）逐项打勾；不签不合并。
 6. **回滚点**：一个阶段一个 commit；出问题 `git revert` 该 commit，不要手删半套 CSS。
 
-### 7.4 人工验收 18 项（每阶段都看）
+### 7.4 人工验收 19 项（每阶段都看）
 
 - [ ] 边框只有一种浓度（主/次/分隔），没有“边框 + 阴影 + 内线”三层。
 - [ ] 同一屏只有一种焦点环；输入框、按钮、树、菜单各自只有一圈。
@@ -929,6 +967,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - [ ] 设置“记忆体检”可被搜索到；保存失败显示“未确认保存”，不显示已保存。
 - [ ] 用户气泡保持原版半透明紫（15%/25% + 轻阴影 + 24px 头像），没有变成 OMP 实底。
 - [ ] 不只靠颜色：diff 有 +/−、Git 有字母、状态有图标/文字。
+- [ ] 思考块在正文之前：流式 summary 跟随最新行、展开体有光标、用户上滚不跳；完成后首行 + 字数；不按空行伪造分段。
 
 ### 7.5 建议的提交粒度
 
@@ -945,6 +984,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | P1-1 | `feat(cmdk): grouped command center` | 只改命令面板 |
 | P1-2 | `feat(model): role-based picker` | 只改模型菜单 |
 | P1-3 | `style(sidebar): density + tree status` | 只改侧栏/树 |
+| P1-6 | `style(chat): live grouped reasoning` | 只改思考块 |
 | P1-4 | `style(tools): row-first tool surface` | 只改工具 |
 
 > 不要一个 commit 同时改 token + 布局 + 组件；否则截图差异无法归因，回滚也会带走别的改动。
