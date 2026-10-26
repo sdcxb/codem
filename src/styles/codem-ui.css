@@ -2642,15 +2642,15 @@ body.resizing-columns * {
   box-shadow: none;
 }
 .settings-page .settings-header {
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   min-height: 44px;
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-primary);
 }
 .settings-page .settings-body {
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   flex: 1;
   min-height: 0;
 }
@@ -2660,8 +2660,8 @@ body.resizing-columns * {
   margin: 0 auto;
 }
 .settings-page .settings-footer {
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   flex-shrink: 0;
 }
 .settings-back {

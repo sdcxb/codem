@@ -15,6 +15,7 @@ import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { WaterLevelBanner } from "./WaterLevelBanner";
+import { useStableContextWaterLevel } from "../core/context/water-level";
 import { SandboxAllowPrompt } from "./SandboxAllowPrompt";
 import { SideSessionPanel } from "./SideSessionPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
@@ -136,6 +137,10 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const lang = useLang();
   const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, messagesLoading, loadMoreReadUnavailable } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
+  const water = useStableContextWaterLevel(currentSession?.id || "");
+  const turnCount = messages.filter((m) => m.role === "user" && !isMachineInjectedMessage(m)).length;
+  const contextPercent = water.level.authoritative ? Math.round(water.level.percent) : null;
+  const modeLabel = collaborationMode === "default" ? "main" : collaborationMode;
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
@@ -733,6 +738,13 @@ setStepTooltipLocked(false);
             </>
           )}
         </div>
+        <span className="chat-meta" aria-label={lang === "zh" ? "会话状态" : "Session status"}>
+          <span>{turnCount} {lang === "zh" ? "轮" : "turns"}</span>
+          <span className="chat-meta-sep">·</span>
+          <span>{contextPercent === null ? "—" : `${contextPercent}%`} {lang === "zh" ? "上下文" : "ctx"}</span>
+          <span className="chat-meta-sep">·</span>
+          <span>{modeLabel}</span>
+        </span>
         {/* SlotBridge 消费 app.jobs-badge — 会话头部任务指示器 */}
         <SlotBridge
           name="app.jobs-badge"

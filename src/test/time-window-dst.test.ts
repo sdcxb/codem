@@ -565,6 +565,14 @@ interface DayLiteralException {
 
 const DAY_LITERAL_EXCEPTIONS: DayLiteralException[] = [
   {
+    file: "src/components/Sidebar.tsx",
+    literal: "86_400_000",
+    occurrences: 2,
+    kind: "elapsed",
+    reason:
+      "formatSessionAge：会话行的 now/m/h/d **相对时间分档**（经过时长），不是按本地日历日分格，也不参与任何日窗口计算",
+  },
+  {
     file: "src/components/UsageStats.tsx",
     literal: "24 * 60 * 60 * 1000",
     occurrences: 1,

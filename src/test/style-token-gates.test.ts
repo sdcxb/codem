@@ -895,7 +895,7 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    * 变异：给任一行加 `height: 30px`（或 `var(--sidebar-row-h)`）⇒ 红；
    * 把任一带宽内边距改回 P0 的 `2px 6px` ⇒ 红；改掉项目头的 `min-height` ⇒ 红。
    */
-  it("RHYTHM-1：侧栏行不得写死行高（项目头 min-height 32px）、分组标题 24px、三套容器内边距各自原值、行间距 2px", () => {
+  it("RHYTHM-1：侧栏行 32/30/32、分组标题 28px、行内边距 0/8、行间距 2px（HTML 基线）", () => {
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
     const ruleOf = (sel: string) =>
@@ -903,34 +903,34 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
 
     const rows = [".sidebar-nav-item", ".sidebar-session", ".sidebar-project-header"];
     /*
-     * ⚠️ 第 168 轮曾把行高收敛到令牌 `--sidebar-row-h`（30px 常量）；
-     * 第 182 轮用户实测后撤回 ⇒ **行类不许出现 `height`**，因此这里不再解析那个令牌的 px 值。
-     * 令牌本身**保留**：Sidebar.tsx 的列表上限仍按它换算（见 RHYTHM-2），删了会连带断掉。
+     * 第 211 轮按 HTML 重新钉死：导航 32 / 会话 30 / 项目 32。
+     * 这不是恢复被用户撤掉的 P0 30px 常量，而是以 HTML 的 32/30/32 为新验收基线。
      */
-    /* 行内边距也回到**各自的原值** —— P0 曾把三行统一成 `0 var(--space-4)`，用户实测后撤回 */
+    const ROW_H: Record<string, string> = {
+      ".sidebar-nav-item": "32px",
+      ".sidebar-session": "30px",
+      ".sidebar-project-header": "32px",
+    };
     const ROW_PAD: Record<string, string> = {
-      ".sidebar-nav-item": "var(--space-5) var(--space-6)",
-      ".sidebar-session": "var(--space-3) var(--space-4)",
-      ".sidebar-project-header": "var(--space-4) var(--space-4)",
+      ".sidebar-nav-item": "0 var(--space-4)",
+      ".sidebar-session": "0 var(--space-4)",
+      ".sidebar-project-header": "0 var(--space-4)",
     };
     for (const sel of rows) {
       const body = ruleOf(sel);
       expect(body, `找不到 ${sel}`).not.toBe("");
-      /* ⚠️ 负向后顾必须有：`[[^\n]*]height:` 会连 `min-height:` 一起命中（`.sidebar-project-header`
-         正好两条都有），那样断言就成了"读错属性"的假绿。 */
       const h = /(?:^|;)\s*(?<![\w-])height:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
-      expect(h, `${sel} 不许写死行高 —— v1.16.165 原版由内容撑开（第 182 轮恢复），实际：${h || "（未声明）"}`).toBe("");
+      expect(h, `${sel} 行高必须是 ${ROW_H[sel]}（HTML 基线），实际：${h || "（未声明）"}`).toBe(ROW_H[sel]);
       const pad = /(?:^|;)\s*padding:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
-      expect(pad, `${sel} 的行内边距必须是 "${ROW_PAD[sel]}"（v1.16.165 原值），实际：${pad || "（未声明）"}`).toBe(ROW_PAD[sel]);
+      expect(pad, `${sel} 的行内边距必须是 "${ROW_PAD[sel]}"（HTML 基线），实际：${pad || "（未声明）"}`).toBe(ROW_PAD[sel]);
     }
-    /* 唯一例外：项目头垫一个下限（原版就是 min-height，不是固定 height） */
     const projectHeaderMinH = /(?:^|;)\s*min-height:\s*([^;]+)/.exec(ruleOf(".sidebar-project-header"))?.[1]?.trim() ?? "";
     expect(projectHeaderMinH,
-      `.sidebar-project-header 必须保留 min-height: 32px（v1.16.165 原值，内容再少也不塌成一条线），实际：${projectHeaderMinH || "（未声明）"}`,
+      `.sidebar-project-header 必须保留 min-height: 32px，实际：${projectHeaderMinH || "（未声明）"}`,
     ).toBe("32px");
 
     const header = ruleOf(".sidebar-section-header");
-    expect(/(?:^|;)\s*height:\s*24px/.test(header), "分组标题行高必须是 24px（对方 token 值）").toBe(true);
+    expect(/(?:^|;)\s*height:\s*28px/.test(header), "分组标题行高必须是 28px（HTML 基线）").toBe(true);
 
     /* ⚠️ 断言"生效的 px 值"而不是"写法"：仓库有 error 级门禁 `spacing-raw` 要求间距走 `var(--space-*)`，
        所以这里先解析令牌再比数值 —— 否则门禁会逼着我们把令牌改回裸 px（口径打架）。
@@ -1176,14 +1176,14 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
       const m = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`, "s").exec(css);
       expect(m, `找不到 ${sel} 的规则体`).toBeTruthy();
       const body = m![1];
-      /* ⚠️ 第 182 轮：行高口径从「必须走 var(--sidebar-row-h)」改成「**不得写死行高**」——
-         v1.16.165 原版这三行都没有 `height`（由内容撑开），P0 压成 30px 常量被用户实测撤回。
-         令牌 `--sidebar-row-h` 仍保留，但消费方只剩 Sidebar.tsx 的列表上限（见下方 ④）。 */
-      /* ⚠️ 负向后顾必须有：`[[^\n]*]height:` 会连 `min-height:` 一起命中（`.sidebar-project-header`
-         正好两条都有），那样断言就成了"读错属性"的假绿。`\s*` 放在后顾之前，所以前面无论是
-         `;`、换行还是规则体开头，后顾看到的都是紧贴 `height` 的那个字符。 */
+      /* 第 211 轮：按 HTML 固定 32/30/32；不再回到“内容撑开”的旧口径。 */
+      const ROW_H: Record<string, string> = {
+        ".sidebar-nav-item": "32px",
+        ".sidebar-session": "30px",
+        ".sidebar-project-header": "32px",
+      };
       const h = /(?:^|[;\n])\s*(?<![\w-])height:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
-      expect(h, `${sel} 不许写死行高（v1.16.165 原版由内容撑开；写死 30px 或 var(--sidebar-row-h) 都是被撤回的 P0 口径），实际：${h || "（未声明）"}`).toBe("");
+      expect(h, `${sel} 行高必须是 ${ROW_H[sel]}（HTML 基线），实际：${h || "（未声明）"}`).toBe(ROW_H[sel]);
       expect(/flex-shrink:\s*0/.test(body),
         `${sel} 缺 flex-shrink: 0 —— 一旦被限高的 flex 列包住，它会被压矮（第 168 轮的 28px 就是这样来的）`,
       ).toBe(true);

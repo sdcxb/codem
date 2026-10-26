@@ -2,7 +2,7 @@ import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check, Crown, LayoutDashboard } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check, Crown, LayoutDashboard, MessageSquare } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
@@ -80,6 +80,16 @@ const SORT_OPTIONS: Array<{ key: SessionSortKey; dir: SessionSortDir; label: { z
   { key: "name", dir: "asc", label: S.sidebar.sortNameAsc },
   { key: "name", dir: "desc", label: S.sidebar.sortNameDesc },
 ];
+
+/** 会话行时间：now / 2h / 3h / 5h / 1d；只显示真实时间，不伪造。 */
+function formatSessionAge(ts: number): string {
+  if (!ts || !Number.isFinite(ts)) return "";
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 60_000) return "now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
+  return `${Math.floor(diff / 86_400_000)}d`;
+}
 
 export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   /* 第 166 轮 P1-3：分组标题吸顶（滚到顶时加 is-stuck，CSS 才画分隔线） */
@@ -205,7 +215,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const w = getSetting("codem-sidebar-width");
     const num = typeof w === "string" ? parseInt(w, 10) : (typeof w === "number" ? w : 0);
-    return num > 0 ? num : 260;
+    return num > 0 ? num : 240;
   });
   /**
    * 会话显示排序（GAP-LIST `O-57`）。
@@ -1279,7 +1289,9 @@ function SessionItem({
           return hasActive ? <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
         } catch { return null; }
       })()}
+      <MessageSquare className="icon-sm sidebar-session-icon" />
       <OverflowText className="sidebar-session-title">{session.title}</OverflowText>
+      <span className="sidebar-session-time">{formatSessionAge(session.lastMessageAt || session.createdAt)}</span>
       <div className="sidebar-session-actions">
         <button
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}

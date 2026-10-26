@@ -91,6 +91,28 @@ describe('UI 对标施工合同', () => {
     expect(settings).toContain('"记忆体检"')
   })
 
+  it('P1-left：侧栏 240/32/30/32/43，项目/会话按文件树层级排，不塞文件树', () => {
+    const sidebar = readFileSync(join(ROOT, 'src/components/Sidebar.tsx'), 'utf8')
+    expect(block(css, '.sidebar')).toContain('width: 240px')
+    expect(block(css, '.sidebar-nav-item')).toContain('height: 32px')
+    expect(block(css, '.sidebar-session')).toContain('height: 30px')
+    expect(block(css, '.sidebar-project-header')).toContain('height: 32px')
+    expect(block(css, '.sidebar-tool-item')).toContain('height: 43px')
+    expect(sidebar).toContain('sidebar-session-time')
+    expect(sidebar).toContain('MessageSquare')
+    expect(sidebar).not.toContain('<FileExplorer')
+    expect(block(css, '.sidebar-project .sidebar-sessions')).toContain('border-left')
+  })
+
+  it('P1-chat：会话头 48 + 轮数/上下文/main，左栏不出现文件树', () => {
+    const chat = readFileSync(join(ROOT, 'src/components/ChatPanel.tsx'), 'utf8')
+    expect(block(css, '.chat-header')).toContain('height: 48px')
+    expect(chat).toContain('chat-meta')
+    expect(chat).toContain('turnCount')
+    expect(chat).toContain('contextPercent')
+    expect(chat).toContain('modeLabel')
+  })
+
   it('P2-1：设置 1080 工作台，侧栏 220，头部 52，内容区最高 760', () => {
     expect(block(css, '.settings-panel')).toContain('width: min(1080px, 95vw)')
     expect(block(css, '.settings-header')).toContain('min-height: 52px')

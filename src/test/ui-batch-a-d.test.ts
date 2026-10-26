@@ -418,7 +418,7 @@ describe("批次 C: 侧栏宽度持久化", () => {
     const num = typeof stored === "string"
       ? parseInt(stored, 10)
       : (typeof stored === "number" ? stored : 0);
-    return num > 0 ? num : 260;
+    return num > 0 ? num : 240;
   }
 
   // 模拟 resize 时的边界限制
@@ -426,13 +426,13 @@ describe("批次 C: 侧栏宽度持久化", () => {
     return Math.max(200, Math.min(500, width));
   }
 
-  it("未存储时返回默认值 260", () => {
-    expect(parseSidebarWidth(undefined)).toBe(260);
-    expect(parseSidebarWidth(null)).toBe(260);
+  it("未存储时返回默认值 240", () => {
+    expect(parseSidebarWidth(undefined)).toBe(240);
+    expect(parseSidebarWidth(null)).toBe(240);
   });
 
   it("空字符串返回默认值", () => {
-    expect(parseSidebarWidth("")).toBe(260);
+    expect(parseSidebarWidth("")).toBe(240);
   });
 
   it("字符串数字正确解析", () => {
@@ -445,12 +445,12 @@ describe("批次 C: 侧栏宽度持久化", () => {
   });
 
   it("无效字符串（NaN）返回默认值", () => {
-    expect(parseSidebarWidth("abc")).toBe(260);
+    expect(parseSidebarWidth("abc")).toBe(240);
   });
 
   it("0 或负数返回默认值", () => {
-    expect(parseSidebarWidth(0)).toBe(260);
-    expect(parseSidebarWidth(-100)).toBe(260);
+    expect(parseSidebarWidth(0)).toBe(240);
+    expect(parseSidebarWidth(-100)).toBe(240);
   });
 
   it("resize 时宽度限制在 200-500 之间", () => {

@@ -1560,7 +1560,7 @@ overflow: hidden;
 /* ========== Sidebar ========== */
 .sidebar {
 position: relative;
-width: 260px;
+width: 240px;
 background: var(--sidebar-bg);
 /* 第 166 轮 P0-0：右边界从 5% 的 `--border-separator` 改成**墨色 8% hairline** ——
    实测 5% 黑在近白面上约等于不存在（侧栏与内容之间"没有分界"，是"看着廉价"的一条）。
@@ -1609,17 +1609,18 @@ flex-shrink: 0;
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-5);
   width: 100%;
+  height: 32px;
   /* 列表容器被限高时（Sidebar.tsx 的 maxHeight）必须是**滚动**而不是把行压矮 */
   flex-shrink: 0;
-  padding: var(--space-5) var(--space-6);
+  padding: 0 var(--space-4);
   background: none;
   border: none;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
-  border-radius: var(--radius);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   text-align: left;
   /* 第 166 轮 P0-1：过渡换成 `--transition-color`（color + background-color + border-color，.15s + 标准曲线）——
      原来只有 `background var(--duration-fast) ease`：**文字色不跟着动**、且用的是默认 `ease`（不是我们自己的曲线）。 */
@@ -1681,10 +1682,9 @@ flex-shrink: 0;
   justify-content: center;
   gap: var(--space-1);
   flex: 1;
-  /* 第 166 轮 P0-2：原来是**竖排**（图标在上文字在下）⇒ 单行 51px、整簇 59px，把侧栏节奏打断了。
-     现在改成行内 chip：**26px 高**（外面 2px padding ⇒ 整簇正好 30px）。 */
-  padding: var(--space-4) var(--space-1);
-  border-radius: var(--radius-xs);
+  height: 43px;
+  padding: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   border-radius: var(--radius);
@@ -1709,12 +1709,12 @@ flex-shrink: 0;
 }
 
 .sidebar-tool-item-icon {
-  font-size: var(--fs-lg);
+  font-size: var(--icon-md);
   line-height: var(--lh-none);
 }
 
 .sidebar-tool-item-label {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-2xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1724,7 +1724,12 @@ flex-shrink: 0;
 /* ========== Independent Scroll Sections ========== */
 .sidebar-global-section {
   flex-shrink: 0;
-  padding: var(--space-4) var(--space-6) var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-2);
+}
+
+.sidebar-global-section .sidebar-sessions {
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .sidebar-projects-section {
@@ -1733,7 +1738,7 @@ flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: var(--space-2) var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-4) var(--space-4);
 }
 
 .sidebar-projects-section .sidebar-projects {
@@ -1748,6 +1753,13 @@ flex-shrink: 0;
   text-align: center;
 }
 
+/* 项目/会话按文件树的层级感排：项目行是目录，会话行是子项。 */
+.sidebar-project .sidebar-sessions {
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border-secondary);
+  margin-left: var(--space-4);
+}
+
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
   padding: 0 var(--space-6);
@@ -1759,7 +1771,7 @@ flex-shrink: 0;
 /* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .sidebar-project {
-  margin: 0 calc(-1 * var(--space-6)) var(--space-1);
+  margin: 0 0 var(--space-1);
 }
 
 .sidebar-project-header {
@@ -1768,9 +1780,11 @@ flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
-  padding: var(--space-4) var(--space-4);
+  height: 32px;
+  padding: 0 var(--space-4);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   transition: var(--transition-color), var(--transition-transform);
   min-height: 32px;
@@ -1821,6 +1835,7 @@ flex-shrink: 0;
 }
 
 .sidebar-project-icon {
+  color: var(--accent);
   font-size: var(--fs-md);
 }
 
@@ -2007,7 +2022,7 @@ flex-shrink: 0;
 
 
 .sidebar-sessions {
-  padding-left: var(--space-9);
+  padding-left: 0;
   /* 第 166 轮 P0-2：会话行之间也要 **2px** 间距（此前为 0，只有导航区有 gap ⇒ 间距取值 4 种） */
   display: flex;
   flex-direction: column;
@@ -2021,12 +2036,13 @@ flex-shrink: 0;
 .sidebar-session {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
-  padding: var(--space-3) var(--space-4);
+  height: 30px;
+  padding: 0 var(--space-4);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   transition: var(--transition-color), var(--transition-transform);
 }
@@ -2054,12 +2070,34 @@ flex-shrink: 0;
   color: var(--accent-strong);
 }
 
+.sidebar-session-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.sidebar-session-time {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-session:is(:hover, :focus-visible) .sidebar-session-time {
+  display: none;
+}
+
+.sidebar-session.active .sidebar-session-icon,
+.sidebar-session.active .sidebar-session-time {
+  color: var(--accent-strong);
+}
+
 .sidebar-session-title {
 flex: 1;
 overflow: hidden;
 text-overflow: ellipsis;
 white-space: nowrap;
-font-size: var(--fs-base);
+font-size: var(--fs-sm);
 }
 
 /* Session running indicator dot */
@@ -2217,8 +2255,9 @@ font-size: var(--fs-base);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 24px;
-  margin-bottom: var(--space-4);
+  height: 28px;
+  margin-bottom: var(--space-1);
+  padding: 0 var(--space-2);
   /* 第 166 轮 P1-3：**吸顶**。此前是 static ⇒ 滚下去以后不知道自己在看哪个分组
      （对方是 sticky + 吸住时浮出一条 hairline）。背景必须不透明：吸顶时行会从它下面滚过。
      z-index 用 `--z-chrome`（外壳内部的局部层叠，不是全局浮层）。 */
@@ -2244,7 +2283,7 @@ font-size: var(--fs-base);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   color: var(--text-muted);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.04em;
   font-weight: 600;
 }
 
@@ -2373,10 +2412,34 @@ font-size: var(--fs-base);
 .chat-header {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-6) var(--space-8);
+  gap: var(--space-2);
+  height: 48px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
+}
+
+.chat-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-meta-sep {
+  color: var(--border-primary);
+}
+
+@media (max-width: 1180px) {
+  .chat-meta {
+    display: none;
+  }
 }
 
 .sidebar-toggle {
