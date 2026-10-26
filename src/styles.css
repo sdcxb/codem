@@ -18048,6 +18048,16 @@ color: var(--accent, #7c6cf0);
   text-align: left;
 }
 
+/* 右栏展开时正文只剩 ~534px，中文表头“工具”会被拆成两行；
+   表头不允许断行，数据列再按可用宽度换行。 */
+.content-table-fallback th {
+  white-space: nowrap;
+}
+
+.content-table-fallback td {
+  overflow-wrap: anywhere;
+}
+
 /* 分辨率选择器 */
 .resolution-label {
   font-size: var(--fs-sm);
