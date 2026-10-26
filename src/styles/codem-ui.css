@@ -2572,11 +2572,14 @@ body.resizing-columns * {
    `width: 160px` / `flex-shrink: 0` / 纵向 flex，整个设置窗口塌成一条 160px 的窄条，
    内容区只剩 40px 宽（用户报的「设置窗口很狭长的一条，内容都看不到」）。
    教训：选择器列表里混入无关的类是**合法 CSS**，构建、单测、审计都看不见它 —— 见 §7 新增的布局契约。 */
+:root {
+  --settings-side-width: 220px;
+}
 .settings-sidebar {
-  width: 220px;
+  width: var(--settings-side-width);
   scrollbar-width: none;
   flex-shrink: 0;
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-6) var(--space-5);
   border-right: 1px solid var(--glass-border) !important;
   overflow-y: auto;
   display: flex;
@@ -2590,14 +2593,16 @@ body.resizing-columns * {
   display: none;
 }
 .settings-nav-group-label {
-  padding: var(--space-3) var(--space-3) var(--space-1);
-  color: var(--text-muted);
-  font-size: var(--fs-2xs);
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--ls-wide);
-  text-transform: uppercase;
+  text-transform: none;
 }
 .settings-nav-group-label:first-child {
+  margin-top: 0;
   padding-top: 0;
 }
 
@@ -2605,8 +2610,8 @@ body.resizing-columns * {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  gap: var(--space-4);
+  padding: 0 var(--space-4) 0 var(--space-6);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-sm);
@@ -2616,7 +2621,7 @@ body.resizing-columns * {
   background: none;
   text-align: left;
   width: 100%;
-  height: 30px;
+  height: 31px;
   flex-shrink: 0;
 }
 .settings-sidebar-item:is(:hover, :focus-visible) {
@@ -2666,8 +2671,8 @@ body.resizing-columns * {
   margin: 0 auto;
 }
 .settings-page .settings-footer {
-  width: 100%;
-  margin: 0;
+  width: calc(100% - var(--settings-side-width));
+  margin: 0 0 0 var(--settings-side-width);
   flex-shrink: 0;
 }
 .settings-back {
@@ -2684,12 +2689,15 @@ body.resizing-columns * {
   cursor: pointer;
 }
 .settings-back--with-label {
-  width: auto;
+  width: fit-content;
   height: 28px;
+  flex: none;
+  align-self: flex-start;
+  justify-content: flex-start;
   gap: var(--space-2);
   padding: 0 var(--space-2);
-  margin-left: calc(-1 * var(--space-2));
-  font-size: var(--fs-2xs);
+  margin-left: 0;
+  font-size: var(--fs-sm);
 }
 .settings-side-head {
   display: flex;
@@ -2704,9 +2712,9 @@ body.resizing-columns * {
   padding: 0 var(--space-2);
 }
 .settings-side-head h2 {
-  margin: 0;
-  padding: 0 var(--space-2);
-  font-size: var(--fs-lg);
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-3);
+  font-size: var(--fs-md);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
@@ -2715,8 +2723,8 @@ body.resizing-columns * {
   align-items: center;
   gap: var(--space-2);
   height: 30px;
-  margin: 0;
-  padding: 0 var(--space-3);
+  margin: 0 var(--space-1) var(--space-4);
+  padding: 0 var(--space-4);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
@@ -2798,10 +2806,9 @@ body.resizing-columns * {
 }
 
 .settings-content {
-  /* P1-7：内容区收成一张行组卡；行与行之间只留 1px 分隔，不再让每个字段裸飘。 */
-  background: var(--surface-1) !important;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
+  /* HTML 基线：内容区是平铺工作区，不是一张圆角卡片。 */
+  background: transparent !important;
+  border: 0;
 }
 .settings-content > .setting-group {
   padding: var(--space-3) 0;

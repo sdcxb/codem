@@ -1985,7 +1985,7 @@ flex-shrink: 0;
 }
 
 .sidebar-session-actions {
-  display: grid;
+  display: none;
   grid-template-columns: repeat(2, max-content);
   align-items: center;
   gap: var(--space-1);
@@ -1994,6 +1994,7 @@ flex-shrink: 0;
 }
 
 .sidebar-session:is(:hover, :focus-visible) .sidebar-session-actions {
+  display: grid;
   opacity: 1;
 }
 
@@ -5326,13 +5327,18 @@ background: var(--bg-secondary);
 }
 
 .settings-footer {
-  display: grid;
-  grid-template-columns: repeat(4, max-content);
+  width: calc(100% - var(--settings-side-width));
+  margin-left: var(--settings-side-width);
+  padding: var(--space-3) var(--space-8);
+  border-top: 1px solid var(--border-primary);
+}
+.settings-footer-inner {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-8) var(--space-9);
-  border-top: 1px solid var(--border-primary);
+  gap: var(--space-2);
 }
 
 .save-success {
@@ -5340,15 +5346,22 @@ background: var(--bg-secondary);
   color: var(--success);
 }
 
-.save-btn {
-  padding: var(--space-4) var(--space-9);
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
+.settings-footer .save-btn {
+  height: 28px;
+  padding: 0 var(--space-6);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-weight: 500;
+}
+
+.settings-footer .save-btn:last-child {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
 }
 
 .save-btn:is(:hover, :focus-visible) {

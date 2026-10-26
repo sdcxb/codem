@@ -2946,6 +2946,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         </div>
 
         <div className="settings-footer">
+          <div className="settings-footer-inner">
           {onSessionRecovery && (
             <button
               className="save-btn sp-btn-auto"
@@ -2965,6 +2966,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {saved && <span className="save-success">{S.settings.saved[lang]}</span>}
           {saveFailure && <span className="sp-hint">{saveFailure}</span>}
           <button className="save-btn" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
+          </div>
         </div>
       </div>
       <PetMarketDialog open={showPetMarket} onClose={() => setShowPetMarket(false)} />

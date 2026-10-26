@@ -52,12 +52,12 @@ describe('UI 对标施工合同', () => {
     expect(css).toContain('--accent: #7c6cf0')
   })
 
-  it('P0-5：设置项 30px，active 14% 软底 + accent-strong + 无 inset 条', () => {
+  it('P0-5：设置项 31px，active 14% 软底 + accent-strong + 无 inset 条', () => {
     const item = block(codemUi, '.settings-sidebar-item')
-    expect(item).toContain('height: 30px')
+    expect(item).toContain('height: 31px')
     expect(item).toContain('flex-shrink: 0')
     expect(item).toContain('font-size: var(--fs-sm)')
-    expect(item).toContain('padding: 0 var(--space-3)')
+    expect(item).toContain('padding: 0 var(--space-4) 0 var(--space-6)')
 
     const active = block(codemUi, '.settings-sidebar-item.active')
     expect(active).toContain('background: var(--accent-selected)')
@@ -119,7 +119,7 @@ describe('UI 对标施工合同', () => {
     expect(block(css, '.settings-panel')).toContain('display: flex')
     expect(block(css, '.settings-body')).toContain('flex: 1 1 auto')
     expect(block(css, '.settings-body')).toContain('min-height: 0')
-    expect(block(codemUi, '.settings-sidebar')).toContain('width: 220px')
+    expect(block(codemUi, '.settings-sidebar')).toContain('width: var(--settings-side-width)')
   })
 
   it('P2-1b：设置整页视图有返回、8 组导航、26px 子导航、900 内容列', () => {
@@ -162,11 +162,11 @@ describe('UI 对标施工合同', () => {
     expect(app).toContain('window.innerWidth <= 1280')
   })
 
-  it('P1-7：设置内容一张行组卡，菜单/模态统一无阴影，Tooltip 500ms/11px', () => {
+  it('P1-7：设置内容平铺无卡片，菜单/模态统一无阴影，Tooltip 500ms/11px', () => {
     const settingsContent = block(codemUi, '.settings-content')
-    expect(settingsContent).toContain('background: var(--surface-1) !important')
-    expect(settingsContent).toContain('border: 1px solid var(--border-primary)')
-    expect(settingsContent).toContain('border-radius: var(--radius-lg)')
+    expect(settingsContent).toContain('background: transparent !important')
+    expect(settingsContent).toContain('border: 0')
+    expect(settingsContent).not.toContain('border-radius: var(--radius-lg)')
     expect(block(css, '.settings-content')).toContain('padding: var(--space-6)')
     expect(block(css, '.settings-content')).toContain('gap: var(--space-3)')
     expect(block(codemUi, '.settings-content > .setting-group')).toContain('padding: var(--space-3) 0')
