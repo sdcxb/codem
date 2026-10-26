@@ -22,7 +22,8 @@ import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentRuntime } from "../core/subagent/index";
 import { useLang, S } from "../core/i18n/lang";
 import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
-import { groupModelsByFamily, isUnknownModelName, type ModelFamily } from "./model-menu-groups";
+import { groupModelsByFamily, isUnknownModelName, modelRoleSlots, type ModelFamily } from "./model-menu-groups";
+import { getModelProfileManager, type TaskSlot } from "../core/llm/model-profile";
 import { ScrollbarMarkers } from "./ScrollbarMarkers";
 import { listPinnedIds, togglePin, subscribePins } from "../core/nav-pins";
 import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
@@ -108,6 +109,17 @@ onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
 /** P3/P4: Active notebook ID for source selector in InputArea */
 notebookId?: string;
 }
+
+const MODEL_SLOT_LABELS: Record<TaskSlot, { zh: string; en: string }> = {
+  chat: { zh: "主对话", en: "Chat" },
+  subagent: { zh: "子智能体", en: "Sub-agent" },
+  memory: { zh: "记忆", en: "Memory" },
+  compaction: { zh: "压缩", en: "Compaction" },
+  vision: { zh: "视觉", en: "Vision" },
+  tts: { zh: "语音", en: "TTS" },
+  imageGen: { zh: "生图", en: "Image" },
+  embedding: { zh: "嵌入", en: "Embedding" },
+};
 
 const MODEL_FAMILY_LABELS: Record<ModelFamily, { zh: string; en: string }> = {
   free: { zh: "免费模型", en: "Free models" },
@@ -252,12 +264,26 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   }, []);
 
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
-  /* P1-2：只按**可证明的来源**分组。Codem 没有权威的 model role 字段，
-     按名字猜 Default/Fast/Thinking 会把 gpt-4o / o3 这类模型贴错标签。 */
+  /* P1-2：模型本身没有 role 字段，按名字猜 Default/Fast/Thinking 会贴错标签；
+     但**当前档案的槽位分配**是真实数据，作为角色徽标展示，不参与分组。 */
   const menuModels = models.filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id));
   const menuKnown = menuModels.filter((m) => m.id === model || !isUnknownModelName(m.name));
   const menuUnknown = menuModels.filter((m) => m.id !== model && isUnknownModelName(m.name));
   const menuGroups = groupModelsByFamily(menuKnown, isFreeModelId);
+  const activeProfile = getModelProfileManager().getActiveProfile();
+
+  const renderModelRoles = (modelId: string) => {
+    const slots = modelRoleSlots(activeProfile, modelId);
+    if (slots.length === 0) return null;
+    const labels = slots.map((slot) => MODEL_SLOT_LABELS[slot][lang === "zh" ? "zh" : "en"]);
+    return (
+      <span className="model-role-badges" title={labels.join(" / ")}>
+        {labels.slice(0, 2).map((label) => (
+          <span className="model-role-badge" key={label}>{label}</span>
+        ))}
+      </span>
+    );
+  };
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
   /* 引导栏是纯内容滚动区（max-height 168px）：边缘 7 档渐隐，判据 EDGEFADE-* */
@@ -754,6 +780,7 @@ setStepTooltipLocked(false);
                       <span className="model-option-name" title={m.name}>
                         {m.name}
                       </span>
+                      {renderModelRoles(m.id)}
                       {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
                       {isFreeModelId(m.id) && (
                         <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
@@ -785,6 +812,7 @@ setStepTooltipLocked(false);
                       onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
                     >
                       <span className="model-option-name" title={m.name}>{m.name}</span>
+                      {renderModelRoles(m.id)}
                       {isFreeModelId(m.id) && (
                         <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
                       )}

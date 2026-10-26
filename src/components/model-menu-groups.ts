@@ -8,7 +8,20 @@
  * 选中态用 check，未知模型折叠到「更多模型」。
  */
 
+import type { ModelProfile, TaskSlot } from "../core/llm/model-profile";
+
 export type ModelFamily = "free" | "deepseek" | "anthropic" | "openai" | "gemini" | "moonshot" | "mimo" | "other";
+
+/** 槽位的展示顺序：主对话永远排第一，用户一眼知道“当前聊天用的是哪个”。 */
+export const MODEL_ROLE_ORDER: TaskSlot[] = ["chat", "subagent", "memory", "compaction", "vision"];
+
+/**
+ * 当前档案里这个模型承担了哪些槽位。
+ * 这是**档案的分配关系**，不是模型固有属性；同一模型可以拿多个角色。
+ */
+export function modelRoleSlots(profile: Pick<ModelProfile, "slots">, modelId: string): TaskSlot[] {
+  return MODEL_ROLE_ORDER.filter((slot) => profile.slots[slot]?.model === modelId);
+}
 
 export interface ModelLike {
   id: string;

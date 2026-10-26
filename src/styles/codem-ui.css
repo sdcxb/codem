@@ -3305,10 +3305,17 @@ background: var(--bg-secondary);
 .tool-card {
   position: relative; /* 第 38 波：运行/失败态竖条 ::before 需要定位上下文 */
   overflow: hidden;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
+  /* P1-4（方案 A）：去掉四边框，只留左侧 2px 状态轨；不再画第二张“卡”。 */
+  border: 0;
+  border-left: 2px solid var(--border-primary);
+  border-radius: 0;
+  background: transparent;
   font-size: var(--fs-sm);
 }
+.tool-call-card-wrap[data-state="running"] .tool-card { border-left-color: var(--accent); }
+.tool-call-card-wrap[data-state="ok"] .tool-card { border-left-color: var(--success); }
+.tool-call-card-wrap[data-state="error"] .tool-card { border-left-color: var(--error); }
+.tool-call-card-wrap[data-state="stopped"] .tool-card { border-left-color: var(--warning); }
 .tool-card--scroll { max-height: 300px; overflow-y: auto; }
 /**
  * 窄容器自适应（container queries）—— 2026-10-18

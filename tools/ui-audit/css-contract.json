@@ -8939,6 +8939,22 @@
     "margin-top": "var(--space-2)",
     "padding": "var(--space-4) var(--space-6)"
   },
+  "model-role-badge": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-xs)",
+    "color": "var(--text-muted)",
+    "font-size": "var(--fs-2xs)",
+    "padding": "0 var(--space-2)",
+    "white-space": "nowrap"
+  },
+  "model-role-badges": {
+    "display": "inline-flex",
+    "flex": "none",
+    "gap": "var(--space-1)",
+    "max-width": "140px",
+    "overflow": "hidden"
+  },
   "model-selector": {
     "align-items": "center",
     "cursor": "pointer",
@@ -19037,8 +19053,10 @@
     "margin-top": "var(--space-4)"
   },
   "tool-card": {
-    "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius)",
+    "background": "transparent",
+    "border": "0",
+    "border-left": "2px solid var(--border-primary)",
+    "border-radius": "0",
     "container-name": "toolcard",
     "container-type": "inline-size",
     "font-size": "var(--fs-sm)",

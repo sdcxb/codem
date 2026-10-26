@@ -89,6 +89,24 @@ describe('UI 对标施工合同', () => {
     expect(settings).toContain('"记忆体检"')
   })
 
+  it('P1-5：用户气泡保留原版半透明紫，不改成 OMP 实底', () => {
+    expect(css).toContain('--message-bubble-user: rgba(107, 92, 231, 0.08)')
+    expect(css).toContain('--message-bubble-user-border: rgba(107, 92, 231, 0.16)')
+    expect(css).toContain('--message-bubble-user: rgba(124, 108, 240, 0.15)')
+    expect(css).toContain('--message-bubble-user-border: rgba(124, 108, 240, 0.25)')
+  })
+
+  it('P1-4（方案 A）：工具卡去四边框，只留左侧状态轨', () => {
+    const toolCard = block(codemUi, '.tool-card')
+    expect(toolCard).toContain('border: 0')
+    expect(toolCard).toContain('border-left: 2px solid var(--border-primary)')
+    expect(toolCard).toContain('border-radius: 0')
+    expect(toolCard).toContain('background: transparent')
+    expect(codemUi).toContain('.tool-call-card-wrap[data-state="running"] .tool-card')
+    expect(codemUi).toContain('.tool-call-card-wrap[data-state="error"] .tool-card')
+    expect(codemUi).toContain('.tool-call-card-wrap[data-state="ok"] .tool-card')
+  })
+
   it('P1-3（安全子集）：文件树 26px，Git 状态只留单字母不画药丸', () => {
     expect(block(css, '.file-entry')).toContain('height: 26px')
     expect(block(css, '.git-status-badge')).toContain('background: transparent')

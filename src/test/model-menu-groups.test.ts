@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { groupModelsByFamily, isUnknownModelName, modelFamily } from '../components/model-menu-groups'
+import { groupModelsByFamily, isUnknownModelName, modelFamily, modelRoleSlots } from '../components/model-menu-groups'
 
 const models = [
   { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
@@ -43,11 +43,26 @@ describe('P1-2 模型来源分组', () => {
     expect(isUnknownModelName('DeepSeek V4 Pro')).toBe(false)
   })
 
-  it('ChatPanel 真的用了分组、check 和未知折叠', () => {
+  it('角色徽标来自当前档案的真实槽位分配，不猜模型名字', () => {
+    const profile = {
+      slots: {
+        chat: { provider: 'deepseek', model: 'deepseek-v4-pro' },
+        subagent: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        vision: { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      },
+    }
+    expect(modelRoleSlots(profile, 'deepseek-v4-pro')).toEqual(['chat', 'vision'])
+    expect(modelRoleSlots(profile, 'deepseek-v4-flash')).toEqual(['subagent'])
+    expect(modelRoleSlots(profile, 'gpt-4o')).toEqual([])
+  })
+
+  it('ChatPanel 真的用了分组、check、未知折叠和角色徽标', () => {
     const src = readFileSync(join(__dirname, '..', 'components', 'ChatPanel.tsx'), 'utf8')
     expect(src).toContain('groupModelsByFamily(menuKnown, isFreeModelId)')
     expect(src).toContain('model-option-check')
     expect(src).toContain('model-unknown-group')
     expect(src).toContain('menuUnknown.map')
+    expect(src).toContain('renderModelRoles(m.id)')
+    expect(src).toContain('getModelProfileManager().getActiveProfile()')
   })
 })
