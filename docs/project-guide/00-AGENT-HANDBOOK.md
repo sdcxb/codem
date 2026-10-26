@@ -1,7 +1,7 @@
 # 00 · AI 接手手册（任何模型 / Agent 平台先读这份）
 
 > **目标**：只读这份手册 + `02-CODE-MAP.md` + `08-ENGINEERING-GATES.md`，就能在 **30–40 分钟**内安全地改第一行代码，并且知道“什么不能做、做完怎么证明”。
-> **基线**：2026-10-26 ｜ `master` @ `e1407753`（文档提交）｜ **1.16.330** ｜ Node 24.19 / rustc 1.97.1。
+> **基线**：2026-10-26 ｜ `master` @ 代码提交 `bb5d4cce`（文档集提交见 `git log -1`）｜ **1.16.330** ｜ Node 24.19 / rustc 1.97.1。
 > **适用范围**：`C:\mimo-gui` 这个仓库（Codem 桌面 AI 编程助手）。大富翁 / Godot 实验线见 `10-GAME-AND-PROTOTYPE.md`。
 
 ---
@@ -111,7 +111,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 |---|---|
 | 版本 | **1.16.330**（`package.json` / `tauri.conf.json` / `Cargo.toml` / `latest.json` 一致） |
 | 发布 | GitHub `Codem v1.16.330` = `Latest`（2026-10-23） |
-| HEAD | `e1407753`（文档提交；代码基线 `bb5d4cce`） |
+| HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce` |
 | `tsc --noEmit` | **0 错误** |
 | 全量测试 | **733 文件 / 8516 用例：8497 通过、17 跳过、2 失败**（约 149 秒） |
 | 两条失败 | ① `no-bom.test.ts`：18 个**未跟踪**游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺“历史文档”横幅。**都不是产品代码回归** |
