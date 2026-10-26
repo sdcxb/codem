@@ -426,18 +426,20 @@ P3       Hub/Dream 形状与背景气质
 - `css-contract` 2979 类、`scan-ui` 0/0；
 - 全量 **737 文件：735 通过 / 2 既有失败**、**8527 用例通过**。
 
-#### P2-6 设计（未实现，产品级）
+#### P2-6 设计（已纠正：复用现有管理面）
 
-对标 OMP：Home 是“最近 + 推荐 + 能力入口”的卡片列表，Agent Hub 是“列表 + 详情”，Capabilities/Models 是“可搜索卡片 + 详情”。Codem 已有真实数据源，不需要新后端：
+**上一版把“已有页面”误写成“待建数据源”，这里纠正。** Codem 已经有：
 
-| 页面 | 数据源 | 结构 | 关键判据 |
-|---|---|---|---|
-| Home | `useProjectStore.currentProject`、`SessionStorage.listSessions`、`getModelProfileManager().getActiveProfile()`、插件注册表 | 44px 页头 + 最近会话 5 条 + 继续任务 + 能力卡（模型/技能/MCP/插件） | 空项目、无会话、加载失败三态；不能用假数据 |
-| Agent Hub | `AgentProfileStorage`、`subagentTasks`、`TaskCenter` 的委派数据 | 左列表（搜索/状态过滤）+ 右详情（角色/slot/最近任务） | 选中态、空列表、运行中状态；不许复制 OMP 的 10 项全局 nav |
-| Capabilities | 插件/Skill/MCP 注册表（现有 `PluginManager`/`SkillManager`/`McpManager`） | 分组卡片 + 搜索 + 详情抽屉 | 已启用/未安装/不可用三态；点击直达现有管理器 |
-| Models | `getConfiguredApiModels`、`ModelProfile.slots`、free-model 可用性 | 来源分组 + 角色徽标 + 详情（上下文/模态/价格/可用性） | 未知模型折叠；角色必须来自档案槽位，不猜 |
+- `PluginManager`（插件市场/依赖/风险/免费模型）
+- `SkillManager`（我的技能/市场/安装/发布）
+- `McpManager`（服务器 CRUD/连接/JSON 导入/市场）
+- `AgentManager`（智能体定义列表/详情/编辑）
+- `TaskCenter`（delegation/subagents/teams/… 8 tab）
+- `ModelProfilePanel`（模型槽位）+ `ModelSelector`
 
-实现顺序：先 `#home` 路由和 `PageHeader`，再 Agent Hub 复用 TaskCenter 数据，最后 Capabilities/Models 只做“入口 + 详情”，不重写现有管理器。URL 统一 `#home / #agents / #capabilities / #models`，返回栈复用本轮 hash 机制。验收：1600/1280/1024 三档、空/加载/错误三态、键盘焦点、搜索直达。
+缺的只是 Home / Agent Hub / Capabilities / Models 四个**聚合视图**。P2-6 只做只读聚合 + 深链，任何写操作都打开原管理器；不复制 registry、市场、安装器、连接器、编辑表单。
+
+详见 [14-P26-AND-DENSITY.md](14-P26-AND-DENSITY.md) 第 1–3 节；URL 统一 `#home / #agents / #capabilities / #models`，返回栈复用本轮 hash 机制。
 
 ---
 
