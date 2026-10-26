@@ -810,7 +810,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 **P1 目标：一个块，但要有“活着”的感觉**
 
 - **位置**：移到 `msg-head` 之后、正文之前；正文之后仍是工具组。形成“思考（折叠）→ 正文 → 工具回执”的稳定顺序。不要声称这是真实时间线。
-- **折叠行**：26px；brain 14；`思考` 11.5/600 accent；`18s · 1,240 字` 10.5 muted；summary 11px 单行 ellipsis；chevron 12。
+- **折叠行**：26px；brain 14；`思考` 11.5/600 accent；`18s · 1,240 字` 10.5 muted（**18s 只在有真实 startedAt 时显示；没有就只显示字数，不造时长**）；summary 11px 单行 ellipsis；chevron 12。
   - 流式 summary 用 `latestLine`；完成后用 `firstLine`；空文本显示“（无摘要）”。
   - 流式中标题 `思考中...` + brain pulse，但不要和 `StreamingTimer` 抢同一个 spinner。
 - **展开体**：13px / 1.65，`max-height: 360`，内部滚动；`surface-2` 底；左 2px accent 40% 轨；radius `0 8 8 0`；padding 8/12；流式末尾 6×13 光标。
