@@ -86,6 +86,19 @@
   --dream-c79: rgba(255, 255, 255, 0.15);
   --dream-c80: rgba(30, 30, 46, 0.15);
   --dream-c81: rgba(255, 255, 255, 0.06);
+  /* 第 205 轮 P0-7：Dream 缺的 6 个语义 token。
+     不补会在浅色梦幻底上回落到默认档的深绿/深黄，状态色和粉紫气质打架。 */
+  --success: #1f7a3f;
+  --warning: #8a5c00;
+  --error: #c0263a;
+  --info: #5b6ee1;
+  --dropdown-bg: var(--dream-panel-bg);
+  --text-on-accent: var(--dream-c7);
+  /* 暗色状态色也收进令牌块：深色梦幻底不能沿用浅色档的深绿/深黄。 */
+  --dream-status-success-dark: #3fb950;
+  --dream-status-warning-dark: #d29922;
+  --dream-status-error-dark: #f85149;
+  --dream-status-info-dark: #58a6ff;
 }
 [data-skin="dream"][data-theme="dark"] {
   --dream-panel-bg: var(--dream-c1);
@@ -968,6 +981,12 @@ backdrop-filter: none !important;
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.18));
   --accent-soft: var(--dream-c49);
   --input-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.80));
+  --success: var(--dream-status-success-dark);
+  --warning: var(--dream-status-warning-dark);
+  --error: var(--dream-status-error-dark);
+  --info: var(--dream-status-info-dark);
+  --dropdown-bg: var(--dream-panel-bg);
+  --text-on-accent: var(--dream-c7);
 }
 
 /* 主容器：Dream 毛玻璃卡片 */

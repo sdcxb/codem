@@ -716,6 +716,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     ["help", ["帮助", "help", "关于", "教程"]],
     ["usage", ["用量统计", "usage", "费用", "token", "限额"]],
     ["performance", ["性能", "performance", "指标"]],
+    ["memory-checkup", ["记忆体检", "记忆", "memory", "体检", "checkup"]],
   ];
   // 由搜索词过滤出的匹配 tab（空 = 全部显示）
   const searchFilteredTabs = useMemo(() => {

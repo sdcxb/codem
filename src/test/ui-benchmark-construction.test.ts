@@ -13,6 +13,9 @@ import { join } from 'node:path'
 
 const ROOT = join(__dirname, '..', '..')
 const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+const codemUi = readFileSync(join(ROOT, 'src/styles/codem-ui.css'), 'utf8')
+const dream = readFileSync(join(ROOT, 'src/styles/skin-dream.css'), 'utf8')
+const settings = readFileSync(join(ROOT, 'src/components/SettingsPanel.tsx'), 'utf8')
 const reasoning = readFileSync(join(ROOT, 'src/components/ReasoningRow.tsx'), 'utf8')
 const bubble = readFileSync(join(ROOT, 'src/components/MessageBubble.tsx'), 'utf8')
 
@@ -45,6 +48,44 @@ describe('UI 对标施工合同', () => {
     expect(css).toContain('--text-base: #e6e7ea')
     expect(css).toContain('--border-primary: rgba(255, 255, 255, 0.12)')
     expect(css).toContain('--accent: #7c6cf0')
+  })
+
+  it('P0-5：设置项 30px，active 14% 软底 + accent-strong + 无 inset 条', () => {
+    const item = block(codemUi, '.settings-sidebar-item')
+    expect(item).toContain('height: 30px')
+    expect(item).toContain('flex-shrink: 0')
+    expect(item).toContain('font-size: var(--fs-sm)')
+    expect(item).toContain('padding: 0 var(--space-3)')
+
+    const active = block(codemUi, '.settings-sidebar-item.active')
+    expect(active).toContain('color-mix(in srgb, var(--accent) 14%, transparent)')
+    expect(active).toContain('color: var(--accent-strong)')
+    expect(active).toContain('box-shadow: none')
+    // 旧的实心规则和 aria-current inset 条都必须删掉；不能靠后加载压住
+    expect(block(css, '.settings-sidebar-item.active')).toBe('')
+    expect(css).not.toContain('.settings-sidebar-item[aria-current="page"]')
+  })
+
+  it('P0-6：Markdown 标题 16/15/14/13，不抢正文', () => {
+    expect(block(css, '.message-content h1')).toContain('font-size: var(--fs-lg)')
+    expect(block(css, '.message-content h2')).toContain('font-size: calc(var(--fs-lg) - 1px)')
+    expect(block(css, '.message-content h3')).toContain('font-size: var(--fs-md)')
+    expect(css).toMatch(/\.message-content h4,\s*\.message-content h5,\s*\.message-content h6\s*\{\s*font-size:\s*var\(--fs-base\)/)
+  })
+
+  it('P0-7：Dream 六个语义 token 齐备，设置搜索索引含记忆体检', () => {
+    for (const token of [
+      '--success:',
+      '--warning:',
+      '--error:',
+      '--info:',
+      '--dropdown-bg:',
+      '--text-on-accent:',
+    ]) {
+      expect(dream).toContain(token)
+    }
+    expect(settings).toContain('["memory-checkup"')
+    expect(settings).toContain('"记忆体检"')
   })
 
   it('思考块默认 24px 折叠、正文分块、位置在正文之前', () => {

@@ -81,6 +81,11 @@ describe("SEARCHMOVE-198 设置搜索框移到标题栏中间", () => {
     expect(PANEL, "缺「搜索后自动跳到首个匹配分组」的副作用").toMatch(/if \(first && first !== activeTab\) setActiveTab\(first as any\)/);
   });
 
+  it("SEARCHMOVE-198-3b 索引覆盖「记忆体检」（23 个 tab 不能漏）", () => {
+    expect(PANEL, "SETTINGS_TAB_INDEX 缺 memory-checkup 条目").toContain('["memory-checkup", ["记忆体检"');
+    expect(PANEL, "索引里要有「体检」搜索词").toMatch(/\["memory-checkup"[^\]]*"体检"/);
+  });
+
   it("SEARCHMOVE-198-4 样式走 `--in-header` 那一支，且用**存在**的令牌定高", () => {
     const body = cssRuleBody(".settings-search-box--in-header");
     /* 弹性撑开 + 上限 + min-width:0（防长占位符把容器撑破） */

@@ -35,7 +35,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 2 | 正文列 820；系统消息改左轨行（标题 16/15/14 留给 P0-6） | 907px + 20px h1 让聊天像网页 | 长消息截图；行宽/标题对照 |
 | 3 | 暗色边框 .14→**.12**，文字 #d4d4d4→#e6e7ea | 去“黑框套黑框”，提阅读对比；9% 会低于 DARK-UI-4 的 1.4:1 下限 | 对比度脚本 + 主界面截图 |
 | 4 | 焦点单环：保留 188/189 轮验收过的 `.input-textarea-row` 2px 环（不移到卡上）；其余 2px outline | 现有双环/常亮历史 | Tab 20 控件无“双环” |
-| 5 | 设置 active 20%→14%，行组卡片化 | 选中态厚重、内容散 | 设置页截图；行组圆角 |
+| 5 | 设置 active 20%→14%、34→30；行组卡片化延后 | 选中态厚重、内容散 | 设置页截图；行组圆角（下一轮） |
 | 6 | 命令面板改命令中心（分组/导航/快捷键） | 现在只是“项目搜索” | 四组命令截图；键盘可达 |
 | 7 | 模型菜单按角色分组 + 选中 check + 隐藏未知 | 现在是 10 行模型名 + `【未知】` | 首屏 ≤7 行；每行三要素 |
 | 8 | 侧栏/树密度：260 / 34 / 30 / 26；Git 字母 | 现在偏大、pill 吵 | 40 行滚动；hover 截图 |
@@ -317,15 +317,18 @@ P3       Hub/Dream 形状与背景气质
 - **P0-3** 暗色 `#0f1217 / #1a1d23 / #23272e / #2b3038`，`--text-base #e6e7ea`，边框 12%/7%；对比度门禁全过。
 - **P0-4** 保持既有 `.input-textarea-row` 单环（未移到卡上，避免违背 188/189 轮判据）。
 - **P0-8** 用户头像 24px；气泡仍是 `.15/.25 + 1px 3px`，未改实底。
+- **P0-5（active 部分）** 设置项 34→30、13→12px；active 20% 实底 + inset 条 → **14% 软底 + `--accent-strong` + 无 inset**；删掉 `styles.css` 旧实心规则与 `aria-current` inset 规则，避免 import 顺序复活。
+- **P0-6** Markdown 标题 16/15/14/13（h2 由 `calc(var(--fs-lg) - 1px)` 派生），间距 12/6。
+- **P0-7** Dream 补 `success/warning/error/info/dropdown-bg/text-on-accent`（暗色另有 4 个状态色 token）；设置搜索索引补 `memory-checkup`。
 - **P1-6** 思考块移到正文前；默认折叠 24px；段落级摘要；展开才挂 64 行/4096 字符分块 body；`content-visibility:auto`；无 ResizeObserver。
 
-未做（不在本轮）：P0-5 设置选中态、P0-6 标题降级、P0-7 三皮肤 token、全部 P1（cmdk/模型/侧栏/工具/空态）、P2。
+未做（不在本轮）：P0-5 的“行组卡片化”（23 个 tab 没有统一 group 容器，强行套卡会改所有表单流；留到 P1-7 与菜单/弹层一起做）、全部 P1（cmdk/模型/侧栏/工具/空态）、P2。
 
 判据：
 
 - 新增 `src/test/ui-benchmark-construction.test.ts`（4）、`src/test/reasoning-row-dsh.test.tsx`（3）；
 - 更新 `theme-boot` 暗色首帧、`color-roles` 两对真实父面数字、`css-contract` 快照；
-- `tsc` 0、`build` 0、全量 **735 文件：733 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8504 用例通过；`scan-ui` 0/0、`css-integrity` 通过。
+- `tsc` 0、`build` 0、全量 **735 文件：733 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8508 用例通过；`scan-ui` 0/0、`css-integrity` 通过。
 
 ---
 
@@ -785,10 +788,11 @@ P3       Hub/Dream 形状与背景气质
 
 **文件**：`src/styles/codem-ui.css`（`.settings-sidebar-item.active`）、`src/styles.css`（旧 `.settings-sidebar-item.active` 规则）、`src/styles.css`（`.settings-content` 行样式）。
 
-- active：`background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);`；高度 34→30。
+- active：`background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-strong);`；高度 34→30；**不要 inset 左边条**（原 `aria-current` 规则已从 styles.css 删除）。
 - **删掉 `styles.css` 里被后加载压住的实心 `.settings-sidebar-item.active` 规则**；不要依赖加载顺序，否则一次 import 调整就会复活。
-- 设置内容行：每组用 12px 卡片，行间 1px 分隔；label 13/500，desc 11/ muted，control 固定 200。
-- 设置弹窗先保留 760，P2 再议整页；P0 只改选中态和行组。
+- 设置项必须 `flex-shrink: 0`：侧栏是限高 flex 列，23 项在 60vh 里会被压扁（本轮实测 30→19.67px，就是这个坑）。
+- 设置内容行组卡片化**本轮不做**：23 个 tab 没有统一 group 容器，强行套 card 会改变所有表单流；留到 P1-7 与菜单/弹层一起做。
+- 设置弹窗先保留 760，P2 再议整页；P0 只改选中态。
 
 **验收**：
 

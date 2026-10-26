@@ -2986,13 +2986,20 @@ margin-top: var(--space-1);
   margin: 1em 0 0.5em;
 }
 
-/* Heading 字体大小分级，对齐 wecode markdown.css */
-.message-content h1 { font-size: var(--fs-2xl); font-weight: 600; }
-.message-content h2 { font-size: var(--fs-xl); font-weight: 600; }
-.message-content h3 { font-size: var(--fs-lg); font-weight: 600; }
+/* Heading 字体大小分级（第 205 轮 P0-6）：16/15/14/13，标题不再抢正文。
+   h2 的 15px 用 calc 从 --fs-lg 派生，避免在 --fs-* 刻度外再手写一个死字号。 */
+.message-content h1 { font-size: var(--fs-lg); font-weight: 600; }
+.message-content h2 { font-size: calc(var(--fs-lg) - 1px); font-weight: 600; }
+.message-content h3 { font-size: var(--fs-md); font-weight: 600; }
 .message-content h4,
 .message-content h5,
-.message-content h6 { font-size: var(--fs-md); font-weight: 600; }
+.message-content h6 { font-size: var(--fs-base); font-weight: 600; }
+.assistant .message-content h1,
+.assistant .message-content h2,
+.assistant .message-content h3,
+.assistant .message-content h4 {
+  margin: var(--space-6) 0 var(--space-3);
+}
 
 /* ========== Code Blocks ========== */
 .code-block {
@@ -5103,11 +5110,6 @@ background: var(--bg-secondary);
 .settings-sidebar-item:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-.settings-sidebar-item.active {
-  background: var(--accent);
-  color: var(--text-on-accent);
 }
 
 .settings-sidebar-item .sidebar-icon {
@@ -19649,16 +19651,11 @@ select:focus-visible {
 [aria-current="page"] {
   font-weight: var(--weight-semibold);
 }
-.settings-sidebar-item[aria-current="page"],
 .nb-view-tab[aria-selected="true"],
 .sp-tab[aria-selected="true"],
 .tc-tab[aria-selected="true"],
 .tool-call-pill[aria-expanded="true"] {
   color: var(--text-primary);
-}
-.settings-sidebar-item[aria-current="page"] {
-  background: var(--bg-hover);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 .nb-view-tab[aria-selected="true"],
 .sp-tab[aria-selected="true"],
