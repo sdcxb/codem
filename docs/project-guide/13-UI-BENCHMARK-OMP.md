@@ -41,7 +41,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 8 | 侧栏/树密度：260 / 34 / 30 / 26；Git 字母 | 现在偏大、pill 吵 | 40 行滚动；hover 截图 |
 | 9 | 工具去“每张卡”边框，改行 + 状态轨 | 连续调用像一叠盒子 | 5 个工具连续截图 |
 | 10 | 用户气泡保留原版半透明紫 + 轻阴影 | 用户 review：原版比 OMP 实底更精致 | 与原版截图并排；暗/亮/三皮肤对比度 |
-| 11 | 思考块保留 Codem 的“整体一段”，先做活人感 | OMP 是 per-think 分段卡；Codem 数据模型只有一段 `message.reasoning` | 流式中最新行、完成后首行、展开全文；不按空行伪造分段 |
+| 11 | 思考块对齐 **DSH 的单行 ReasoningRow**，不是 OMP 的多卡 | OMP 是 per-think 分段卡；DSH 是单行 + 段落摘要 | 折叠 24px 固定高、流式段落首行、展开分块 body；不按空行伪造分段 |
 
 ### 0.2 HTML 预演验证（2026-10-26）
 
@@ -63,7 +63,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | 工具行 + 左状态轨成立，但代码面板与卡片同色会糊 | 代码面板用 `--surface-2`，工具行用 `--surface`；不要加外框 |
 | 暗色 `#101318` 比 OMP `#121519` 还黑一档 | 保留 `#101318` 作为 Codem 底色；如果实拍仍偏黑，再试 `#111419`，不要直接复制 OMP |
 | 设置 active 14% 在暗色成立；20% 明显成块 | P0-5 的 14% 保持；**删掉被覆盖的旧实心规则** |
-| Codem 的 `message.reasoning` 是**一整段**，OMP 的 `ThinkCard` 是 per-think 时间线卡 | **不照搬 OMP 分段**：P1-6 保留整体模型，做“最新行/首行 + 展开全文 + 跟随最新”；真分段需要 `reasoningSegments` 数据模型，放 P2 可选 |
+| Codem 的 `message.reasoning` 是**一整段**，OMP 的 `ThinkCard` 是 per-think 时间线卡 | **最终不做分段卡**：P1-6 对齐 DSH 单行（段落级摘要 + 固定 24px 折叠 + 展开分块 body）；不改数据模型 |
 
 **预演没有解决的问题**（不要假装已经解决）：
 
@@ -194,7 +194,15 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 
 ### 0.4 思考流渲染性能分析（2026-10-26）
 
-> 先纠正一个前提：**Codem 的 UI 不是每 token 重渲染**。`App.tsx:1775-1801` 的 `flushReasoningBuffer` 已经按 **100ms** 批量 flush；`ReasoningRow` 每 100ms 才收到一次新 `text`。真正每 delta 都做的是 `executor.ts:601` 的 `MessageStorage.updateMessage`（同步写日志 + 索引 IPC + FTS）。所以“整段渲染导致每 token 重排”这个判断不准确，瓶颈要分层看。
+> **先纠正我上一轮说错的地方。** 主聊天路径**不是**每个 `reasoning_delta` 写一次库：
+> - `App.tsx:1775-1801` 已经按 **100ms** 批量 flush；
+> - `appendToMessage` / `safeUpdateMessage` 在主聊天里是**纯内存**；
+> - 落库走 2 秒 autosave / 回合边界 / 工具边界，不是每个 delta；
+> - 真机 `msgw=0`（`docs/PROJECT-GUIDE.md:1157`）已经明确否定了“交互路径每个 delta 写库”这个判断。
+>
+> `executor.ts:601` 的每 delta `updateMessage` 属于**后台/委派路径**（delegation、微信桥、手机续聊），不是主聊天 UI。把这个当成“主聊天最大性能风险”是我上一轮**过度推断**，现在撤回。
+>
+> 因此下面的分析只回答两件事：**长 reasoning 在单块里怎么渲染**，以及**要不要改成分段卡**。
 
 #### 0.4.1 DOM 微基准（不是产品 benchmark）
 
@@ -212,35 +220,48 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 60k 时，**已完成段冻结 + 只更新尾段** 的布局成本低一个数量级；`content-visibility` 再把已完成段从布局里摘掉，收益更大。这是“分段/分块”的真实收益。
 - 反过来，如果每段都重渲染、所有段都挂载、每段都做 Markdown/高亮，**卡片越多越慢**。收益来自“已完成内容冻结 + 只更新尾部”，不是“卡片数量”。
 
-#### 0.4.2 结论：要调的是“增量单位”，不一定是“数据模型”
+#### 0.4.2 DSH / Codex 的源码证据（不是凭“主流”猜）
 
-- **OMP 的性能并不是因为“卡多”**：它的 `ThinkCard` 是 `memo`，`useLazyExpand` 折叠时不挂 body，`ChunkedText` 按 64 行分块 + `content-visibility:auto`，`follow` 只跟随正在运行的那一张。
-- **Codex CLI 是终端渲染**，和 React/DOM 不是同一套性能模型；“主流都分段”不能直接证明 Codem 必须改协议。
-- **Codem 当前真正贵的地方**：
-  1. `executor.ts` 每个 `reasoning_delta` 同步 `updateMessage`（日志 + 索引 + FTS），与 token 数同向增长；UI 100ms 批量并不能省这部分。
-  2. 流式默认展开，`ReasoningRow` 把完整 reasoning 放进一个 `pre-wrap` 文本节点；60k 时每 100ms 布局一次，微基准 p95 已到 25.5ms、max 33.4ms。
-  3. 折叠时只渲染 summary，成本很低；所以“长思考 + 默认展开”才是最差组合。
-- **所以优先级**：
-  1. **先做 chunked 单块**（不改数据模型）：把正文按 64 行分块、`content-visibility:auto`，只更新尾块；折叠时 body 不挂载。预计能吃到微基准的大部分收益。
-  2. **再做持久化批量**：`reasoning_delta` 的 `updateMessage` 改成 100–250ms 批量，tool_start/tool_complete/end/error 强制 flush；用现有 `takeMessageWriteStats()` 量 calls/ms/max，不要凭感觉。
-  3. **最后才评估分段卡**：只有产品明确要 OMP 的时间线，才改 `reasoningSegments`；否则不要为“看起来像”付数据模型成本。
-- **不要**把“分段卡”当成性能优化：它只有在 **memo + 懒挂载 + 尾段更新 + 段数上限/合并** 都成立时才更快；否则 50 张卡的重渲染会比一个块更慢。
+**DSH（开源：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)，本机安装 `@deepseek-ai/dsh 0.2.1-rc.2`）**
 
-#### 0.4.3 对 P1-6 的修改
+- 持久化：`dsh-session-persistence-jsonl` 的 `enqueueLive()` 把 live 事件放进缓冲，**固定 200ms** 窗口后 single-flight drain（`lib/index.js` 的 `setTimeout(..., 200)`）；不是每个 delta 一次 fsync。
+- 推理 UI：`dsh-client-ui-chat` 的 `ReasoningRow` 是**一个 assistant reasoning block**，不是 per-thought 卡：
+  - `summaryText = running ? latestCompletedParagraphFirstLine(text) : firstLine(text)`；
+  - 折叠时 `contain: size layout`、固定 `24px + font delta`，**不挂 body**；
+  - 展开才挂 Markdown body；`memo` + `useMemo`；`TextShimmer` 做流式高光。
+- 实时发布：工具 delta 与推理共用**按帧合并**的发布节奏；持久调用/结果立即发布。
+- 结论：DSH 是“**单行 + 段落级摘要 + 固定折叠高度 + 展开 body**”，不是 OMP 的多张 ThinkCard。
 
-- P1-6 从“只改位置/样式”升级为：
-  - **折叠时只渲染 summary**，body 不挂载（成本接近 0）；
-  - **展开时按 64 行分块**，已完成块 `content-visibility:auto`，只更新尾块；
-  - 流式超过 **20k 字符**自动回到“summary + 展开全文”，不默认挂完整 body；
-  - 用户手动展开后，保持展开但只挂最近 2 个块 + 可视区，其余按需挂载。
-- P1-6b 新增“持久化批量”性能项（0.5–1 天，不改视觉）：见 0.3.9/0.4.2；必须有 crash/异常 flush 判据。
-- P2-5 分段卡保留为“产品要 OMP 时间线才做”，不是性能前置。
+**Codex Windows（Electron 桌面 + Rust app-server，闭源）**
+
+- 本地安装研究：[Codex Windows UI/UX study](https://github.com/anthony-chaudhary/fak/blob/f4984534c97a92f18956b64beac0823a200d6931/docs/notes/2026-09-05-codex-desktop-windows-uiux-harness-study.md) 记录它是 Electron 42.3 + `codex.exe app-server` + SQLite 历史；不是纯 CLI。
+- 推理 UI 有已知 issue：
+  - [#33996](https://github.com/openai/codex/issues/33996)：**并发 reasoning summaries** 与 `ResizeObserver loop completed with undelivered notifications`、Windows UI 卡死/Not Responding 强相关；关掉 `concurrent_reasoning_summaries` 后该环境恢复。
+  - [#43679](https://github.com/openai/codex/issues/43679)：Chat 的 thinking disclosure 在首个 summary 到达时仍保持 collapsed；说明它也是**disclosure 行 + summary**，不是每 token 一张卡。
+- 结论：Codex 的“分段”更接近 **reasoning summary item/disclosure**；它自己就出现过“多 summary 并发 → 布局反馈循环 → UI 卡”的事故。**不能把“主流分段”当成性能更优的证明。**
+
+**OMP**
+
+- `BatchChain.tsx:147-191` 的 `ThinkCard` 是真正的 per-think timeline item；它快是因为 `memo` + `useLazyExpand` + `ChunkedText` 64 行 + `content-visibility` + 只跟尾，而不是“卡多”。
+
+#### 0.4.3 最终判断：保留单块，做 DSH 级单行，不做分段卡
+
+- **数据模型不改**：`message.reasoning: string` 继续用；不引入 `reasoningSegments`，不改 DB/API，不做旧会话迁移。
+- **UI 采用 DSH 的形状**：
+  - 一条 assistant 消息一个 `ReasoningRow`；
+  - 流式 summary 用**最近一个已完成段落的首行**，完成态用首行；不要每字符横向滚动；
+  - 折叠态固定 24px，`contain: size layout`，body 不挂载；
+  - 展开态才挂 body，按 64 行分块 + `content-visibility:auto`，只更新尾块；
+  - 不把 `ResizeObserver` 绑在会随 summary 变高的行上（Codex #33996 的教训）。
+- **主聊天性能风险**：不是写库，是“60k 长文本 + 流式默认展开 + 一个 `pre-wrap` 节点每 100ms 重排”。修法是分块/折叠，不是加卡片。
+- **后台/委派路径的每 delta 写库**是另一个问题：只影响 delegation/微信/手机后台，不影响主聊天；单独开 perf ticket，不混进这次 UI 一步到位。
+- **P2-5 取消**：不做 per-thought 分段卡。不是“以后再说”，是**当前证据不支持**它作为默认架构。
 
 **性能验收门槛**：
 
-- 60k 字符 reasoning，流式 10 次/秒更新，Edge 真机：**无 >50ms 长帧**；p95 frame work ≤8ms；页面滚动不跳。
-- `takeMessageWriteStats()`：60k reasoning 的 `updateMessage` 调用次数从“按 delta”降到 **≤10 次/秒 + 边界 flush**；`maxMs` 不高于基线。
-- 分段卡若做：段数 >30 时必须合并/虚拟化；已完成段 0 重渲染（React Profiler 验证）。
+- 60k 字符 reasoning，10 次/秒更新：p95 frame work ≤16.7ms、无 >50ms 长帧；折叠态高度稳定 24px。
+- 主聊天 `takeMessageWriteStats()` 保持 **0 次/轮**（现状），不能因为重构引入 per-delta 写库。
+- 展开 body 的已完成块 0 重渲染（React Profiler）；不出现 ResizeObserver 反馈循环。
 
 ---
 
@@ -856,49 +877,36 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 数据：`Message.reasoning?: string`（`src/core/llm/types.ts:102`）——一条 assistant 消息只有**一段** reasoning；`ReasoningRow` 只接收 `text` + `running`。
 - 位置：`MessageBubble` 先渲染正文（约 789 行），再渲染 `ReasoningRow`（约 871 行），最后才是 `toolCalls`（约 876 行）。所以现在是“回答 → 思考 → 工具回执”，不是 OMP 的“思考卡 → 工具卡 → 回答”时间线。
 - 已有能力：流式时 `latestLine` 跟随 + 摘要自动滚到末尾；展开后整段正文 + 光标；历史默认折叠。**基础已经像样，不需要换成 OMP 的 `ThinkCard` 结构。**
+- 但 `latestLine` 每 100ms 横向滚动一个**未完成行**，视觉上会“抖”；DSH 的做法是等一个**段落完成**再换摘要。
 
-**P1 目标：一个块，但要有“活着”的感觉**
+**P1 目标：对齐 DSH 的“单行 + 段落摘要”，不是 OMP 的“多卡”**
 
 - **位置**：移到 `msg-head` 之后、正文之前；正文之后仍是工具组。形成“思考（折叠）→ 正文 → 工具回执”的稳定顺序。不要声称这是真实时间线。
-- **折叠行**：26px；brain 14；`思考` 11.5/600 accent；`18s · 1,240 字` 10.5 muted（**18s 只在有真实 startedAt 时显示；没有就只显示字数，不造时长**）；summary 11px 单行 ellipsis；chevron 12。
-  - 流式 summary 用 `latestLine`；完成后用 `firstLine`；空文本显示“（无摘要）”。
-  - 流式中标题 `思考中...` + brain pulse，但不要和 `StreamingTimer` 抢同一个 spinner。
+- **折叠行**：**24px**；brain 14；`思考` 11.5/600 accent；`18s · 1,240 字` 10.5 muted（**18s 只在有真实 startedAt 时显示；没有就只显示字数，不造时长**）；summary 13px/20px 单行 ellipsis；chevron 12。
+  - 流式 summary 用 **`latestCompletedParagraphFirstLine`**（最近一个已完成段落的首行），不是 `latestLine`；完成后用 `firstLine`；空文本显示“（无摘要）”。
+  - 流式中标题 `思考中...` + brain pulse；**折叠行高度固定 24px + `contain: size layout`**，不让 summary 变化触发父级尺寸观察。
+- **折叠策略**：**流式默认折叠**（只显示 summary，body 不挂载）；用户手动展开才挂 body；用户收起后不因新 token 重开；历史默认折叠。这样长思考的默认渲染成本接近 0，同时 summary 按段推进，仍然“活着”。
 - **展开体**：13px / 1.65，`max-height: 360`，内部滚动；`surface-2` 底；左 2px accent 40% 轨；radius `0 8 8 0`；padding 8/12；流式末尾 6×13 光标。
-- **跟随**：只有用户位于底部时才 auto-follow 最新；用户上滚后停止跟随并显示“回到最新”小按钮，不要每帧抢滚动。
-- **折叠策略**：流式默认展开；用户手动收起后**不因新 token 重开**；完成后保持用户选择；历史默认折叠。现有 `reasoningAutoCollapsedRef` 逻辑保留，只改位置与样式。
-- **长文本**：折叠时 **body 不挂载**（成本接近 0）；展开时按 64 行分块 + `content-visibility:auto`，只更新尾块，不要把完整 60k 文本塞进一个 `pre-wrap` 节点每 100ms 重排。
-- **流式阈值**：超过 **20k 字符**自动回到“summary + 展开全文”，不默认挂完整 body；用户手动展开后挂可视区 + 最近 2 块，其余按需挂载。
+- **长文本**：展开时按 64 行分块 + `content-visibility:auto`，只更新尾块；不要把完整 60k 文本塞进一个 `pre-wrap` 节点每 100ms 重排。
+- **跟随**：展开体只有用户位于底部时才 auto-follow 最新；用户上滚后停止跟随并显示“回到最新”小按钮，不要每帧抢滚动。
 - **a11y**：toggle `aria-expanded` / `aria-controls`；正文 `role="region"` + `aria-label="思考过程"`；不要对每个 token 做 `aria-live`，只对“思考中/完成”节流播报。
 
 **明确不做**
 
-- 不按空行/句号把一段 reasoning 切成多张“ThinkCard”——那是**伪造时间线**，会误导用户以为思考和工具是交替发生的。
-- P1 不改数据库/事件协议；`message.reasoning` 仍是一段。
+- **不做 per-thought `ThinkCard`**：DSH 是单行 ReasoningRow；Codex 的 reasoning summary 有 #33996 的 ResizeObserver/UI 卡死前科；OMP 的 per-think 卡是它自己的产品选择，不是性能或主流共识。
+- 不按空行/句号把一段 reasoning 切成多张卡——那是**伪造时间线**，会误导用户以为思考和工具是交替发生的。
+- 不改数据库/事件协议；`message.reasoning` 仍是一段；主聊天落库仍是 2 秒/边界，不做 per-delta 写库。
+- 不改 `StreamingTimer` / 状态行；思考行不抢同一个 spinner。
 
 **验收**：
 
-- 流式：summary 跟随最新行；展开体光标可见；用户上滚后不跳。
-- 完成：summary 首行；`18s · 1,240 字`；折叠/展开状态保持。
+- 流式：折叠态固定 24px；summary 按**段落完成**推进，不逐字符抖；展开体光标可见；用户上滚后不跳。
+- 完成：summary 首行；字数真实；折叠/展开状态保持；`18s` 只在有 startedAt 时出现。
 - 历史：默认折叠；展开完整；长文本在 360 内滚动。
-- 位置：在正文之前、工具之前；和 OMP 并排看，明确“我们是一个块，不是多张卡”。
+- 位置：在正文之前、工具之前；和 DSH 的 ReasoningRow 并排看，明确“一个块，不是多张卡”。
+- **性能**：60k 字符、10 次/秒更新，折叠态无长帧；展开态 p95 ≤16.7ms、无 >50ms；主聊天 `msgw` 保持 0。
 
-#### P1-6b 思考持久化批量（0.5–1 天，不改视觉）
-
-**文件**：`src/core/session/executor.ts:601`、`src/core/storage/message.ts`。
-
-- 现状：每个 `reasoning_delta` 都同步 `MessageStorage.updateMessage`（日志 + 索引 IPC + FTS）；UI 的 100ms 批量只省了 React，没省这里。
-- 改成 **100–250ms 批量**：reasoning 缓冲 + 定时 flush；以下边界强制 flush：
-  - `tool_start` / `tool_complete` / `tool_error`
-  - 回合结束 / 错误 / 取消
-  - 切换会话 / 窗口关闭前
-- 用现有 `takeMessageWriteStats()` 记录 calls/ms/maxMs；加判据：批量后调用次数下降，但**工具前/结束后至少各落一次**，不能丢 reasoning。
-- 不做“只写最终值”：崩溃/强制退出时最后一段 reasoning 允许最多一个 flush 窗口丢失，和不写不同，要在测试里明确。
-
-**验收**：
-
-- 60k reasoning：`updateMessage` 调用从“每个 delta”降到 **≤10 次/秒 + 边界 flush**；`maxMs` 不高于基线。
-- 工具开始/结束、异常、退出路径各有一个 flush 判据；重启后 reasoning 不丢整段。
-- 不改 DB schema、不改 API 协议、不改历史消息读取。
+> **后台/委派路径的 per-delta 写库不在这次“一步到位”里。** `executor.ts` 只服务 delegation / 微信桥 / 手机续聊；它确实是每个 reasoning_delta 同步写，但主聊天 `msgw=0`。如果以后后台会话慢，单独开 `perf(delegation): batch reasoning persistence`，不要混进 UI 重构的验收。
 
 #### P1-7 设置行组 + 菜单/弹层
 
@@ -930,8 +938,8 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **右侧 Inspector 常驻**：项目会话默认展开 **400px**，复用 `PanelSidebar` 的 Files/Git/Changes；1440 宽 360，≤1280 收起；Composer/正文列仍 820。
 3. **底部面板**：默认 **34px 折叠**；终端按需展开 **190px**；不做 OMP 的常驻 240；与右侧 Inspector 不重复。
 4. **页面级导航**：仅对设置/任务中心/知识/用量等“全屏页”加 44px 页头 + 图标 nav；不要动聊天主区。
-5. **分段思考时间线（可选，需数据模型）**：如果产品明确要 OMP 的 per-think 卡，必须先把 `message.reasoning: string` 升级为 `reasoningSegments[]`（含 `stepId/toolCallId/startedAt/endedAt`），由 agent loop 在 `reasoning_delta` 边界写入；只对新会话启用、旧消息回退单块；不按空行猜分段。成本 2–4 天 + DB/事件契约测试，不在 P1 做。**性能上它不是前置**：0.4 的微基准说明，先做 chunked 单块 + 批量写库，收益更大、风险更低；分段卡只有在 memo/懒挂载/段数上限成立时才值得做。
-5. **Home/Agent Hub/Capabilities/Models**：按 OMP 的“列表 + 详情/卡片”重构；这是产品功能，不是纯 UI，需单独立项。
+5. ~~**分段思考时间线（可选，需数据模型）**~~ **取消**：DSH 是单行 ReasoningRow，Codex 的 reasoning summary 有 ResizeObserver/UI 卡死前科；OMP 的 per-think 卡不是性能或主流共识。Codem 不做 per-thought `ThinkCard`，不改 `reasoningSegments`。
+6. **Home/Agent Hub/Capabilities/Models**：按 OMP 的“列表 + 详情/卡片”重构；这是产品功能，不是纯 UI，需单独立项。
 
 ### 6.4 P3：皮肤与持续治理
 
@@ -1037,7 +1045,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - [ ] 用户气泡保持原版半透明紫（15%/25% + 轻阴影 + 24px 头像），没有变成 OMP 实底。
 - [ ] 不只靠颜色：diff 有 +/−、Git 有字母、状态有图标/文字。
 - [ ] 思考块在正文之前：流式 summary 跟随最新行、展开体有光标、用户上滚不跳；完成后首行 + 字数；不按空行伪造分段。
-- [ ] 60k 字符 reasoning 流式 p95 frame ≤16.7ms、无 >50ms 长帧；`updateMessage` ≤10 次/秒 + 工具/结束边界 flush；分段卡不做假时间线。
+- [ ] 60k 字符 reasoning 流式 p95 frame ≤16.7ms、无 >50ms 长帧；折叠态固定 24px；主聊天 `msgw` 保持 0（不因重构引入 per-delta 写库）；不做分段卡。
 
 ### 7.5 建议的提交粒度
 
@@ -1054,8 +1062,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | P1-1 | `feat(cmdk): grouped command center` | 只改命令面板 |
 | P1-2 | `feat(model): role-based picker` | 只改模型菜单 |
 | P1-3 | `style(sidebar): density + tree status` | 只改侧栏/树 |
-| P1-6 | `style(chat): live grouped reasoning` | 只改思考块 |
-| P1-6b | `perf(chat): batch reasoning persistence` | 只改写入频率/边界 |
+| P1-6 | `style(chat): DSH-like reasoning row` | 只改思考块（不改数据模型） |
 | P1-4 | `style(tools): row-first tool surface` | 只改工具 |
 
 > 不要一个 commit 同时改 token + 布局 + 组件；否则截图差异无法归因，回滚也会带走别的改动。
