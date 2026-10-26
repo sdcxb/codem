@@ -29,7 +29,7 @@ import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2, Zap } from "lucide-react";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2, Zap, AlertTriangle } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import { getAttachmentContent } from "../core/storage/message";
 import type { UserConfig } from "../core/types";
@@ -272,6 +272,7 @@ const lang = useLang();
   const [pendingAttachment, setPendingAttachment] = useState<{ id: string; tries: number } | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
   const [contentCollapsed, setContentCollapsed] = useState(false);
+  const [systemExpanded, setSystemExpanded] = useState(false);
 const [copied, setCopied] = useState(false);
 const [isEditing, setIsEditing] = useState(false);
 const [isEditingRewind, setIsEditingRewind] = useState(false);
@@ -598,6 +599,37 @@ setCopied(true);
 setTimeout(() => setCopied(false), 2000);
 });
 }, [rawContent]);
+
+  /*
+   * 机器注入的 [SYSTEM] 提醒是给模型的上下文，不是用户消息。
+   * 不隐藏它（SYSINJ 要求提醒内容仍可取证），但压成一行状态；
+   * 原始大段只在点开后显示，避免它抢走整轮对话的视觉主体。
+   */
+  if (isSystem && machineInjected && !delegatedTask) {
+    const noticeText = displayContent.replace(/^\[SYSTEM\]\s*/, "").replace(/\*\*/g, "");
+    const noticeSummary = noticeText.split("\n")[0]?.slice(0, 160) || noticeText.slice(0, 160);
+    return (
+      <div
+        className="message message-bubble system system-status"
+        data-message-id={message.id}
+        data-message-kind="system"
+      >
+        <button
+          className="system-status-head"
+          aria-expanded={systemExpanded}
+          onClick={() => setSystemExpanded((v) => !v)}
+        >
+          <AlertTriangle className="icon-sm system-status-icon" />
+          <span className="system-status-title">{lang === "zh" ? "系统提醒" : "System notice"}</span>
+          <span className="system-status-summary">{noticeSummary}</span>
+          {systemExpanded ? <ChevronUp className="icon-xs" /> : <ChevronDown className="icon-xs" />}
+        </button>
+        {systemExpanded && (
+          <div className="system-status-body">{noticeText}</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div 
