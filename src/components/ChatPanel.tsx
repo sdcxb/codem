@@ -36,7 +36,7 @@ import { useDomainReady } from "../hooks/use-domain-ready";
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
-  Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
+  Search, X, GitFork, RotateCcw, Check, AlertTriangle, Hammer, ClipboardList, Zap,
   Activity, Pencil, Paperclip,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
@@ -1296,13 +1296,23 @@ setStepTooltipLocked(false);
             } else if (displayMessages[effectiveIdx + 1]?.role === "user" && !isMachineInjectedMessage(displayMessages[effectiveIdx + 1])) {
               isTurnEnd = true;
             }
-            // 本回合的工具数要从整段 turn 统计；最后一条 assistant 往往只是收尾文本，
-            // 直接读 msg.toolCalls 会得到 0（截图里的“1 轮 · 0 个工具”就是这么来的）。
-            let turnToolCount = 0;
-            for (let i = effectiveIdx; i >= 0; i--) {
-              const turnMsg = displayMessages[i];
-              if (turnMsg.role === "user" && !isMachineInjectedMessage(turnMsg)) break;
-              turnToolCount += turnMsg.toolCalls?.length ?? 0;
+            // 本回合末尾若停在机器提醒（verify-nudge / completion-nudges）且
+            // 后面没有 assistant 回应，就不能显示“任务完成”。
+            let turnHasUnverifiedNudge = false;
+            for (let i = effectiveIdx + 1; i < displayMessages.length; i++) {
+              const nextMsg = displayMessages[i];
+              if (nextMsg.role === "user" && !isMachineInjectedMessage(nextMsg)) break;
+              if (nextMsg.role === "assistant") {
+                turnHasUnverifiedNudge = false;
+                continue;
+              }
+              if (
+                nextMsg.role === "user" &&
+                isMachineInjectedMessage(nextMsg) &&
+                /^(verify-nudge-|completion-nudges-)/.test(String(nextMsg.id))
+              ) {
+                turnHasUnverifiedNudge = true;
+              }
             }
 
             // Check if this turn has any assistant response (walk backwards to find user start)
@@ -1367,13 +1377,13 @@ canEdit={!isSessionStreaming}
                 by using groupLastIdx for boundary detection. */}
 {isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
-                <span className="task-complete-badge">
-                  <Check size={14} />
-                  {lang === "zh" ? "任务完成" : "Done"}
+                <span className={`task-complete-badge${turnHasUnverifiedNudge ? " is-warning" : ""}`}>
+                  {turnHasUnverifiedNudge ? <AlertTriangle size={14} /> : <Check size={14} />}
+                  {turnHasUnverifiedNudge
+                    ? (lang === "zh" ? "待验证" : "Needs verification")
+                    : (lang === "zh" ? "完成" : "Done")}
                 </span>
-                <span className="qa-turn-meta">
-                  {lang === "zh" ? "1 轮" : "1 turn"} · {turnToolCount} {lang === "zh" ? "个工具" : "tools"}
-                </span>
+                <span className="qa-turn-meta">{lang === "zh" ? "1 轮" : "1 turn"}</span>
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>

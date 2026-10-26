@@ -1935,6 +1935,18 @@ flex-shrink: 0;
   color: var(--text-on-status);
 }
 
+/* 分区标题里的“+”是普通流内按钮；套用项目行的绝对定位会把右侧留出 32px 空白。 */
+.sidebar-section-header .sidebar-add-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  transform: none;
+  opacity: 1;
+}
+
 .sidebar-project-more-wrapper {
   position: absolute;
   top: 50%;
@@ -2740,16 +2752,25 @@ opacity: 0.5;
 .task-complete-badge {
 display: inline-flex;
 align-items: center;
-gap: var(--space-2);
+gap: var(--space-1);
 margin-right: 0;
-padding: var(--space-1) var(--space-5);
+padding: 0;
 font-size: var(--fs-sm);
 font-weight: 500;
-color: var(--accent);
-background: color-mix(in srgb, var(--accent) 12%, transparent);
-border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-border-radius: var(--radius-md);
+color: var(--text-secondary);
+background: transparent;
+border: 0;
+border-radius: 0;
 user-select: none;
+}
+
+.task-complete-badge svg {
+  color: var(--success);
+}
+
+.task-complete-badge.is-warning,
+.task-complete-badge.is-warning svg {
+  color: var(--warning);
 }
 
 .qa-turn-btn {
