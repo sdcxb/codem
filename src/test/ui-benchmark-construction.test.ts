@@ -112,6 +112,8 @@ describe('UI 对标施工合同', () => {
     expect(chat).toContain('turnCount')
     expect(chat).toContain('contextPercent')
     expect(chat).toContain('modeLabel')
+    expect(chat).toContain('qa-turn-meta')
+    expect(block(css, '.right-sidebar')).toContain('background: var(--sidebar-bg)')
   })
 
   it('P2-1：设置 1080 工作台，侧栏 220，头部 52，内容区最高 760', () => {

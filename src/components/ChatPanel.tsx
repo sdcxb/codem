@@ -1296,6 +1296,15 @@ setStepTooltipLocked(false);
             } else if (displayMessages[effectiveIdx + 1]?.role === "user" && !isMachineInjectedMessage(displayMessages[effectiveIdx + 1])) {
               isTurnEnd = true;
             }
+            // 本回合的工具数要从整段 turn 统计；最后一条 assistant 往往只是收尾文本，
+            // 直接读 msg.toolCalls 会得到 0（截图里的“1 轮 · 0 个工具”就是这么来的）。
+            let turnToolCount = 0;
+            for (let i = effectiveIdx; i >= 0; i--) {
+              const turnMsg = displayMessages[i];
+              if (turnMsg.role === "user" && !isMachineInjectedMessage(turnMsg)) break;
+              turnToolCount += turnMsg.toolCalls?.length ?? 0;
+            }
+
             // Check if this turn has any assistant response (walk backwards to find user start)
             let isTurnWithResponse = false;
             if (isTurnEnd) {
@@ -1361,6 +1370,9 @@ canEdit={!isSessionStreaming}
                 <span className="task-complete-badge">
                   <Check size={14} />
                   {lang === "zh" ? "任务完成" : "Done"}
+                </span>
+                <span className="qa-turn-meta">
+                  {lang === "zh" ? "1 轮" : "1 turn"} · {turnToolCount} {lang === "zh" ? "个工具" : "tools"}
                 </span>
                 {onFork && (
                   <Tooltip>
