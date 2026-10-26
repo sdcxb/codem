@@ -2148,6 +2148,22 @@
     "gap": "var(--space-3)",
     "padding": "var(--space-2) var(--space-6) 0"
   },
+  "composer-foot": {
+    "align-items": "center",
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "font-size": "var(--fs-2xs)",
+    "gap": "var(--space-2)",
+    "margin": "var(--space-1) auto 0",
+    "max-width": "var(--reading-column)",
+    "width": "100%"
+  },
+  "composer-foot-lock": {
+    "color": "var(--success)"
+  },
+  "composer-foot-right": {
+    "margin-left": "auto"
+  },
   "config-body": {
     "display": "flex",
     "flex-direction": "column",

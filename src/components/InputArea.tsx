@@ -904,7 +904,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     : disabled ? S.sidebar.disabledHint[lang]
     : isStreaming && onSendGuidance
       ? (lang === "zh" ? "输入消息，回车发送将作为引导消息注入当前任务" : "Type a message - Enter will inject it as guidance into the running task")
-    : tipList[tipIndex];
+    : (lang === "zh" ? "输入消息…  @ 提及文件  / 命令" : "Type a message…  @ files  / commands");
 
   // Load custom operations
   useEffect(() => {
@@ -1861,6 +1861,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 对标 composer-foot：隐私 + 键位提示，和输入卡同宽。 */}
+      <div className="composer-foot">
+        <span className="composer-foot-lock">● {zh ? "本地处理 · 数据不出设备" : "Local only · data stays on device"}</span>
+        <span className="composer-foot-right">{zh ? "Enter 发送 · Shift+Enter 换行" : "Enter to send · Shift+Enter for newline"}</span>
       </div>
 
       {/* === Bottom control bar — 仅保留自定义操作（连接状态/输入提示已隐藏） === */}
