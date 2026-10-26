@@ -192,6 +192,56 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | P3 再做 Dream | **前移**：Dream token 在 P0-7 完成；P3 只做 Hub/Dream 形状/背景气质 |
 | 验收只截 1600 | 加 1280/1920、125%/150%、空/审批/错误三态；像素差之外加 IME/焦点陷阱实测 |
 
+### 0.4 思考流渲染性能分析（2026-10-26）
+
+> 先纠正一个前提：**Codem 的 UI 不是每 token 重渲染**。`App.tsx:1775-1801` 的 `flushReasoningBuffer` 已经按 **100ms** 批量 flush；`ReasoningRow` 每 100ms 才收到一次新 `text`。真正每 delta 都做的是 `executor.ts:601` 的 `MessageStorage.updateMessage`（同步写日志 + 索引 IPC + FTS）。所以“整段渲染导致每 token 重排”这个判断不准确，瓶颈要分层看。
+
+#### 0.4.1 DOM 微基准（不是产品 benchmark）
+
+同一台 Windows / Edge headless，820px 文档列，60fps 循环更新；单块 = 一个 `pre-wrap` 文本节点每次追加；分段 = 20 段，只更新最后一段，已完成段不动；每帧强制布局一次。**这是 DOM 微基准，不是 React/应用 benchmark；脚本临时运行，未提交；数字只用于判断量级和方向。**
+
+| 字符量 | 单块 avg / p95 / max work | 20 段仅尾段 avg / p95 / max | 单块 >33ms 帧 | 分段 >33ms 帧 |
+|---|---|---|---|---|
+| 10k | 0.96 / 1.70 / 16.8ms | 0.25 / 0.40 / 16.8ms | 0 | 0 |
+| 30k | 2.75 / 5.40 / 16.8ms | 0.34 / 0.50 / 16.8ms | 0 | 0 |
+| 60k | **9.04 / 20.3 / 50.1ms** | **0.46 / 0.70 / 16.8ms** | **6** | **0** |
+
+**读法**：
+
+- 10k–30k 的“单块”仍在 16.7ms 预算内；60k 才会出现 50ms 长帧。典型 2k–10k 思考并不会因为“整段”就卡。
+- 60k 时，**冻结已完成段、只更新尾段** 的布局成本低一个数量级；这是“分段/分块”的真实收益。
+- 反过来，如果每段都重渲染、所有段都挂载、每段都做 Markdown/高亮，**卡片越多越慢**。收益来自“已完成内容冻结 + 只更新尾部”，不是“卡片数量”。
+
+#### 0.4.2 结论：要调的是“增量单位”，不一定是“数据模型”
+
+- **OMP 的性能并不是因为“卡多”**：它的 `ThinkCard` 是 `memo`，`useLazyExpand` 折叠时不挂 body，`ChunkedText` 按 64 行分块 + `content-visibility:auto`，`follow` 只跟随正在运行的那一张。
+- **Codex CLI 是终端渲染**，和 React/DOM 不是同一套性能模型；“主流都分段”不能直接证明 Codem 必须改协议。
+- **Codem 当前真正贵的地方**：
+  1. `executor.ts` 每个 `reasoning_delta` 同步 `updateMessage`（日志 + 索引 + FTS），与 token 数同向增长；UI 100ms 批量并不能省这部分。
+  2. 流式默认展开，`ReasoningRow` 把完整 reasoning 放进一个 `pre-wrap` 文本节点；60k 时每 100ms 布局一次，可能 20–50ms。
+  3. 折叠时只渲染 summary，成本很低；所以“长思考 + 默认展开”才是最差组合。
+- **所以优先级**：
+  1. **先做 chunked 单块**（不改数据模型）：把正文按 64 行分块、`content-visibility:auto`，只更新尾块；折叠时 body 不挂载。预计能吃到微基准的大部分收益。
+  2. **再做持久化批量**：`reasoning_delta` 的 `updateMessage` 改成 100–250ms 批量，tool_start/tool_complete/end/error 强制 flush；用现有 `takeMessageWriteStats()` 量 calls/ms/max，不要凭感觉。
+  3. **最后才评估分段卡**：只有产品明确要 OMP 的时间线，才改 `reasoningSegments`；否则不要为“看起来像”付数据模型成本。
+- **不要**把“分段卡”当成性能优化：它只有在 **memo + 懒挂载 + 尾段更新 + 段数上限/合并** 都成立时才更快；否则 50 张卡的重渲染会比一个块更慢。
+
+#### 0.4.3 对 P1-6 的修改
+
+- P1-6 从“只改位置/样式”升级为：
+  - **折叠时只渲染 summary**，body 不挂载（成本接近 0）；
+  - **展开时按 64 行分块**，已完成块 `content-visibility:auto`，只更新尾块；
+  - 流式超过 **20k 字符**自动回到“summary + 展开全文”，不默认挂完整 body；
+  - 用户手动展开后，保持展开但只挂最近 2 个块 + 可视区，其余按需挂载。
+- P1-6b 新增“持久化批量”性能项（0.5–1 天，不改视觉）：见 0.3.9/0.4.2；必须有 crash/异常 flush 判据。
+- P2-5 分段卡保留为“产品要 OMP 时间线才做”，不是性能前置。
+
+**性能验收门槛**：
+
+- 60k 字符 reasoning，流式 10 次/秒更新，Edge 真机：**无 >50ms 长帧**；p95 frame work ≤8ms；页面滚动不跳。
+- `takeMessageWriteStats()`：60k reasoning 的 `updateMessage` 调用次数从“按 delta”降到 **≤10 次/秒 + 边界 flush**；`maxMs` 不高于基线。
+- 分段卡若做：段数 >30 时必须合并/虚拟化；已完成段 0 重渲染（React Profiler 验证）。
+
 ---
 
 ## 1. 证据与方法
@@ -816,7 +866,8 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - **展开体**：13px / 1.65，`max-height: 360`，内部滚动；`surface-2` 底；左 2px accent 40% 轨；radius `0 8 8 0`；padding 8/12；流式末尾 6×13 光标。
 - **跟随**：只有用户位于底部时才 auto-follow 最新；用户上滚后停止跟随并显示“回到最新”小按钮，不要每帧抢滚动。
 - **折叠策略**：流式默认展开；用户手动收起后**不因新 token 重开**；完成后保持用户选择；历史默认折叠。现有 `reasoningAutoCollapsedRef` 逻辑保留，只改位置与样式。
-- **长文本**：≥400 行用分块 + `content-visibility`，不要一帧重排整段；展开体内部滚动。
+- **长文本**：折叠时 **body 不挂载**（成本接近 0）；展开时按 64 行分块 + `content-visibility:auto`，只更新尾块，不要把完整 60k 文本塞进一个 `pre-wrap` 节点每 100ms 重排。
+- **流式阈值**：超过 **20k 字符**自动回到“summary + 展开全文”，不默认挂完整 body；用户手动展开后挂可视区 + 最近 2 块，其余按需挂载。
 - **a11y**：toggle `aria-expanded` / `aria-controls`；正文 `role="region"` + `aria-label="思考过程"`；不要对每个 token 做 `aria-live`，只对“思考中/完成”节流播报。
 
 **明确不做**
@@ -830,6 +881,24 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - 完成：summary 首行；`18s · 1,240 字`；折叠/展开状态保持。
 - 历史：默认折叠；展开完整；长文本在 360 内滚动。
 - 位置：在正文之前、工具之前；和 OMP 并排看，明确“我们是一个块，不是多张卡”。
+
+#### P1-6b 思考持久化批量（0.5–1 天，不改视觉）
+
+**文件**：`src/core/session/executor.ts:601`、`src/core/storage/message.ts`。
+
+- 现状：每个 `reasoning_delta` 都同步 `MessageStorage.updateMessage`（日志 + 索引 IPC + FTS）；UI 的 100ms 批量只省了 React，没省这里。
+- 改成 **100–250ms 批量**：reasoning 缓冲 + 定时 flush；以下边界强制 flush：
+  - `tool_start` / `tool_complete` / `tool_error`
+  - 回合结束 / 错误 / 取消
+  - 切换会话 / 窗口关闭前
+- 用现有 `takeMessageWriteStats()` 记录 calls/ms/maxMs；加判据：批量后调用次数下降，但**工具前/结束后至少各落一次**，不能丢 reasoning。
+- 不做“只写最终值”：崩溃/强制退出时最后一段 reasoning 允许最多一个 flush 窗口丢失，和不写不同，要在测试里明确。
+
+**验收**：
+
+- 60k reasoning：`updateMessage` 调用从“每个 delta”降到 **≤10 次/秒 + 边界 flush**；`maxMs` 不高于基线。
+- 工具开始/结束、异常、退出路径各有一个 flush 判据；重启后 reasoning 不丢整段。
+- 不改 DB schema、不改 API 协议、不改历史消息读取。
 
 #### P1-7 设置行组 + 菜单/弹层
 
@@ -861,7 +930,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **右侧 Inspector 常驻**：项目会话默认展开 **400px**，复用 `PanelSidebar` 的 Files/Git/Changes；1440 宽 360，≤1280 收起；Composer/正文列仍 820。
 3. **底部面板**：默认 **34px 折叠**；终端按需展开 **190px**；不做 OMP 的常驻 240；与右侧 Inspector 不重复。
 4. **页面级导航**：仅对设置/任务中心/知识/用量等“全屏页”加 44px 页头 + 图标 nav；不要动聊天主区。
-5. **分段思考时间线（可选，需数据模型）**：如果产品明确要 OMP 的 per-think 卡，必须先把 `message.reasoning: string` 升级为 `reasoningSegments[]`（含 `stepId/toolCallId/startedAt/endedAt`），由 agent loop 在 `reasoning_delta` 边界写入；只对新会话启用、旧消息回退单块；不按空行猜分段。成本 2–4 天 + DB/事件契约测试，不在 P1 做。
+5. **分段思考时间线（可选，需数据模型）**：如果产品明确要 OMP 的 per-think 卡，必须先把 `message.reasoning: string` 升级为 `reasoningSegments[]`（含 `stepId/toolCallId/startedAt/endedAt`），由 agent loop 在 `reasoning_delta` 边界写入；只对新会话启用、旧消息回退单块；不按空行猜分段。成本 2–4 天 + DB/事件契约测试，不在 P1 做。**性能上它不是前置**：0.4 的微基准说明，先做 chunked 单块 + 批量写库，收益更大、风险更低；分段卡只有在 memo/懒挂载/段数上限成立时才值得做。
 5. **Home/Agent Hub/Capabilities/Models**：按 OMP 的“列表 + 详情/卡片”重构；这是产品功能，不是纯 UI，需单独立项。
 
 ### 6.4 P3：皮肤与持续治理
@@ -944,10 +1013,10 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 2. **token/契约**：更新 `ui-benchmark-contract.json` 与 `docs/ui-spec.md`（如涉及新 token）。
 3. **截图**：`before/` + `after/` + `contact-sheet`；放 `docs/evidence/ui-benchmark-<phase>-<date>/`，附 README（来源/操作/读数）。
 4. **机器结果**：`npm run audit:docs`、`npx tsc --noEmit`、相关判据；CSS 改动跑 `css-contract.mjs --check`。
-5. **人工签字**：19 项检查表（见 7.4）逐项打勾；不签不合并。
+5. **人工签字**：20 项检查表（见 7.4）逐项打勾；不签不合并。
 6. **回滚点**：一个阶段一个 commit；出问题 `git revert` 该 commit，不要手删半套 CSS。
 
-### 7.4 人工验收 19 项（每阶段都看）
+### 7.4 人工验收 20 项（每阶段都看）
 
 - [ ] 边框只有一种浓度（主/次/分隔），没有“边框 + 阴影 + 内线”三层。
 - [ ] 同一屏只有一种焦点环；输入框、按钮、树、菜单各自只有一圈。
@@ -968,6 +1037,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 - [ ] 用户气泡保持原版半透明紫（15%/25% + 轻阴影 + 24px 头像），没有变成 OMP 实底。
 - [ ] 不只靠颜色：diff 有 +/−、Git 有字母、状态有图标/文字。
 - [ ] 思考块在正文之前：流式 summary 跟随最新行、展开体有光标、用户上滚不跳；完成后首行 + 字数；不按空行伪造分段。
+- [ ] 60k 字符 reasoning 流式无 >50ms 长帧；`updateMessage` ≤10 次/秒 + 工具/结束边界 flush；分段卡不做假时间线。
 
 ### 7.5 建议的提交粒度
 
@@ -985,6 +1055,7 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | P1-2 | `feat(model): role-based picker` | 只改模型菜单 |
 | P1-3 | `style(sidebar): density + tree status` | 只改侧栏/树 |
 | P1-6 | `style(chat): live grouped reasoning` | 只改思考块 |
+| P1-6b | `perf(chat): batch reasoning persistence` | 只改写入频率/边界 |
 | P1-4 | `style(tools): row-first tool surface` | 只改工具 |
 
 > 不要一个 commit 同时改 token + 布局 + 组件；否则截图差异无法归因，回滚也会带走别的改动。
