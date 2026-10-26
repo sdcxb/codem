@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-10-26 快照）
 
-> 基线：`master` @ `bb5d4cce` ｜ **1.16.330**（2026-10-23 发布）
+> 基线：`master` @ `e1407753`（文档提交；父提交 `bb5d4cce`）｜ **1.16.330**（2026-10-23 发布）
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -12,7 +12,7 @@
 | 版本 | **1.16.330** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
 | 发布 | GitHub `Codem v1.16.330` = **Latest**（2026-10-23 11:54 UTC） | `gh release list --limit 1` |
 | 更新清单 | `latest.json` version 1.16.330 | 根目录文件 |
-| HEAD | `bb5d4cce`（docs: 记录 1.16.330 安装校验） | `git rev-parse --short HEAD` |
+| HEAD | `e1407753`（docs: 重编项目文档集）；父提交 `bb5d4cce`（1.16.330 安装校验） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
 | 本地 tag | 最新只到 **v1.16.321** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
