@@ -130,6 +130,7 @@ describe('UI 对标施工合同', () => {
     expect((settings.match(/settings-nav-group-label/g) ?? []).length).toBe(8)
     expect(settings).toContain('settings-subnav')
     expect(codemUi).toContain('.settings-page-overlay')
+    expect(codemUi).toContain('padding: var(--chrome-height) 0 0')
     expect(codemUi).toContain('.settings-page .settings-content')
     expect(codemUi).toContain('max-width: 900px')
     expect(block(codemUi, '.settings-subnav-pill')).toContain('height: 26px')

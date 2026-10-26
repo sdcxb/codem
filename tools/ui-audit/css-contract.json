@@ -15485,7 +15485,7 @@
     "border": "0",
     "border-radius": "var(--radius-xs)",
     "box-shadow": "none",
-    "height": "100vh",
+    "height": "100%",
     "max-height": "none",
     "max-width": "100vw",
     "width": "100vw"
@@ -15493,8 +15493,9 @@
   "settings-page-overlay": {
     "align-items": "stretch",
     "background": "var(--bg-primary)",
+    "box-sizing": "border-box",
     "justify-content": "stretch",
-    "padding": "0"
+    "padding": "var(--chrome-height) 0 0"
   },
   "settings-panel": {
     "background": "var(--bg-secondary)",

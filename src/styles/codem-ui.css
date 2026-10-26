@@ -2626,7 +2626,9 @@ body.resizing-columns * {
 }
 /* P2-1：设置整页视图（不是居中弹窗）。 */
 .settings-page-overlay {
-  padding: 0;
+  /* 全屏页从标题栏下方开始；否则设置头会压在 Codem 菜单/窗口按钮上。 */
+  padding: var(--chrome-height) 0 0;
+  box-sizing: border-box;
   background: var(--bg-primary);
   align-items: stretch;
   justify-content: stretch;
@@ -2634,7 +2636,7 @@ body.resizing-columns * {
 .settings-page {
   width: 100vw;
   max-width: 100vw;
-  height: 100vh;
+  height: 100%;
   max-height: none;
   border: 0;
   border-radius: var(--radius-xs);
