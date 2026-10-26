@@ -1947,6 +1947,22 @@ flex-shrink: 0;
   transform: translateY(-50%);
 }
 
+/* `+` 与 `...` 共用 .sidebar-project-btn，但后者在 wrapper 内：
+   不能再套一次 header 的绝对定位，否则两个按钮会叠在同一位置。 */
+.sidebar-project-more-wrapper > .sidebar-project-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  width: 24px;
+  height: 24px;
+  transform: none;
+  opacity: 0;
+}
+
+.sidebar-project-header:is(:hover, :focus-visible) .sidebar-project-more-wrapper > .sidebar-project-btn {
+  opacity: 1;
+}
+
 /* 外观统一走 .popover-shell（Sidebar 项目菜单） */
 .sidebar-project-more-menu {
   display: none;

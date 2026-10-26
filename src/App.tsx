@@ -607,13 +607,16 @@ setGlobalCwd(currentProject?.path || "");
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // P2-2：1440 以上默认展开右侧 Inspector；≤1280 自动收起，避免挤压 820 正文列。
+  // P2-2：1280 以上默认展开右侧 Inspector；≤1100 自动收起，避免挤压正文列。
   const [rightRailOpen, setRightRailOpen] = useState(() =>
-    typeof window !== "undefined" && window.innerWidth >= 1440
+    typeof window !== "undefined" && window.innerWidth >= 1280
   );
   useEffect(() => {
     const onResize = () => {
-      if (window.innerWidth <= 1280) setRightRailOpen(false);
+      // 启动时窗口可能先是小尺寸、随后才最大化；只在 resize 里“收起”会导致
+      // 右栏永远停在 36px 折叠条。跨过阈值时两侧都要恢复。
+      if (window.innerWidth <= 1100) setRightRailOpen(false);
+      else if (window.innerWidth >= 1280) setRightRailOpen(true);
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);

@@ -157,12 +157,19 @@ describe('UI 对标施工合同', () => {
     expect(block(css, '.notebook-manager-header')).toContain('min-height: 44px')
   })
 
-  it('P2-2：右栏 1440 默认展开，1440 宽 360，≤1280 自动收起', () => {
+  it('P0-window：启动最大化，避免固定 1200×800 在小屏/高缩放下超出屏幕', () => {
+    const conf = readFileSync(join(ROOT, 'src-tauri/tauri.conf.json'), 'utf8')
+    expect(conf).toContain('"maximized": true')
+    expect(conf).toContain('"minWidth": 800')
+  })
+
+  it('P2-2：右栏 1280 默认展开，1440 宽 360，≤1100 自动收起', () => {
     const right = readFileSync(join(ROOT, 'src/components/RightSidebar.tsx'), 'utf8')
     const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')
     expect(right).toContain('window.innerWidth <= 1440 ? 360 : 400')
-    expect(app).toContain('window.innerWidth >= 1440')
-    expect(app).toContain('window.innerWidth <= 1280')
+    expect(app).toContain('window.innerWidth >= 1280')
+    expect(app).toContain('window.innerWidth <= 1100')
+    expect(app).toContain('else if (window.innerWidth >= 1280) setRightRailOpen(true)')
   })
 
   it('P1-7：设置内容平铺无卡片，菜单/模态统一无阴影，Tooltip 500ms/11px', () => {
