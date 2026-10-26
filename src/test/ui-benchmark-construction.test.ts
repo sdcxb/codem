@@ -112,7 +112,7 @@ describe('UI 对标施工合同', () => {
     expect(chat).toContain('turnCount')
     expect(chat).toContain('contextPercent')
     expect(chat).toContain('modeLabel')
-    expect(chat).toContain('qa-turn-meta')
+    expect(chat).toContain('qa-turn-status-line')
     expect(block(css, '.right-sidebar')).toContain('background: var(--sidebar-bg)')
   })
 

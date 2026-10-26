@@ -2707,7 +2707,7 @@ width: 100%;
    by a subtle border line. The fork/regenerate buttons appear on hover. */
 .qa-turn-footer {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) 0 var(--space-3);
@@ -2730,13 +2730,6 @@ width: 100%;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-.qa-turn-meta {
-  margin-right: auto;
-  color: var(--text-muted);
-  font-size: var(--fs-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Show buttons when hovering the preceding message or the footer itself */
 .message:is(:hover, :focus-visible) + .qa-turn-footer .qa-turn-btn,
 .qa-turn-footer:is(:hover, :focus-visible) .qa-turn-btn {
@@ -2748,28 +2741,17 @@ width: 100%;
 opacity: 0.5;
 }
 
-/* Task complete badge — always visible at turn end */
-.task-complete-badge {
-display: inline-flex;
-align-items: center;
-gap: var(--space-1);
-margin-right: 0;
-padding: 0;
-font-size: var(--fs-sm);
-font-weight: 500;
-color: var(--text-secondary);
-background: transparent;
-border: 0;
-border-radius: 0;
-user-select: none;
+/* 对标 HTML：footer 上方是状态线，不是“任务完成”徽章。 */
+.qa-turn-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
 }
 
-.task-complete-badge svg {
-  color: var(--success);
-}
-
-.task-complete-badge.is-warning,
-.task-complete-badge.is-warning svg {
+.qa-turn-status-line.is-warning {
   color: var(--warning);
 }
 

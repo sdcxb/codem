@@ -1372,18 +1372,19 @@ sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
 />
             )}
-{/* Task complete badge — rendered when turn has ended with assistant response.
+{/* 对标 HTML：turn foot 只放元信息，不放“任务完成”徽章。
+                未验证是状态线的语义，放在 footer 上方，避免把未完成说成完成。 */}
+            {isTurnEnd && isTurnWithResponse && !isSessionStreaming && turnHasUnverifiedNudge && (
+              <div className="qa-turn-status-line is-warning">
+                <AlertTriangle className="icon-sm" />
+                <span>{lang === "zh" ? "待验证 · 最后一步后没有运行验证" : "Needs verification · no run after the last edit"}</span>
+              </div>
+            )}
+            {/* Task complete badge — rendered when turn has ended with assistant response.
                 The isTurnEnd check now correctly handles unified mode merged groups
                 by using groupLastIdx for boundary detection. */}
 {isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
-                <span className={`task-complete-badge${turnHasUnverifiedNudge ? " is-warning" : ""}`}>
-                  {turnHasUnverifiedNudge ? <AlertTriangle size={14} /> : <Check size={14} />}
-                  {turnHasUnverifiedNudge
-                    ? (lang === "zh" ? "待验证" : "Needs verification")
-                    : (lang === "zh" ? "完成" : "Done")}
-                </span>
-                <span className="qa-turn-meta">{lang === "zh" ? "1 轮" : "1 turn"}</span>
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
