@@ -18450,10 +18450,10 @@
   },
   "task-complete-badge": {
     "align-items": "center",
-    "background": "color-mix(in srgb, var(--accent) 12%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
+    "background": "var(--accent-surface)",
+    "border": "1px solid var(--accent-border)",
     "border-radius": "var(--radius-md)",
-    "color": "var(--accent)",
+    "color": "var(--accent-strong)",
     "display": "inline-flex",
     "font-size": "var(--fs-sm)",
     "font-weight": "500",
@@ -19749,36 +19749,6 @@
     "font-size": "var(--fs-sm)",
     "gap": "var(--space-3)",
     "padding": "var(--space-3) var(--space-5)"
-  },
-  "turn-summary-body": {
-    "color": "var(--text-secondary)",
-    "font-size": "var(--fs-sm)",
-    "line-height": "var(--lh-reading)",
-    "margin-top": "var(--space-1)",
-    "white-space": "pre-wrap"
-  },
-  "turn-summary-card": {
-    "background": "var(--bg-secondary)",
-    "border": "1px solid var(--border-secondary)",
-    "border-radius": "var(--radius-md)",
-    "margin": "var(--space-5) 0 0",
-    "padding": "var(--space-3) var(--space-4)"
-  },
-  "turn-summary-head": {
-    "align-items": "center",
-    "display": "flex",
-    "gap": "var(--space-2)"
-  },
-  "turn-summary-meta": {
-    "color": "var(--text-muted)",
-    "font-size": "var(--fs-2xs)",
-    "font-variant-numeric": "tabular-nums",
-    "margin-left": "auto"
-  },
-  "turn-summary-title": {
-    "color": "var(--text-primary)",
-    "font-size": "var(--fs-sm)",
-    "font-weight": "var(--weight-semibold)"
   },
   "unified-separator": {
     "background": "linear-gradient(to right, transparent, var(--separator-fade), transparent)",

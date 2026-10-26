@@ -222,6 +222,8 @@ interface MessageBubbleProps {
   onDeleteFiles?: (files: string[]) => void;
   /** true if this is the last assistant message in the current Q&A turn */
   isLastInTurn?: boolean;
+  /** true if this is the newest assistant message in the whole session */
+  isLatestMessage?: boolean;
   /** Called when user clicks a citation — opens SourceViewer */
   onCitationClick?: (sourceName: string) => void;
   /** Called when user clicks a source in the metadata-driven sources panel */
@@ -243,7 +245,7 @@ interface MessageBubbleProps {
   canEdit?: boolean;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, onCitationClick, onSourceClick, onEditAndResend, onEditAndRewind, onReEdit, sessionId, canEdit = true, pinned, onTogglePin }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, isLatestMessage, onCitationClick, onSourceClick, onEditAndResend, onEditAndRewind, onReEdit, sessionId, canEdit = true, pinned, onTogglePin }: MessageBubbleProps) {
 const lang = useLang();
   const displayMode = useAppStore((s) => s.displayMode);
   const isStreaming = message.status === "streaming";
@@ -557,8 +559,8 @@ const [galleryTransitionName, setGalleryTransitionName] = useState<string | unde
     }
     // Only auto-collapse historical messages (never streamed).
     // The latest answer that just finished streaming should stay expanded
-    // so the user can read it immediately.
-    if (wasStreamedRef.current) return;
+    // so the user can read it immediately. 重开会话时“最新一条”同样不折叠。
+    if (wasStreamedRef.current || isLatestMessage) return;
     // P2: content-visibility: auto 下屏外消息不布局，scrollHeight 不可靠。
     // 用字符长度估算为主（稳定、不依赖布局），scrollHeight 作为补充测量。
     const estimatedTall = displayContent.length > COLLAPSE_CHARS;
@@ -566,7 +568,7 @@ const [galleryTransitionName, setGalleryTransitionName] = useState<string | unde
     if (estimatedTall || measured) {
       setContentCollapsed(true);
     }
-  }, [isStreaming, displayContent]);
+  }, [isStreaming, displayContent, isLatestMessage]);
 
   // Reasoning collapse logic:
   // - During streaming: keep expanded (user sees reasoning in real-time)

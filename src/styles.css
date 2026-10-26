@@ -2750,62 +2750,17 @@ opacity: 0.5;
   padding: var(--space-1) var(--space-5);
   font-size: var(--fs-sm);
   font-weight: 500;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-border);
   border-radius: var(--radius-md);
   user-select: none;
 }
 
 .task-complete-badge.is-warning {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  border-color: color-mix(in srgb, var(--warning) 25%, transparent);
-}
-
-/* 对标 HTML summary-card：收尾信息放这里，不占用 footer。 */
-.turn-summary-card {
-  margin: var(--space-5) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-}
-
-.turn-summary-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.turn-summary-head svg {
-  flex: none;
-  color: var(--success);
-}
-
-.turn-summary-card.is-warning .turn-summary-head svg {
-  color: var(--warning);
-}
-
-.turn-summary-title {
-  font-size: var(--fs-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-}
-
-.turn-summary-meta {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: var(--fs-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.turn-summary-body {
-  margin-top: var(--space-1);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-reading);
-  white-space: pre-wrap;
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
 }
 
 /* 对标 HTML：footer 上方是状态线，不是“任务完成”徽章。 */
