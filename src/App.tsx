@@ -5366,7 +5366,7 @@ onRemoveProject={(id, name, path) => {
                           onRegenerate={handleRegenerate}
                           onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
-                          sessionId={currentSession?.id}
+                          sessionId={currentSession?.id || loadedSessionId || undefined}
                           onFork={handleFork}
                           connected={true}
                           model={cliModel}
@@ -5474,7 +5474,7 @@ onSend={handleSend}
                         onRegenerate={handleRegenerate}
                         onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
-                        sessionId={currentSession?.id}
+                        sessionId={currentSession?.id || loadedSessionId || undefined}
                         onFork={handleFork}
                         connected={true}
                         model={cliModel}
@@ -5534,6 +5534,8 @@ onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getSt
 editingFile={editingFile}
 onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
+sessionId={currentSession?.id || loadedSessionId || undefined}
+workspace={currentProject?.path || appRoot}
 />
           </SlotBridge>
           ) : (
@@ -5614,7 +5616,7 @@ onSend={handleSend}
                 onRegenerate={handleRegenerate}
                 onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
-                sessionId={currentSession?.id}
+                sessionId={currentSession?.id || loadedSessionId || undefined}
                 onFork={handleFork}
                 connected={true}
                 model={cliModel}
@@ -5675,6 +5677,8 @@ onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getSt
 editingFile={editingFile}
 onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
+sessionId={currentSession?.id || loadedSessionId || undefined}
+workspace={currentProject?.path || appRoot}
 />
         </>
           )}

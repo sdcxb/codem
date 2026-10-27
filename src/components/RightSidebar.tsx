@@ -40,6 +40,9 @@ interface RightSidebarProps {
   onEditingFileChange?: (path: string | null) => void;
   /** 文件刷新 key */
   refreshKey?: number;
+  /** 当前会话与工作区由 App 直接传入，避免右栏自己从 store 猜空 */
+  sessionId?: string | null;
+  workspace?: string | null;
 }
 
 export function RightSidebar(props: RightSidebarProps = {}) {
@@ -142,10 +145,10 @@ const effectiveWidth = sidebarWidth;
       {/* Tab content */}
       <div className="right-sidebar-content">
         {activeTab === "changes" && (() => {
-          const sessionId = currentSession?.id || loadedSessionId || "";
+          const sessionId = props.sessionId || currentSession?.id || loadedSessionId || "";
           const session = sessions.find((s) => s.id === sessionId);
           const sessionProject = projects.find((p) => p.id === session?.projectId);
-          const workspace = currentProject?.path || sessionProject?.path || "";
+          const workspace = props.workspace || currentProject?.path || sessionProject?.path || "";
           return sessionId && workspace ? (
             <FileChangesList sessionId={sessionId} workspace={workspace} />
           ) : (

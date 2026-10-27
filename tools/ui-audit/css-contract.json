@@ -1259,19 +1259,22 @@
   },
   "change-file-row": {
     "align-items": "center",
-    "border-radius": "var(--radius-sm)",
+    "border-bottom": "1px solid var(--border-secondary)",
+    "border-radius": "0",
     "cursor": "pointer",
     "display": "grid",
     "font-size": "var(--fs-sm)",
     "gap": "var(--space-3)",
     "grid-template-columns": "max-content minmax(0, 1fr) max-content",
-    "padding": "var(--space-2) var(--space-2)"
+    "min-height": "43px",
+    "padding": "var(--space-2) var(--space-3)"
   },
   "change-file-status": {
-    "border-radius": "var(--radius-sm)",
-    "font-size": "var(--fs-xs)",
+    "background": "transparent",
+    "font-family": "var(--font-mono)",
+    "font-size": "var(--fs-2xs)",
     "font-weight": "700",
-    "padding": "1px var(--space-2)"
+    "padding": "0"
   },
   "change-item": {
     "color": "var(--text-secondary)",
@@ -3955,7 +3958,8 @@
   "file-changes-list": {
     "display": "flex",
     "flex-direction": "column",
-    "gap": "var(--space-1)"
+    "gap": "var(--space-1)",
+    "padding": "var(--space-3) var(--space-3) var(--space-4)"
   },
   "file-children": {
     "display": "flex",
@@ -19765,17 +19769,17 @@
     "text-overflow": "ellipsis"
   },
   "turn-brief": {
-    "border-bottom": "1px solid var(--border-primary)",
+    "border-bottom": "1px solid var(--border-secondary)",
     "color": "var(--text-muted)",
     "font-size": "var(--fs-2xs)",
-    "margin-bottom": "var(--space-2)",
-    "padding": "var(--space-2) 0"
+    "margin-bottom": "0",
+    "padding": "var(--space-2) var(--space-3)"
   },
   "turn-change-files": {
     "display": "flex",
     "flex-direction": "column",
-    "gap": "var(--space-1)",
-    "padding": "var(--space-2) var(--space-4) var(--space-2) var(--space-9)"
+    "gap": "0",
+    "padding": "0"
   },
   "turn-change-group": {
     "border-radius": "var(--radius-sm)",

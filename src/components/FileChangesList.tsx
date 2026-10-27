@@ -175,16 +175,14 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
             >
               {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               <span className="turn-label">
-                Turn {record.turn_index}
+                第 {record.turn_index} 轮
                 {isReverted && <span className="reverted-tag">已回滚</span>}
               </span>
-              <span className="turn-file-count">{files.length} 文件</span>
+              <span className="turn-file-count">{files.length} 个文件</span>
             </div>
             {isExpanded && (
               <div className="turn-change-files">
-                {record.current_brief && (
-                  <div className="turn-brief">{record.current_brief}</div>
-                )}
+                <div className="turn-brief">本轮改动 {files.length} 个文件</div>
                 {files.map((file, i) => (
                   <div key={i} className="change-file-row" onClick={() => handleViewDiff(record, file)}>
                     <FileText size={12} className="change-file-icon" />

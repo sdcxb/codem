@@ -4870,19 +4870,21 @@ min-height: 0;
   color: var(--text-muted);
 }
 
+.file-changes-list { padding: var(--space-3) var(--space-3) var(--space-4); }
+
 .turn-change-files {
-  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-9);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 0;
 }
 
 .turn-brief {
   font-size: var(--fs-2xs);
   color: var(--text-muted);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-primary);
-  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-secondary);
+  margin-bottom: 0;
 }
 
 .change-file-row {
@@ -4890,9 +4892,11 @@ min-height: 0;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-2);
+  min-height: 43px;
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-secondary);
   font-size: var(--fs-sm);
 }
 
@@ -4913,10 +4917,11 @@ min-height: 0;
 }
 
 .change-file-status {
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
   font-weight: 700;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 0;
+  background: transparent;
 }
 
 .revert-btn {
