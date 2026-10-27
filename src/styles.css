@@ -3556,7 +3556,7 @@ z-index: 50;
   margin: 0 auto var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-4);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-strong);
+  border: 1px solid color-mix(in srgb, color-mix(in srgb, var(--info) 55%, var(--success)) 35%, transparent);
   border-radius: var(--radius-lg);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
