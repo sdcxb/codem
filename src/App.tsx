@@ -5536,6 +5536,7 @@ onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
 sessionId={currentSession?.id || loadedSessionId || undefined}
 workspace={currentProject?.path || appRoot}
+agents={subagentTasks}
 />
           </SlotBridge>
           ) : (
@@ -5679,6 +5680,7 @@ onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
 sessionId={currentSession?.id || loadedSessionId || undefined}
 workspace={currentProject?.path || appRoot}
+agents={subagentTasks}
 />
         </>
           )}

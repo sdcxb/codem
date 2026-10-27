@@ -15,7 +15,8 @@
 
 import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
-import { Folder, Globe, ChevronRight, ChevronLeft, ArrowLeft, FileDiff } from "lucide-react";
+import { Folder, Globe, ChevronRight, ChevronLeft, ArrowLeft, FileDiff, Bot } from "lucide-react";
+import type { SubagentTask } from "../core/subagent/subagent";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useProjectStore } from "../core/store";
 import { useAppStore } from "../store";
@@ -44,13 +45,15 @@ interface RightSidebarProps {
   /** 当前会话与工作区由 App 直接传入，避免右栏自己从 store 猜空 */
   sessionId?: string | null;
   workspace?: string | null;
+  /** 真实子代理任务列表（由 App 的 SubagentRuntime 订阅提供） */
+  agents?: SubagentTask[];
 }
 
 export function RightSidebar(props: RightSidebarProps = {}) {
   const lang = useLang();
   const zh = lang === "zh";
   const [internalCollapsed, setInternalCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"changes" | "files" | "browser">("files");
+  const [activeTab, setActiveTab] = useState<"changes" | "files" | "subagents" | "browser">("files");
   const { currentProject, currentSession, sessions, projects } = useProjectStore();
   const loadedSessionId = useAppStore((s) => s.loadedSessionId);
   const contextWater = useStableContextWaterLevel(
@@ -103,6 +106,7 @@ const effectiveWidth = sidebarWidth;
   const tabs = [
     { id: "changes" as const, icon: FileDiff, label: zh ? "改动" : "Changes" },
     { id: "files" as const, icon: Folder, label: zh ? "文件" : "Files" },
+    { id: "subagents" as const, icon: Bot, label: zh ? "子代理" : "Agents" },
     { id: "browser" as const, icon: Globe, label: zh ? "浏览器" : "Browser" },
   ];
 
@@ -216,6 +220,23 @@ const effectiveWidth = sidebarWidth;
           )
         )}
 
+        {activeTab === "subagents" && (
+          (props.agents?.length ?? 0) > 0 ? (
+            <div className="inspector-agent-list">
+              {props.agents!.map((a) => (
+                <div key={a.id} className="inspector-agent-row">
+                  <span className={`inspector-agent-dot ${a.status}`} />
+                  <span className="inspector-agent-title">{a.name || a.id}</span>
+                  <span className="inspector-agent-status">{a.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-hint is-fill">
+              {zh ? "当前没有子代理任务" : "No subagent tasks"}
+            </div>
+          )
+        )}
         {activeTab === "browser" && (
           <div className="right-sidebar-browser">
             <div className="browser-url-bar">
@@ -263,3 +284,4 @@ const effectiveWidth = sidebarWidth;
     </aside>
   );
 }
+

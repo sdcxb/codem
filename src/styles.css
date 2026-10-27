@@ -4887,6 +4887,35 @@ min-height: 0;
   margin-bottom: 0;
 }
 
+.inspector-agent-list { padding: var(--space-2) var(--space-3); }
+.inspector-agent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--border-secondary);
+  font-size: var(--fs-sm);
+}
+.inspector-agent-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.inspector-agent-dot.running { background: var(--accent); }
+.inspector-agent-dot.completed { background: var(--success); }
+.inspector-agent-dot.failed { background: var(--error); }
+.inspector-agent-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector-agent-status { color: var(--text-muted); font-size: var(--fs-2xs); }
+
 .inspector-context {
   display: flex;
   align-items: center;
