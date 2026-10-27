@@ -190,7 +190,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
         const isReverted = record.status === "reverted";
 
         return (
-          <div key={record.id} className={"turn-change-group" + (isReverted ? " reverted" : "")}>
+          <div key={record.id} className={isReverted ? "turn-change-group reverted" : "turn-change-group"}>
             <div
               className="turn-change-header"
               onClick={() => setExpandedTurn(isExpanded ? null : record.id)}

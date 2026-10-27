@@ -5593,6 +5593,29 @@ background: var(--bg-secondary);
   margin: 0;
 }
 
+/* 身份块：label 左，选项 chips/输入框右，避免 200px 控件列放不下五个 chip。 */
+.settings-content .setting-group:has(> .identity-options) {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-5);
+  min-height: 46px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.settings-content .setting-group:has(> .identity-options) > label {
+  margin: 0;
+  padding-top: var(--space-1);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.settings-content .setting-group:has(> .identity-options) > .identity-options,
+.settings-content .setting-group:has(> .identity-options) > input {
+  grid-column: 2;
+  width: 100%;
+  margin: 0;
+}
+
 .setting-group label {
   font-size: var(--fs-base);
   color: var(--text-secondary);
@@ -18927,6 +18950,23 @@ color: var(--accent, #7c6cf0);
   .setting-group input[type="text"],
   .setting-group select,
   .setting-group textarea { width: 100%; box-sizing: border-box; }
+  /* 行式组在窄容器退回单列，控件占满，不再被 200px 固定列挤压 */
+  .settings-content .setting-group:has(> label),
+  .settings-content .setting-group:has(> label):has(> select),
+  .settings-content .setting-group:has(> label):has(> input[type="text"]),
+  .settings-content .setting-group:has(> label):has(> input[type="range"]),
+  .settings-content .setting-group:has(> .identity-options) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-content .setting-group:has(> label):has(> select) > select,
+  .settings-content .setting-group:has(> label):has(> input[type="text"]) > input[type="text"],
+  .settings-content .setting-group:has(> label):has(> input[type="range"]) > input[type="range"],
+  .settings-content .setting-group:has(> label) > .sp-row,
+  .settings-content .setting-group:has(> .identity-options) > .identity-options,
+  .settings-content .setting-group:has(> .identity-options) > input {
+    grid-column: 1;
+    width: 100%;
+  }
   .sp-note { overflow-wrap: anywhere; }
 }
 .sp-row--between { justify-content: space-between; }
