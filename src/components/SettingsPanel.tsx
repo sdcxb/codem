@@ -1730,6 +1730,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {activeTab === "appearance" && (
           <>
           <SkinSelector />
+          <div className="settings-rows">
 
           <div className="setting-group">
             <label>{lang === "zh" ? "提示音" : "Sound cues"}</label>
@@ -1876,6 +1877,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <div className="sp-hint sp-hint--tiny">
               {lang === "zh" ? "统一模式：AI 的多轮回复合并为一个连续气泡，阅读更连贯" : "Unified: merges AI multi-turn replies into one continuous bubble"}
             </div>
+          </div>
           </div>
 
 </>

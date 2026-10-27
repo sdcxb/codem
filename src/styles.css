@@ -5439,6 +5439,41 @@ background: var(--bg-secondary);
   gap: var(--space-3);
 }
 
+/* Row-style settings (Phase 4): label left, 200px control right, 46px floor. */
+.settings-rows .setting-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 46px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.settings-rows .setting-group > label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.settings-rows .setting-group > select,
+.settings-rows .setting-group > input[type="range"],
+.settings-rows .setting-group > .sp-row {
+  grid-column: 2;
+  width: 200px;
+  justify-self: end;
+  margin: 0;
+}
+
+.settings-rows .setting-group > .sp-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.settings-rows .setting-group > input[type="range"] {
+  min-width: 0;
+}
+
 .setting-group label {
   font-size: var(--fs-base);
   color: var(--text-secondary);
