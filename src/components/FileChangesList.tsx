@@ -33,6 +33,26 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null);
   const [diffFile, setDiffFile] = useState<{ path: string; before: string; after: string } | null>(null);
+  const [patchPreview, setPatchPreview] = useState<{ id: string; add: number; del: number; lines: string[] } | null>(null);
+
+  useEffect(() => {
+    if (!expandedTurn) { setPatchPreview(null); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const patch = await FileChangeStorage.getPatchByIdAsync(expandedTurn);
+        if (cancelled || !patch) return;
+        const lines = patch.split("\n");
+        const add = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
+        const del = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
+        const preview = lines
+          .filter((l) => /^[+-]/.test(l) && !l.startsWith("+++") && !l.startsWith("---"))
+          .slice(0, 12);
+        setPatchPreview({ id: expandedTurn, add, del, lines: preview });
+      } catch { /* 预览失败不伪造统计 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [expandedTurn]);
 
   /**
    * ## 第 269 波：这张表**不再有域镜像** ✗→✓（按需查询 + 有界一屏 ✓）
@@ -160,9 +180,11 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
     );
   }
 
+  const visibleRecords = records.filter((r) => FileChangeStorage.parseChangedFiles(r).length > 0);
+
   return (
     <div className="file-changes-list">
-      {records.map((record) => {
+      {visibleRecords.map((record) => {
         const files = FileChangeStorage.parseChangedFiles(record);
         const isExpanded = expandedTurn === record.id;
         const isReverted = record.status === "reverted";
@@ -182,7 +204,26 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
             </div>
             {isExpanded && (
               <div className="turn-change-files">
-                <div className="turn-brief">本轮改动 {files.length} 个文件</div>
+                <div className="turn-brief">
+                  本轮改动 {files.length} 个文件
+                  {patchPreview?.id === record.id && (
+                    <>
+                      {" · "}
+                      <span className="diff-stat-add">+{patchPreview.add}</span>
+                      {" "}
+                      <span className="diff-stat-del">−{patchPreview.del}</span>
+                    </>
+                  )}
+                </div>
+                {patchPreview?.id === record.id && patchPreview.lines.length > 0 && (
+                  <pre className="turn-diff-preview">
+                    {patchPreview.lines.map((line, i) => (
+                      <span key={i} className={line.startsWith("+") ? "diff-line-add" : "diff-line-del"}>
+                        {line}{"\n"}
+                      </span>
+                    ))}
+                  </pre>
+                )}
                 {files.map((file, i) => (
                   <div key={i} className="change-file-row" onClick={() => handleViewDiff(record, file)}>
                     <FileText size={12} className="change-file-icon" />

@@ -359,6 +359,22 @@ export const FileChangeStorage = {
   },
 
   /**
+   * 只按 id 取 `patch` 一列（Inspector 的 +/− 与 diff 预览用）。
+   * patch 仍不进一屏查询，只在展开某一轮时单独取。
+   */
+  async getPatchByIdAsync(id: string): Promise<string | null> {
+    if (!id) return null;
+    const items = await queryRows({
+      table: TABLE,
+      columns: ["patch"],
+      where: { id },
+      limit: 1,
+    });
+    const row = items[0] as { patch?: string | null } | undefined;
+    return row?.patch ?? null;
+  },
+
+  /**
    * 同步读**一屏投影** ✓（只读缓存 ✓，不发查询 ✗）。
    *
    * 契约（三条都要记清，否则很容易把它当成"整会话读"✗）：

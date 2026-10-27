@@ -22,6 +22,7 @@ import { useAppStore } from "../store";
 import { FileExplorer } from "./FileExplorer";
 import { FileEditor } from "./FileEditor";
 import { FileChangesList } from "./FileChangesList";
+import { useStableContextWaterLevel } from "../core/context/water-level";
 import { usePaneResize } from "../hooks/usePaneResize";
 
 interface RightSidebarProps {
@@ -52,6 +53,9 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const [activeTab, setActiveTab] = useState<"changes" | "files" | "browser">("files");
   const { currentProject, currentSession, sessions, projects } = useProjectStore();
   const loadedSessionId = useAppStore((s) => s.loadedSessionId);
+  const contextWater = useStableContextWaterLevel(
+    props.sessionId || currentSession?.id || loadedSessionId || "",
+  );
   const editingFile = props.editingFile ?? null;
   const setEditingFile = props.onEditingFileChange ?? (() => {});
 
@@ -150,7 +154,20 @@ const effectiveWidth = sidebarWidth;
           const sessionProject = projects.find((p) => p.id === session?.projectId);
           const workspace = props.workspace || currentProject?.path || sessionProject?.path || "";
           return sessionId && workspace ? (
-            <FileChangesList sessionId={sessionId} workspace={workspace} />
+            <>
+              <FileChangesList sessionId={sessionId} workspace={workspace} />
+              <div className="inspector-context">
+                <span>{zh ? "上下文" : "Context"}</span>
+                <span className="inspector-context-value">
+                  {contextWater.level.authoritative
+                    ? `${Math.round(contextWater.level.percent)}%`
+                    : "—"}
+                </span>
+              </div>
+              <div className="inspector-foot">
+                {workspace.split(/[/\\]/).filter(Boolean).pop() || workspace}
+              </div>
+            </>
           ) : (
             <div className="empty-hint is-fill">
               {zh ? "选择会话和项目后查看改动" : "Select a session and project to view changes"}
