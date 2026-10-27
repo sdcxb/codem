@@ -47,6 +47,6 @@ describe("JSX className 运算符优先级（无裸拼接比较）", () => {
     expect(fcl).not.toContain('git-status-" + file.status');
     // 修复后：git-status- 后跟括号内三元
     expect(fcl).toContain('"change-file-status git-status-" + (');
-    expect(fcl).toContain('"turn-change-group" + (isReverted ? " reverted" : "")');
+    expect(fcl).toContain('isReverted ? "turn-change-group reverted" : "turn-change-group"');
   });
 });
