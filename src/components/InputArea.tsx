@@ -1789,6 +1789,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
           {/* 右侧发送组 */}
           <div className="input-tools-right">
+            <ModelSelector
+              model={model}
+              models={modelList}
+              onModelChange={onModelChange}
+              locked={isStreaming}
+            />
             {/* Voice input — 双引擎：browser (Web Speech API) / whisper (云端 OpenAI) */}
             <button
               className={`mode-toggle-btn mode-toggle-btn--mic ${micActive ? "voice-rec-active" : ""}`}
