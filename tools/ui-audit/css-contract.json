@@ -5066,10 +5066,10 @@
     "padding": "0 var(--space-5) var(--space-4)"
   },
   "guidance-item": {
-    "align-items": "flex-start",
+    "align-items": "center",
     "display": "flex",
-    "gap": "var(--space-5)",
-    "padding": "var(--space-5) var(--space-7)"
+    "gap": "var(--space-4)",
+    "padding": "var(--space-4) var(--space-6)"
   },
   "guidance-item-actions": {
     "align-items": "center",
@@ -5086,6 +5086,24 @@
   },
   "guidance-item-body": {
     "flex": "1",
+    "min-width": "0"
+  },
+  "guidance-item-icon": {
+    "align-items": "center",
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "50%",
+    "color": "var(--accent)",
+    "display": "inline-flex",
+    "flex-shrink": "0",
+    "height": "28px",
+    "justify-content": "center",
+    "width": "28px"
+  },
+  "guidance-item-line": {
+    "align-items": "center",
+    "display": "flex",
+    "gap": "var(--space-4)",
     "min-width": "0"
   },
   "guidance-item-meta": {
@@ -5121,6 +5139,13 @@
     "font-size": "var(--fs-2xs)",
     "line-height": "var(--lh-reading)",
     "padding": "1px var(--space-4)"
+  },
+  "guidance-status-label": {
+    "color": "var(--text-primary)",
+    "flex-shrink": "0",
+    "font-size": "var(--fs-sm)",
+    "font-weight": "600",
+    "white-space": "nowrap"
   },
   "guidance-toggle": {
     "align-items": "center",

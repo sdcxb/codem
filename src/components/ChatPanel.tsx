@@ -37,7 +37,7 @@ import { useDomainReady } from "../hooks/use-domain-ready";
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, AlertTriangle, Hammer, ClipboardList, Zap,
-  Activity, Pencil, Paperclip,
+  Activity, Pencil, Paperclip, Clock,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -1683,15 +1683,18 @@ canEdit={!isSessionStreaming}
         <div className="guidance-messages-bar" ref={guidanceFade.ref} style={guidanceFade.style}>
           {guidanceMessages.map((g) => (
             <div key={g.id} className={`guidance-item ${g.consumed ? 'consumed' : 'pending'}`}>
+              <span className="guidance-item-icon"><Clock size={14} /></span>
               <div className="guidance-item-body">
-                <div className="guidance-item-meta">
-                  <span className="guidance-status-badge">
+                <div className="guidance-item-line">
+                  <span className="guidance-status-label">
                     {g.consumed
                       ? (lang === "zh" ? "已接收" : "Applied")
-                      : (lang === "zh" ? "待接收" : "Queued")}
+                      : (lang === "zh"
+                        ? `已排队 ${guidanceMessages.filter((m) => !m.consumed).length} 条`
+                        : `${guidanceMessages.filter((m) => !m.consumed).length} queued`)}
                   </span>
+                  {g.message ? <p className="guidance-item-text">{g.message}</p> : null}
                 </div>
-                {g.message ? <p className="guidance-item-text">{g.message}</p> : null}
                 {g.attachments && g.attachments.length > 0 && (
                   <div className="guidance-item-attachments">
                     {g.attachments.map((att) => (

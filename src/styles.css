@@ -14395,9 +14395,48 @@ html.pet-window-mode body,
 
 .guidance-item {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-5);
-  padding: var(--space-5) var(--space-7);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+.guidance-item-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-primary);
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.guidance-item-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.guidance-status-label {
+  flex-shrink: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.guidance-item-line .guidance-item-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
 
 .guidance-item + .guidance-item {
