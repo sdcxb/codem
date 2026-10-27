@@ -215,7 +215,11 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const w = getSetting("codem-sidebar-width");
     const num = typeof w === "string" ? parseInt(w, 10) : (typeof w === "number" ? w : 0);
-    return num > 0 ? num : 240;
+    // mock: >1280 是 260，<=1280 是 240。
+    if (num > 0) {
+      return num === 240 && window.innerWidth > 1280 ? 260 : num;
+    }
+    return window.innerWidth > 1280 ? 260 : 240;
   });
   /**
    * 会话显示排序（GAP-LIST `O-57`）。

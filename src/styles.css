@@ -87,7 +87,7 @@
   --lh-compact: 1.3;  /* 紧凑段落（卡片摘要、两行截断） */
   --lh-ui: 1.4;       /* 密集元信息：时间戳、路径、状态行 */
   --lh-base: 1.5;     /* 正文默认（`body` 当前就是 1.5） */
-  --lh-reading: 1.6;  /* 长文阅读：消息正文、文档预览、说明段落 */
+  --lh-reading: 1.7;  /* 长文阅读：与 mock .md 的 1.7 对齐 */
   --lh-loose: 1.8;    /* 疏排：引导页/空态大段说明 */
   /* 字距刻度（同上一族：对标 `letterSpacing.*`）。em 与字号联动，px 微调那批（0.5px/1px）
      留在原地不进令牌 —— 它们本来就是"不随字号缩放的小微调"，收进来反而会改变缩放行为。 */
@@ -2684,6 +2684,14 @@ font-size: var(--fs-sm);
 :root {
   --reading-column: 820px;
   --reading-gutter: 48px;
+}
+
+/* mock breakpoints: 820 / 780 / 780 / 100% */
+@media (max-width: 1440px) {
+  :root { --reading-column: 780px; }
+}
+@media (max-width: 900px) {
+  :root { --reading-column: 100%; --reading-gutter: 24px; }
 }
 
 .messages-container {
