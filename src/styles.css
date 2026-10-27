@@ -3559,7 +3559,7 @@ z-index: 50;
   margin: 0 auto var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-4);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
@@ -3623,8 +3623,10 @@ z-index: 50;
  */
 /* 编辑态：环圈整张 composer（含 chips / actions），不再只圈 textarea 行。 */
 .input-area.input-card-container:has(.message-input:focus-visible) {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--accent-border);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 0 18px 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .input-area.input-card-container:has(.message-input:focus-visible) .input-textarea-row {
@@ -3918,7 +3920,7 @@ z-index: 50;
 }
 
 .message-input::placeholder {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
   opacity: 1;
 }
 
