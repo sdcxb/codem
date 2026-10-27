@@ -564,7 +564,17 @@ export const ToolCallCard = memo(function ToolCallCard({
   const Icon = VARIANT_ICONS[variant]
 
   const isRunning = status === 'running'
-  const isError = status === 'error'
+  /**
+   * bash 的退出码有时只存在于结果文本/metadata 中，tool call 的 status 仍是 done。
+   * 只看 status 会把 `exit 1` 画成成功（用户实测：失败工具卡不出现）。
+   */
+  const metaExit = Number(
+    (metadata as Record<string, unknown> | undefined)?.exitCode ??
+    (metadata as Record<string, unknown> | undefined)?.exit_code,
+  )
+  const textExit = /(?:exit(?:\s+with)?\s+(?:code\s*)?[:：]?\s*|退出码\s*[:：]?\s*)([1-9]\d*)/i.exec(toolResult || '')?.[1]
+  const exitFailure = (Number.isFinite(metaExit) && metaExit !== 0) || textExit !== undefined
+  const isError = status === 'error' || exitFailure
   const rowState: ToolRowState = isRunning ? 'running' : isError ? 'error' : 'ok'
 
   // 摘要：优先用 argsSummary，否则从 args 推导
