@@ -19259,7 +19259,7 @@
     "margin-right": "var(--space-2)"
   },
   "tool-call-group-inline": {
-    "margin-top": "var(--space-4)"
+    "margin": "var(--space-4) var(--space-9) 0"
   },
   "tool-call-pill": {
     "align-items": "center",
@@ -19424,7 +19424,7 @@
     "font-size": "var(--fs-sm)",
     "gap": "var(--space-3)",
     "height": "32px",
-    "padding": "0 var(--space-9)",
+    "padding": "0 var(--space-5)",
     "transition": "var(--transition-color)",
     "width": "100%"
   },

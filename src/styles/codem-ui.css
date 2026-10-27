@@ -1271,7 +1271,7 @@
 
 /* Tool Call Group — inline, no outer border */
 .tool-call-group-inline {
-  margin-top: var(--space-4);
+  margin: var(--space-4) var(--space-9) 0;
 }
 
 .tool-group-header-inline {
@@ -1280,7 +1280,7 @@
   width: 100%;
   height: 32px;
   gap: var(--space-3);
-  padding: 0 var(--space-9);
+  padding: 0 var(--space-5);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
