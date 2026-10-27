@@ -1,4 +1,4 @@
-/* ========== Custom Fonts ========== */
+﻿/* ========== Custom Fonts ========== */
 /* 第 35 波：这确实是**可变字体**（fvar 轴 wght 200–700 + BEVL 1–100，18 个具名实例），
    所以 --weight-* 的 560/620 细档是真实生效的，不是靠浏览器取整。
    `font-weight` 声明改成真实轴范围 200–700：以前写 100 900 会让浏览器在 700 以上
@@ -5440,7 +5440,7 @@ background: var(--bg-secondary);
 }
 
 /* Row-style settings (Phase 4): label left, 200px control right, 46px floor. */
-.settings-rows .setting-group {
+.settings-rows > .setting-group {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 200px;
   align-items: center;
@@ -5450,27 +5450,27 @@ background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-secondary);
 }
 
-.settings-rows .setting-group > label {
+.settings-rows > .setting-group > label {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
-.settings-rows .setting-group > select,
-.settings-rows .setting-group > input[type="range"],
-.settings-rows .setting-group > .sp-row {
+.settings-rows > .setting-group > select,
+.settings-rows > .setting-group > input[type="range"],
+.settings-rows > .setting-group > .sp-row {
   grid-column: 2;
   width: 200px;
   justify-self: end;
   margin: 0;
 }
 
-.settings-rows .setting-group > .sp-hint {
+.settings-rows > .setting-group > .sp-hint {
   grid-column: 1 / -1;
   margin: 0;
 }
 
-.settings-rows .setting-group > input[type="range"] {
+.settings-rows > .setting-group > input[type="range"] {
   min-width: 0;
 }
 
@@ -22019,3 +22019,4 @@ html[data-contrast="high"] {
 .ofm-compact-card.is-off { opacity: var(--opacity-disabled); }
 .ofm-compact-badge { color: var(--text-muted); font-size: var(--fs-xs); }
 .ofm-compact-more { margin-left: auto; color: var(--accent); font-size: var(--fs-xs); }
+

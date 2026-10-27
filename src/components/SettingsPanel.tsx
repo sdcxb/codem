@@ -1490,6 +1490,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </div>
           </div>
 
+          <div className="settings-rows">
           {settings.mode === "cli" && (
             <div className="setting-group">
               <label>MiMo 账号</label>
@@ -1724,6 +1725,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {showModelProfiles && (
             <ModelProfilePanel onClose={() => setShowModelProfiles(false)} />
           )}
+          </div>
 
 </>
           )}
