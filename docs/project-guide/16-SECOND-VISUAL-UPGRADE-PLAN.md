@@ -8,11 +8,16 @@
 
 ## 0. 采集口径
 
-| 对象 | 来源 | 原始尺寸 | 归一化 |
+> 修正（2026-10-28）：上一版把 OMP 的 0.75× 当成它独有，误推出「OMP 1600 / Codem 1280」。
+> 实际 OMP 与 Codem 的参考批次**都是 1600×1000 渲染后压到 1200×750**；0.75 是共同的压缩比。
+> OMP 没有在本机运行过（无安装/无进程），所以不存在「OMP 在这台电脑上的显示分辨率」。
+
+| 对象 | 来源 | 渲染尺寸 | 落盘图 |
 |---|---|---|---|
-| HTML mock | `docs/design/ui-benchmark-mock.html`，Edge headless 1400×875、DPR 1 | 1400×875 | 原图 |
-| Codem | 安装版 1.16.330，CDP 9223，1280 屏 zoom 后 CSS 视口 1400×735、DPR 3 | 4200×2205 | 缩到 1400×735 |
-| OMP Studio | 参考图 `docs/evidence/ui-benchmark-omp-2026-10-26/omp-workbench-dark.jpg`，0.75× 缩放 | 1200×750 | 设计值 = 原图 / 0.75，即 1600×1000 |
+| HTML mock | `docs/design/ui-benchmark-mock.html`，Edge headless | 1400×875 @1x（另有 1280 断点） | 1400×875 |
+| Codem | 安装版 1.16.330，CDP 9223，1280 屏 zoom 后 CSS 1400×735 | 1400×735 CSS，DPR 3 | 归一化到 1400×735 |
+| OMP Studio | 本批参考图由 preview harness 渲染；**本机未安装、未运行** | 1600×1000 @1x | 1200×750（0.75×） |
+| Codem（同批参考图） | 本批 `codem-main-dark.jpg` 等 | 1600×1000 @DPR2 | 1200×750（0.75×） |
 
 证据：
 
