@@ -3574,7 +3574,7 @@ z-index: 50;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-size: var(--fs-xs);
   cursor: pointer;
 }
@@ -3699,25 +3699,6 @@ z-index: 50;
 }
 
 /* P-UI: 两行结构 — textarea 上方独占一行，action row 下方 */
-.composer-foot {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  max-width: var(--reading-column);
-  margin: var(--space-1) auto 0;
-  color: var(--text-muted);
-  font-size: var(--fs-2xs);
-}
-
-.composer-foot-lock {
-  color: var(--success);
-}
-
-.composer-foot-right {
-  margin-left: auto;
-}
-
 .input-wrapper {
   display: flex;
   flex-direction: column;
