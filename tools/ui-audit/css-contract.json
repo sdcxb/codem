@@ -15373,6 +15373,15 @@
     "flex-direction": "column",
     "gap": "var(--space-3)"
   },
+  "setting-group--row": {
+    "align-items": "center",
+    "border-bottom": "1px solid var(--border-secondary)",
+    "display": "grid",
+    "gap": "var(--space-5)",
+    "grid-template-columns": "minmax(0, 1fr) 200px",
+    "min-height": "46px",
+    "padding": "var(--space-3) 0"
+  },
   "settings-back": {
     "align-items": "center",
     "background": "transparent",

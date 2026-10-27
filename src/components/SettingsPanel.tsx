@@ -2007,7 +2007,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
           <div className="settings-section-title">{S.settings.identityConfig[lang]}</div>
 
-          <div className="setting-group">
+          <div className="setting-group setting-group--row">
             <label>{S.settings.callMe[lang]}</label>
             <input
               type="text"

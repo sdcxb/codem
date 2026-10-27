@@ -1,4 +1,4 @@
-﻿/* ========== Custom Fonts ========== */
+/* ========== Custom Fonts ========== */
 /* 第 35 波：这确实是**可变字体**（fvar 轴 wght 200–700 + BEVL 1–100，18 个具名实例），
    所以 --weight-* 的 560/620 细档是真实生效的，不是靠浏览器取整。
    `font-weight` 声明改成真实轴范围 200–700：以前写 100 900 会让浏览器在 700 以上
@@ -5438,6 +5438,18 @@ background: var(--bg-secondary);
   flex-direction: column;
   gap: var(--space-3);
 }
+
+.setting-group--row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 46px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.setting-group--row > label { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+.setting-group--row > input { width: 200px; justify-self: end; margin: 0; }
 
 /* Row-style settings (Phase 4): label left, 200px control right, 46px floor. */
 .settings-rows > .setting-group {
