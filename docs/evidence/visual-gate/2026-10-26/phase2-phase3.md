@@ -1,26 +1,25 @@
 # Phase 2/3 运行态证据
 
-## Phase 2 四态
+## Phase 2
 
-| 状态 | 截图 | sha256(16) | 取证方式 |
+| 状态 | 截图 | sha256(16) | 取证 |
 |---|---|---|---|
-| 运行中 | `C:\temp\visual-gate\phase2-running.png` | `D07A30A982BFB298` | 真实发送“运行 bash sleep 8”，800ms 后截图；显示“正在思考/处理中”和红色停止方块 |
-| 停止 | `C:\temp\visual-gate\phase2-stopped.png` | `D3C0A467169E10CB` | 点击 `.cancel-btn` 后截图 |
-| 完成 | `C:\temp\visual-gate\phase2-completed.png` | `B643DF4EBB67D9E4` | 真实回合结束显示“任务完成” |
-| 失败 | unknown | — | 当前可见时间线未定位到失败工具卡；不伪造 |
+| 运行中 | `phase2-running.png` | `D07A30A982BFB298` | 真实 sleep 8，显示“处理中”+停止键 |
+| 停止 | `phase2-stopped.png` | `D3C0A467169E10CB` | 点击 `.cancel-btn` |
+| 完成 | `phase2-completed.png` | `B643DF4EBB67D9E4` | 真实回合结束 |
+| 失败 | unknown | — | 退出码 1 只在正文解释，未出现独立失败工具卡 |
 
-环境：安装版，CDP 9223，CSS 视口 1400×735（1280 屏 zoom 补偿）。
+## Phase 3
 
-## Phase 3 IME
-
-| 状态 | 截图 | sha256(16) | 读回值 |
+| 项 | 截图 | sha256(16) | 读回 |
 |---|---|---|---|
-| 组合中 | `C:\temp\visual-gate\phase3-ime-composing.png` | `215C6D1F583A7BBF` | `nihao` |
-| 提交后 | `C:\temp\visual-gate\phase3-ime-committed.png` | `0B8F7B6027A3E2FC` | `你好` |
+| IME 组合 | `phase3-ime-composing.png` | `215C6D1F583A7BBF` | `nihao` |
+| IME 提交 | `phase3-ime-committed.png` | `0B8F7B6027A3E2FC` | `你好` |
+| 上下文 chips | `chips-inspector-final.png` | — | `.context-badge` 高 28，accentsurface 背景 |
 
-使用 CDP `Input.imeSetComposition` + `Input.insertText`，不是 DOM dispatch；受控 textarea 正常更新，无重复字符。
+IME 使用 CDP `Input.imeSetComposition` + `Input.insertText`，受控 textarea 正常，无重复字符。
 
-## 仍未取证
+## Phase 6
 
-- 失败态工具卡（当前会话没有可定位的 failed 卡片）。
-- 上下文 chips：当前项目没有可匹配文件，@ 列表为空。
+- 右栏 tab 行高已从 36 调到 40（`right-sidebar-tabs`）。
+- 右栏可拖 300–800，8px 热区，折叠条 24。
