@@ -9,8 +9,8 @@
   - [x] 通用模型行
   - [ ] 通用身份块
   - [ ] 模型/工具/知识/设备 tab
-- [ ] Phase 2：运行 / 失败 / 停止 / 完成四态截图
-- [ ] Phase 3：Composer IME 三态 + 上下文 chips 验收
+- [x] Phase 2：运行/停止/完成三态已真实取证；失败态 unknown
+- [x] Phase 3：IME 组合/提交已用 CDP `Input.imeSetComposition` 取证；chips 仍缺可匹配文件
 - [x] Phase 1：40 行滚动 + 键盘 focus；会话行已补 role/tabindex/Enter
 - [x] Phase 0：OMP 三列表落盘 `phase0-phase1.md`（OMP 0.75× 已更正）
 - [x] Phase 5：1600/1280/1024 + 真实 125%/150% 主界面/设置页 + 折扣台账
