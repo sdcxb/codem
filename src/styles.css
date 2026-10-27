@@ -16310,15 +16310,18 @@ color: var(--accent, #7c6cf0);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 1px var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--bg-tertiary, #25252b);
-  font-size: var(--fs-2xs);
-  color: var(--text-secondary, #a0a0a8);
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-surface);
+  font-size: var(--fs-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--accent-strong);
 }
-.context-badge.type-notebook { border: 1px solid var(--accent-border); }
-.context-badge.type-file { border: 1px solid var(--success-border); }
-.context-badge.type-url { border: 1px solid var(--warning-border); }
+.context-badge.type-notebook,
+.context-badge.type-file,
+.context-badge.type-url { border-color: var(--accent-border); }
 
 /* ========== P4: MentionAutocomplete ========== */
 .mention-autocomplete {
@@ -16664,7 +16667,7 @@ color: var(--accent, #7c6cf0);
   gap: var(--space-1);
   padding: 0 var(--space-3);
   padding-right: var(--space-11);
-  height: 36px;
+  height: 40px;
   flex-shrink: 0;
   /* 第 51 波：按钮/标签行必须一行放完 —— 不滚动、不折行；宽度不足时标签文字省略号 */
   overflow: hidden;

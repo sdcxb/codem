@@ -2526,13 +2526,16 @@
   },
   "context-badge": {
     "align-items": "center",
-    "background": "var(--bg-tertiary, #25252b)",
-    "border-radius": "var(--radius-full)",
-    "color": "var(--text-secondary, #a0a0a8)",
+    "background": "var(--accent-surface)",
+    "border": "1px solid var(--accent-border)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--accent-strong)",
     "display": "inline-flex",
-    "font-size": "var(--fs-2xs)",
+    "font-size": "var(--fs-sm)",
+    "font-weight": "var(--font-weight-medium)",
     "gap": "var(--space-2)",
-    "padding": "1px var(--space-3)"
+    "height": "28px",
+    "padding": "0 var(--space-4)"
   },
   "context-badge-list": {
     "align-items": "center",
@@ -14785,7 +14788,7 @@
     "flex-shrink": "0",
     "flex-wrap": "nowrap",
     "gap": "var(--space-1)",
-    "height": "36px",
+    "height": "40px",
     "overflow": "hidden",
     "padding": "0 var(--space-3)",
     "padding-right": "var(--space-11)"
