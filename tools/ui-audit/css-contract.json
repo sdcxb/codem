@@ -1260,7 +1260,6 @@
   "change-file-row": {
     "align-items": "center",
     "border-bottom": "1px solid var(--border-secondary)",
-    "border-radius": "0",
     "cursor": "pointer",
     "display": "grid",
     "font-size": "var(--fs-sm)",
