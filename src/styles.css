@@ -2490,29 +2490,6 @@ font-size: var(--fs-sm);
   background: var(--bg-primary);
 }
 
-.chat-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: var(--space-2);
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: var(--fs-2xs);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-meta-sep {
-  color: var(--border-primary);
-}
-
-@media (max-width: 1180px) {
-  .chat-meta {
-    display: none;
-  }
-}
-
 .sidebar-toggle {
   background: none;
   border: none;
@@ -16398,18 +16375,22 @@ color: var(--accent, #7c6cf0);
 .composer-badges-row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-6) 0;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5) 0;
 }
 .composer-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 1px var(--space-4) 1px var(--space-4);
-  border-radius: var(--radius-full);
-  font-size: var(--fs-xs);
+  height: 28px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  font-size: var(--fs-sm);
   font-weight: 500;
-  line-height: var(--lh-ui);
+  line-height: 1;
   max-width: 240px;
   transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
   cursor: default;
@@ -16419,7 +16400,7 @@ color: var(--accent, #7c6cf0);
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  opacity: 0.8;
+  opacity: 1;
 }
 .composer-badge-label {
   overflow: hidden;
