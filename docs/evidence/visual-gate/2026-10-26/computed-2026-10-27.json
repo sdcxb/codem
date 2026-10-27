@@ -1,0 +1,137 @@
+{
+  "schema": "visual-gate/phase0-computed@1",
+  "batch": "2026-10-26",
+  "measured_at": "2026-10-27T11:48:00+08:00",
+  "doc": "docs/evidence/visual-gate/2026-10-26/phase0-phase1.md",
+  "environment": {
+    "codem_version": "1.16.330",
+    "codem_source": "package.json",
+    "webview2_version": "156.0.4314.50",
+    "cdp_protocol": "1.3",
+    "cdp_endpoint": "http://127.0.0.1:9223",
+    "viewport_css": { "width": 1280, "height": 672 },
+    "device_pixel_ratio": 3,
+    "screenshot_physical": { "width": 3840, "height": 2016 },
+    "screen": { "width": 1280, "height": 720, "avail_width": 1280, "avail_height": 672 },
+    "html_mock_file": "docs/design/ui-benchmark-mock.html",
+    "html_mock_bytes": 93930,
+    "html_render_browser": "Edge 156.0.4314.42 headless=new",
+    "html_render_dpr": 1,
+    "omp_reference_version": "0.1.10 (main @ 6c82315, per 13-UI-BENCHMARK-OMP.md L3)",
+    "omp_reference_images": {
+      "workbench": "docs/evidence/ui-benchmark-omp-2026-10-26/omp-workbench-dark.jpg",
+      "settings": "docs/evidence/ui-benchmark-omp-2026-10-26/omp-settings-dark.jpg",
+      "codem_calibration": "docs/evidence/ui-benchmark-omp-2026-10-26/codem-main-dark.jpg",
+      "image_size": { "width": 1200, "height": 750 }
+    },
+    "omp_image_scale": 0.75,
+    "omp_image_scale_basis": [
+      "1200x750 image = 1600x1000 layout x 0.75",
+      "OMP sidebar 204 image px / 272 documented = 0.750",
+      "OMP right rail 360 image px / 480 documented = 0.750",
+      "Codem reference sidebar 172 image px / 231 documented = 0.745 (within 1px border rounding)",
+      "column sum check: 272 + 848 + 480 = 1600 (image 204 + 636 + 360 = 1200)"
+    ],
+    "omp_quantization_error_css_px": 1.3
+  },
+  "phase0": {
+    "sidebar_width": {
+      "html_1400x875": { "value": 260, "source": "H-1400", "css": "ui-benchmark-mock.html:19 --sidebar-w: 260px" },
+      "html_1280x672": { "value": 240, "source": "H-1280", "css": "ui-benchmark-mock.html:1398-1401 @media max-width:1280 .sidebar{width:240px}" },
+      "current": { "value": 240, "source": "C-main", "selector": ".sidebar", "height": 628, "x": 0, "y": 44 },
+      "omp": { "value": 272, "source": "O-css", "image_px": 204, "border_x": [203, 204], "detector": "vlines frac=1.00 over y=90..600" }
+    },
+    "nav_row_height": {
+      "html_1400x875": { "value": 32, "source": "H-1400", "css": "ui-benchmark-mock.html:320" },
+      "current": { "value": 32, "source": "C-main", "selector": ".sidebar-nav-item", "width": 223, "font_size": "12px", "padding": "0px 8px" },
+      "omp": { "value": 32.0, "source": "O-css", "image_px": 24.0, "text_band_centers": [72.5, 96.5, 120.5], "doc_value": 30, "doc_source": "13-UI-BENCHMARK-OMP.md:602", "doc_conflict": true }
+    },
+    "session_row_height": {
+      "html_1400x875": { "value": 30, "source": "H-1400", "css": "ui-benchmark-mock.html:391" },
+      "current": { "value": 30, "source": "C-main", "selector": ".sidebar-session", "font_size": "12px", "line_height": "18px", "padding": "0px 8px", "count": 43, "unique_heights": [30] },
+      "omp": { "value": 30.7, "source": "O-css", "image_px": 23.0, "interval_range_image_px": [22, 24], "text_band_centers": [206.5, 228.5, 252.5, 276, 298.5], "doc_value": 28, "doc_source": "13-UI-BENCHMARK-OMP.md:605", "doc_conflict": true }
+    },
+    "reading_column_width": {
+      "html_1400x875": { "value": 732, "source": "H-1400", "selector": ".doc", "max_width": 780, "css": "ui-benchmark-mock.html:21,530" },
+      "html_1280x672": { "value": 780, "source": "H-1280", "selector": ".doc", "max_width": 780 },
+      "current": { "value": 820, "source": "C-main", "selector": ".message-content", "css": ["src/styles.css:2688 --reading-column: 820px", "src/styles.css:14373 max-width: 820px"] },
+      "omp": { "value": 768, "source": "O-doc", "doc_source": "13-UI-BENCHMARK-OMP.md:591", "measured_card_edges_css_px": [748, 751], "measured_card_edges_image_px": [552, 563], "note": "column width has no visible boundary in the reference image" }
+    },
+    "composer_width": {
+      "html_1400x875": { "value": 732, "height": 112, "source": "H-1400", "css": "ui-benchmark-mock.html:791,761" },
+      "html_1280x672": { "value": 780, "height": 112, "source": "H-1280" },
+      "current": { "shell_value": 820, "shell_height": 134.5, "inner_value": 798, "inner_height": 102, "source": "C-main", "selectors": { "shell": ".input-area", "inner": ".input-wrapper", "textarea_row": ".input-textarea-row", "action_row": ".input-action-row", "foot": ".composer-foot" }, "shell_when_rail_expanded": 680, "shell_when_rail_expanded_source": "C-rail" },
+      "omp": { "value_range": [748, 751], "source": "O-css", "image_px_range": [561, 563] }
+    },
+    "right_rail_collapsed_width": {
+      "html": { "value": 0, "state": "no collapsed state; display:none at <=1280", "source": "H-1280", "css": "ui-benchmark-mock.html:1398-1401" },
+      "current": { "collapsed": 36, "expanded": 360, "source": "C-main + C-rail", "collapsed_selector": ".right-sidebar-collapsed", "expanded_x": 920, "collapsed_x": 1244 },
+      "omp": { "value": 480, "state": "always expanded, no collapsed state", "source": "O-css", "image_px": 360, "border_x": 840 }
+    },
+    "settings_grouping": {
+      "html": { "nav_items": 8, "groups_in_general": 4, "subnav_pills": 5, "sidebar_width": 220, "content_width": 900, "nav_item_height": 31, "set_row_height": 49, "set_row_min_height": 46, "source": "H-set", "css": ["ui-benchmark-mock.html:1790-1799", "ui-benchmark-mock.html:1817/1835/1857/1875", "ui-benchmark-mock.html:1135"] },
+      "current": { "nav_group_labels": 6, "tabs": 23, "setting_group_nodes": 39, "visible_section_titles": 3, "settings_sidebar_width": 220, "settings_content_width": 900, "settings_subnav": { "width": 876, "height": 33 }, "nav_item_height": 31, "source": "C-set" },
+      "omp": { "nav_sections": 8, "groups_in_general": 3, "nav_pitch_image_px": 22.5, "nav_pitch_css_px": 30.0, "setting_row_pitch_image_px": 43.25, "setting_row_pitch_css_px": 57.7, "source": "O-set" }
+    }
+  },
+  "phase1": {
+    "geometry_current": {
+      "sidebar_width": 240,
+      "nav_row_height": 32,
+      "session_row_height": 30,
+      "project_row_height": 32,
+      "tool_item_height": 43,
+      "tool_item_width": 54.25,
+      "section_header_height": 28,
+      "titlebar_height": 44,
+      "chat_header_height": 48,
+      "messages_container_width": 916,
+      "messages_container_padding": "20px 48px",
+      "horizontal_overflow": false,
+      "scroll_width": 1280,
+      "source": "C-main"
+    },
+    "left_rail_file_tree": { "present": false, "dom_hits": 0, "html_has_tree": true, "html_css_lines": "ui-benchmark-mock.html:1544-1556", "decision": "15-VISUAL-REBUILD-PLAN.md §2.3 (user decision: no file tree in left rail)", "source": "C-main" },
+    "session_scroll_40_rows": {
+      "status": "captured",
+      "session_rows": 43,
+      "row_height_unique": [30],
+      "container": { "selector": ".sidebar-sessions", "client_height": 143, "scroll_height": 1402, "max_scroll": 1259 },
+      "top": { "scroll_top": 0, "fully_visible_rows": 3, "first_visible": "对话 43" },
+      "bottom": { "scroll_top": 1259, "fully_visible_rows": 4, "last_visible": "对话 1" },
+      "screenshots": {
+        "top": { "file": "sessions-scroll-top.png", "sha256_16": "78868d061ddfe7a0", "bytes": 447973 },
+        "bottom": { "file": "sessions-scroll-bottom.png", "sha256_16": "d391cdb250be0960", "bytes": 454711 }
+      },
+      "limitation": "1280x672 viewport shows 3-4 rows at once; evidence is 'no compression while scrolling', not '40 rows on screen'",
+      "source": "C-scroll"
+    },
+    "keyboard_focus": {
+      "status": "captured",
+      "tab_order_from_titlebar": ["titlebar x5", "sidebar-nav-item x3", "sidebar-tool-item x4", "sidebar-project-btn.sidebar-add-btn", ".sidebar-sessions (DIV)", "sidebar-section-btn.sort", "sidebar-section-btn", "sidebar-project-btn x8", "sidebar-user-me", "sidebar-user-plugin-btn", "sidebar-toggle", "chat controls"],
+      "session_row_focusable": { "tag": "DIV", "tabindex": -1, "role": null, "aria_selected": null, "tab_hits_in_60_samples": 0 },
+      "session_actions_focusable": { "pin_and_delete_tabindex": 0, "reachable": false, "reason": "parent .sidebar-session-actions display:none until hover" },
+      "focus_ring": { "buttons": "outline 2px solid rgb(124,108,240) / outline-offset 2px", "focus_visible_hits": "59/60", "non_hit": "press 21 landed on BODY (tabindex=-1, outline 3px none)" },
+      "html_reference": { "session_element": "button", "css_lines": "ui-benchmark-mock.html:1523-1531", "focus_visible_rule": "ui-benchmark-mock.html:151 outline 2px + offset 2px (outset)" },
+      "verdict": "session rows are not buttons and are not keyboard reachable; focus ring is outset 2px (matches HTML, not the plan's 'inset')",
+      "screenshots": {
+        "nav_item": { "file": "tabfocus-nav-item.png", "sha256_16": "b99fae3eba9a7186" },
+        "nav_item_zoom": { "file": "tabfocus-nav-item-zoom.png", "sha256_16": "941f3f30252c155a" },
+        "sessions_container": { "file": "tabfocus-session-action.png", "sha256_16": "1ae3949b5d42c971" },
+        "sessions_container_zoom": { "file": "tabfocus-session-action-zoom.png", "sha256_16": "2791385d02ddeb23" }
+      },
+      "source": "C-tab"
+    }
+  },
+  "unknowns": [
+    "current app geometry at a real 1400x875 window (window is maximized at 1280x672)",
+    "OMP project row height, tool item height, section header height",
+    "OMP settings groups outside the 常规 pane",
+    "OMP light theme / command palette / model menu geometry",
+    "current settings per-row height (set-row min-height, control width)",
+    "HTML mock 40-row session scroll (mock has 6 .session rows only)",
+    "light / hub / dream skin geometry"
+  ],
+  "artifacts_dir": "C:/temp/visual-gate",
+  "artifacts_not_in_repo": true
+}

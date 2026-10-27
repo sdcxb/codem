@@ -1259,7 +1259,17 @@ function SessionItem({
   return (
     <div
       className={`sidebar-session ${isActive ? "active" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-current={isActive ? "true" : undefined}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       onContextMenu={onContextMenu}
       draggable
       onDragStart={onDragStart}

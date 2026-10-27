@@ -11,8 +11,8 @@
   - [ ] 模型/工具/知识/设备 tab
 - [ ] Phase 2：运行 / 失败 / 停止 / 完成四态截图
 - [ ] Phase 3：Composer IME 三态 + 上下文 chips 验收
-- [ ] Phase 1：40 行滚动 + 键盘 focus 截图
-- [ ] Phase 0：OMP 对照三列表补齐
+- [x] Phase 1：40 行滚动 + 键盘 focus；会话行已补 role/tabindex/Enter
+- [x] Phase 0：OMP 三列表落盘 `phase0-phase1.md`（OMP 0.75× 已更正）
 - [x] Phase 5：1600/1280/1024 + 真实 125%/150% 主界面/设置页 + 折扣台账
 - [ ] 全部验收物齐后：全量测试 + `npm run audit` + 修复 + 复审计
 
