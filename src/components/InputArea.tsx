@@ -1056,6 +1056,16 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P0: Model list for inline model selector
   const modelList: ModelOption[] = getModelsForMode(mode);
   const currentModelName = modelList.find(m => m.id === model)?.name || model || "";
+  const [reasoningEffort, setReasoningEffort] = useState<string>(() =>
+    getSettingJSON<string>("codem-reasoning-effort", "high"),
+  );
+  const effortLabels: Record<string, { zh: string; en: string }> = {
+    low: { zh: "低", en: "Low" },
+    medium: { zh: "中", en: "Medium" },
+    high: { zh: "高", en: "High" },
+    ultra: { zh: "超高", en: "Ultra" },
+  };
+  const effortOrder = ["low", "medium", "high", "ultra"] as const;
 
   /**
    * 显示态与草稿态的**对齐规则**（第 184 轮，这条是修"文字不见了"的关键）。
@@ -1789,6 +1799,19 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
           {/* 右侧发送组 */}
           <div className="input-tools-right">
+            <button
+              type="button"
+              className="composer-effort"
+              title={zh ? "推理强度（点击切换）" : "Reasoning effort (click to cycle)"}
+              onClick={() => {
+                const idx = effortOrder.indexOf(reasoningEffort as typeof effortOrder[number]);
+                const next = effortOrder[(idx + 1) % effortOrder.length];
+                setReasoningEffort(next);
+                setSettingJSON("codem-reasoning-effort", next);
+              }}
+            >
+              {effortLabels[reasoningEffort]?.[zh ? "zh" : "en"] || effortLabels.high[zh ? "zh" : "en"]}
+            </button>
             <ModelSelector
               model={model}
               models={modelList}

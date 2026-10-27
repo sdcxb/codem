@@ -2148,6 +2148,17 @@
     "gap": "var(--space-3)",
     "padding": "var(--space-2) var(--space-6) 0"
   },
+  "composer-effort": {
+    "background": "transparent",
+    "border": "none",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-tertiary)",
+    "cursor": "pointer",
+    "flex-shrink": "0",
+    "font-size": "var(--fs-xs)",
+    "height": "24px",
+    "padding": "0 var(--space-2)"
+  },
   "composer-foot": {
     "align-items": "center",
     "color": "var(--text-muted)",

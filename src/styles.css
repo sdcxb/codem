@@ -3563,6 +3563,24 @@ z-index: 50;
   border-radius: var(--radius-lg);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
+  /* Model / reasoning popovers are anchored inside the composer. */
+  overflow: visible;
+}
+
+.composer-effort {
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.composer-effort:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* 第 185/186/187 轮：输入区的焦点环 —— 位置、宽度、**触发条件**都改过，三次各有实测依据。
