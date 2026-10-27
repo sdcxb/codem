@@ -1,0 +1,14 @@
+{
+  "name": "dsh-completion-gate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Profile-level completion gate: if todo_write still has pending/in_progress items at turn/end completed, inject one more turn.",
+  "dsh": {
+    "plugin": true
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2"
+  }
+}
