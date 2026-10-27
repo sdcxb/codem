@@ -15,11 +15,13 @@
 
 import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
-import { Folder, Globe, ChevronRight, ChevronLeft, ArrowLeft } from "lucide-react";
+import { Folder, Globe, ChevronRight, ChevronLeft, ArrowLeft, FileDiff } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useProjectStore } from "../core/store";
+import { useAppStore } from "../store";
 import { FileExplorer } from "./FileExplorer";
 import { FileEditor } from "./FileEditor";
+import { FileChangesList } from "./FileChangesList";
 import { usePaneResize } from "../hooks/usePaneResize";
 
 interface RightSidebarProps {
@@ -44,8 +46,9 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const lang = useLang();
   const zh = lang === "zh";
   const [internalCollapsed, setInternalCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"files" | "browser">("files");
-  const { currentProject } = useProjectStore();
+  const [activeTab, setActiveTab] = useState<"changes" | "files" | "browser">("files");
+  const { currentProject, currentSession, sessions, projects } = useProjectStore();
+  const loadedSessionId = useAppStore((s) => s.loadedSessionId);
   const editingFile = props.editingFile ?? null;
   const setEditingFile = props.onEditingFileChange ?? (() => {});
 
@@ -91,6 +94,7 @@ const effectiveWidth = sidebarWidth;
   }
 
   const tabs = [
+    { id: "changes" as const, icon: FileDiff, label: zh ? "改动" : "Changes" },
     { id: "files" as const, icon: Folder, label: zh ? "文件" : "Files" },
     { id: "browser" as const, icon: Globe, label: zh ? "浏览器" : "Browser" },
   ];
@@ -137,6 +141,19 @@ const effectiveWidth = sidebarWidth;
 
       {/* Tab content */}
       <div className="right-sidebar-content">
+        {activeTab === "changes" && (() => {
+          const sessionId = currentSession?.id || loadedSessionId || "";
+          const session = sessions.find((s) => s.id === sessionId);
+          const sessionProject = projects.find((p) => p.id === session?.projectId);
+          const workspace = currentProject?.path || sessionProject?.path || "";
+          return sessionId && workspace ? (
+            <FileChangesList sessionId={sessionId} workspace={workspace} />
+          ) : (
+            <div className="empty-hint is-fill">
+              {zh ? "选择会话和项目后查看改动" : "Select a session and project to view changes"}
+            </div>
+          );
+        })()}
         {activeTab === "files" && (
           currentProject ? (
             editingFile ? (
