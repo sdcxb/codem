@@ -16099,6 +16099,21 @@
     "display": "flex",
     "position": "relative"
   },
+  "sidebar-task-count": {
+    "align-items": "center",
+    "background": "var(--accent)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-on-accent)",
+    "display": "inline-flex",
+    "font-size": "var(--fs-xs)",
+    "font-weight": "600",
+    "height": "18px",
+    "justify-content": "center",
+    "line-height": "1",
+    "margin-left": "auto",
+    "min-width": "18px",
+    "padding": "0 var(--space-2)"
+  },
   "sidebar-toggle": {
     "background": "none",
     "border": "none",

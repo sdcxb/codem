@@ -647,19 +647,13 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                 : undefined
             }
           >
-            <span className="sidebar-nav-icon" style={{ position: "relative" }}>
-              <ClipboardList size={16} />
-              {inboxUnread > 0 && (
-                <span style={{
-                  position: "absolute", top: -4, right: -6,
-                  fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-on-accent)",
-                  background: "var(--error)", borderRadius: "var(--radius)",
-                  minWidth: 14, height: 14, display: "flex",
-                  alignItems: "center", justifyContent: "center", padding: "0 3px",
-                }} aria-hidden="true">{inboxUnread}</span>
-              )}
-            </span>
+            <span className="sidebar-nav-icon"><ClipboardList size={16} /></span>
             <span>{lang === 'zh' ? '任务管理' : 'Task Center'}</span>
+            {inboxUnread > 0 && (
+              <span className="sidebar-task-count" aria-hidden="true">
+                {inboxUnread > 99 ? '99+' : inboxUnread}
+              </span>
+            )}
           </button>
         )}
 
