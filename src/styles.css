@@ -5555,7 +5555,8 @@ background: var(--bg-secondary);
 
 .mode-options {
   display: flex;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 /* 运行模式的「更多」（第 186 轮）：CLI 模式收在展开区里按需显示。
@@ -5583,44 +5584,51 @@ background: var(--bg-secondary);
 }
 
 .mode-btn {
-flex: 1;
-display: flex;
-flex-direction: column;
-align-items: center;
-gap: var(--space-2);
-padding: var(--space-6) var(--space-4);
-background: var(--bg-tertiary);
-border: 2px solid var(--border-primary);
-border-radius: var(--radius);
-cursor: pointer;
-color: var(--text-primary);
-transition: var(--transition-color);
+  width: 100%;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-5);
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: var(--transition-color);
 }
 
 .mode-btn:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--bg-hover);
 }
 
 .mode-btn.active {
-  border-color: var(--accent-strong);
-  background: var(--accent-muted);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
 }
 
 .mode-icon {
-font-size: var(--fs-2xl);
-color: var(--text-primary);
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
 }
 
 .mode-title {
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .mode-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-2xs);
   color: var(--text-muted);
-  text-align: center;
+  text-align: right;
 }
 
 .api-key-input {
