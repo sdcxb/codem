@@ -5,12 +5,11 @@
  * 复用项目已有的 react-syntax-highlighter。
  */
 
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useEffect } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ContentFrame } from "./ContentFrame";
 import { getSetting } from "../../core/storage/settings";
-import { DEFAULT_THEME, isThemeMode } from "../../core/theme/theme-default";
 import { ActionIcons } from "../../core/icons/icon-map";
 
 interface CodeBlockViewProps {
@@ -31,8 +30,20 @@ export const CodeBlockView = memo(function CodeBlockView({
   const [fullscreen, setFullscreen] = useState(false);
   const CloseIcon = ActionIcons.close;
   const theme = typeof getSetting === "function" ? getSetting("codem-theme") : null;
-  // 第 36 波：默认档位改为浅色，这里不能再写死"没读到就是暗色"
-  const isDark = isThemeMode(theme) ? theme === "dark" : DEFAULT_THEME === "dark";
+  const [dataTheme, setDataTheme] = useState<string>(() =>
+    typeof document === "undefined" ? "dark" : (document.documentElement.getAttribute("data-theme") || "dark"),
+  );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setDataTheme(root.getAttribute("data-theme") || "dark");
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  // 第 36 波：默认档位改为浅色；data-theme 是主题切换后的权威值。
+  const isDark = theme === "hub" ? true : dataTheme !== "light";
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(code).catch(() => {});
