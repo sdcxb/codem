@@ -14,6 +14,7 @@
 - [x] Phase 1：40 行滚动 + 键盘 focus；会话行已补 role/tabindex/Enter
 - [x] Phase 0：OMP 三列表落盘 `phase0-phase1.md`（OMP 0.75× 已更正）
 - [x] Phase 5：1600/1280/1024 + 真实 125%/150% 主界面/设置页 + 折扣台账
+- [ ] Phase 6：右侧 Inspector（改动/文件/子代理、文件行、检查行、上下文、diff 预览、footer）对标 400px
 - [ ] 全部验收物齐后：全量测试 + `npm run audit` + 修复 + 复审计
 
 ## 已完成提交
