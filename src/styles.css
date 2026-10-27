@@ -3621,6 +3621,17 @@ z-index: 50;
  * 触发条件仍用 `textarea 的 :focus-visible`（而不是行的 `:focus-within`），
  * 这样"鼠标点一下不亮、一打字就亮、焦点离开就灭"的行为保持不变（187 轮的修复）。
  */
+/* 编辑态：环圈整张 composer（含 chips / actions），不再只圈 textarea 行。 */
+.input-area.input-card-container:has(.message-input:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.input-area.input-card-container:has(.message-input:focus-visible) .input-textarea-row {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .input-textarea-row:has(.message-input:focus-visible) {
   /**
    * ⚠️ 第 189 轮：**顶边必须让位给环**，不能再叠一层边框色。
@@ -16333,10 +16344,10 @@ color: var(--accent, #7c6cf0);
 .composer-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
+  gap: var(--space-2);
+  padding: 1px var(--space-4) 1px var(--space-4);
   border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 500;
   line-height: var(--lh-ui);
   max-width: 240px;
