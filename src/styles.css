@@ -5512,6 +5512,41 @@ background: var(--bg-secondary);
   min-width: 0;
 }
 
+/*
+ * Phase 4 收尾：其余 tab 里“直接 label + 单个控件”的组统一成 46px 行式。
+ * 只匹配直接子 label 且直接子控件是 select/text/range，复杂业务块
+ *（多选 chips、按钮组、textarea、嵌套面板）不匹配，避免再次把嵌套组撑高。
+ */
+.settings-content .setting-group:has(> label):has(> select),
+.settings-content .setting-group:has(> label):has(> input[type="text"]),
+.settings-content .setting-group:has(> label):has(> input[type="range"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 46px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.settings-content .setting-group:has(> label):has(> select) > label,
+.settings-content .setting-group:has(> label):has(> input[type="text"]) > label,
+.settings-content .setting-group:has(> label):has(> input[type="range"]) > label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.settings-content .setting-group:has(> label):has(> select) > select,
+.settings-content .setting-group:has(> label):has(> input[type="text"]) > input[type="text"],
+.settings-content .setting-group:has(> label):has(> input[type="range"]) > input[type="range"] {
+  width: 200px;
+  justify-self: end;
+  margin: 0;
+}
+.settings-content .setting-group:has(> label) > .sp-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .setting-group label {
   font-size: var(--fs-base);
   color: var(--text-secondary);
