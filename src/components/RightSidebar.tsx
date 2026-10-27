@@ -64,8 +64,8 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const [browserInput, setBrowserInput] = useState("");
 
 const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
-min: 360,
-max: 620,
+min: 300,
+max: 800,
 /* P2-2：1440 宽给 360，宽屏给 400；持久化值仍优先。 */
 initial: typeof window !== "undefined" && window.innerWidth <= 1440 ? 360 : 400,
 storageKey: "right-sidebar-width",
@@ -101,6 +101,10 @@ const effectiveWidth = sidebarWidth;
       <div
         className={`right-sidebar-resize-handle ${isResizing ? "active" : ""}`}
         onPointerDown={onResizeStart}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖动调整右侧栏宽度"
+        title="拖动调整右侧栏宽度"
       />
 
       {/* Collapse button */}

@@ -14753,11 +14753,11 @@
     "background": "transparent",
     "bottom": "0",
     "cursor": "col-resize",
-    "left": "0",
+    "left": "-3px",
     "position": "absolute",
     "top": "0",
     "transition": "background var(--duration-fast) var(--ease-out)",
-    "width": "4px",
+    "width": "8px",
     "z-index": "10"
   },
   "right-sidebar-tab": {

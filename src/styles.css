@@ -15102,14 +15102,31 @@ html.pet-window-mode body,
 /* ========== P2 #33: Right sidebar resize handle ========== */
 .right-sidebar-resize-handle {
   position: absolute;
-  left: 0;
+  left: -3px;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 8px;
   cursor: col-resize;
   z-index: 10;
   background: transparent;
   transition: background var(--duration-fast) var(--ease-out);
+}
+.right-sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 2px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  transform: translateY(-50%);
+  background: var(--border-secondary);
+  opacity: .7;
+}
+.right-sidebar-resize-handle:is(:hover, :focus-visible)::after,
+.right-sidebar-resize-handle.active::after {
+  background: var(--accent);
+  opacity: 1;
 }
 .right-sidebar-resize-handle:is(:hover, :focus-visible),
 .right-sidebar-resize-handle.active {
