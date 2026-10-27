@@ -1,9 +1,12 @@
+import AgentLoop from "@deepseek-ai/dsh-agent-loop";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 export const name = "completion-gate";
-export const inject = ["sessionProjections", "agents"];
+export const inject = ["sessionProjections"];
 
-const attempts = new Map();
+const attempts = new WeakMap();
+const originalStep = AgentLoop.prototype.step;
+let patched = false;
 
 function pendingTodos(ctx, session) {
   const state = ctx.sessionProjections.stateOf(session, "todos");
@@ -24,29 +27,34 @@ function reminder(pending) {
 }
 
 export function apply(ctx, config = {}) {
+  if (patched) return;
+  patched = true;
   const maxRounds = Number.isInteger(config.maxRounds) && config.maxRounds > 0 ? config.maxRounds : 3;
 
-  ctx.on("session/event", (session, event) => {
-    if (event.type !== "turn/end") return;
-    if (event.data?.reason !== "completed") return;
+  /*
+   * turn() does:
+   *   const stepEnd = await this.step(decision);
+   *   if (turnEnds === null || ...) turnEnds = stepEnd;
+   * A completed stepEnd causes turn/end completed. Returning null keeps
+   * turnEnds null, so the same turn continues with another step.
+   */
+  AgentLoop.prototype.step = async function completionGatedStep(decision) {
+    const result = await originalStep.call(this, decision);
+    if (result?.kind !== "completed") return result;
 
-    const pending = pendingTodos(ctx, session);
+    const pending = pendingTodos(ctx, this.session);
     if (pending.length === 0) {
-      attempts.delete(session.id);
-      return;
+      attempts.delete(this.session);
+      return result;
     }
 
-    const count = (attempts.get(session.id) ?? 0) + 1;
-    attempts.set(session.id, count);
-    if (count > maxRounds) return;
+    const count = (attempts.get(this.session) ?? 0) + 1;
+    attempts.set(this.session, count);
+    if (count > maxRounds) return result;
 
-    const agent = ctx.agents.get(session.id);
-    if (!agent || typeof agent.followup !== "function") return;
-
-    agent.followup(
-      createUserMessage({
-        content: [{ type: "text", text: reminder(pending) }],
-      }),
-    );
-  });
+    this.inject(createUserMessage({
+      content: [{ type: "text", text: reminder(pending) }],
+    }));
+    return null;
+  };
 }
