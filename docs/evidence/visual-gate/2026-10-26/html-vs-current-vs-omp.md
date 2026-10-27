@@ -51,9 +51,25 @@
 | 设置组数 | 6 组 | 6 组 / 23 tab | 已完成 |
 | 运行模式 | 行式 | 46px 行式 | 已完成 |
 
-## 缩放限制
+## 真实缩放（WebView2 --force-device-scale-factor）
 
-125%/150% 不能通过 CDP `setDeviceMetricsOverride` 在本机 WebView 复现：宿主 DPR 固定为 3，覆盖后 `devicePixelRatio` 仍为 3，截图不能作为真实缩放证据。该项保持未验证，不用假数据充数。
+| 缩放 | inner | dpr | scrollWidth | 设置行 | 截图 |
+|---|---:|---:|---:|---:|---|
+| 125% | 3072×1614 | 1.25 | 3072 | 7 | `real-scale-125-settings.png` |
+| 150% | 2560×1344 | 1.5 | 2560 | 7 | `real-scale-150-settings.png` |
+
+主界面与设置页均无横向溢出；缩放测试后已恢复正常启动。
+
+## 外观行式化
+
+外观 tab 的 7 个 `setting-group` 已改成 `label | 200px control` 行：
+
+```text
+行宽 876，控件 200
+控件右缘 x=1183 = 内容列右缘
+```
+
+截图：`settings-appearance-rows.png`。
 
 ## 未完成
 
@@ -62,3 +78,12 @@
 - Composer IME 三态；
 - 工具卡片内部行与运行/失败/停止/完成四态截图；
 - 40 行滚动与键盘 focus 截图。
+
+## 真实缩放（WebView2 --force-device-scale-factor）
+
+| 缩放 | inner | dpr | scrollWidth | 结果 |
+|---|---:|---:|---:|---|
+| 125% | 3072×1614 | 1.25 | 3072 | 无横向溢出 |
+| 150% | 2560×1344 | 1.5 | 2560 | 无横向溢出 |
+
+截图：`real-scale-125.png` / `real-scale-150.png`。宿主 DPR 不再是假的 3；这是 WebView2 启动参数级别缩放。
