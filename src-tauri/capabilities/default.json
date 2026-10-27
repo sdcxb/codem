@@ -23,6 +23,7 @@
     "core:window:allow-outer-size",
     "core:window:allow-primary-monitor",
     "core:event:default",
+    "core:webview:allow-set-webview-zoom",
     "shell:default",
     "shell:allow-open",
     "shell:allow-execute",

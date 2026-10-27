@@ -526,6 +526,31 @@ function App() {
     streamingRef.current = isStreaming;
   }, [isStreaming]);
 
+  /**
+   * 整页缩放：mock 以 1400×875 为设计基准。
+   * 屏幕窄于 1400 时按比例缩小 WebView（而不是改字体），
+   * 否则同样 14px 的文字在 1280 窗口里会显得整体放大约 9%。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const width = window.screen?.availWidth || window.innerWidth;
+        const scale = Math.min(1, width / 1400);
+        if (!cancelled) {
+          await getCurrentWebview().setZoom(scale);
+          // setZoom 会改变 CSS 视口宽度；等一帧后再通知响应式侧栏取 240/260。
+          requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+          setTimeout(() => window.dispatchEvent(new Event("resize")), 120);
+        }
+      } catch {
+        // 非 Tauri 环境（测试/浏览器）不需要整页缩放
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
 // file links in markdown output resolves paths against the wrong base dir
 // (get_default_cwd returns the global workspace, not the project dir).

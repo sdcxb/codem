@@ -918,7 +918,8 @@ body {
   background: transparent;
   color: var(--text-primary);
   overflow: hidden;
-  font-size: var(--fs-md);
+  /* mock body 基准是 13px；正文自身用 --fs-md(14px)，其余继承 13px。 */
+  font-size: var(--fs-base);
   line-height: var(--lh-base);
 }
 
@@ -1574,6 +1575,11 @@ display: flex;
 flex-direction: column;
 flex-shrink: 0;
 overflow: hidden;
+}
+
+/* mock: >1280 sidebar 260；setZoom 后 CSS 视口是 1400，故覆盖内联 240。 */
+@media (min-width: 1281px) {
+  .sidebar { width: 260px !important; min-width: 260px; }
 }
 
 .sidebar-header {
@@ -2686,7 +2692,8 @@ font-size: var(--fs-sm);
 /* ========== Messages ========== */
 :root {
   --reading-column: 820px;
-  --reading-gutter: 48px;
+  /* mock .chat-main 左右各 24px；780 - 48 = 732，正是 HTML 1400 下的正文宽。 */
+  --reading-gutter: 24px;
 }
 
 /* mock breakpoints: 820 / 780 / 780 / 100% */
@@ -3567,7 +3574,7 @@ z-index: 50;
   margin: 0 auto var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-4);
   background: var(--bg-secondary);
-  border: 1px solid var(--success-border);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent);
   border-radius: var(--radius-lg);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);

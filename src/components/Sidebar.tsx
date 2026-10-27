@@ -221,6 +221,19 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
     }
     return window.innerWidth > 1280 ? 260 : 240;
   });
+  // mock 断点：宽度变化时在 240/260 之间切换；用户拖过的其他宽度保持不动。
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarWidth((w) => {
+        if (w !== 240 && w !== 260) return w;
+        const next = window.innerWidth > 1280 ? 260 : 240;
+        return w === next ? w : next;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   /**
    * 会话显示排序（GAP-LIST `O-57`）。
    *
