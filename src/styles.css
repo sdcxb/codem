@@ -2699,6 +2699,11 @@ font-size: var(--fs-sm);
 /* mock breakpoints: 820 / 780 / 780 / 100% */
 @media (max-width: 1440px) {
   :root { --reading-column: 780px; }
+  /* 正文实际内容列 = reading-column - 左右 gutter；Composer 必须同宽。 */
+  .input-area.input-card-container {
+    width: min(100%, calc(var(--reading-column) - var(--reading-gutter) * 2));
+    max-width: calc(var(--reading-column) - var(--reading-gutter) * 2);
+  }
 }
 @media (max-width: 900px) {
   :root { --reading-column: 100%; --reading-gutter: 24px; }
@@ -3580,6 +3585,14 @@ z-index: 50;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
   /* Model / reasoning popovers are anchored inside the composer. */
   overflow: visible;
+}
+
+@media (max-width: 1440px) {
+  /* 必需放在基规则之后：正文内容列 = 780 - 48 = 732，Composer 同宽。 */
+  .input-area.input-card-container {
+    width: min(100%, calc(var(--reading-column) - var(--reading-gutter) * 2));
+    max-width: calc(var(--reading-column) - var(--reading-gutter) * 2);
+  }
 }
 
 .composer-effort {
