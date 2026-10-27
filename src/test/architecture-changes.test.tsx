@@ -372,18 +372,18 @@ describe('架构变更: InputArea 两行布局', () => {
     expect(code).toContain('input-tools-right')
   })
 
-  it('textarea 字号 >= 15px', async () => {
+  it('textarea 字号 = 14px（对齐 mock composer）', async () => {
     const src = await vi.importActual('fs')
     const css = src.readFileSync('src/styles.css', 'utf8')
     // 锚定行首，避免误匹配 `.input-card-container.blur-folded .message-input {` 等后代规则
     const inputBlock = css.match(/(?:^|\n)\.message-input\s*\{[^}]+\}/s)?.[0]
     expect(inputBlock).toBeDefined()
-    // 字号必须走设计系统令牌（audit 规则 fs-hardcoded 禁止写死 px），
-    // 但「>= 15px」这个可读性要求不变 —— 于是从 :root 解析令牌的实际数值来断言。
+    // 字号必须走设计系统令牌（audit 规则 fs-hardcoded 禁止写死 px）。
+    // mock .composer-input 是 14px / line-height 1.6；这里钉住同一基准。
     const token = /font-size:\s*var\((--[a-z0-9-]+)\)/.exec(inputBlock!)?.[1]
     expect(token, '输入框字号必须使用设计系统令牌 var(--fs-*)').toBeTruthy()
     const rawPx = new RegExp(`\\${token}:\\s*calc\\(([0-9.]+)px`).exec(css)?.[1]
-    expect(Number(rawPx), `${token} = ${rawPx}px，输入框字号必须 >= 15px`).toBeGreaterThanOrEqual(15)
+    expect(Number(rawPx), `${token} = ${rawPx}px，输入框字号必须 = 14px`).toBe(14)
     expect(inputBlock).toContain('min-height: 56px')
     /**
      * 行高：第 155 轮（P0-3）从写死的 `24px` 改成令牌 `var(--lh-base)`。
@@ -394,14 +394,14 @@ describe('架构变更: InputArea 两行布局', () => {
      * 判据同时钉住两件事：① 走的是行高令牌；② 在默认字号下仍然等于 24px；③ 镜像层用**同一个**令牌
      * （见下面那条用例 —— 两层字号/行高不一致会直接表现为光标错位）。
      */
-    expect(inputBlock, '输入框行高必须走 --lh-* 令牌').toContain('line-height: var(--lh-base)')
+    expect(inputBlock, '输入框行高必须走 --lh-* 令牌').toContain('line-height: var(--lh-composer)')
     const lhToken = /line-height:\s*var\((--lh-[a-z]+)\)/.exec(inputBlock!)?.[1]
     expect(lhToken, '输入框行高必须使用设计系统令牌 var(--lh-*)').toBeTruthy()
     const lhFactor = new RegExp(`\\${lhToken}:\\s*([0-9.]+);`).exec(css)?.[1]
     const fsPx = Number(rawPx)
     expect(
-      lhFactor && Math.abs(Number(lhFactor) * fsPx - 24) < 0.01,
-      `${lhToken}(${lhFactor}) × ${token}(${fsPx}px) = ${(Number(lhFactor) * fsPx).toFixed(2)}px，必须等于 24px`,
+      lhFactor && Math.abs(Number(lhFactor) * fsPx - 22.4) < 0.01,
+      `${lhToken}(${lhFactor}) × ${token}(${fsPx}px) = ${(Number(lhFactor) * fsPx).toFixed(2)}px，必须等于 22.4px`,
     ).toBe(true)
   })
 

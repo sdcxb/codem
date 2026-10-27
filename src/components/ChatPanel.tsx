@@ -1671,7 +1671,7 @@ canEdit={!isSessionStreaming}
         <div className="guidance-messages-bar" ref={guidanceFade.ref} style={guidanceFade.style}>
           {guidanceMessages.map((g) => (
             <div key={g.id} className={`guidance-item ${g.consumed ? 'consumed' : 'pending'}`}>
-              <span className="guidance-item-icon"><Clock size={14} /></span>
+              <span className="guidance-item-icon"><Clock className="icon-sm" /></span>
               <div className="guidance-item-body">
                 <div className="guidance-item-line">
                   <span className="guidance-status-label">

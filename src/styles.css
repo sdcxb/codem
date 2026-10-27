@@ -40,6 +40,8 @@
   /* 兼容别名：历史代码与插件里仍按 --font-family 取用（它跟随 --font-ui，故设置页改字体时一并生效） */
   --font-family: var(--font-ui);
   --font-weight: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
   /* 字重档位（第 33 波）：参考实现用 560/620/650/720 这种细档建层次，
      我们此前只有 400/500/600/700 且 600 用了 235 次 —— "哪里都加粗"等于没有层次。
      本项目自带的是**可变字体**（wght 200–700），所以 560/620 是真实字重，不靠合成。 */
@@ -88,6 +90,7 @@
   --lh-ui: 1.4;       /* 密集元信息：时间戳、路径、状态行 */
   --lh-base: 1.5;     /* 正文默认（`body` 当前就是 1.5） */
   --lh-reading: 1.7;  /* 长文阅读：与 mock .md 的 1.7 对齐 */
+  --lh-composer: 1.6; /* 与 mock .composer-input 的 14px/1.6 对齐 */
   --lh-loose: 1.8;    /* 疏排：引导页/空态大段说明 */
   /* 字距刻度（同上一族：对标 `letterSpacing.*`）。em 与字号联动，px 微调那批（0.5px/1px）
      留在原地不进令牌 —— 它们本来就是"不随字号缩放的小微调"，收进来反而会改变缩放行为。 */
@@ -2159,8 +2162,8 @@ flex-shrink: 0;
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--lh-ui);
 }
 
 .sidebar-session-title {
@@ -3564,7 +3567,7 @@ z-index: 50;
   margin: 0 auto var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-4);
   background: var(--bg-secondary);
-  border: 1px solid color-mix(in srgb, color-mix(in srgb, var(--info) 55%, var(--success)) 35%, transparent);
+  border: 1px solid var(--success-border);
   border-radius: var(--radius-lg);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
@@ -3856,9 +3859,9 @@ z-index: 50;
   overflow-x: hidden;
   overflow-y: auto;
   /* 与 .message-input（输入框本体）必须同字号令牌，否则实时镜像层与光标会错位 */
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   font-family: inherit;
-  line-height: var(--lh-base);
+  line-height: var(--lh-composer);
   padding: var(--space-2) 0;
   margin: 0;
   box-sizing: border-box;
@@ -3902,14 +3905,13 @@ z-index: 50;
   color: var(--text-primary);
   /* 第 59 波：光标与文字同色（原为 --accent，暗色主题下在深底上过暗不易看见） */
   caret-color: var(--caret-color);
-  /* 输入框字号必须 >= 15px（见 src/test/architecture-changes.test.tsx 的回归断言），
-   * 走设计系统令牌 --fs-lg(16px)，并随 --ui-font-scale 缩放 */
-  font-size: var(--fs-lg);
+  /* mock .composer-input: 14px / line-height 1.6，随 --ui-font-scale 缩放 */
+  font-size: var(--fs-md);
   font-family: inherit;
   resize: none;
   min-height: 56px;
   max-height: 280px;
-  line-height: var(--lh-base);
+  line-height: var(--lh-composer);
   padding: var(--space-2) 0;
   margin: 0;
   box-sizing: border-box;
@@ -14414,7 +14416,7 @@ html.pet-window-mode body,
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-primary);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   color: var(--accent);
   background: var(--bg-tertiary);
 }
@@ -14429,7 +14431,7 @@ html.pet-window-mode body,
 .guidance-status-label {
   flex-shrink: 0;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -16397,8 +16399,8 @@ color: var(--accent, #7c6cf0);
   background: var(--accent-surface);
   color: var(--accent-strong);
   font-size: var(--fs-sm);
-  font-weight: 500;
-  line-height: 1;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--lh-ui);
   max-width: 240px;
   transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
   cursor: default;

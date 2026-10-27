@@ -77,7 +77,7 @@ const effectiveWidth = sidebarWidth;
   // Collapsed mode — thin rail with expand button
   if (collapsed) {
     return (
-      <aside className="right-sidebar right-sidebar-collapsed" style={{ width: 36, flexShrink: 0 }}>
+      <aside className="right-sidebar right-sidebar-collapsed" style={{ width: 24, flexShrink: 0 }}>
         <button
           className="right-sidebar-toggle-collapsed"
           onClick={toggleCollapse}
