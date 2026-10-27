@@ -5077,7 +5077,7 @@
     "background": "var(--bg-tertiary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-full)",
-    "color": "var(--accent)",
+    "color": "var(--accent-strong)",
     "display": "inline-flex",
     "flex-shrink": "0",
     "height": "28px",

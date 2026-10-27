@@ -27,9 +27,10 @@ function block(source: string, selector: string): string {
 }
 
 describe('UI 对标施工合同', () => {
-  it('正文列 820 + 48 gutter，Composer 同步 820', () => {
+  it('正文列 820/780 响应式 + 24 gutter，Composer 同步', () => {
     expect(css).toContain('--reading-column: 820px')
-    expect(css).toContain('--reading-gutter: 48px')
+    expect(css).toContain('--reading-gutter: 24px')
+    expect(css).toContain('--reading-column: 780px')
     expect(block(css, '.messages-container')).toContain('max-width: calc(var(--reading-column) + var(--reading-gutter) * 2)')
     const inputCard = block(css, '.input-area.input-card-container')
     expect(inputCard).toContain('width: min(100%, var(--reading-column))')
@@ -39,7 +40,7 @@ describe('UI 对标施工合同', () => {
   it('输入卡是 surface + 14px 圆角 + 无阴影，且不再有 textarea 顶边', () => {
     const inputCard = block(css, '.input-area.input-card-container')
     expect(inputCard).toContain('background: var(--bg-secondary)')
-    expect(inputCard).toContain('border: 1px solid var(--border-primary)')
+    expect(inputCard).toContain('border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent)')
     expect(inputCard).toContain('border-radius: var(--radius-lg)')
     expect(inputCard).toContain('box-shadow: none')
     expect(block(css, '.input-textarea-row')).toContain('border-top: none')
@@ -105,13 +106,13 @@ describe('UI 对标施工合同', () => {
     expect(block(css, '.sidebar-project .sidebar-sessions')).toContain('border-left')
   })
 
-  it('P1-chat：会话头 48 + 轮数/上下文/main，左栏不出现文件树', () => {
+  it('P1-chat：会话头 48，轮数/上下文交给上下文面板，左栏不出现文件树', () => {
     const chat = readFileSync(join(ROOT, 'src/components/ChatPanel.tsx'), 'utf8')
     expect(block(css, '.chat-header')).toContain('height: 48px')
-    expect(chat).toContain('chat-meta')
-    expect(chat).toContain('turnCount')
-    expect(chat).toContain('contextPercent')
-    expect(chat).toContain('modeLabel')
+    expect(chat).not.toContain('chat-meta')
+    expect(chat).not.toContain('turnCount')
+    expect(chat).not.toContain('contextPercent')
+    expect(chat).not.toContain('modeLabel')
     expect(chat).toContain('qa-turn-status-line')
     expect(block(css, '.right-sidebar')).toContain('background: var(--sidebar-bg)')
   })

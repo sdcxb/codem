@@ -14424,7 +14424,7 @@ html.pet-window-mode body,
   justify-content: center;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-full);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--bg-tertiary);
 }
 
