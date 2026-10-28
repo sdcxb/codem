@@ -174,3 +174,12 @@ Codem 当前把 1280 屏 zoom 到 1400 CSS，OMP 是原生 1280 CSS；所以“�
 - Codem 与 HTML 的字体、行高、左栏、标题栏已基本一致。
 - 最大真实 UI 差距是 **Composer 777 vs 正文 718**，以及右栏 checks 数据缺失。
 - 最大 UX 差距不是视觉，而是 Inspector 信息结构（按轮 accordion vs 最近一轮平铺）。
+
+### 实机工作台已可见
+
+在 Electron 43.4.0 中加载 `preview-app-harness.html?preview=1&route=workbench&theme=dark&density=standard&lang=zh`，OMP 真实 renderer 工作台已显示（fixture client，页面带「演示」标记）。
+
+- 窗口客户区：1280×672 CSS
+- DPR：3
+- 截图：`docs/evidence/second-benchmark-2026-10-28/omp-real-ui-1280.png`
+- 结论：OMP 在本机的真实显示就是 1280×672 @3x；1600×1000 只是参考图 harness 尺寸。
