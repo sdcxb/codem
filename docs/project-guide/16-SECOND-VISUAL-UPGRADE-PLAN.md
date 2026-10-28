@@ -40,6 +40,26 @@
 | 正文 | 14px / 23.8px | 14px / 23.8px | 14px 级 |
 | 正文字体族 | Alimama + 中文回退 | Alimama + 系统回退 | 系统 UI |
 
+
+### OMP 实机复核（2026-10-28）
+
+已在本机从源码运行真实 Electron（`C:\temp\omp-studio`，0.1.12，Electron 43.4.0）：
+
+| 项 | 实测 |
+|---|---|
+| 窗口客户区 | **1280×672 CSS** |
+| outer | 1292×678 |
+| DPR | **3** |
+| 本机屏幕 | 1280×720，avail 1280 |
+
+截图：`docs/evidence/second-benchmark-2026-10-28/omp-real-1280.png`（sha256 前 16：`B418A17C53BFE3BB`）。
+
+因此要区分两件事：
+
+- **OMP 参考图**来自 1600×1000 harness，压到 1200；
+- **OMP 实机**在本机就是 1280×672 @DPR3，和 Codem 的物理窗口一致。
+
+Codem 当前把 1280 屏 zoom 到 1400 CSS，OMP 是原生 1280 CSS；所以“实机显示密度”不能只按参考图的 1600 算。
 ### 已确认的硬差距
 
 1. **Composer 比正文宽 59px**
