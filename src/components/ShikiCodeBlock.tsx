@@ -50,7 +50,19 @@ export const ShikiCodeBlock = memo(function ShikiCodeBlock({
     () => ThemeManager.getSkin(),
     () => "default" as const,
   );
-  const resolvedTheme = theme ?? (skin === "hub" ? "github-dark-dimmed" : (document.documentElement.getAttribute("data-theme") === "light" ? "github-light" : "github-dark-dimmed"));
+  const [dataTheme, setDataTheme] = useState<string>(() =>
+    typeof document === "undefined" ? "dark" : (document.documentElement.getAttribute("data-theme") || "dark"),
+  );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setDataTheme(root.getAttribute("data-theme") || "dark");
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  const resolvedTheme = theme ?? (skin === "hub" ? "github-dark-dimmed" : (dataTheme === "light" ? "github-light" : "github-dark-dimmed"));
 
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
