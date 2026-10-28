@@ -3579,8 +3579,8 @@ z-index: 50;
   margin: 0 auto var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-4);
   background: var(--bg-secondary);
-  border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent);
-  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+  border-radius: calc(var(--radius-lg) + 2px);
   box-shadow: none;
   transition: border-color var(--transition-color), box-shadow var(--transition-color);
   /* Model / reasoning popovers are anchored inside the composer. */

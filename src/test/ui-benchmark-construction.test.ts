@@ -40,8 +40,8 @@ describe('UI 对标施工合同', () => {
   it('输入卡是 surface + 14px 圆角 + 无阴影，且不再有 textarea 顶边', () => {
     const inputCard = block(css, '.input-area.input-card-container')
     expect(inputCard).toContain('background: var(--bg-secondary)')
-    expect(inputCard).toContain('border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent)')
-    expect(inputCard).toContain('border-radius: var(--radius-lg)')
+    expect(inputCard).toContain('border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)')
+    expect(inputCard).toContain('border-radius: calc(var(--radius-lg) + 2px)')
     expect(inputCard).toContain('box-shadow: none')
     expect(block(css, '.input-textarea-row')).toContain('border-top: none')
   })
