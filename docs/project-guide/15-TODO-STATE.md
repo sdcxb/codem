@@ -1,5 +1,7 @@
 # 15 视觉重做 · 持久 Todo
 
+> 全量功能/性能/数据/记忆审计的交接与执行清单见 `docs/audit/FULL-SYSTEM-AUDIT-HANDOFF.md`。
+
 > 这份文件是 UI todo 被会话投影吞掉时的权威副本。每完成一项就改这里。
 
 ## 未完成
