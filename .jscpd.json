@@ -8,6 +8,7 @@
     "**/dist/**",
     "**/src-tauri/target/**",
     "**/.deepseek-harness-ref/**",
+    "**/.rich4-renew-ref/**",
     "**/src/test/**",
     "**/*.test.ts",
     "**/*.test.tsx"

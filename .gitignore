@@ -40,6 +40,8 @@ test-output.json
 .deepseek-harness-ref/
 .dsh-desktop-ref/
 .wecode-ref/
+# rich4-renew-app clone (GPL-3.0 research reference; never shipped or committed)
+.rich4-renew-ref/
 
 # Internal analysis & training docs (not for public repo)
 docs/codex-use-cases/
@@ -191,3 +193,9 @@ src-tauri/codem-db/tests/wire-fixtures.verified.json
 # 会话 worktree 根（运行时建在项目根，2026-10-22 真机发现：未忽略时主工作区变脏，
 # 切换执行模式会误弹「有未提交修改」确认，且容易被 git add 进仓库）
 .codem-worktrees/
+# ??????2026-10-28 ?? D2????????
+# art/ 4.1 GB??????prototype/ 273 MB?????docs/ref-analysis/ 246 MB???????
+# ???**????**??????? ? `git status` ????? `??`????? `git add -A` ??????
+/art/
+/prototype/
+/docs/ref-analysis/
