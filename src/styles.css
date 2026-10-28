@@ -91,6 +91,7 @@
   --lh-base: 1.5;     /* 正文默认（`body` 当前就是 1.5） */
   --lh-reading: 1.7;  /* 长文阅读：与 mock .md 的 1.7 对齐 */
   --lh-composer: 1.6; /* 与 mock .composer-input 的 14px/1.6 对齐 */
+--lh-bubble: 1.65;  /* 与 mock 用户气泡的 14px/1.65 对齐 */
   --lh-loose: 1.8;    /* 疏排：引导页/空态大段说明 */
   /* 字距刻度（同上一族：对标 `letterSpacing.*`）。em 与字号联动，px 微调那批（0.5px/1px）
      留在原地不进令牌 —— 它们本来就是"不随字号缩放的小微调"，收进来反而会改变缩放行为。 */
@@ -2699,11 +2700,6 @@ font-size: var(--fs-sm);
 /* mock breakpoints: 820 / 780 / 780 / 100% */
 @media (max-width: 1440px) {
   :root { --reading-column: 780px; }
-  /* 正文实际内容列 = reading-column - 左右 gutter；Composer 必须同宽。 */
-  .input-area.input-card-container {
-    width: min(100%, calc(var(--reading-column) - var(--reading-gutter) * 2));
-    max-width: calc(var(--reading-column) - var(--reading-gutter) * 2);
-  }
 }
 @media (max-width: 900px) {
   :root { --reading-column: 100%; --reading-gutter: 24px; }
@@ -3065,7 +3061,7 @@ opacity: 0.5;
 
 .message.user {
 align-self: flex-end;
-max-width: 75%;
+max-width: 78%;
 flex-direction: row !important;
 align-items: flex-start;
 gap: var(--space-4);
@@ -3205,7 +3201,9 @@ margin-top: var(--space-1);
  */
 .user .message-content {
   padding: var(--space-5) var(--space-8);
-  border-radius: var(--radius-message-user);
+  line-height: var(--lh-bubble);
+  border-radius: var(--radius-message-user) var(--radius-message-user)
+    var(--radius-xs) var(--radius-message-user);
   background: var(--message-bubble-user);
   border: 1px solid var(--message-bubble-user-border);
   box-shadow: var(--shadow-bubble);
