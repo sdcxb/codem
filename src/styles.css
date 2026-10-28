@@ -15248,35 +15248,31 @@ html.pet-window-mode body,
 /* ========== P2 #33: Right sidebar resize handle ========== */
 .right-sidebar-resize-handle {
   position: absolute;
-  left: -3px;
+  left: -4px;
   top: 0;
   bottom: 0;
   width: 8px;
   cursor: col-resize;
   z-index: 10;
   background: transparent;
-  transition: background var(--duration-fast) var(--ease-out);
 }
+/* 对标 OMP `.sp-resizer`：8px 命中区，2px 视觉线；默认透明，仅 hover/拖动显示。 */
 .right-sidebar-resize-handle::after {
   content: "";
   position: absolute;
   left: 3px;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   width: 2px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  transform: translateY(-50%);
-  background: var(--border-secondary);
-  opacity: .7;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .right-sidebar-resize-handle:is(:hover, :focus-visible)::after,
 .right-sidebar-resize-handle.active::after {
-  background: var(--accent);
-  opacity: 1;
+  background: var(--accent-border);
 }
-.right-sidebar-resize-handle:is(:hover, :focus-visible),
-.right-sidebar-resize-handle.active {
-  background: var(--accent);
+.right-sidebar-resize-handle:focus-visible {
+  outline: none;
 }
 
 /* ========== P1 #20: ErrorCard ========== */

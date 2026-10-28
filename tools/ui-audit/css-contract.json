@@ -14831,7 +14831,6 @@
     "left": "-3px",
     "position": "absolute",
     "top": "0",
-    "transition": "background var(--duration-fast) var(--ease-out)",
     "width": "8px",
     "z-index": "10"
   },
