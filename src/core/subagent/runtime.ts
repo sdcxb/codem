@@ -32,6 +32,7 @@ import type {
 
 import type { LLMEngine } from '../llm';
 import * as MessageStorage from '../storage/message';
+import type { SubagentReport } from './report-contract';
 import { getLang } from '../i18n/lang';
 import { parseTaskResult, type SubagentTask, type SubagentActivity } from './subagent';
 import { ensureSubagentSession } from './subagent-session';
@@ -70,6 +71,8 @@ interface Activation {
   executionResolver: () => void;
   /** 最终结果 */
   result?: SubagentResult;
+  /** 最近一次带结构化的 report（父 agent 结算时优先使用） */
+  lastReport?: SubagentReport;
   /** 汇报回调列表 */
   reportCallbacks: Array<(content: string, delivery: 'quiet' | 'wakeup') => void>;
   /**
@@ -93,6 +96,24 @@ function generateId(): string {
 
 function generateMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+}
+
+/**
+ * 有结构化 report 时，以 report 为准覆盖从最终文本解析出的结果。
+ * 这样“子 agent 写了失败但最终文本是散文”不会被默认当成 success。
+ */
+function applyStructuredReport(
+  result: ReturnType<typeof parseTaskResult>,
+  report?: SubagentReport,
+): ReturnType<typeof parseTaskResult> {
+  if (!report) return result;
+  return {
+    ...result,
+    status: report.status,
+    summary: report.summary,
+    filesTouched: report.changed.length ? report.changed : result.filesTouched,
+    report,
+  };
 }
 
 /**
@@ -380,7 +401,7 @@ export class SubagentRuntime {
       throw new Error(`Subagent "${childId}" is being disposed; the report was not delivered`);
     }
 
-    return this.deliverReport(activation, content, options.delivery);
+    return this.deliverReport(activation, content, options.delivery, options.report);
   }
 
   /**
@@ -615,7 +636,7 @@ export class SubagentRuntime {
         };
         this.completeRunningActivities(activation);
       } else {
-        const result = parseTaskResult(fullOutput);
+        const result = applyStructuredReport(parseTaskResult(fullOutput), activation.lastReport);
         /**
          * 第 83 波（审计修正）：子智能体**自报失败**时不能报"已完成"。
          *
@@ -814,7 +835,7 @@ activation.task.profile_id,
         activation.task.completedAt = Date.now();
         this.completeRunningActivities(activation);
       } else {
-        const result = parseTaskResult(fullOutput);
+        const result = applyStructuredReport(parseTaskResult(fullOutput), activation.lastReport);
         // 第 83 波：子智能体自报失败/受阻时不能报"已完成"
         const reported = result.status; // success | partial | failed | blocked
         const failed = reported === 'failed' || reported === 'blocked';
@@ -1015,10 +1036,12 @@ activation.task.profile_id,
     activation: Activation,
     content: string,
     delivery: 'quiet' | 'wakeup',
+    report?: SubagentReport,
   ): string {
     const zh = getLang() === 'zh';
     const messageId = `report-${activation.childId}-${Date.now()}`;
     const prefix = zh ? '[子智能体汇报]' : '[SUBAGENT REPORT]';
+    if (report) activation.lastReport = report;
     // 防注入：对子智能体汇报内容做净化 — 防止通过 report 工具注入伪造系统提示词
     const sanitizedContent = sanitizeSubagentOutput(content);
     const notification = `${prefix}\n${zh ? '后台子智能体' : 'Background subagent'} ${activation.childId} ${zh ? '汇报:' : 'reported:'}\n${sanitizedContent}`;
@@ -1030,6 +1053,7 @@ activation.task.profile_id,
       content: notification,
       timestamp: Date.now(),
       status: 'done',
+      ...(report ? { metadata: { subagentReport: report } } : {}),
     }, activation.parentSession);
 
     if (delivery === 'wakeup') {

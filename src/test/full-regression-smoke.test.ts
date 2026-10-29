@@ -549,7 +549,10 @@ describe("回归 — Subagent 工具仍可用", () => {
     const { createReportTool } = await import("../core/llm/tools/subagent-tools");
     const tool = createReportTool();
     expect(tool.id).toBe("report");
-    expect(tool.parameters.required).toContain("output");
+    expect(tool.parameters.properties).toHaveProperty("status");
+    expect(tool.parameters.properties).toHaveProperty("summary");
+    expect(tool.parameters.properties).toHaveProperty("verified");
+    expect(tool.parameters.required).toEqual([]);
   });
 
   it("interrupt_agent 工具 schema 正确", async () => {

@@ -17,7 +17,7 @@
 
 ### 智能模式怎么选
 
-- 子 agent 向主 agent 汇报 → 只注入 `status/scope/changed/verified/unverified/evidence/open` 字段；
+- 子 agent 向主 agent 汇报 → 注入「必须调用 `report` 工具」的字段契约；runtime 校验坏报告，缺报告按 `unknown` 结算，不再默认 success；
 - 用户说「简短 / 简要 / 一句话」→ 最小规则；
 - 用户说「汇报 / 总结 / 排查 / 结论 / 决定 / 验收」→ 完整规则；
 - 普通短请求（≤120 字）→ 最小规则；
@@ -35,7 +35,7 @@
 - 未执行写“未验证”，缺证据写“未确认”并写确认方法；
 - 代码写 `路径:行号`，命令写完整命令；
 - 需要用户决定时列编号选项，推荐项放第一；
-- 子 agent 用紧凑字段，`verified` 只写本 agent 实际跑过的命令；调用方给的结果只能进 `evidence`。
+- 子 agent 调用 `report` 工具，参数 `status/summary/changed/verified/unverified/open`；`verified` 每项含 `{command, ok, source}`，`source=caller` 表示调用方提供，不能算 agent 验证。
 
 明确不改变：
 
@@ -59,7 +59,7 @@
 - 规则与策略：`src/core/ste-zh/index.ts`；
 - UI：`src/components/SteZhToggle.tsx`（三态开关）、`SteZhReportNotice.tsx`（回复后告警）。
 
-主 agent 的 `buildSystemPromptAsync` 和子 agent 的 `buildSubagentSystemPrompt` 都已接入；子 agent 不再只靠用户模板。
+主 agent 的 `buildSystemPromptAsync` 和子 agent 的 `buildSubagentSystemPrompt` 都已接入。子 agent 的最终结算以 `report` 结构化结果为准；没有 `report` 时 `parseTaskResult` 返回 `unknown`，不默认成功。
 
 ## 与外部 DSH 插件的关系
 
@@ -72,6 +72,8 @@ Codem 的外部 DSH 插件管理只负责 npm 安装/升级，不执行插件代
 - `src/test/ste-zh.test.ts`：三态、智能选模、prompt 注入、假验证告警；
 - `src/test/ste-zh-provider.test.ts`：provider 服务面；
 - `src/test/ste-zh-toggle.test.tsx`：三态按钮；
-- `src/test/ste-zh-report-notice.test.tsx`：回复后告警显示/隐藏。
+- `src/test/ste-zh-report-notice.test.tsx`：回复后告警显示/隐藏；
+- `src/test/subagent-report-contract.test.ts`：报告契约/信封往返；
+- `src/test/subagent-report-tool.test.ts`：report 工具拒绝坏报告、旧 output 兼容。
 
 规则是提示词约束，不是验证器；`verified` 字段仍要主 agent 复核。

@@ -85,6 +85,8 @@ export interface SubagentReportOptions {
   readonly delivery: 'quiet' | 'wakeup';
   /** 取消信号 */
   readonly signal: AbortSignal;
+  /** 可选的结构化报告；由 report 工具校验后传入 */
+  readonly report?: import('./report-contract').SubagentReport;
 }
 
 /** 后续消息发送选项 */

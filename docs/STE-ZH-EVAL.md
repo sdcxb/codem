@@ -140,6 +140,30 @@ D 智能版原文：
 | 防止编造 | 仍不成立；告警只是提示，不是硬门禁 |
 
 **总评：v2 解决了“短任务形式负担”；子 agent 汇报仍未验证；假验证只有告警、没有硬门禁。**
+## v3 P0 结构整改实测（2026-10-29 20:45）
+
+已改：
+
+- `report` 工具支持 `status/summary/changed/verified/unverified/open`，坏报告返回 `isError`；
+- `parseTaskResult` 优先解析 `<subagent_report>` 信封；
+- 没有结构化报告时返回 `unknown`，不再默认 `success`；
+- runtime 有 `lastReport` 时以报告状态覆盖最终文本；
+- 回复后告警忽略 `status=error` 的命令。
+
+真机验证结果：
+
+- 子 agent 的 tool scope 里 `report` 工具**确实存在**：日志 `report tool registered=true runtime=true visible=true`；
+- 但连续两次要求子 agent“必须调用 report”，它仍未调用；父会话里 `subagent_report` 消息数为 **0**；
+- 因此当前只能证明“工具与解析链路在”，不能证明“子 agent 会按契约交报告”。
+
+这说明还缺最后一道硬门：**子 agent 未调用 report 时，runtime 必须把它结算为 `unknown/failed`，不能只把文本解析成 unknown 就继续当 completed。** 否则父 agent 仍可能从散文里读到“已完成”。
+
+下一步应做：
+
+1. subagent 启用结构化模式时，结算前检查 `lastReport`；缺失 → `stopReason=refusal`、task 失败、通知父 agent“未提交报告”；
+2. 或在 report 工具的 schema 上加 `required: ["status","summary"]`（但模型仍可能不调用，需 runtime 兜底）；
+3. 用留出任务集验证，不要再用“只回答 2+2”这种容易被任务约束覆盖的用例。
+
 ## 总评
 
 | 维度 | 结论 |

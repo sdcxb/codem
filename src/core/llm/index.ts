@@ -1881,14 +1881,12 @@ Report earlier as well whenever a partial finding changes what that agent should
     // DSH-style: 创建隔离的工具作用域 — 对标 ctx.isolate('tools')
     // 子智能体的 report 工具注册在 scope 中，不泄漏到主智能体
     const scopedTools = this.tools.createScope();
-    let reportToolRegistered = false;
     try {
       const { createReportTool, setSubagentRuntime } = await import('./tools/subagent-tools');
       // 如果 runtime 已初始化，在 scope 中注册 report 工具
       if (this._subagentRuntime) {
         setSubagentRuntime(this._subagentRuntime);
         scopedTools.register(createReportTool());
-        reportToolRegistered = true;
       }
     } catch (e) { console.warn('[processSubagent] report tool registration:', e) }
 

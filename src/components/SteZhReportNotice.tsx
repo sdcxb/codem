@@ -16,7 +16,7 @@ export function SteZhReportNotice({
   toolCalls,
 }: {
   text: string;
-  toolCalls?: Array<{ tool?: string; args?: unknown }>;
+  toolCalls?: Array<{ tool?: string; args?: unknown; status?: string }>;
 }) {
   const [enabled, setEnabled] = useState(() => getSteZhMode() !== "off");
 

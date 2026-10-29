@@ -7748,3 +7748,12 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 真实子 agent 复测：最终仍是散文，没有 `status/...` 字段，且违反“不要调用工具”；
   字段模式在真实子 agent 路径上**未达成**，需 report 工具/JSON schema 硬约束。
 - 全量 789 文件 / 8798 用例（8781 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
+## 2026-10-29 20:55 — 第 269 波：子 agent 报告契约 + parser 默认 unknown
+
+- 新增 `src/core/subagent/report-contract.ts`：status/summary/changed/verified/unverified/open 契约、校验、信封。
+- `report` 工具改为结构化参数；坏报告当场拒绝；旧 output 仍兼容；runtime 保存 lastReport。
+- `parseTaskResult` 优先解析 `<subagent_report>`；无报告返回 unknown，不再默认 success；runtime 用 lastReport 覆盖最终文本。
+- 告警忽略 status=error 的命令（失败测试不算已验证）。
+- 真机：tool scope 里 report 工具 registered=true/visible=true；但子 agent 仍未调用，subagent_report 消息 0 条。
+  结论：链路在，模型不交报告；下一步需要“缺报告即失败”的 runtime 门，而不是再加 prompt。
+- 测试：report-contract/report-tool/parser 新判据；全量 791 文件 / 8805 用例（8788 通过 + 17 skipped + 0 失败）；tsc 0；未发版。

@@ -112,17 +112,17 @@ const FULL_RULES = `# 汇报规范（STE-ZH，启用中）
 
 const SUBAGENT_RULES = `# 子智能体汇报字段
 
-你是在向主智能体汇报，不是在向最终用户写汇报。只返回以下字段，不要列“请用户选择”的编号选项：
+完成前**必须调用 \`report\` 工具**，不要只在最终文本里写字段；runtime 只接收 report 的结构化结果。
 
-- \`status\`: 已完成 / 部分完成 / 未开始 / 进行中 / 阻塞 / 失败 / 跳过
-- \`scope\`: 你实际完成了什么，一句
-- \`changed\`: 改动的文件，\`路径:行号\`；只读任务写“无”
-- \`verified\`: 你**实际执行过**的检查命令 + 结果；没有执行写“未验证”
-- \`unverified\`: 没执行的检查，写原因
-- \`evidence\`: 支持结论的命令输出/文件位置；调用方提供的事实标“调用方提供”
-- \`open\`: 需要主智能体决定或补做的事；没有写“无”
+参数：
+- \`status\`: success / partial / failed / blocked / unknown
+- \`summary\`: 一句话结论（<=300 字）
+- \`changed\`: 改动文件数组；只读任务写空数组
+- \`verified\`: 数组，每项 \`{ command, ok, source, evidence? }\`；\`source=agent\` 表示本 agent 实际跑过，调用方给的结果只能写 \`source=caller\`
+- \`unverified\`: 没执行的检查及原因
+- \`open\`: 需要主智能体决定或补做的事
 
-硬规则：\`verified\` 只写本 agent 实际跑过的命令。调用方给的结果只能进 \`evidence\`，不能写成 \`verified\`。`;
+硬规则：\`verified\` 只写本 agent 实际跑过的命令；调用方给的结果不能写成 \`source=agent\`。`;
 
 export function buildSteZhPromptSection(ctx: SteZhTurnContext = {}): string {
   switch (resolveSteZhAppliedMode(ctx)) {
@@ -146,12 +146,13 @@ const VERIFICATION_CMD =
  */
 export function validateSteZhReport(
   text: string,
-  toolCalls: Array<{ tool?: string; args?: unknown }> | undefined,
+  toolCalls: Array<{ tool?: string; args?: unknown; status?: string }> | undefined,
 ): SteZhFinding[] {
   if (getSteZhMode() === "off" || !text) return [];
   const claimsVerified = /(已验证|verified\s*[:：]\s*(?:已验证|verified|true))/i.test(text);
   if (!claimsVerified) return [];
   const hasVerificationCommand = (toolCalls || []).some((tc) => {
+    if (tc.status === "error") return false;
     const tool = String(tc.tool || "").toLowerCase();
     if (!["bash", "pwsh", "shell", "terminal_send"].includes(tool)) return false;
     const args = (tc.args || {}) as Record<string, unknown>;

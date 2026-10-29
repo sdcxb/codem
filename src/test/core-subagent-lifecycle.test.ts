@@ -204,12 +204,36 @@ describe("子智能体 — System Prompt 注入", () => {
 });
 
 describe("子智能体 — parseTaskResult 完整链路", () => {
-  it("SUBA-029: parseTaskResult 解析纯文本输出", async () => {
+  it("SUBA-029: 纯文本没有结构化报告 → unknown，不再默认 success", async () => {
     const { parseTaskResult } = await import("../core/subagent/subagent");
     const result = parseTaskResult("纯文本结果");
     expect(result).toBeDefined();
     expect(result.output).toBe("纯文本结果");
-    expect(result.status).toBe("success");
+    expect(result.status).toBe("unknown");
+    expect(result.summary).toContain("未提供结构化报告");
+  });
+
+  it("SUBA-029b: 结构化报告信封优先于散文", async () => {
+    const { parseTaskResult } = await import("../core/subagent/subagent");
+    const output = [
+      "<subagent_report>",
+      JSON.stringify({
+        status: "failed",
+        summary: "子任务失败",
+        changed: ["a.ts"],
+        verified: [{ command: "npm test", ok: false, source: "agent" }],
+        unverified: ["iOS 未测"],
+        open: ["主 agent 需决定"],
+      }),
+      "</subagent_report>",
+      "",
+      "散文说一切正常",
+    ].join("\n");
+    const result = parseTaskResult(output);
+    expect(result.status).toBe("failed");
+    expect(result.summary).toBe("子任务失败");
+    expect(result.filesTouched).toEqual(["a.ts"]);
+    expect(result.report?.verified?.[0]?.ok).toBe(false);
   });
 });
 

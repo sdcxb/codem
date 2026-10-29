@@ -78,5 +78,11 @@ describe("STE-ZH 汇报插件", () => {
       { tool: "read", args: { path: "a.ts" } },
     ]);
     expect(readOnly).toHaveLength(1);
+
+    // 命令失败也不能证明“已验证”
+    const failed = validateSteZhReport("已完成，已验证。", [
+      { tool: "bash", args: { command: "npm test" }, status: "error" },
+    ]);
+    expect(failed).toHaveLength(1);
   });
 });
