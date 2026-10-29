@@ -58,8 +58,28 @@ describe("MessageBubble — 渲染测试", () => {
     expect(actions).toBeNull();
   });
 
-  it("完成状态：渲染操作工具栏", () => {
+  it("子智能体状态：chip 放进独立 flex 行（不与工具组重叠、不再更靠左）", () => {
     const msg = makeMessage({
+      role: "assistant",
+      content: "并行启动",
+      status: "done",
+      toolCalls: [
+        {
+          id: "t1",
+          tool: "subagent",
+          args: { description: "统计 llm 目录 .ts 文件数" },
+          result: "A: 111",
+          status: "done",
+          metadata: { subagentId: "sub-1" },
+        } as any,
+      ],
+    });
+    const { container } = renderWithProviders(<MessageBubble message={msg} />);
+    expect(container.querySelector(".subagent-status-row")).toBeTruthy();
+    expect(container.querySelector(".subagent-status-row .subagent-status")).toBeTruthy();
+  });
+
+  it("完成状态：渲染操作工具栏", () => {    const msg = makeMessage({
       role: "assistant",
       content: "完成了",
       status: "done",

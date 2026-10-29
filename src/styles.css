@@ -5695,18 +5695,6 @@ background: var(--bg-secondary);
   gap: var(--space-3);
 }
 
-.setting-group--row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 200px;
-  align-items: center;
-  gap: var(--space-5);
-  min-height: 46px;
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-secondary);
-}
-.setting-group--row > label { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
-.setting-group--row > input { width: 200px; justify-self: end; margin: 0; }
-
 /* Row-style settings (Phase 4): label left, 200px control right, 46px floor. */
 .settings-rows > .setting-group {
   display: grid;
@@ -5747,9 +5735,9 @@ background: var(--bg-secondary);
  * 只匹配直接子 label 且直接子控件是 select/text/range，复杂业务块
  *（多选 chips、按钮组、textarea、嵌套面板）不匹配，避免再次把嵌套组撑高。
  */
-.settings-content .setting-group:has(> label):has(> select),
-.settings-content .setting-group:has(> label):has(> input[type="text"]),
-.settings-content .setting-group:has(> label):has(> input[type="range"]) {
+.settings-content .setting-group:has(> label):has(> select):not(:has(> .identity-options)):not(:has(> div)),
+.settings-content .setting-group:has(> label):has(> input[type="text"]):not(:has(> .identity-options)):not(:has(> div)),
+.settings-content .setting-group:has(> label):has(> input[type="range"]):not(:has(> .identity-options)):not(:has(> div)) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 200px;
   align-items: center;
@@ -5758,26 +5746,38 @@ background: var(--bg-secondary);
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-secondary);
 }
-.settings-content .setting-group:has(> label):has(> select) > label,
-.settings-content .setting-group:has(> label):has(> input[type="text"]) > label,
-.settings-content .setting-group:has(> label):has(> input[type="range"]) > label {
+.settings-content .setting-group:has(> label):has(> select):not(:has(> .identity-options)) > label,
+.settings-content .setting-group:has(> label):has(> input[type="text"]):not(:has(> .identity-options)) > label,
+.settings-content .setting-group:has(> label):has(> input[type="range"]):not(:has(> .identity-options)):not(:has(> div)) > label {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
-.settings-content .setting-group:has(> label):has(> select) > select,
-.settings-content .setting-group:has(> label):has(> input[type="text"]) > input[type="text"],
-.settings-content .setting-group:has(> label):has(> input[type="range"]) > input[type="range"] {
+.settings-content .setting-group:has(> label):has(> select):not(:has(> .identity-options)):not(:has(> div)) > select,
+.settings-content .setting-group:has(> label):has(> input[type="text"]):not(:has(> .identity-options)):not(:has(> div)) > input[type="text"],
+.settings-content .setting-group:has(> label):has(> input[type="range"]):not(:has(> .identity-options)):not(:has(> div)) > input[type="range"] {
   width: 200px;
   justify-self: end;
   margin: 0;
+}
+.settings-content .setting-group--wide:has(> label):has(> input[type="text"]):not(:has(> .identity-options)):not(:has(> div)) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.settings-content .setting-group--wide:has(> label):has(> input[type="text"]):not(:has(> .identity-options)):not(:has(> div)) > input[type="text"] {
+  width: 100%;
+  justify-self: auto;
 }
 .settings-content .setting-group:has(> label) > .sp-hint {
   grid-column: 1 / -1;
   margin: 0;
 }
 
-/* 身份块：label 左，选项 chips/输入框右，避免 200px 控件列放不下五个 chip。 */
+/* 身份块：label 左，选项 chips/输入框右，避免 200px 控件列放不下五个 chip。
+ * 2026-10-29：通用行式规则已排除 `.identity-options`，这里保持原特异性，
+ * 窄容器媒体查询才能按原设计退回单列。 */
 .settings-content .setting-group:has(> .identity-options) {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -12624,6 +12624,20 @@ border-bottom: 1px solid var(--accent);
 }
 
 /* ========== Sub-agent Status ========== */
+/*
+ * 2026-10-29（用户实报）：状态 chip 是 tool-calls 里 group 之后的 inline-block 兄弟，
+ * group 有左右 margin（--space-9），chip 只有 margin-left 4 ⇒ 比 group 更靠左；
+ * 长摘要不换行则向右溢出。改为独立 flex 行：间距与 group 对齐、自动换行、chip 不超宽。
+ */
+.subagent-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-9) 0;
+}
+.subagent-status-row:empty { display: none; }
+
 .subagent-status {
   display: inline-block;
   margin-left: var(--space-4);
@@ -12631,6 +12645,13 @@ border-bottom: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   font-size: var(--fs-2xs);
   font-weight: 500;
+}
+
+.subagent-status-row > .subagent-status {
+  margin-left: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .subagent-status.running {

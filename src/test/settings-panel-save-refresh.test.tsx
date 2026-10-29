@@ -210,7 +210,9 @@ describe("provider 卡片「保存并刷新模型」= 真保存 + 真刷新（�
     await act(async () => {
       fireEvent.click(saveRefreshButton());
     });
-    await waitFor(() => expect(screen.getByText(/获取到 \d+ 个模型/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/获取到 [1-9]\d* 个模型/)).toBeTruthy());
+    // 回归：服务器列表 + 内置目录都拿到了，计数不许再写成 0（用户实报“服务器 2 + 内置目录 1”却 0）
+    expect(screen.queryByText(/获取到 0 个模型/)).toBeNull();
 
     // ① 「保存」这一半：值确实落库
     expect(storedDeepSeek().apiKey, "点了「保存」就必须把新 Key 存下去").toBe(NEW_KEY);

@@ -998,6 +998,7 @@ const opLabel = tc.tool === 'create_note'
               defaultExpanded={toolsExpanded}
             />
             {/* Subagent status polling — 支持 spawn_subagent (旧) 和 subagent (新) */}
+            <div className="subagent-status-row">
             {message.toolCalls.filter(tc => {
               // 旧格式: tool=spawn_subagent, result 以 SUBAGENT_TASK_ID: 开头
               if (tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")) return true;
@@ -1025,6 +1026,7 @@ const opLabel = tc.tool === 'create_note'
                 />
               );
             })}
+            </div>
           </div>
         );
         })()}

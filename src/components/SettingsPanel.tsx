@@ -1121,8 +1121,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
          * 用户看到 25 会以为这 25 个都能用，而其中一批已经被隐藏了 ✗。
          */
         const summarize = () =>
-          freeModelPlugin.models.summarizeList(isManagedFreeModel ? models : [], (id) =>
-            freeModelPlugin.models.isUnavailable(id),
+          freeModelPlugin.models.summarizeList(models, (id) =>
+            isManagedFreeModel ? freeModelPlugin.models.isUnavailable(id) : false,
           );
         const describeRefresh = (probeNote?: string) => {
           const s = summarize();
@@ -2007,7 +2007,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
           <div className="settings-section-title">{S.settings.identityConfig[lang]}</div>
 
-          <div className="setting-group setting-group--row">
+          <div className="setting-group setting-group--wide">
             <label>{S.settings.callMe[lang]}</label>
             <input
               type="text"
@@ -2156,7 +2156,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </div>
           </div>
 
-          <div className="setting-group">
+          <div className="setting-group setting-group--wide">
             <label>{S.settings.yourName[lang]}</label>
             <input
               type="text"
@@ -2166,7 +2166,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             />
           </div>
 
-          <div className="setting-group">
+          <div className="setting-group setting-group--wide">
             <label>{S.settings.callYou[lang]}</label>
             <input
               type="text"
@@ -2176,7 +2176,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             />
           </div>
 
-          <div className="setting-group">
+          <div className="setting-group setting-group--wide">
             <label>{S.settings.yourTimezone[lang]}</label>
             <input
               type="text"
@@ -2235,7 +2235,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </div>
               </div>
 
-              <div className="setting-group">
+              <div className="setting-group setting-group--wide">
                 <label>Base URL</label>
                 <input
                   type="text"

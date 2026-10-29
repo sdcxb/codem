@@ -7646,3 +7646,35 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   用 Secret `CODEM_MARKET_SIGNING_KEY` 签，上传 Release 资产；完整操作见 `docs/MARKET-SIGNING.md`。
 - 触发权限：只有 write 权限能推 tag；fork PR 拿不到 Secret；再加 environment 手动批准。
 - 全量 **785 文件 / 8786 用例（8769 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 16:45 — 第 262 波：设置页两个用户实报 + 3 并发真机
+
+- **Base URL 被压成 200px 右对齐**（用户截图）：通用 `.settings-content .setting-group` 行式规则把直接 `<input type="text">` 固定成 200px；
+  Base URL 是长 URL，肉眼像“跑到右边一条”。加 `setting-group--wide`（label 上、input 占满整行），
+  真机量到 input 宽度 **852px**（原 200px），其余设置行未改。
+- **“服务器 2 + 内置目录 1”却显示“获取到 0 个模型”**：`summarize` 只对免费模型插件传 `models`，
+  非托管 provider 传了 `[]` ⇒ total 恒 0。改为所有 provider 都传 `models`，只有“是否隐藏不可用”按托管判定。
+  真机 DeepSeek 刷新后：`✓ 获取到 3 个模型（服务器 2 + 内置目录 1）`；判据 `SAVE-REFRESH-1` 加了“计数不许为 0”。
+- **内置目录是什么**：`src/core/llm/model-catalog.ts::BUILTIN_MODEL_CATALOG`，Codem 自带的兜底目录；
+  DeepSeek 有 v4-flash / v4-pro / vision-exp，服务器 `/models` 只列前两条，vision-exp 是“服务器不列但可调用”的那条。
+- **3 并发真机（隔离副本）**：同一主会话里 3 个 subagent 在 **39ms** 内创建
+  （`sub-…227895` / `…227916` / `…227934`），全部完成；主会话汇总 A=111（`src/core/llm` .ts）、
+  B=710（`src/test` .test.ts）、C=1.16.331。三个 subagent 都把 PowerShell 命令发进 Git Bash 导致
+  `command not found`/重复守卫中止，但**并发启动/回收本身已验证**；数字由主会话用 `find`/node 交叉核对。
+- 测试规模不变：785 文件 / 8786 用例（8769 通过 + 17 skipped + 0 失败）；未发版。
+## 2026-10-29 17:05 — 第 263 波：设置页布局全量排查 + 子智能体 chip 行
+
+- **用户第二次截图（我的标志）**：不是单个类的问题，是通用行式规则
+  `.settings-content .setting-group:has(> label):has(> input[type="text"])` 会把**所有含直接 text 输入的组**
+  压成 `1fr / 200px`（label 占 1fr、控件固定 200px 右对齐）——“我的标志”同时有 emoji 网格 + 输入框，
+  于是整块被塞进右列，左边空一片。修法：通用规则追加 `:not(:has(> div))`，凡是有嵌套 div 的组
+  （identity-options / emoji-grid / sp-row / api-key-input）不再套行式规则；`setting-group--row` 已无使用者，整段删除。
+- **同批修正**：Base URL / 叫我什么 / 你的名字 / 想让我怎么叫你 / 你的时区 统一 `setting-group--wide`
+  （label 上、input 占满整行）；Base URL 真机量到 852px（原 200px）。
+- **全量排查**：脚本遍历设置侧栏 23 个页面，逐页量每个 `.setting-group` 的 label/control 宽度、间距、
+  右溢出与 `.settings-content` 横向溢出；修后 **0 个 gap>200 / 0 个 overflow / 0 个窄控件**。
+- **子智能体状态 chip**：原来是 `.tool-calls` 里 group 之后的 inline-block 兄弟，group 有 `--space-9` 边距而
+  chip 只有 4px ⇒ 更靠左、长摘要向右溢出；改为 `.subagent-status-row` flex 行（左右与 group 对齐、自动换行、
+  chip max-width 100%），空行 `:empty` 不占位；判据加进 `component-message-bubble`。
+- **设置刷新 0 个模型**：`summarizeList` 对非托管 provider 传了 `[]`，total 恒 0；改为所有 provider 传 models，
+  只有“隐藏不可用”按托管判定。真机 DeepSeek：`✓ 获取到 3 个模型（服务器 2 + 内置目录 1）`。
+- 全量 **785 文件 / 8787 用例（8770 通过 + 17 skipped + 0 失败）**；tsc 0；CSS 契约/UI 一致性/样式棘轮全绿；未发版。
