@@ -58,11 +58,21 @@ describe("设置项落地契约（第 61 波）", () => {
      * 必须在存储就绪之后 —— 太早读只会拿到空值（这正是"看起来读了、其实没生效"的形状）。
      *
      * 第 18 轮：锚点从 `await initDatabase()`（旧引擎初始化，App.tsx 已删掉这一步）
-     * 换成 `await registerRustStoragePort()` —— 那才是新架构下"存储就绪"的分界线。
+     * 换成"存储端口注册"那一步。
+     *
+     * 第 233 轮：注册调用收敛成**单飞入口** `ensureStoragePortRegistered()`
+     * （端口就绪的唯一事实，Cordis 初始化也要 await 它 —— 见 `memory-boot-order.test.ts`）。
+     * 判据要回答的问题没变：**读设置必须发生在这条分界线之后**。
      */
-    const readyAt = app.indexOf("registerRustStoragePort()");
+    const readyAt = Math.max(
+      app.indexOf("ensureStoragePortRegistered()"),
+      app.indexOf("registerRustStoragePort()"),
+    );
     const readAt = app.indexOf("getSetting(\"codem-display-mode\")");
-    expect(readyAt, "App.tsx 里应有 registerRustStoragePort() 调用").toBeGreaterThan(-1);
+    expect(
+      readyAt,
+      "App.tsx 里应有存储端口就绪的调用（ensureStoragePortRegistered / registerRustStoragePort）",
+    ).toBeGreaterThan(-1);
     expect(readAt, "读取点应位于存储端口注册之后").toBeGreaterThan(readyAt);
   });
 

@@ -189,7 +189,22 @@ describe("APPEARANCE 外观档位（第 159 轮 P2-1）", () => {
   it("APPEARANCE-6：启动路径（首帧 + DB 就绪）都必须应用外观档位", () => {
     const main = read("src/main.tsx");
     expect(main, "main.tsx 的 bootstrap 必须在首帧前按镜像应用一次").toMatch(/applyAppearanceAttributes\(\)/);
-    expect(main, "必须发生在 renderApp() 之前").toMatch(/applyAppearanceAttributes\(\)[\s\S]{0,600}?renderApp\(\)/);
+    /*
+     * ⚠️ 第 233 轮：首帧触发方式从 `await Promise.race([...]); renderApp()` 改成
+     * `startWithMaterialHint({ probe, render: renderApp })`（材质探测最多阻塞 60ms，
+     * 超时也先渲染 —— 判据 `START-1`）。断言口径随之改成"语义"：
+     * ① 档位在 bootstrap 里应用；② 它**先于**交给启动器的那次渲染；
+     * ③ `renderApp` 不再被 bootstrap 直接调用（直接调就绕过了探测与顺序）。
+     */
+    const boot = main.slice(main.indexOf("async function bootstrap"));
+    const applyIdx = boot.indexOf("applyAppearanceAttributes()");
+    const renderIdx = boot.indexOf("render: renderApp");
+    expect(applyIdx, "bootstrap 里必须应用外观档位").toBeGreaterThan(-1);
+    expect(renderIdx, "首帧必须由启动器触发（render: renderApp）").toBeGreaterThan(-1);
+    expect(applyIdx, "档位必须**先于**首帧落地（否则会先按默认档画一帧再跳）").toBeLessThan(renderIdx);
+    expect(main, "bootstrap 里不许直接调 renderApp()（绕过启动器会破坏顺序）").not.toMatch(
+      /async function bootstrap[\s\S]{0,900}renderApp\(\);/,
+    );
 
     const dbSync = ["src/components/TitleBar.tsx", "src/App.tsx"]
       .map((f) => ({ f, text: read(f) }))

@@ -169,7 +169,13 @@ describe('UI 对标施工合同', () => {
   it('P2-2：右栏 1280 默认展开，1440 宽 360，≤1100 自动收起', () => {
     const right = readFileSync(join(ROOT, 'src/components/RightSidebar.tsx'), 'utf8')
     const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')
-    expect(right).toContain('window.innerWidth <= 1440 ? 360 : 400')
+    /*
+     * 第 233 轮：默认宽度抽成 `rightSidebarDefaultWidth()`（单一真相，双击复位共用它），
+     * 所以断言改成钉**两条分支的数字**，不再要求那个三元表达式逐字存在。
+     */
+    expect(right, '1440 以内默认 360').toMatch(/RIGHT_SIDEBAR_DEFAULT_WIDE = 400/)
+    expect(right, '宽屏默认 400').toMatch(/RIGHT_SIDEBAR_DEFAULT_NARROW = 360/)
+    expect(right, '默认宽度必须由同一个函数产出').toMatch(/function rightSidebarDefaultWidth\(\)/)
     expect(app).toContain('window.innerWidth >= 1280')
     expect(app).toContain('window.innerWidth <= 1100')
     expect(app).toContain('codem-right-rail-open')

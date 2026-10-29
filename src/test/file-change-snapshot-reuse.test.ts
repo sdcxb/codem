@@ -33,7 +33,9 @@ import {
 } from "../core/environment/file-change-tracker";
 
 const WS = process.cwd();
-const seed = () => __seedFileChangeSnapshot(WS, "tree-1", { ref: "tree-1", untracked: [] } as unknown as never);
+/** ????? sessionId????? `workspace\0sessionId`?? 233 ???? */
+const seed = (sessionId = "s1") =>
+  __seedFileChangeSnapshot(WS, "tree-1", { ref: "tree-1", untracked: [] } as unknown as never, sessionId);
 
 describe("第 188 波：改动前快照跨迭代复用（上一次的 after = 下一次的 before）", () => {
   beforeEach(() => __resetFileChangeSnapshotCache());
@@ -54,14 +56,14 @@ describe("第 188 波：改动前快照跨迭代复用（上一次的 after = �
     seed();
     const t = new FileChangeTracker(WS, "s1", "m1", 1);
     await t.start();
-    expect(__hasFileChangeSnapshot(WS), "start 之后缓存里有 ✓").toBe(true);
+    expect(__hasFileChangeSnapshot(WS, "s1"), "start 之后缓存里有 ✓").toBe(true);
     /**
      * `finalize()` 会去拍 after 快照（这里 `isGitRepo` 为 false ⇒ 它拿不到 after ✓），
      * 但它**绝不能**把缓存删掉 ✗ —— 否则下一轮又得重新拍 ✗。
      */
     await t.finalize().catch(() => null);
     expect(
-      __hasFileChangeSnapshot(WS),
+      __hasFileChangeSnapshot(WS, "s1"),
       "finalize 之后缓存必须**还在** ✓（186 波把它删了 ⇒ 等于没缓存 ✗）",
     ).toBe(true);
   });

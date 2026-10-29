@@ -57,10 +57,14 @@ describe("P0 滚动/UX — 组件导入与 Store 状态", () => {
 
   it("REG-FULL-001b: ScrollbarMarkers 轨道按“全内容比例”铺点（防回退到视口相对坐标导致一屏只剩 1-2 点）", () => {
     const src = readFileSync(join(__dirname, "../components/ScrollbarMarkers.tsx"), "utf-8");
-    // 内容地图定位：contentTop = 视口坐标差 + scrollTop，再除以 totalHeight
-    expect(src).toContain("toContentPercent");
-    expect(src).toContain("contentTop = el.getBoundingClientRect().top - scrollerRect.top + scrollTop");
-    expect(src).toContain("(contentTop / totalHeight) * 100");
+    /*
+     * ⚠️ 第 233 轮：这条判据原来钉的是**实现文本**（必须叫 `toContentPercent`、必须逐字出现
+     * `contentTop = el.getBoundingClientRect()…`）—— 而那段被重构成「内容坐标缓存 +
+     * 零布局重算」（`SBM-1` 要求的正是**流式期间不读布局**），局部变量名与表达式形状因此变了。
+     * **语义没变**，所以判据改成钉语义：① 按"内容坐标 / 总内容高度"计算；② 不许回退到视口相对坐标。
+     */
+    expect(src, "必须仍按内容坐标铺点").toContain("contentTop");
+    expect(src, "百分比必须除以**总内容高度**（不是视口高度）").toContain("(contentTop / totalHeight) * 100");
     // 旧实现（视口相对坐标，离屏点被 clamp 到轨道两端堆叠）不得回退
     expect(src).not.toContain("((elTop - scrollTop) / viewportHeight) * 100");
   });

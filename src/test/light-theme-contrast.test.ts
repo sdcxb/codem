@@ -798,7 +798,16 @@ describe("NATIVE 系统材质档（第 158 轮）", () => {
     const writers = srcFiles.filter((f) => /setAttribute\(\s*["']data-native-material["']/.test(readFileSync(f, "utf8")));
     expect(writers.length, "没有任何地方设置 data-native-material —— 这一档 CSS 永远不会生效").toBeGreaterThan(0);
     const main = readFileSync(join(ROOT, "src", "main.tsx"), "utf8");
-    expect(main, "必须在**首次渲染前**打上属性（渲染后打会先闪一帧实色）").toMatch(/await\s+Promise\.race\(\[[\s\S]{0,200}?applyNativeMaterialHint\(\)[\s\S]{0,200}?\]\);?\s*renderApp\(\)/);
+    /*
+     * ⚠️ 第 233 轮：首帧触发方式改成 `startWithMaterialHint({ probe, render: renderApp })`
+     * —— 探测在 `limitMs`（60ms）内回来就"属性先落地、再渲染"（不闪实色），
+     * 超时也**先渲染**（原来是 `await Promise.race([探测, sleep(400)]); renderApp()`，
+     * IPC 慢就是最长 400ms 白屏）。行为判据见 `startup-material-hint.test.ts` 的 START-1/2。
+     * 这里钉两件仍然必须成立的事：① 探测函数仍接进启动器；② 顶层不许有 await。
+     */
+    expect(main, "材质探测必须接进启动器（probe: applyNativeMaterialHint）").toMatch(
+      /startWithMaterialHint\(\{\s*probe:\s*applyNativeMaterialHint,\s*render:\s*renderApp\s*\}\)/,
+    );
     expect(main, "顶层 await 会让构建失败（esbuild 目标不支持）—— 必须包在函数里").not.toMatch(/^await\s/m);
     /* Rust 侧要提供"材质成功没有"的真相源：前端猜不出来 */
     const rust = readFileSync(join(ROOT, "src-tauri", "src", "lib.rs"), "utf8");

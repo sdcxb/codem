@@ -146,7 +146,13 @@ const REAL_IMPLEMENTATIONS: ReadonlyArray<{
     checks: [
       { file: "src/core/agent/agent.ts", must: [/BUILTIN_AGENT_IDS/, /id: "build"/], why: "内置预设的定义处" },
       { file: "src/components/AgentManager.tsx", must: [/getAgentRegistry\(\)/, /isBuiltin\(/], why: "预设列表/详情的渲染者" },
-      { file: "src/App.tsx", must: [/import \{ AgentManager \} from "\.\/components\/AgentManager"/, /fallback=\{AgentManager\}/], why: "侧边栏「智能体」入口的真实接线" },
+      /*
+       * 第 233 轮审计：面板改成按需加载之后，接线形态从「静态 import」变成
+       * 「`lazy(() => import(...))` + `fallback={XLazy}`」。判据钉的仍然是**接线**：
+       * ① 真的把实现拉进来（静态 import 或 lazy 动态 import 都算）；
+       * ② 真的接到了侧边栏那个入口（`fallback={X}` 或 `fallback={XLazy}`）。
+       */
+      { file: "src/App.tsx", must: [/import\("\.\/components\/AgentManager"\)/, /fallback=\{AgentManager(?:Lazy)?\}/], why: "侧边栏「智能体」入口的真实接线" },
       {
         file: "src/components/PermissionPresetSelector.tsx",
         must: [/SECURITY_MODES/, /setGlobalSecurityMode/, /setProjectSecurityMode/],
@@ -159,7 +165,8 @@ const REAL_IMPLEMENTATIONS: ReadonlyArray<{
     landing: "src/components/SkillManager.tsx + src/core/skill/*（registry / installer / market client）",
     checks: [
       { file: "src/components/SkillManager.tsx", must: [/getSkillRegistry\(\)/, /installSkillFromZip/, /listMarketSkills/, /uninstallSkill/], why: "列表/安装/市场/删除四处数据源" },
-      { file: "src/App.tsx", must: [/import \{ SkillManager \} from "\.\/components\/SkillManager"/, /fallback=\{SkillManager\}/], why: "侧边栏「技能」入口的真实接线" },
+      /* 同上（第 233 轮）：按需加载后接线形态是 lazy + `fallback={SkillManagerLazy}` */
+      { file: "src/App.tsx", must: [/import\("\.\/components\/SkillManager"\)/, /fallback=\{SkillManager(?:Lazy)?\}/], why: "侧边栏「技能」入口的真实接线" },
     ],
   },
 ];

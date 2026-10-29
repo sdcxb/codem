@@ -697,7 +697,16 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
     const p1 = makePort();
     setStoragePort(p1);
     deleteSession(SESSION, { confirmBulk: true });
-    const withConfirm = p1.__writes().filter((w) => w.command === "crud.delete");
+    const withConfirm = p1
+      .__writes()
+      .filter((w) => w.command === "crud.delete" && (w.params as Record<string, unknown>)?.table === "sessions");
+    /**
+     * 第 233 轮审计：`deleteSession` 成功分支现在**还会**补两条补偿清理
+     * （`delegation_tasks` 的 source/target 各一条 `crud.delete`）——
+     * 所以这里按**表**过滤，只断言「删会话本身」那一条。
+     * 断言的内容没变（confirmBulk 必须如实翻译成 confirm_bulk），
+     * 变的只是"一次会话删除会发几条命令"这个本来就不是契约的假设。
+     */
     expect(withConfirm.length, "删会话走 crud.delete").toBe(1);
     expect(
       (withConfirm[0].params as Record<string, unknown>).confirm_bulk,
@@ -718,7 +727,10 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
      * —— 断言前先等写穿落地。产品侧读的是镜像（同步更新），这里只是断言的时序假设变了。
      */
     await __awaitPendingWrites();
-    const withoutConfirm = p2.__writes().filter((w) => w.command === "crud.delete");
+    /** 同 FIXB-8c 上半段：按表过滤（`delegation_tasks` 的两条补偿清理不是会话行本身）。 */
+    const withoutConfirm = p2
+      .__writes()
+      .filter((w) => w.command === "crud.delete" && (w.params as Record<string, unknown>)?.table === "sessions");
     expect(withoutConfirm.length).toBe(1);
     expect(
       (withoutConfirm[0].params as Record<string, unknown>).confirm_bulk,

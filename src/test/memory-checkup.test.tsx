@@ -14,7 +14,7 @@
  * 组件层再断言"勾选删除只影响勾选项、清空全部要二次确认"。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent, act } from "@testing-library/react";
+import { render, cleanup, fireEvent, act, waitFor } from "@testing-library/react";
 
 /**
  * 二次确认一律走原生 helper（NC-1 禁止裸 `window.confirm`：Tauri dialog 下它返回 Promise ⇒ 闸门静默失效）。
@@ -619,11 +619,20 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
 
     await act(async () => {
       fireEvent.click(findBtn!);
-      await Promise.resolve();
+      /*
+       * 第 233 轮审计：扫描改成**分块异步**（每 2 万对让出主线程，界面才有进度）。
+       * 这里要等它真的跑完 —— 不再是一个微任务，而是若干次 setTimeout(0)。
+       */
+      await new Promise((r) => setTimeout(r, 0));
     });
+    await waitFor(
+      () => {
+        expect(container.querySelectorAll(".mc-duplicate-group"), "这一对必须被列出来").toHaveLength(1);
+      },
+      { timeout: 3000 },
+    );
 
     const groups = container.querySelectorAll(".mc-duplicate-group");
-    expect(groups, "这一对必须被列出来").toHaveLength(1);
     expect(groups[0].querySelector(".mc-duplicate-similarity")?.textContent ?? "", "要给出可核对的相似度读数").toMatch(
       /相似度 \d+%/,
     );

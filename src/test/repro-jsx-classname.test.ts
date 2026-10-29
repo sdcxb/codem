@@ -43,10 +43,14 @@ describe("JSX className 运算符优先级（无裸拼接比较）", () => {
 
   it("UI-003: FileChangesList 状态类名用括号包裹三元", () => {
     const fcl = read("FileChangesList.tsx");
-    // 不应再有 git-status- 前缀 + 裸比较
+    // 不应再有 git-status- 前缀 + 裸比较（这正是本条判据要防的优先级 bug）
     expect(fcl).not.toContain('git-status-" + file.status');
-    // 修复后：git-status- 后跟括号内三元
-    expect(fcl).toContain('"change-file-status git-status-" + (');
+    /*
+     * 第 233 轮：那处三目被抽成了**一个函数**（`gitStatusClass`）—— JSX 里不再拼字符串，
+     * 上面那条"不许裸比较拼接"的意图因此更强；这里钉住新形态的接线。
+     */
+    expect(fcl, "状态类必须由一个函数产出（不许在 JSX 里拼）").toContain("function gitStatusClass(");
+    expect(fcl, "两处 status 类都必须走这个函数").toContain("className={gitStatusClass(file.status)}");
     expect(fcl).toContain('isReverted ? "turn-change-group reverted" : "turn-change-group"');
   });
 });

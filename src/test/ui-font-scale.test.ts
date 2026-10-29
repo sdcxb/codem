@@ -64,12 +64,16 @@ describe("全局字号缩放（第 56 波）", () => {
   it("UI-FONT-5: 启动时就应用字号（存储就绪后），而不是等打开设置才应用", () => {
     const app = read("src/App.tsx");
     /**
-     * 第 18 轮：锚点从 `await initDatabase()`（旧引擎初始化，App.tsx 已删）换成
-     * `registerRustStoragePort()` —— 新架构下"设置可读"的分界线是**端口注册完成**。
+     * 第 18 轮：锚点从 `await initDatabase()`（旧引擎初始化，App.tsx 已删）换成"端口注册完成"。
+     * 第 233 轮：注册调用收敛成单飞入口 `ensureStoragePortRegistered()`（Cordis 初始化也 await 它，
+     * 见 `memory-boot-order.test.ts`）⇒ 分界线跟着换成它。
      */
-    const readyIdx = app.indexOf("registerRustStoragePort()");
+    const readyIdx = Math.max(
+      app.indexOf("ensureStoragePortRegistered()"),
+      app.indexOf("registerRustStoragePort()"),
+    );
     const applyIdx = app.indexOf("applyStoredUiFont()");
-    expect(readyIdx, "App.tsx 应有 registerRustStoragePort()").toBeGreaterThan(0);
+    expect(readyIdx, "App.tsx 应有存储端口就绪的调用").toBeGreaterThan(0);
     expect(applyIdx, "App.tsx 应在存储就绪后调用 applyStoredUiFont()").toBeGreaterThan(0);
     expect(applyIdx, "applyStoredUiFont() 必须在存储端口注册之后（设置存在端口里）").toBeGreaterThan(readyIdx);
     // 侧栏启动路径也必须用同一个解析器（不能再直接读旧键）

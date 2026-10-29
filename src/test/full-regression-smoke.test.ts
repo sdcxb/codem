@@ -394,8 +394,13 @@ describe("UI 入口 — AgentManager 变更", () => {
 describe("UI 入口 — App.tsx AgentManager 弹窗", () => {
   const appSource = readFile("App.tsx");
 
-  it("AgentManager 已 import", () => {
-    expect(appSource).toContain("import { AgentManager }");
+  it("AgentManager 已接线（静态 import 或 lazy 动态 import）", () => {
+    /*
+     * 第 233 轮审计：这个面板改成了按需加载（`lazy(() => import("./components/AgentManager"))`），
+     * 原来那句 `toContain("import { AgentManager }")` 会把"正常的分包"判成缺陷。
+     * 判据改成钉**实现被拉进来**这件事本身（两种形态都算）。
+     */
+    expect(appSource).toMatch(/import \{ AgentManager \}|import\("\.\/components\/AgentManager"\)/);
   });
 
   it("showAgentManager state 存在", () => {
