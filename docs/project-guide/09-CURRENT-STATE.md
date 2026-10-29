@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-10-26 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.16.331 发布提交）｜ **1.16.331**（2026-10-29 发布）
+> 基线：`master` @ 代码提交见 `git log -1`（1.16.332 发布提交）｜ **1.16.332**（2026-10-29 发布）
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -9,10 +9,10 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.16.331** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.16.331` = **Latest**（2026-10-29 发布） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` version 1.16.331 | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（1.16.331 发布提交） | `git rev-parse --short HEAD` |
+| 版本 | **1.16.332** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.16.332` = **Latest**（2026-10-29 发布） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` version 1.16.332 | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（1.16.332 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
 | 本地 tag | 最新只到 **v1.16.321** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
@@ -165,7 +165,7 @@
 
 | 文档 | 最后口径 | 问题 |
 |---|---|---|
-| `docs/PROJECT-GUIDE.md` | 823 KB；头部写“最后更新 2026-10-23（v1.16.331）”，但正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
+| `docs/PROJECT-GUIDE.md` | 823 KB；头部写“最后更新 2026-10-23（v1.16.332）”，但正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
 | `AGENTS.md` | 1.16.323（本次已改顶部版本/测试数） | 正文的状态/评测叙述仍偏旧；以本套为准 |
 | `docs/NEW-SESSION-START.md` | 1.16.319 | 待办/版本/测试数过时 |
 | `docs/HANDOVER-2026-10-17.md` | 1.16.329 | 三条主动脉仍有效；命令面“全在 lib.rs”等细节过时 |

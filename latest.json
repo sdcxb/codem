@@ -1,15 +1,15 @@
 {
-  "version": "1.16.331",
-  "notes": "Codem v1.16.331：事件日志自动清理释放磁盘、右侧改动面板先给结论、梦幻皮肤令牌补齐、启动包体减小",
-  "pub_date": "2026-10-29T01:18:44Z",
+  "version": "1.16.332",
+  "notes": "设置页与帮助页布局修复、子智能体状态条、worktree 逐文件选边、模型列表与 DeepSeek 目录清理、事件归档、重启恢复待回答问题",
+  "pub_date": "2026-10-29T10:06:16Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lTLzdXL0ZIcE9QK0kxYmlrTHRaRWk2S2VJdGdIZGRWOHNpbDNaNHROUnkyMUlhemNlb1ZpZWVLdURFV20vdnZZaUVpMUJFcUVEMWhqZitPMWM3OHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjM2NzE3CWZpbGU6Q29kZW1fMS4xNi4zMzFfeDY0LXNldHVwLmV4ZQpwempUUTFWTlZwTjVEQVdJVEZMS1VLaDhQSmtvc2RUUHF2STltZFVPV3RCOExzc1F3UTE0T2M3VGlIQ2QwdEc0dTF5d1k3NncwR2NXbnJGNVhBZGNDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.331/Codem_1.16.331_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VxZFozdlR4MjcvQTRuck1pVUhvT0JBUlc1VS9KeHI3ZkhOVGpqTnBVREFhUEdTWXFLOGhYbzhIMDBKU0VaWC9PejBHSXM3VVZubWJsUklMQktMcmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjY4MzcxCWZpbGU6Q29kZW1fMS4xNi4zMzJfeDY0LXNldHVwLmV4ZQpUNmhKWmlhNW12RytaTkJVQm11b29uakJ5VEh1UVN6Sy9GblFZMS9OaG1Eby8veHJERlJqMFFaUU9GSDZWN2w1QlZ2eW5Nc0txVkVBZjFVem5rdzZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.332/Codem_1.16.332_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lTLzdXL0ZIcE9QK0kxYmlrTHRaRWk2S2VJdGdIZGRWOHNpbDNaNHROUnkyMUlhemNlb1ZpZWVLdURFV20vdnZZaUVpMUJFcUVEMWhqZitPMWM3OHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjM2NzE3CWZpbGU6Q29kZW1fMS4xNi4zMzFfeDY0LXNldHVwLmV4ZQpwempUUTFWTlZwTjVEQVdJVEZMS1VLaDhQSmtvc2RUUHF2STltZFVPV3RCOExzc1F3UTE0T2M3VGlIQ2QwdEc0dTF5d1k3NncwR2NXbnJGNVhBZGNDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.331/Codem_1.16.331_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VxZFozdlR4MjcvQTRuck1pVUhvT0JBUlc1VS9KeHI3ZkhOVGpqTnBVREFhUEdTWXFLOGhYbzhIMDBKU0VaWC9PejBHSXM3VVZubWJsUklMQktMcmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjY4MzcxCWZpbGU6Q29kZW1fMS4xNi4zMzJfeDY0LXNldHVwLmV4ZQpUNmhKWmlhNW12RytaTkJVQm11b29uakJ5VEh1UVN6Sy9GblFZMS9OaG1Eby8veHJERlJqMFFaUU9GSDZWN2w1QlZ2eW5Nc0txVkVBZjFVem5rdzZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.332/Codem_1.16.332_x64-setup.exe"
     }
   }
 }
