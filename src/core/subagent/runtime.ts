@@ -32,8 +32,6 @@ import type {
 
 import type { LLMEngine } from '../llm';
 import * as MessageStorage from '../storage/message';
-import type { SubagentReport } from './report-contract';
-import { settleSubagentReport } from './report-contract';
 import { getLang } from '../i18n/lang';
 import { parseTaskResult, type SubagentTask, type SubagentActivity } from './subagent';
 import { ensureSubagentSession } from './subagent-session';
@@ -42,14 +40,6 @@ import { idleWatchdog } from '../session/idle-watchdog';
 // ========== 活化状态 ==========
 
 type ActivationState = 'running' | 'waiting' | 'settled';
-
-/** 一次性前台子智能体的报告接收器（没有持久 Activation）。 */
-interface ForegroundReportSink {
-  readonly childId: string;
-  readonly parentSession: string;
-  lastReport?: SubagentReport;
-  reportRequired: boolean;
-}
 
 interface Activation {
   /** 持久子智能体 ID */
@@ -80,8 +70,6 @@ interface Activation {
   executionResolver: () => void;
   /** 最终结果 */
   result?: SubagentResult;
-  /** 最近一次带结构化的 report（父 agent 结算时优先使用） */
-  lastReport?: SubagentReport;
   /** 汇报回调列表 */
   reportCallbacks: Array<(content: string, delivery: 'quiet' | 'wakeup') => void>;
   /**
@@ -105,30 +93,6 @@ function generateId(): string {
 
 function generateMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-}
-
-/**
- * 有结构化 report 时，以 report 为准覆盖从最终文本解析出的结果。
- * 这样“子 agent 写了失败但最终文本是散文”不会被默认当成 success。
- */
-function applyStructuredReport(
-  result: ReturnType<typeof parseTaskResult>,
-  report: SubagentReport | undefined,
-  reportRequired: boolean,
-): ReturnType<typeof parseTaskResult> {
-  const settlement = settleSubagentReport({
-    reportRequired,
-    report,
-    parsedStatus: result.status,
-    parsedSummary: result.summary,
-  });
-  return {
-    ...result,
-    status: settlement.status,
-    summary: settlement.summary,
-    filesTouched: report?.changed.length ? report.changed : result.filesTouched,
-    ...(report ? { report } : {}),
-  };
 }
 
 /**
@@ -166,7 +130,6 @@ type SubagentChangeListener = () => void;
 export class SubagentRuntime {
   private providers = new Map<string, SubagentProvider>();
   private activations = new Map<string, Activation>();
-  private foregroundReports = new Map<string, ForegroundReportSink>();
   private draining = false;
   private listeners = new Set<SubagentChangeListener>();
 
@@ -212,34 +175,7 @@ export class SubagentRuntime {
    */
   async start(providerName: string, request: SubagentStartRequest): Promise<SubagentRun> {
     const provider = this.expectProvider(providerName);
-    const run = await provider.start(request);
-    const sink: ForegroundReportSink = {
-      childId: run.id,
-      parentSession: request.parentSessionId,
-      reportRequired: false,
-    };
-    this.foregroundReports.set(run.id, sink);
-
-    const result = run.result
-      .then((result) => {
-        const settlement = settleSubagentReport({
-          reportRequired: sink.reportRequired,
-          report: sink.lastReport,
-          parsedStatus: 'unknown',
-          parsedSummary: result.summary,
-        });
-        const failed = settlement.missing || settlement.status === 'failed' || settlement.status === 'blocked';
-        return {
-          ...result,
-          summary: settlement.summary,
-          ...(failed ? { stopReason: 'refusal' as const } : {}),
-        };
-      })
-      .finally(() => {
-        this.foregroundReports.delete(run.id);
-      });
-
-    return { ...run, result };
+    return provider.start(request);
   }
 
   // ========== 内部状态变更通知 ==========
@@ -426,20 +362,6 @@ export class SubagentRuntime {
   }
 
   /**
-   * 标记该子智能体必须提交结构化 report。由 engine 在子任务启动时按插件策略设置；
-   * 缺失时结算为 failed，而不是把散文当完成。
-   */
-  setReportRequired(childId: string, required = true): void {
-    const activation = this.activations.get(childId);
-    if (activation) {
-      activation.task.reportRequired = required;
-      return;
-    }
-    const sink = this.foregroundReports.get(childId);
-    if (sink) sink.reportRequired = required;
-  }
-
-  /**
    * 子智能体向父智能体汇报 — 对标 DSH reportFrom()
    *
    * 这是 DSH 的核心机制：子智能体通过 report 工具主动向父推送内容。
@@ -452,17 +374,13 @@ export class SubagentRuntime {
   ): Promise<string> {
     const activation = this.activations.get(childId);
     if (activation === undefined) {
-      const sink = this.foregroundReports.get(childId);
-      if (!sink) {
-        throw new Error(`Agent "${childId}" is not a live subagent and cannot report`);
-      }
-      return this.deliverForegroundReport(sink, content, options.report);
+      throw new Error(`Agent "${childId}" is not a live continuable subagent and cannot report`);
     }
     if (activation.disposed) {
       throw new Error(`Subagent "${childId}" is being disposed; the report was not delivered`);
     }
 
-    return this.deliverReport(activation, content, options.delivery, options.report);
+    return this.deliverReport(activation, content, options.delivery);
   }
 
   /**
@@ -697,7 +615,7 @@ export class SubagentRuntime {
         };
         this.completeRunningActivities(activation);
       } else {
-        const result = applyStructuredReport(parseTaskResult(fullOutput), activation.lastReport, activation.task.reportRequired === true);
+        const result = parseTaskResult(fullOutput);
         /**
          * 第 83 波（审计修正）：子智能体**自报失败**时不能报"已完成"。
          *
@@ -896,7 +814,7 @@ activation.task.profile_id,
         activation.task.completedAt = Date.now();
         this.completeRunningActivities(activation);
       } else {
-        const result = applyStructuredReport(parseTaskResult(fullOutput), activation.lastReport, activation.task.reportRequired === true);
+        const result = parseTaskResult(fullOutput);
         // 第 83 波：子智能体自报失败/受阻时不能报"已完成"
         const reported = result.status; // success | partial | failed | blocked
         const failed = reported === 'failed' || reported === 'blocked';
@@ -1097,41 +1015,13 @@ activation.task.profile_id,
     activation: Activation,
     content: string,
     delivery: 'quiet' | 'wakeup',
-    report?: SubagentReport,
-  ): string {
-    if (report) activation.lastReport = report;
-    return this.deliverReportMessage(
-      activation.parentSession,
-      activation.childId,
-      content,
-      delivery,
-      report,
-    );
-  }
-
-  /** 一次性前台子智能体没有 Activation，用它自己的 sink 投递。 */
-  private deliverForegroundReport(
-    sink: ForegroundReportSink,
-    content: string,
-    report?: SubagentReport,
-  ): string {
-    if (report) sink.lastReport = report;
-    return this.deliverReportMessage(sink.parentSession, sink.childId, content, 'wakeup', report);
-  }
-
-  private deliverReportMessage(
-    parentSession: string,
-    childId: string,
-    content: string,
-    delivery: 'quiet' | 'wakeup',
-    report?: SubagentReport,
   ): string {
     const zh = getLang() === 'zh';
-    const messageId = `report-${childId}-${Date.now()}`;
+    const messageId = `report-${activation.childId}-${Date.now()}`;
     const prefix = zh ? '[子智能体汇报]' : '[SUBAGENT REPORT]';
     // 防注入：对子智能体汇报内容做净化 — 防止通过 report 工具注入伪造系统提示词
     const sanitizedContent = sanitizeSubagentOutput(content);
-    const notification = `${prefix}\n${zh ? '后台子智能体' : 'Background subagent'} ${childId} ${zh ? '汇报:' : 'reported:'}\n${sanitizedContent}`;
+    const notification = `${prefix}\n${zh ? '后台子智能体' : 'Background subagent'} ${activation.childId} ${zh ? '汇报:' : 'reported:'}\n${sanitizedContent}`;
 
     // 将汇报注入父会话的 inbox
     MessageStorage.createMessage({
@@ -1140,16 +1030,15 @@ activation.task.profile_id,
       content: notification,
       timestamp: Date.now(),
       status: 'done',
-      ...(report ? { metadata: { subagentReport: report } } : {}),
-    }, parentSession);
+    }, activation.parentSession);
 
     if (delivery === 'wakeup') {
       // wakeup: 尝试触发父智能体的下一轮
       // 在我们的架构中，inbox 注入本身就是足够的唤醒机制，
       // 因为 agentic-loop 在下一轮迭代时会读取所有未处理的 user messages
-      console.log(`[SubagentRuntime] Report (wakeup) delivered to parent ${parentSession} from child ${childId}`);
+      console.log(`[SubagentRuntime] Report (wakeup) delivered to parent ${activation.parentSession} from child ${activation.childId}`);
     } else {
-      console.log(`[SubagentRuntime] Report (quiet) delivered to parent ${parentSession} from child ${childId}`);
+      console.log(`[SubagentRuntime] Report (quiet) delivered to parent ${activation.parentSession} from child ${activation.childId}`);
     }
 
     return messageId;

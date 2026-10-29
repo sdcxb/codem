@@ -7725,62 +7725,10 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   而 App 拉 `stacks-index.json` 会 404；已手动补正确资产并改 workflow 先复制成目标文件名
   （提交 `6074e2ca`）。
 - 全量 785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）；tsc 0。
-## 2026-10-29 18:50 — 第 267 波：@codem/ste-zh 汇报规范插件 + 顶部开关
+## 2026-10-29 22:30 — 第 274 波：移除 @codem/ste-zh 插件
 
-- 独立插件 `@codem/ste-zh`：`config/codem.base.yml` 声明、`builtin-registry` 注册、
-  `ste-zh-provider` 提供 `steZh` 服务；`core: true` 保证顶部开关在关闭时也能重新开启。
-- 规则只影响汇报文字：结论先行、固定状态词、工作/验证分离、证据可定位、不确定写明；
-  子 agent 用 `status/scope/changed/verified/unverified/evidence/open` 紧凑字段。
-  不改变代码/注释/commit/项目文件；用户指定格式优先。
-- 顶部工具栏新增「STE 汇报规范」按钮：`aria-pressed` 反映状态，点击写
-  `codem-ste-zh-enabled`；真机验证按钮从关闭→开启，DB 键变 true，header 无溢出。
-- 判据：`ste-zh.test.ts`（规则/注入）、`ste-zh-provider.test.ts`（服务面）、
-  `ste-zh-toggle.test.tsx`（按钮）；fail-open 白名单登记 `isSteZhEnabled`（纯风格开关，失败⇒关闭）。
-- 文档：`docs/STE-ZH-PLUGIN.md`。
-- 全量 **788 文件 / 8795 用例（8778 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
-## 2026-10-29 20:05 — 第 268 波：STE-ZH 智能策略 + 回复后告警 + 复测
-
-- 三态：关 / 智能 / 全量；智能模式按消息选 minimal/full，子 agent 走字段模式。
-- 子 agent prompt 也接入 `@codem/ste-zh`；主 prompt 传入 userMessage 供策略判断。
-- 回复后告警：正文声称“已验证”但本轮无测试/构建命令 → 黄色提示，不改写正文。
-- 真机复测（关 vs 智能）：D 短任务 197→78 字（-60%），首句状态 + 未验证保留，目标达成；
-  A 状态词 2→8 但长 27%；B 无净收益；C 短 53% 但编号仍未遵守。
-- 真实子 agent 复测：最终仍是散文，没有 `status/...` 字段，且违反“不要调用工具”；
-  字段模式在真实子 agent 路径上**未达成**，需 report 工具/JSON schema 硬约束。
-- 全量 789 文件 / 8798 用例（8781 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
-## 2026-10-29 20:55 — 第 269 波：子 agent 报告契约 + parser 默认 unknown
-
-- 新增 `src/core/subagent/report-contract.ts`：status/summary/changed/verified/unverified/open 契约、校验、信封。
-- `report` 工具改为结构化参数；坏报告当场拒绝；旧 output 仍兼容；runtime 保存 lastReport。
-- `parseTaskResult` 优先解析 `<subagent_report>`；无报告返回 unknown，不再默认 success；runtime 用 lastReport 覆盖最终文本。
-- 告警忽略 status=error 的命令（失败测试不算已验证）。
-- 真机：tool scope 里 report 工具 registered=true/visible=true；但子 agent 仍未调用，subagent_report 消息 0 条。
-  结论：链路在，模型不交报告；下一步需要“缺报告即失败”的 runtime 门，而不是再加 prompt。
-- 测试：report-contract/report-tool/parser 新判据；全量 791 文件 / 8805 用例（8788 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
-## 2026-10-29 21:10 — 第 270 波：子 agent 缺报告硬门 + 前台 report 支持
-
-- `SubagentRuntime` 增加 `setReportRequired()`；前台 run 增加 ForegroundReportSink，report 工具在
-  `run_in_background:false` 路径也能投递（不再因为没有 Activation 报错）。
-- 缺报告：`settleSubagentReport()` 返回 failed；前台 `SubagentRun.result.stopReason=refusal`，
-  summary 写“未提交结构化报告”；后台 task 失败；STE 关闭时不要求。
-- 真机：子 agent 未调用 report 时，工具结果出现 `refusal: 未提交结构化报告...`；
-  但主 agent 仍会在散文里写“已完成”，说明父 agent 必须读 stopReason/status，不能只看散文。
-- 新增 `subagent-report-gate.test.ts`；全量 792 文件 / 8807 用例（8790 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
-## 2026-10-29 21:20 — 第 271 波：subagent 工具错误标记
-
-- 前台 subagent 工具在 stopReason 非 completed（含 refusal）时返回 `isError: true`，
-  不再把“未提交结构化报告”当普通成功文本；metadata 保留 stopReason。
-- 新增 `subagent-tool-result.test.ts`；全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0。
-## 2026-10-29 21:40 — 第 272 波：验证结果门控 + 选项编号告警 + 留出集
-
-- 告警不再只看命令存在：工具结果出现 `[exit code: 1+]` 或 `2 failed` 时不算验证。
-- 新增 options-not-numbered 告警：多选项但全用项目符号时提示编号。
-- 留出集 4 例 × 关/智能：H1 短任务 128→82 字；H2/H3 暴露格式压力反例
-  （失败运行写成“已验证”、调用方版本被写成“不是 1.2.3”）。
-- 全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
-## 2026-10-29 22:00 — 第 273 波：精确输出 bypass + 反例
-
-- 智能模式遇到“只输出/只回答/JSON/代码块/不要解释”直接不注入规则，代码级避免格式污染。
-- 反例：X1 JSON、X2 城市名，关/智能输出逐字相同；X3 决策仍靠散文，智能版更长且未用 ask_clarification。
-- 留出集 H2/H3 已记录格式压力反例（失败运行写成“已验证”、调用方版本被写成“不是 1.2.3”）。
-- 全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0。
+- 结论：汇报格式约束与创作/自由文本任务不可兼容；全局智能注入属于设计级缺陷，收益与损失不成正比。
+- 已移除：STE-ZH 插件、顶部开关、prompt 注入、回复告警、子 agent report 契约/硬门及对应测试/文档；
+  恢复到插件引入前的 785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）。
+- 真机：构建后顶部无 STE 按钮，页面无“STE 汇报”入口。
+- 未发版；保留 1.16.332 版本与既有发布。

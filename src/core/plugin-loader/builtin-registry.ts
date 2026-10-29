@@ -255,7 +255,6 @@ import { userApprovalProvider } from '../provider/user-approval-provider'
 import { skillBadgeProvider } from '../provider/skill-badge-provider'
 import { skillFilesystemProvider } from '../provider/skill-filesystem-provider'
 import { personaProvider } from '../provider/persona-provider'
-import { steZhProvider } from '../provider/ste-zh-provider'
 import { shellOpsProvider } from '../../plugins/shell-ops'
 import { commandFeedbackProvider } from '../provider/command-feedback-provider'
 import { cordisClientRunnerProvider } from '../provider/cordis-client-runner-provider'
@@ -529,7 +528,6 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/skill-badge', { provides: ['skillBadge'], inject: ['skill'], priority: 0, hot: true }, () => skillBadgeProvider)
   registerBuiltinPlugin('@codem/skill-filesystem', { provides: ['skillFilesystem'], inject: ['skill', 'fs'], priority: 0, hot: true }, () => skillFilesystemProvider)
   registerBuiltinPlugin('@codem/persona', { provides: ['persona'], inject: [], priority: 0, hot: true }, () => personaProvider)
-  registerBuiltinPlugin('@codem/ste-zh', { provides: ['steZh'], inject: [], priority: 0, hot: true }, () => steZhProvider)
   /**
    * `@codem/shell-ops`：Windows 上把 `bash` 工具的执行器从 Windows PowerShell 5.1
    * 换成真正的 bash，并**拒绝**点名 PowerShell 的命令（找不到 bash 时大声失败、不回退）。

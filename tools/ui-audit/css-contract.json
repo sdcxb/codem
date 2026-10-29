@@ -3948,7 +3948,7 @@
     "width": "auto"
   },
   "fade-in-element": {
-    "@starting-style {\n    opacity": "0",
+    "@starting-style {\r\n    opacity": "0",
     "opacity": "1",
     "transform": "translateY(-8px)",
     "transition": "opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out)"
@@ -16146,7 +16146,7 @@
     "transition": "opacity var(--duration-fast) var(--ease-out)"
   },
   "sidebar-session-context-menu": {
-    "@starting-style {\n    opacity": "0",
+    "@starting-style {\r\n    opacity": "0",
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius)",
@@ -18175,18 +18175,6 @@
   "status-dot": {
     "font-size": "var(--fs-xs)",
     "margin-left": "auto"
-  },
-  "ste-zh-report-warning": {
-    "align-items": "flex-start",
-    "background": "var(--warning-surface)",
-    "border": "1px solid var(--warning-border)",
-    "border-radius": "var(--radius-sm)",
-    "color": "var(--warning)",
-    "display": "flex",
-    "font-size": "var(--fs-xs)",
-    "gap": "var(--space-2)",
-    "margin": "var(--space-2) var(--space-4)",
-    "padding": "var(--space-2) var(--space-3)"
   },
   "step-progress-container": {
     "display": "flex",

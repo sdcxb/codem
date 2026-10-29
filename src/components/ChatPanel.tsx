@@ -44,7 +44,6 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
 import { CorrectionModeToggle } from "./CorrectionModeToggle";
-import { SteZhToggle } from "./SteZhToggle";
 import { StreamingWaitIndicator } from "./StreamingWaitIndicator";
 import { TodoListDisplay } from "./TodoListDisplay";
 import { PanelSidebar } from "./PanelSidebar";
@@ -925,7 +924,6 @@ setStepTooltipLocked(false);
         >
           <Activity size={16} />
         </button>
-        <SteZhToggle />
         {/* 第 46 波：「搜索当前会话」已移到编辑器底部工具行（与执行模式/安全策略同一行） */}
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
         <span className="header-spacer" />

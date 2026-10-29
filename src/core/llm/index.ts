@@ -41,7 +41,6 @@ import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
 import { buildCoordinatorContext } from "../project/coordinator/context";
 import { buildPersonaPromptSection } from "../persona/persona";
-import { buildSteZhPromptSection, type SteZhTurnContext } from "../ste-zh";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
@@ -965,7 +964,7 @@ function readContextCompactionThreshold(): number {
    * AGENTS.md files (global → project → current directory).
    * Use this when cwd is available for layered project instructions.
    */
-  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode, knowledgeContext?: SystemPromptConfig["knowledgeContext"], userSelectedSkills?: string[], steZhContext?: SteZhTurnContext): Promise<string> {
+  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode, knowledgeContext?: SystemPromptConfig["knowledgeContext"], userSelectedSkills?: string[]): Promise<string> {
     const agent = this.agents.get(agentId || this.config.defaultAgent || "build");
     if (!agent) return "";
 
@@ -1111,8 +1110,6 @@ function readContextCompactionThreshold(): number {
       personaSection: this.isPersonaAvailable()
         ? await buildPersonaPromptSection()
         : "",
-      // @codem/ste-zh：插件服务在场且用户开启时才注入；按回合结构选 minimal/full/subagent。
-      steZhSection: this.isSteZhAvailable() ? buildSteZhPromptSection(steZhContext) : "",
     };
 
     const basePrompt = buildSystemPrompt(config);
@@ -1148,16 +1145,6 @@ function readContextCompactionThreshold(): number {
     if (!this.ctx) return true; // 无 ctx（纯引擎环境）：不拦截（调用方各自可控）
     try {
       return !!this.ctx.get('persona');
-    } catch {
-      return false;
-    }
-  }
-
-  /** @codem/ste-zh：插件被禁时 ctx 里没有 steZh 服务，主 prompt 不注入规则。 */
-  private isSteZhAvailable(): boolean {
-    if (!this.ctx) return true;
-    try {
-      return !!this.ctx.get('steZh');
     } catch {
       return false;
     }
@@ -1355,12 +1342,6 @@ Deliver your result with the report tool before you finish: call it once with a 
 The agent that started you shares your workspace but does not automatically receive your transcript, tool output, or reasoning, so a closing remark such as "done" leaves it nothing it can use.
 Report earlier as well whenever a partial finding changes what that agent should do next; reporting never ends your turn.`
     );
-
-    // @codem/ste-zh：子智能体汇报字段（插件在场且开启时才注入）
-    if (this.isSteZhAvailable()) {
-      const steZhSection = buildSteZhPromptSection({ isSubagent: true });
-      if (steZhSection) sections.push(steZhSection);
-    }
 
     return sections.join("\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
   }
@@ -1644,10 +1625,7 @@ Report earlier as well whenever a partial finding changes what that agent should
       yield { type: "knowledge_sources", sources: autoRetrievedSources };
     }
 
-    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills, {
-      userMessage: message,
-      isSubagent: agentId !== undefined && agentId !== "main",
-    });
+    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills);
 
     const startTime = Date.now();
     yield* this.runLoopAndRecordUsage({
@@ -1881,12 +1859,14 @@ Report earlier as well whenever a partial finding changes what that agent should
     // DSH-style: 创建隔离的工具作用域 — 对标 ctx.isolate('tools')
     // 子智能体的 report 工具注册在 scope 中，不泄漏到主智能体
     const scopedTools = this.tools.createScope();
+    let reportToolRegistered = false;
     try {
       const { createReportTool, setSubagentRuntime } = await import('./tools/subagent-tools');
       // 如果 runtime 已初始化，在 scope 中注册 report 工具
       if (this._subagentRuntime) {
         setSubagentRuntime(this._subagentRuntime);
         scopedTools.register(createReportTool());
+        reportToolRegistered = true;
       }
     } catch (e) { console.warn('[processSubagent] report tool registration:', e) }
 
@@ -1897,11 +1877,6 @@ Report earlier as well whenever a partial finding changes what that agent should
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
     const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd, profileId);
-    // STE 子 agent 模式开启时，要求 report 工具提交结构化结果；缺失按 failed 结算。
-    // 插件关闭时 section 为空，不改变旧子智能体行为。
-    if (this._subagentRuntime && buildSteZhPromptSection({ isSubagent: true })) {
-      this._subagentRuntime.setReportRequired(sessionId, true);
-    }
 
     // Filter out <system-reminder> tags from the message
     const cleanMessage = message.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();

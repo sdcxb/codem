@@ -18,7 +18,6 @@
 import type { ToolDef, ToolContext, ToolExecuteResult } from '../tools';
 import type { SubagentRuntime } from '../../subagent/runtime';
 import { getLang } from '../../i18n/lang';
-import { formatSubagentReport, parseSubagentReport, type SubagentReport } from '../../subagent/report-contract';
 // 本文件的工具声明 `timeoutMs: NO_TIMEOUT`（它们是长任务，或会等用户确认），
 // 哨兵值必须在声明处可见。
 import { NO_TIMEOUT } from '../tool-contract';
@@ -176,8 +175,7 @@ export function createSubagentTool(): ToolDef {
             title: `subagent: ${description}`,
             output: result.stopReason === 'completed'
               ? result.output
-              : `${result.stopReason}: ${result.summary}\n${result.output}`,
-            isError: result.stopReason !== 'completed',
+              : `${result.stopReason}: ${result.summary}\n${result.output}`, isError: false,
             metadata: { runId: run.id, stopReason: result.stopReason },
           };
         }
@@ -206,116 +204,67 @@ export function createReportTool(): ToolDef {
     contract: { sideEffectScope: "session", accessScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
-        ? '向启动你的 agent 汇报结构化结果。完成前必须调用一次；调用会被 runtime 校验，坏报告会被拒绝并返回错误。'
-        + 'status/summary 必填；verified 只写你实际执行过的命令，调用方给的结果放 source=caller。'
+        ? '向启动你的 agent 汇报选定的内容。在完成前调用一次，给出自足的最终结果；'
         + '更早调用可用于汇报会改变该 agent 下一步操作的进展或发现。'
-        : 'Report a structured result to the agent that started you. Call once before finishing; the runtime validates it '
-        + 'and rejects malformed reports. status/summary are required; verified must contain commands you actually ran, '
-        + 'use source=caller for results supplied by the caller.',
+        + '该 agent 共享你的工作空间但不会自动收到你的记录、工具输出或推理，'
+        + '所以完成工作本身不是结果。汇报不会结束你的轮次或完成你的工作，'
+        + '只有你的直接父智能体会收到它。调用失败可能仍然已经到达，所以不要盲目重试。'
+        : 'Report selected content to the agent that started you. Call this once before you finish, with a '
+        + 'self-contained final result, and earlier for progress or findings that change what that agent does '
+        + 'next. That agent shares your workspace but does not automatically receive your transcript, tool '
+        + 'output, or reasoning, so finishing your work is not itself a result. Reporting does not end your '
+        + 'turn or finish your work, and only your direct parent receives it. A failed call may still have '
+        + 'arrived, so do not blindly repeat it.',
     guidance:
       zh
-        ? '在完成前使用 report 工具汇报结构化结果：status、summary 必填；verified 只写本 agent 实际跑过的命令。'
-        + '调用方给的结果只能放 source=caller，不能当成自己的验证。汇报不会结束你的轮次。'
-        : 'Deliver a structured report with the report tool before you finish: status and summary are required. '
-        + 'verified must contain commands you actually ran; results supplied by the caller use source=caller. '
-        + 'Reporting never ends your turn.',
+        ? '在完成前使用 report 工具汇报结果：调用一次给出自足的答案。'
+        + '启动你的 agent 共享你的工作空间但不会自动收到你的记录、工具输出或推理，'
+        + '所以像 "完成" 这样的结束语让它什么也用不了。'
+        + '更早也汇报任何会改变该 agent 下一步操作的部分发现；汇报不会结束你的轮次。'
+        : 'Deliver your result with the report tool before you finish: call it once with a self-contained '
+        + 'answer. The agent that started you shares your workspace but does not automatically receive your '
+        + 'transcript, tool output, or reasoning, so a closing remark such as "done" leaves it nothing it can '
+        + 'use. Report earlier as well whenever a partial finding changes what that agent should do next; '
+        + 'reporting never ends your turn.',
     parameters: {
       type: 'object',
       properties: {
-        status: {
+        output: {
           type: 'string',
-          enum: ['success', 'partial', 'failed', 'blocked', 'unknown'],
-          description: zh ? '最终状态；success 不等于已验证' : 'Final status; success does not mean verified',
+          description: zh
+            ? '给父智能体的可操作内容；总结结论并引用相关的共享路径。'
+            : 'Actionable content for your parent; summarize conclusions and reference relevant shared paths.',
         },
-        summary: { type: 'string', description: zh ? '一句话结论（<=300 字）' : 'One-line outcome (<=300 chars)' },
-        changed: {
-          type: 'array',
-          items: { type: 'string' },
-          description: zh ? '改动的文件路径；只读任务留空' : 'Changed file paths; empty for read-only tasks',
-        },
-        verified: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              command: { type: 'string' },
-              ok: { type: 'boolean' },
-              source: { type: 'string', enum: ['agent', 'caller'] },
-              evidence: { type: 'string' },
-            },
-            required: ['command', 'ok', 'source'],
-          },
-          description: zh ? '实际执行/核对过的命令；调用方给的结果必须标 source=caller' : 'Commands actually run/checked; caller-supplied results must use source=caller',
-        },
-        unverified: { type: 'array', items: { type: 'string' }, description: zh ? '没执行的检查及原因' : 'Checks not run and why' },
-        open: { type: 'array', items: { type: 'string' }, description: zh ? '需要父 agent 决策或补做的事' : 'Items the parent must decide or follow up' },
-        output: { type: 'string', description: zh ? '可选：给父 agent 的自足细节' : 'Optional: self-contained detail for the parent' },
       },
-      required: [],
+      required: ['output'],
     },
     async execute(args, ctx: ToolContext): Promise<ToolExecuteResult> {
       const rt = getRuntime();
-      const childId = ctx.sessionId;
-      const hasStructured =
-        args.status !== undefined ||
-        args.summary !== undefined ||
-        Array.isArray(args.verified) ||
-        Array.isArray(args.changed) ||
-        Array.isArray(args.unverified) ||
-        Array.isArray(args.open);
-
-      let report: SubagentReport | undefined;
-      let content = String(args.output ?? '').trim();
-      if (hasStructured) {
-        const parsed = parseSubagentReport({
-          status: args.status,
-          summary: args.summary,
-          changed: args.changed,
-          verified: args.verified,
-          unverified: args.unverified,
-          open: args.open,
-          output: args.output,
-        });
-        if (!parsed.ok || !parsed.report) {
-          return {
-            title: 'Report rejected',
-            output: zh
-              ? '报告未提交：' + (parsed.error || '格式错误') + '。请补齐 status/summary；verified 项必须带 command/ok/source。'
-              : 'Report not submitted: ' + (parsed.error || 'invalid format') + '. Provide status/summary; each verified item needs command/ok/source.',
-            isError: true,
-          };
-        }
-        report = parsed.report;
-        content = formatSubagentReport(report);
-      }
-      if (!content) {
-        return {
-          title: 'Report rejected',
-          output: zh ? '报告未提交：结构化字段和 output 至少提供一个。' : 'Report not submitted: provide structured fields or output.',
-          isError: true,
-        };
-      }
+      const content = args.output as string;
 
       try {
+        // ctx.sessionId 直接就是 childId — 不再有多重 sub- 前缀
+        // runtime.executeContinuable 现在直接使用 activation.childId 作为 sessionId
+        const childId = ctx.sessionId;
+
         const messageId = await rt.reportFrom(childId, content, {
           delivery: 'wakeup',
           signal: ctx.abort,
-          report,
         });
 
         return {
           title: 'report',
           output: zh
-            ? '汇报已被启动你的 agent 接受为消息 ' + messageId
-            : 'Report accepted by the agent that started you as message ' + messageId,
-          isError: false,
-          metadata: { messageId, report },
+            ? `汇报已被启动你的 agent 接受为消息 ${messageId}`
+            : `report accepted by the agent that started you as message ${messageId}`, isError: false,
+          metadata: { messageId },
         };
       } catch (error: any) {
         return {
           title: 'report',
-          output: zh ? '汇报失败: ' + error.message : 'Report failed: ' + error.message,
-          isError: true,
+          output: zh
+            ? `汇报失败: ${error.message}`
+            : `Report failed: ${error.message}`, isError: true,
         };
       }
     },

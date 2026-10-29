@@ -18,7 +18,7 @@
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
 - 当前版本：**1.16.332**（已发布；外部 DSH 插件检查更新/一键升级；统一插件详情页；删除运行中会话立即杀命令进程树；免费模型面板收进详情页。上一版 1.16.329：折叠旧工具参数，长会话上下文从 247% 降到 58%）
-- 测试规模：**793 个测试文件 / 8808 个用例**（8791 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
+- 测试规模：**785 个测试文件 / 8790 个用例**（8773 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -46,7 +46,7 @@ src/core/environment/ 工作区变更追踪（file-change-tracker.ts）
 src/core/prompt/      系统提示词与外置模板
 src/core/knowledge/   知识与动画类小工具（字体/嵌入/PPT 生成等）
 src/components/       React 界面组件（含技能管理、设置面板、任务中心等）
-src/test/             793 个测试文件（判据都写在这里）
+src/test/             785 个测试文件（判据都写在这里）
 tools/eval/           评测口径（配对报告、去重）
 tools/audit/          结构审计（上报点分诊、可达性门禁等）
 .preview-shot/        评测脚手架与运行产物（**已被 .gitignore 忽略**，不进仓库）
@@ -58,7 +58,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 2.6 分钟；793 文件 / 8808 用例）
+npx vitest run                          # 全量测试（约 2.6 分钟；785 文件 / 8790 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）

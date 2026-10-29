@@ -5,7 +5,6 @@
  * 于是"这份孤儿实现到底还有没有人跑"这件事被掩盖了。
  */
 import { getLang } from "../i18n/lang";
-import { extractSubagentReport, type SubagentReport } from "./report-contract";
 
 // ========== Sub-agent Types ==========
 
@@ -40,18 +39,14 @@ export interface SubagentTask {
   activities?: SubagentActivity[];
   /** P1-7: Agent Profile ID — links to agent_profiles table for persistent identity */
   profile_id?: string;
-  /** 本次子任务是否必须提交结构化 report（STE 子 agent 模式开启） */
-  reportRequired?: boolean;
 }
 
 export interface SubagentResult {
-  status: "success" | "partial" | "failed" | "blocked" | "unknown";
+  status: "success" | "partial" | "failed" | "blocked";
   summary: string;
   output: string;
   filesTouched: string[];
   findings: string[];
-  /** 子 agent 通过 report 工具提交的结构化报告（若有） */
-  report?: SubagentReport;
 }
 
 // ========== Task Result Parser ==========
@@ -63,23 +58,9 @@ export interface SubagentResult {
 export function parseTaskResult(output: string): SubagentResult {
   // Filter out <system-reminder> tags
   const cleanOutput = output.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
-
-  // 新契约优先：report 工具投递的结构化报告。
-  const structured = extractSubagentReport(cleanOutput);
-  if (structured) {
-    return {
-      status: structured.status,
-      summary: structured.summary,
-      output: cleanOutput,
-      filesTouched: structured.changed,
-      findings: structured.unverified,
-      report: structured,
-    };
-  }
-
+  
   const lines = cleanOutput.split("\n");
-  // 缺结构化报告时不能默认成功；unknown 让父 agent 知道“没拿到可结算结论”。
-  let status: SubagentResult["status"] = "unknown";
+  let status: SubagentResult["status"] = "success";
   let summary = "";
   let filesTouched: string[] = [];
   let findings: string[] = [];
@@ -120,7 +101,7 @@ export function parseTaskResult(output: string): SubagentResult {
 
   return {
     status,
-    summary: summary || (getLang() === "zh" ? "未提供结构化报告" : "No structured report provided"),
+    summary: summary || (getLang() === "zh" ? "任务已完成" : "Task completed"),
     output: cleanOutput,
     filesTouched,
     findings,
