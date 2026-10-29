@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 /* 第 215 波：模型选择器要能标出「当前不可用」的免费模型（判定与文案都在 model-index / service 里） */
 import { isFreeModelId } from "../core/free-model-plugin/model-index";
 import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { MessageBubble } from "./MessageBubble";
+import { useStableMessageHandlers } from "./useStableMessageHandlers";
+import { computeHasAssistantAfter } from "../core/ui/message-suffix";
 import { isMachineInjectedMessage } from "../core/storage/session";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
@@ -42,7 +44,6 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
 import { CorrectionModeToggle } from "./CorrectionModeToggle";
-import { Workbench } from "./Workbench";
 import { StreamingWaitIndicator } from "./StreamingWaitIndicator";
 import { TodoListDisplay } from "./TodoListDisplay";
 import { PanelSidebar } from "./PanelSidebar";
@@ -390,8 +391,6 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   }, [currentSessionId, notebookId]);
   // P1: Correction mode toggle
   // Correction/Clarification removed from main UI — correction config moved to Settings, clarification auto-triggers
-  // P1: Workbench panel
-  const [showWorkbench, setShowWorkbench] = useState(false);
   // P1: RightSidebar (Git + Workbench per benchmark layer 4)
   const [showRightSidebar, setShowRightSidebar] = useState(false);
   // P1: Todo list display
@@ -637,6 +636,23 @@ setStepTooltipLocked(false);
         : `${lang === "zh" ? "有 " : ""}${failed.length}${lang === "zh" ? " 个文件没能删除（文件仍在磁盘上，清单条目已保留）：" : " file(s) could not be deleted (still on disk, kept in the list): "}${failed.map((f) => f.file).join("、")}`,
     );
   };
+
+  /**
+   * ★ 第 233 轮审计：每行消息要有**稳定引用**的 `onDeleteFiles`。
+   *
+   * 原来传的是 `(files) => handleDeleteFiles(msg.id, files)` —— 每次渲染都是新引用，
+   * 于是 `MessageBubble`（`memo()`）的浅比较永远不等 ⇒ 流式期间每 100ms **整列**重渲染，
+   * 而实际只有最后一行在变。`useStableMessageHandlers` 按 id 缓存同一个函数引用，
+   * 内部通过 ref 调最新实现（handler 换了闭包也不会让引用失效）。
+   */
+  const messageIds = useMemo(() => messages.map((m) => m.id), [messages]);
+  const getDeleteFilesHandler = useStableMessageHandlers<string[]>(
+    useCallback((messageId: string, files: string[]) => {
+      void handleDeleteFiles(messageId, files);
+    }, []),
+    messageIds,
+  );
+
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const runningCount = agents.filter((a) => a.status === "running").length;
@@ -1021,7 +1037,7 @@ setStepTooltipLocked(false);
       {/* 交接正文里有工作区外绝对路径时出现（只提示，不自动放行） */}
       <SandboxAllowPrompt />
 
-      <div className={`chat-body ${showWorkbench ? "workbench-split-active" : ""}`}>
+      <div className="chat-body">
         <div className="messages-container" ref={messagesContainerRef}>
           <RunStatusBar
             phase={runPhase}
@@ -1232,6 +1248,11 @@ setStepTooltipLocked(false);
             }
             // Build render list: each entry is either a single message or a merged group
             // origIndex tracks the index in displayMessages (not renderList) for correct turn-boundary detection
+            /**
+             * 第 233 轮审计：先做**一次**后缀扫描，「i 之后还有没有 assistant」变成 O(1) 查询。
+             * 原来对每条 assistant 行都 `slice(i+1).some(...)` ⇒ 整列 O(n²)。
+             */
+            const hasAssistantAfter = computeHasAssistantAfter(displayMessages);
             const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean; origIndex: number; groupLastIdx?: number }[] = [];
             for (let i = 0; i < displayMessages.length; i++) {
               const msg = displayMessages[i];
@@ -1295,9 +1316,10 @@ setStepTooltipLocked(false);
               }
             }
             // 最新一条 assistant 在重开会话时也不折叠，保持可读。
-            const isLatestMessage =
-              msg.role === "assistant" &&
-              !displayMessages.slice(effectiveIdx + 1).some((m) => m.role === "assistant");
+            // ★ 第 233 轮审计：原来这里是 `displayMessages.slice(i + 1).some(...)` ⇒
+            // 单行 O(n)、整列 O(n²)，而且跑在渲染体里（流式每 100ms 一次）。
+            // 改成一次后缀扫描（O(n)）后按索引 O(1) 查询。
+            const isLatestMessage = msg.role === "assistant" && !hasAssistantAfter[effectiveIdx];
 
             // Determine turn boundary: a new turn starts at each user message.
             // The footer (with "task complete" badge) should appear after the last
@@ -1354,7 +1376,7 @@ setStepTooltipLocked(false);
 message={msg}
 index={origIndex}
 showReasoning={showReasoning}
-onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+onDeleteFiles={getDeleteFilesHandler(msg.id)}
 isLastInTurn={isLastInTurn}
 isLatestMessage={isLatestMessage}
 onCitationClick={onCitationClick}
@@ -1373,7 +1395,7 @@ canEdit={!isSessionStreaming}
 message={msg}
 index={origIndex}
 showReasoning={showReasoning}
-onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+onDeleteFiles={getDeleteFilesHandler(msg.id)}
 isLastInTurn={isLastInTurn}
 isLatestMessage={isLatestMessage}
 onCitationClick={onCitationClick}
@@ -1474,18 +1496,6 @@ canEdit={!isSessionStreaming}
             />
           )}
         </div>
-
-        {/* P2 #39: Workbench split-screen panel */}
-        {showWorkbench && (
-          <div className="workbench-split-pane">
-            <Workbench
-              collapsed={false}
-              onToggle={() => setShowWorkbench(false)}
-              activeTools={[]}
-              modifiedFiles={[]}
-            />
-          </div>
-        )}
 
         {/* P0: Scroll-to-bottom indicator */}
         <ScrollToBottomIndicator

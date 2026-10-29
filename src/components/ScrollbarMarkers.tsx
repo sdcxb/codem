@@ -74,7 +74,20 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
     };
   }, [containerRef]);
 
-  const calculatePositions = useCallback(() => {
+  /**
+   * 第 233 轮审计：**内容坐标缓存**（px，相对于内容顶部）。
+   *
+   * 为什么能省掉流式期间的整列布局：流式是**追加**（`scrollHeight` 变大），
+   * 而某条消息的内容坐标 `contentTop` 只有在"它上面的内容变高/变矮"时才变。
+   * 于是"id 序列没变"时只需用 `contentTop / totalHeight` 重算百分比 —— **零布局读取**。
+   * 只有集合变了（新回合/删除/换 pinned）或 resize 才真的去量（并刷新缓存）。
+   *
+   * `signatureRef` 是"我上次量的是哪一批"：`userIds|pinnedIds` 的有序拼接。
+   */
+  const contentTopCacheRef = useRef(new Map<string, number>());
+  const viewportCacheRef = useRef(new Map<string, boolean>());
+  const signatureRef = useRef<string>("");
+  const measureNow = useCallback(() => {
     const container = containerRef.current;
     const scroller = scrollElRef.current;
     if (!container || !scroller) return;
@@ -89,48 +102,60 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
       return;
     }
 
-    const scrollerRect = scroller.getBoundingClientRect();
-
-    // 消息在“全部内容”中的比例位置（0-100），让整条轨道成为全内容地图：
-    // 每个历史消息/回合一个点、按内容比例铺满轨道（对标 dsh-navbar 密集节点导航）。
-    // 旧实现用 (elTop - scrollTop)/viewportHeight 的“视口相对”坐标，离屏消息
-    // 全部被 clamp 到轨道两端堆叠，一屏只剩当前视口内 1-2 个点，导航形同虚设。
-    const toContentPercent = (el: HTMLElement): number => {
-      const contentTop = el.getBoundingClientRect().top - scrollerRect.top + scrollTop;
-      return Math.max(0, Math.min(100, (contentTop / totalHeight) * 100));
-    };
-    const isInViewport = (el: HTMLElement): boolean => {
-      const r = el.getBoundingClientRect();
-      return r.bottom > scrollerRect.top && r.top < scrollerRect.bottom;
-    };
-
     /* 第 198 波：系统提醒（`verify-nudge-…` 等）也是 user 角色，但它们不是用户打的话 —— */
     /* 把它们当用户消息会在滚动条上多出一串假的「User」标记（真机缺陷同源）。 */
     const userIds = messages.filter((m) => m.role === "user" && !isMachineInjectedMessage(m)).map((m) => m.id);
+    const pinnedList = pinnedIds ? [...pinnedIds] : [];
+    const signature = `${userIds.join("\u0000")}|${pinnedList.join("\u0000")}`;
+    /** 集合没变 ⇒ 复用缓存的内容坐标（不读任何布局）；变了就重量这一批 */
+    const reuse = signature === signatureRef.current && contentTopCacheRef.current.size > 0;
+    if (!reuse) {
+      /** 轨道矩形**只在真去量的时候**读（流式增长那条路径一次 layout 都不碰） */
+      const scrollerRect = scroller.getBoundingClientRect();
+      contentTopCacheRef.current.clear();
+      /*
+       * 一次 rect 同时拿到"位置"与"是否在视口"两件事：原来每条消息读**两次**
+       * `getBoundingClientRect()`（`toContentPercent` 一次、`isInViewport` 一次），
+       * 现在只读一次 —— 布局读取减半，语义不变。
+       */
+      for (const id of [...userIds, ...pinnedList]) {
+        if (contentTopCacheRef.current.has(id)) continue;
+        const el = container.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        contentTopCacheRef.current.set(id, rect.top - scrollerRect.top + scrollTop);
+        viewportCacheRef.current.set(id, rect.bottom > scrollerRect.top && rect.top < scrollerRect.bottom);
+      }
+      signatureRef.current = signature;
+    }
+
+    const viewportCache = viewportCacheRef.current;
+    const toPercent = (id: string): number | null => {
+      const contentTop = contentTopCacheRef.current.get(id);
+      if (contentTop === undefined) return null;
+      return Math.max(0, Math.min(100, (contentTop / totalHeight) * 100));
+    };
+
     const newMarkers: MarkerPosition[] = [];
     for (const msgId of userIds) {
-      const el = container.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`);
-      if (!el) continue;
+      const percent = toPercent(msgId);
+      if (percent === null) continue;
       newMarkers.push({
         messageId: msgId,
-        topPercent: toContentPercent(el),
-        inViewport: isInViewport(el),
+        topPercent: percent,
+        inViewport: viewportCache.get(msgId) ?? false,
         pinned: false,
       });
     }
-
-    // Add pinned (精选) assistant markers on top (gold discs).
-    if (pinnedIds && pinnedIds.size > 0) {
-      for (const pid of pinnedIds) {
-        const el = container.querySelector<HTMLElement>(`[data-message-id="${pid}"]`);
-        if (!el) continue;
-        newMarkers.push({
-          messageId: pid,
-          topPercent: toContentPercent(el),
-          inViewport: isInViewport(el),
-          pinned: true,
-        });
-      }
+    for (const pid of pinnedList) {
+      const percent = toPercent(pid);
+      if (percent === null) continue;
+      newMarkers.push({
+        messageId: pid,
+        topPercent: percent,
+        inViewport: viewportCache.get(pid) ?? false,
+        pinned: true,
+      });
     }
 
     newMarkers.sort((a, b) => a.topPercent - b.topPercent);
@@ -163,13 +188,30 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
     setActiveId(firstInViewport?.messageId || null);
   }, [messages, containerRef, pinnedIds]);
 
+  /**
+   * 合并成"一帧最多一次"（第 233 轮审计）：
+   * 流式 flush（100ms）+ 滚动 + resize 可能在同一帧里各要一次重算 —— 原来每次都真跑一遍。
+   */
+  const frameRef = useRef(0);
+  const scheduleMeasure = useCallback(() => {
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      measureNow();
+    });
+  }, [measureNow]);
+  useEffect(() => () => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = 0;
+  }, []);
+
   // Recalculate on content / pinned changes (after DOM settles).
   useEffect(() => {
-    calculatePositions();
-    const t1 = setTimeout(calculatePositions, 60);
-    const t2 = setTimeout(calculatePositions, 250);
+    scheduleMeasure();
+    const t1 = setTimeout(scheduleMeasure, 60);
+    const t2 = setTimeout(scheduleMeasure, 250);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [messages, pinnedIds, calculatePositions]);
+  }, [messages, pinnedIds, scheduleMeasure]);
 
   // Listen to the REAL scroller.
   useEffect(() => {
@@ -183,7 +225,7 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
       if (raf) cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         raf = 0;
-        calculatePositions();
+        measureNow();
       });
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
@@ -194,7 +236,7 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
         raf = 0;
       }
     };
-  }, [calculatePositions, railRect]);
+  }, [measureNow, railRect]);
 
   const jumpTo = useCallback((messageId: string) => {
     const container = containerRef.current;

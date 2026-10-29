@@ -30,7 +30,7 @@ import { ComposerBadges, type ComposerBadge } from "./ComposerBadges";
 import { GenerateModeSelector } from "./GenerateModeSelector";
 import { ResolutionSelector } from "./ResolutionSelector";
 import { SourceSelector } from "./SourceSelector";
-import { listSources } from "../core/knowledge";
+import { listSources } from "../core/knowledge/storage";
 import { MIMO_MODELS, getConfiguredApiModels, getModelsForMode, type ModelOption } from "../core/model-config";
 import { listFilesForMention, getRelativePath } from "../core/file-mention";
 import {

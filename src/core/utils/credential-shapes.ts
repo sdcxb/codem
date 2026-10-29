@@ -152,6 +152,32 @@ export const CREDENTIAL_VALUE_SHAPES: readonly CredentialShape[] = CREDENTIAL_SH
   (s) => s.scope === "value",
 );
 
+/**
+ * **全部**形状（值形状 + 上下文形状）—— 只给**改写型**出口用（导出脱敏、日志脱敏）。
+ *
+ * 为什么单独开一个出口（第 233 轮审计）：导出脱敏原来只取 `CREDENTIAL_VALUE_RES`
+ * （`scope === "value"`），而日志脱敏用的是全表 ⇒ 同一份设置，日志里被脱敏的私钥块 /
+ * `password=…` / `Bearer …`，**导出文件里原样带出去**。形状只有一份，出口也必须取同一批；
+ * 报告型出口（凭据普查）仍只取值形状（上下文形状需要上下文，普查另有键名判据）。
+ */
+export const CREDENTIAL_ALL_SHAPES: readonly CredentialShape[] = CREDENTIAL_SHAPES;
+
+/** 全部形状的正则（改写型出口用；顺序即 `CREDENTIAL_SHAPES` 的顺序） */
+export const CREDENTIAL_ALL_RES: RegExp[] = CREDENTIAL_ALL_SHAPES.map((s) => s.pattern);
+
+/**
+ * **改写顺序**：上下文形状在前，值形状在后。
+ *
+ * 为什么顺序有意义（第 233 轮审计）：`token=sk-…` 同时满足两条 ——
+ * `secretAssign`（`token=…`）与 `apiKeyStrong`（`sk-…`）。先跑值形状会把令牌换掉、
+ * 再让赋值形状匹配到占位符 ⇒ **一次命中被计成两个凭据**（`redacted` 计数虚高，
+ * 界面上"发现 N 处密钥"就是假的）。先跑上下文形状 ⇒ 整段赋值一次换掉，计数与事实一致。
+ */
+export const CREDENTIAL_REDACT_RES: RegExp[] = [
+  ...CREDENTIAL_SHAPES.filter((s) => s.scope === "context"),
+  ...CREDENTIAL_SHAPES.filter((s) => s.scope === "value"),
+].map((s) => s.pattern);
+
 /** 按 id 取一条形状（取不到就**抛**：手工改 id 应该立刻炸，而不是静默少检一条） */
 export function credentialShape(id: CredentialShapeId): CredentialShape {
   const found = CREDENTIAL_SHAPES.find((s) => s.id === id);

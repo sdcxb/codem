@@ -18,7 +18,6 @@
      缺字重时浏览器默认会把笔画"拉粗"，中文界面尤其糊；参考实现同样声明了后两项。 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
   font-synthesis: none;
   /* ===== 字体栈令牌（第 35 波收敛）=====
      背景：实测全项目有 31 种不同的 font-family 取值、192 处声明 —— 其中**等宽栈就有 14 种写法**
@@ -2705,6 +2704,7 @@ font-size: var(--fs-sm);
   :root { --reading-column: 100%; --reading-gutter: 24px; }
 }
 
+
 .messages-container {
 flex: 1;
 padding: var(--space-9) var(--reading-gutter);
@@ -2716,6 +2716,22 @@ background: var(--bg-primary);
 max-width: calc(var(--reading-column) + var(--reading-gutter) * 2);
 margin: 0 auto;
 width: 100%;
+}
+
+/**
+ * 第 233 轮 · 二次升级 Phase A 收尾：**正文列与 Composer 同宽**。
+ *
+ * 真机实测（1400 视口）修前：Composer 732，正文内容列 770 —— 差 38px。
+ * 原因：`.messages-container` 的 max-width 是 `reading-column + 2*gutter`（828），
+ * 而它自己两侧各留 `gutter`（24）⇒ 内容 780；Composer 却是 `reading-column − 2*gutter`（732）。
+ *
+ * 窄档把容器 max-width 直接对齐到 `reading-column` ⇒ 内容 = 780 − 48 = 732，与 Composer 一致。
+ * （>1440 的宽档本来就一致：内容 820 / Composer 820。）
+ */
+@media (max-width: 1440px) {
+  .messages-container {
+    max-width: var(--reading-column);
+  }
 }
 
 /* ========== Q&A Turn Container ========== */
@@ -3586,10 +3602,22 @@ z-index: 50;
 }
 
 @media (max-width: 1440px) {
-  /* 必需放在基规则之后：正文内容列 = 780 - 48 = 732，Composer 同宽。 */
+  /**
+   * 必需放在基规则之后：正文内容列 = 780 − 48 = 732，Composer 同宽。
+   *
+   * 第 233 轮（Phase F 取证补的一条）：**右栏拉宽时聊天区会变窄**，而 Composer
+   * 原来只夹 `reading-column − 2*gutter`（732），不夹"父容器能吃多少" ——
+   * 真机实测（右栏 428 宽）：正文 642、Composer 712，**Composer 比正文宽 70px**，
+   * 正是 Phase A 要消灭的那种错位，只是在更窄的布局里复现。
+   *
+   * 两个上限取 `min(...)`：既不超过阅读列，也不超过「容器宽 − 两侧 gutter」。
+   */
   .input-area.input-card-container {
     width: min(100%, calc(var(--reading-column) - var(--reading-gutter) * 2));
-    max-width: calc(var(--reading-column) - var(--reading-gutter) * 2);
+    max-width: min(
+      calc(var(--reading-column) - var(--reading-gutter) * 2),
+      calc(100% - var(--reading-gutter) * 2)
+    );
   }
 }
 
@@ -4980,6 +5008,122 @@ min-height: 0;
   font-size: var(--fs-sm);
 }
 
+/* ===== Inspector「最近一轮」（第 233 轮 · Phase C） ===== */
+.inspector-latest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-secondary);
+}
+.inspector-latest-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+}
+.inspector-latest-title {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.inspector-latest-turn,
+.inspector-latest-count {
+  color: var(--text-muted);
+}
+.inspector-latest-stats {
+  font-variant-numeric: tabular-nums;
+}
+.inspector-stats-unknown {
+  color: var(--text-muted);
+}
+.inspector-file-rows {
+  display: flex;
+  flex-direction: column;
+}
+.inspector-file-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content;
+  align-items: center;
+  gap: var(--space-2);
+  /* 43px 行高：与计划里"文件平铺 43px 行"一致 */
+  min-height: 43px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-bottom: 1px solid var(--border-secondary);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.inspector-file-row:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+.inspector-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* 长路径优先露出文件名尾部 */
+  text-align: left;
+}
+.inspector-file-stat {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+}
+.inspector-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-secondary);
+}
+.inspector-checks-title {
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.inspector-checks-empty {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.inspector-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inspector-check {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+}
+.inspector-check-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--text-muted);
+}
+.inspector-check.ok .inspector-check-dot { background: var(--success); }
+.inspector-check.failed .inspector-check-dot { background: var(--error); }
+.inspector-check-cmd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.inspector-check-verdict { color: var(--text-muted); }
+.inspector-history-title {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
 .change-file-row:is(:hover, :focus-visible) {
   background: var(--bg-hover);
 }
@@ -4999,7 +5143,7 @@ min-height: 0;
 .change-file-status {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   padding: 0;
   background: transparent;
 }
@@ -5726,11 +5870,40 @@ background: var(--bg-secondary);
   margin: var(--space-4) 0;
 }
 
+/**
+ * 第 233 轮 · 二次升级 Phase D：设置页的**标题层级**。
+ *
+ * 计划口径：卡片区（知识/权限/Git/环境/宠物）标题 = **13px / 600**。
+ * 两个都走令牌：13px 就是 `--fs-base`（`--fs-sm` 是 12px，用它就掉一档 ——
+ * 这是本轮真机截图 `docs/evidence/settings-tabs-2026-10-28` 抓到的：当时渲染成了 12px）；
+ * 600 在本仓对应 `--weight-bold`（620，可变字体真实字重，与下方跨文件那组标题档一致）。
+ * 只有这一处定义，各 tab 复用。
+ */
 .settings-section-title {
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
   margin-bottom: var(--space-4);
+}
+
+/**
+ * ? 233 ? ? Phase D?**???????**?
+ *
+ * ?????????? 1fr + ?? 200px?????????????520px ???/??????
+ * ?????????????????????????????????????
+ */
+@media (max-width: 520px) {
+  .settings-content .setting-group:has(> label):has(> select),
+  .settings-content .setting-group:has(> label):has(> input[type="text"]),
+  .settings-content .setting-group:has(> label):has(> input[type="range"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-content .setting-group:has(> label):has(> select) > select,
+  .settings-content .setting-group:has(> label):has(> input[type="text"]) > input[type="text"],
+  .settings-content .setting-group:has(> label):has(> input[type="range"]) > input[type="range"] {
+    width: 100%;
+    justify-self: stretch;
+  }
 }
 
 .provider-group {
@@ -6486,6 +6659,14 @@ min-height: 0;
 overflow-y: auto;
 overflow-x: hidden;
 position: relative;
+  /*
+   * 第 233 轮 · Phase A 收尾：**把滚动条位置预留出来**（`stable`），
+   * 且两侧对称（`both-edges`）—— 正文列不再因为"这一屏有没有滚动条"左右各差 11px。
+   * 这正是计划里「Composer 732 vs 正文 718」那 11px 的来源。
+   *
+   * 不支持的引擎会忽略这条声明、退回原行为（不会更糟）。
+   */
+  scrollbar-gutter: stable both-edges;
 }
 
 /* ========== Step Progress ========== */
@@ -12517,6 +12698,15 @@ border-bottom: 1px solid var(--accent);
 .diff-new-num { width: 45px; min-width: 45px; border-right: 2px solid var(--border-primary); }
 .diff-line-marker { width: 24px; min-width: 24px; text-align: center; font-weight: 700; font-size: var(--fs-md); user-select: none; }
 .diff-line-content { padding: 0 var(--space-4); }
+/* 第 233 轮审计：diff 渲染有行数上限，被截断时必须**说出来**（不许静默少显示） */
+.diff-truncated-note {
+  padding: var(--space-4) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-secondary);
+}
 .diff-line-content pre { margin: 0; padding: 0; font-family: inherit; white-space: pre-wrap; word-break: break-all; }
 .diff-added { background: color-mix(in srgb, var(--success) 8%, transparent); }
 .diff-added .diff-line-marker { color: var(--success); }
@@ -15269,8 +15459,13 @@ html.pet-window-mode body,
 .right-sidebar-resize-handle.active::after {
   background: var(--accent-border);
 }
+/* 第 233 轮审计：`:focus-visible { outline: none }` 原本没有任何替代环 ——
+   键盘用户 Tab 到这个分隔条时看不到焦点（而且它当时还不可聚焦）。
+   现在它可聚焦（`tabIndex=0`，方向键调宽 / Home/End 到底，见
+   `components/RightSidebarResizeHandle.tsx`），焦点用全局焦点环令牌显式画出来。 */
 .right-sidebar-resize-handle:focus-visible {
-  outline: none;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ========== P1 #20: ErrorCard ========== */
@@ -15681,17 +15876,28 @@ html.pet-window-mode body,
 
 /* ========== P2 #39: Workbench split-screen ========== */
 
-.workbench-split-pane {
-  flex: 1;
-  background: var(--bg-secondary);
+/* ========== worktree ?????????????? 233 ? D3-C? ========== */
+.wt-conflict-list {
   display: flex;
   flex-direction: column;
+  gap: var(--space-1);
 }
-.workbench-split-pane.chat {
-  flex: 0.6;
+.wt-conflict-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
-.workbench-split-pane.workbench {
-  flex: 0.4;
+.wt-conflict-path {
+  font-family: var(--font-mono, monospace);
+}
+.wt-conflict-open {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
 }
 
 /* ========== P1: CorrectionModeToggle ========== */

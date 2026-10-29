@@ -16,7 +16,7 @@
  */
 
 import { installSkillFromZip, type InstallResult, type InstallProgressCallback } from "./installer";
-import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
+import { getSkillRegistry, parseSkillMarkdown, isSafeSkillName, type SkillDefinition } from "./skill";
 import { writeFile, readFile, deletePath } from "../file-api";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 // P3-27: 增强安全沙箱
@@ -2698,6 +2698,18 @@ async function installSkillFromGitHubDir(
       skillDef.name = skill.name;
     }
 
+    /**
+     * ★ 第 233 轮审计（P0）：「名字」是**不可信输入**，而它会被拼进安装路径
+     * （下面 `skillDir = <技能根>\<name>`）。口径见 `isSafeSkillName`：
+     * 名字必须只是一个目录名，否则安装会写到技能根之外。
+     */
+    if (!isSafeSkillName(skillDef.name)) {
+      return {
+        success: false,
+        error: `安装失败：技能名 ${JSON.stringify(skillDef.name)} 不是一个合法的目录名（不能含路径分隔符、不能是 "." / ".."、不能是绝对路径）。`,
+      };
+    }
+
     // 检查是否已存在
     const registry = getSkillRegistry();
     const existing = registry.get(skillDef.name);
@@ -2992,6 +3004,14 @@ async function installSkillFromZipFiltered(
     // 使用 preferredName 覆盖技能名（确保与市场显示一致）
     if (preferredName) {
       skill.name = preferredName;
+    }
+
+    /** ★ 第 233 轮审计（P0）：与上面那条同因 —— 名字会被拼进安装路径。 */
+    if (!isSafeSkillName(skill.name)) {
+      return {
+        success: false,
+        error: `安装失败：技能名 ${JSON.stringify(skill.name)} 不是一个合法的目录名（不能含路径分隔符、不能是 "." / ".."、不能是绝对路径）。`,
+      };
     }
 
     // 检查是否已存在

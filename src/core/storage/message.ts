@@ -1471,6 +1471,40 @@ function resolveAttachmentText(text: string): string | undefined {
   return undefined;
 }
 
+/**
+ * 索引里没有这一行时，按**附件 id** 在附件目录里找回正文文件并预热（第 233 轮审计 · P0）。
+ *
+ * ## 为什么需要它
+ *
+ * `attachments` 表是**可重建的投影**，而重建路径（`messages_rebuild_index`）只重放
+ * messages / tool_calls，**不重放 attachments**；权威日志里也没有 `file:<路径>` 标记
+ * （外置是异步队列做的，日志行写下时附件还是内联形态）。于是库损坏恢复之后：
+ * 正文文件还在磁盘上，但**没有任何一行**指向它 ⇒ `getAttachmentContent(id)` 永远取不到。
+ *
+ * 文件名本身就是线索（`<safeId>-<safeName>`，`safeId` 就是附件 id），所以这里按 id
+ * 扫一次目录把标记补回同步缓存 —— 下一次读（界面本来就有 400ms×4 的重试）即可命中。
+ * 只在这个「未命中」路径上发生，正常读取零开销。
+ */
+const attachmentFileWarmInFlight = new Set<string>();
+function warmAttachmentContentFromFiles(id: string): void {
+  if (attachmentFileWarmInFlight.has(id)) return;
+  attachmentFileWarmInFlight.add(id);
+  void (async () => {
+    try {
+      const { findExternalFileByAttachmentId, hydrateAttachmentsForSession } = await import("./attachment-files");
+      const path = await findExternalFileByAttachmentId(id);
+      if (!path) return;
+      const marker = `file:${path}`;
+      attachmentContentCache.set(id, marker);
+      await hydrateAttachmentsForSession([{ id, content: marker }]);
+    } catch {
+      /* 找不到 / 读不回来：保持「尚未预热」，与既有约定一致 */
+    } finally {
+      attachmentFileWarmInFlight.delete(id);
+    }
+  })();
+}
+
 export function getAttachmentContent(id: string): string | undefined {
   /**
    * **端口优先 + 同步缓存**（第 14 轮）：正文不进镜像（可能是几十 MB），
@@ -1480,10 +1514,24 @@ export function getAttachmentContent(id: string): string | undefined {
    */
   const cachedContent = attachmentContentCache.get(id);
   if (cachedContent !== undefined) return resolveAttachmentText(cachedContent);
-  // 端口没接手：正文读不到 —— 如实说“尚未预热”并触发一次预取（调用方按既有约定重试）
+
+  // 索引里可能压根没有这一行（重建后）⇒ 同时试「按 id 在附件目录里找回文件」
   warmAttachmentContent(id);
+  warmAttachmentContentFromFiles(id);
   console.warn(`[getAttachmentContent] 附件 ${id} 正文尚未预热，已触发预取（请重试一次）`);
   return undefined;
+}
+
+/**
+ * 测试用：清空附件正文的同步缓存（模拟「进程重启后缓存为空」）。
+ *
+ * 为什么需要它：`getAttachmentContent` 的恢复路径只有在**缓存全空**时才会走到
+ * （真实场景是崩溃/重启之后）。不清缓存的话，外置时写进去的那条标记还在内存里，
+ * 判据会"经由旧缓存变绿" —— 那是假绿。
+ */
+export function __resetAttachmentContentCacheForTests(): void {
+  attachmentContentCache.clear();
+  attachmentFileWarmInFlight.clear();
 }
 
 /**

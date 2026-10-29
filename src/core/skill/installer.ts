@@ -16,7 +16,7 @@
  */
 
 import { unzipSync, strFromU8 } from "fflate";
-import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
+import { getSkillRegistry, parseSkillMarkdown, isSafeSkillName, type SkillDefinition } from "./skill";
 import { writeFile, deleteDirectoryPermanent, deleteFile, listDirectory, readFile, u8ToBase64 } from "../file-api";
 import { diagTrail } from "./skill-delete-diag";
 
@@ -131,6 +131,21 @@ export async function installSkillFromZip(
     // 使用 preferredName 覆盖技能名（确保与市场显示一致）
     if (preferredName) {
       skill.name = preferredName;
+    }
+
+    /**
+     * ★ 第 233 轮审计（P0）：**技能名必须先证明它只是一个目录名**。
+     *
+     * 下一句就是 `skillDir = <技能根>\<skill.name>`，而名字来自 ZIP 里的 `SKILL.md`
+     * 或市场条目 —— 都是不可信输入。`isSafePath()` 只校验 ZIP **内条目**路径，
+     * 目录名本身没被校验过，于是 `name: ..\..\..\evil` 能把安装写到技能根之外
+     * （写入侧 Rust 在 `workspace=None` 时不做沙箱判定）。见 `isSafeSkillName` 的说明。
+     */
+    if (!isSafeSkillName(skill.name)) {
+      return {
+        success: false,
+        error: `安装失败：技能名 ${JSON.stringify(skill.name)} 不是一个合法的目录名（不能包含路径分隔符、不能是 "." / ".."、不能是绝对路径）。`,
+      };
     }
 
     // 检查是否已存在
@@ -301,6 +316,18 @@ async function checkDeleteTarget(skillDir: string): Promise<string | null> {
     p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
   const target = normalize(skillDir);
   if (!target) return "拒绝删除：目标路径为空。";
+
+  /**
+   * ★ 第 233 轮审计：**带 `..` 的目标一律拒绝**。
+   *
+   * 下面的比较是**词法**的（`target === skillsRoot` / `skillsRoot.startsWith(target + "\\")`），
+   * 不折叠 `..` —— 于是 `<技能根>\..\..\evil` 既不是根、也不以根开头 ⇒ 放行 ⇒
+   * `delete_directory_permanent` 删到技能根之外（安装侧同一类名字能写出去，记录里就可能留下这种路径）。
+   * 正常技能的目录/文件路径从不含 `..`，所以这条拒绝不会误伤。
+   */
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(skillDir.trim()) || /\.\.$/.test(target)) {
+    return `拒绝删除：目标 "${skillDir}" 含 ".." 路径段，不是某个技能自己的目录。`;
+  }
 
   try {
     const skillsRoot = normalize(await getSkillsDir());

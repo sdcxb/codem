@@ -13,6 +13,7 @@
  * 皮肤系统兼容: 支持 default / hub / dream 三套皮肤
  */
 
+import "../styles/notebook-workspace.css";
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Plus, Trash2, Search, FileText, Link as LinkIcon, Type,

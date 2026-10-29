@@ -94,8 +94,18 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
 
   const sources = listSources(notebookId);
 
-  // Clear existing graph data
-  deleteGraphData(notebookId);
+  /**
+   * ★ 第 233 轮审计：**第一批真正抽到东西之后才清旧图**（原来是在循环之前无条件清）。
+   *
+   * provider 掉线 / 未配置 / 每条都超时的时候，旧实现「先清库、再全批失败、返回空图」——
+   * 用户点一次「抽取图谱」就把既有图谱清空了，只剩一条 warnings。
+   * 这与本函数开头守的那条（C-3："读不到块不许清库"）是同一类缺陷的另一半：
+   * 前面守住了"读不到"，没守住"读到了但抽不出来"。
+   *
+   * 现在：全批失败 ⇒ 一次都不清（旧图谱原样保留 + 如实上报 warnings）；
+   * 任意一批成功 ⇒ 清一次再写（保持"先清后写"，否则出现重复节点）。
+   */
+  let clearedExistingGraph = false;
 
   // Process chunks in batches to avoid token overflow
   const BATCH_SIZE = 10;
@@ -117,6 +127,15 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
 
     try {
       const extraction = await callLLMForExtraction(batchText, sources.length > 0);
+
+      /**
+       * 第一批成功（LLM 真的回了内容）才清旧图：清库与写入必须同属"这次抽成功"的分支，
+       * 否则"全批失败"就会变成"用户的图谱被一次失败操作抹掉"。
+       */
+      if (!clearedExistingGraph) {
+        deleteGraphData(notebookId);
+        clearedExistingGraph = true;
+      }
 
       // Process entities — 根据 LLM 返回的 chunkIndex 关联正确的来源
       for (const entity of extraction.entities) {

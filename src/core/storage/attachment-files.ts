@@ -80,6 +80,43 @@ async function readExternalAttachment(path: string): Promise<string | undefined>
 }
 
 /**
+ * 按**附件 id** 在附件目录里找回外置文件（第 233 轮审计 · P0）。
+ *
+ * ## 为什么需要（索引可重建，但它不带附件）
+ *
+ * `attachments` 表是**可重建的投影**，而重建路径（`messages_rebuild_index`）
+ * 只重放 messages / tool_calls，**不重放 attachments**；权威日志里也没有
+ * `file:<路径>` 标记（外置是**异步队列**做的，日志行写下时附件还是内联形态）。
+ *
+ * 于是"重建之后"这三个事实同时成立：
+ * - 正文文件还在 `<dataRoot>/attachments/` 里（`externalizeAttachmentContent` 的产物）；
+ * - 索引里没有任何一行指向它；
+ * - 日志里也没有指针。
+ *
+ * 结果就是附件**永久不可达**——文件在、名字在、没人知道它属于谁。
+ * 但文件名本身就是线索：`<safeId>-<safeName>`（`externalizeAttachmentContent` 的规则，
+ * `safeId` 就是附件 id）。所以按 id 前缀扫一次目录即可找回 —— 这条路径让
+ * "重建后仍能读到附件"成为结构性质，不依赖任何新增的 DB 命令或日志格式变更。
+ *
+ * 成本：一次目录列举，**只在"索引里没有这一行"的未命中路径**上发生。
+ */
+export async function findExternalFileByAttachmentId(attachmentId: string): Promise<string | undefined> {
+  const safeId = (attachmentId || "").replace(/[^\w.-]+/g, "_");
+  if (!safeId) return undefined;
+  let entries: Awaited<ReturnType<typeof listDirectory>> = [];
+  try {
+    entries = await listDirectory(await attachmentsDir());
+  } catch {
+    return undefined;
+  }
+  const prefix = `${safeId}-`;
+  const hit = entries.find(
+    (e) => !e.isDirectory && e.name.startsWith(prefix) && !e.name.endsWith(".tmp"),
+  );
+  return hit?.path;
+}
+
+/**
  * 外置内容的内存缓存（路径 → 内容），带**总字节预算 + LRU 逐出**（P6 第 3 段）。
  *
  * 为什么需要缓存：附件的读取路径（`loadAttachmentsForMessage` / `getAttachmentContent`）
@@ -188,11 +225,27 @@ function externalContentCacheSize(): number {
  * 清理孤儿附件文件：文件存在、但数据库里已经没有对应标记的（附件被删除/会话被清理）。
  * 与 JSONL 日志、spill 文件遵循同一套"保留策略"原则：只写不删等于把增长换个地方。
  *
- * @returns 删除的文件数
+ * ## ★ 第 233 轮审计（P0）：**「零引用」不等于「全是孤儿」**
+ *
+ * 破坏性事实：库损坏 → 引擎从 JSONL 重建索引时**只重放 messages / tool_calls，
+ * 不重放 attachments**（`repo.rs` 的 `messages_rebuild_index`）；而权威日志里
+ * `attachmentsForLog` 又刻意**不写** `content`（只有元数据，`file:<路径>` 标记不进日志）。
+ * 于是重建之后 `attachments` 表是空的，`attachments.externalized` 返回 `{items: []}`，
+ * 上层据此判成「权威的空清单」⇒ `referenced = ∅` ⇒ 本函数把 `<dataRoot>/attachments/` 下
+ * **每一个**外置正文（大文档/图片的唯一副本）删掉，且没有恢复路径。
+ *
+ * 判据：**调用方说「一条引用都没有」、而目录里确实有文件**时，这几乎必然是
+ * 「标记清单不可信」，而不是「所有附件同时被删干净」。这种形态下拒绝删除
+ * （`.tmp` 例外：它们是原子写盘的中间产物，永远可以清），并把原因交回调用方去如实上报。
+ *
+ * 代价：用户真的删光所有附件时，外置文件会留到下一次「有引用」的清理。
+ * 这是有意的取舍 —— 多留几个文件，远好过把用户唯一的副本删掉。
+ *
+ * @returns 删除的文件数（被跳过时带原因）
  */
 export async function pruneOrphanAttachmentFiles(
   referencedPaths: Set<string>,
-): Promise<{ deletedFiles: number }> {
+): Promise<{ deletedFiles: number; skippedUnreferenced?: number; reason?: string }> {
   let deletedFiles = 0;
   let entries: Awaited<ReturnType<typeof listDirectory>> = [];
   try {
@@ -200,12 +253,29 @@ export async function pruneOrphanAttachmentFiles(
   } catch {
     return { deletedFiles }; // 还没有附件目录
   }
+
+  const tmpFiles: typeof entries = [];
+  const candidates: typeof entries = [];
   for (const entry of entries) {
     if (entry.isDirectory) continue;
-    if (entry.name.endsWith(".tmp")) {
-      try { await deleteFile(entry.path); deletedFiles++; } catch { /* 跳过 */ }
-      continue;
-    }
+    if (entry.name.endsWith(".tmp")) tmpFiles.push(entry);
+    else candidates.push(entry);
+  }
+
+  // `.tmp` 是原子写盘的中间产物：无论引用清单是否可信都可以清
+  for (const entry of tmpFiles) {
+    try { await deleteFile(entry.path); deletedFiles++; } catch { /* 跳过 */ }
+  }
+
+  if (candidates.length > 0 && referencedPaths.size === 0) {
+    console.warn(
+      `[Attachment] 引用清单为空但目录里有 ${candidates.length} 个文件 —— 拒绝按「孤儿」清理` +
+        `（空清单更可能来自索引重建/迁移，而不是附件全被删）。已保留全部正文，避免不可逆的数据丢失。`,
+    );
+    return { deletedFiles, skippedUnreferenced: candidates.length, reason: "no-references" };
+  }
+
+  for (const entry of candidates) {
     if (referencedPaths.has(entry.path)) continue;
     try {
       await deleteFile(entry.path);

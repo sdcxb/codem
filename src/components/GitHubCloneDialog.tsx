@@ -4,6 +4,8 @@
  */
 
 import { useState } from "react";
+import { GitFork, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { Spinner } from "./ui/Spinner";
 import { createPortal } from "./ui/portal";
 import { useLang } from "../core/i18n/lang";
 import { useProjectStore } from "../core/store";
@@ -118,7 +120,7 @@ return createPortal(
         onClick={(e) => e.stopPropagation()}
       >
         <h2 style={{ marginBottom: "16px", fontSize: "var(--fs-xl)", fontWeight: 600 }}>
-          <i className="fab fa-github" style={{ marginRight: "8px" }} />
+          <GitFork className="icon-sm" style={{ marginRight: "8px" }} />
           {lang === "zh" ? "从 GitHub 拉取项目" : "Clone from GitHub"}
         </h2>
 
@@ -177,7 +179,7 @@ return createPortal(
                   fontWeight: 500,
                 }}
               >
-                <i className="fas fa-download" style={{ marginRight: "6px" }} />
+                <Download className="icon-xs" style={{ marginRight: "6px" }} />
                 {lang === "zh" ? "拉取" : "Clone"}
               </button>
             </div>
@@ -186,7 +188,7 @@ return createPortal(
 
         {status === "cloning" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <i className="fas fa-spinner fa-spin" style={{ fontSize: "var(--fs-hero)", color: "var(--accent, #ff6b35)", marginBottom: "16px" }} />
+            <span style={{ marginBottom: "16px" }}><Spinner size="lg" label="" /></span>
             <p style={{ color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
               {lang === "zh" ? `正在克隆 ${projectName}...` : `Cloning ${projectName}...`}
             </p>
@@ -195,7 +197,7 @@ return createPortal(
 
         {status === "done" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <i className="fas fa-check-circle" style={{ fontSize: "var(--fs-hero)", color: "var(--success)", marginBottom: "16px" }} />
+            <CheckCircle2 className="icon-2xl" style={{ color: "var(--success)", marginBottom: "16px" }} />
             <p style={{ color: "var(--text-primary)", fontSize: "var(--fs-md)", fontWeight: 500 }}>
               {lang === "zh" ? `项目 ${projectName} 创建成功！` : `Project ${projectName} created successfully!`}
             </p>
@@ -205,7 +207,7 @@ return createPortal(
         {status === "error" && (
           <div style={{ padding: "20px 0" }}>
             <div style={{ color: "var(--error)", fontSize: "var(--fs-md)", marginBottom: "12px" }}>
-              <i className="fas fa-exclamation-circle" style={{ marginRight: "6px" }} />
+              <AlertCircle className="icon-xs" style={{ marginRight: "6px" }} />
               {lang === "zh" ? "克隆失败" : "Clone failed"}
             </div>
             <pre style={{

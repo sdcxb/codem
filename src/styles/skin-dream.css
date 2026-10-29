@@ -94,6 +94,48 @@
   --info: #5b6ee1;
   --dropdown-bg: var(--dream-panel-bg);
   --text-on-accent: var(--dream-c7);
+  /*
+   * 第 233 轮 D4：**默认值写死字面色**的语义令牌补齐（复审后 28 个真缺口里最显眼的 8 个）。
+   *
+   * 为什么只补这些：另外 35 个（`--accent-surface` / `--accent-border` / `--error-*` /
+   * `--focus-ring-color` / `--hairline-ink` …）的默认值已经是
+   * `color-mix(… var(--accent) / var(--text-base) …)`，dream 覆盖 `--accent` 后会自动跟随 ——
+   * 在这里再给死值反而会**冻住**它们（判据 DREAM-TOK-3 守着「不许重复定义自适应令牌」）。
+   *
+   * 取值一律绑 `--dream-accent` / `--dream-text-main`（ThemeManager 从用户背景图提取），
+   * 换背景图时强调色/阴影/边框会一起变，而不是固定在粉紫。
+   */
+  --accent-strong: color-mix(in srgb, var(--dream-accent, #e88c9a) 72%, var(--dream-text-main, #1e1e2e));
+  --reasoning-accent: color-mix(in srgb, var(--dream-accent, #e88c9a) 60%, var(--dream-text-main, #1e1e2e));
+  --text-base: var(--dream-text-main, #1e1e2e);
+  --border-strong: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 34%, transparent);
+  --shadow-color: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 16%, transparent);
+  --shadow-color-soft: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 8%, transparent);
+  --text-on-status: var(--dream-c7);
+  --text-ramp-paper: var(--dream-c8);
+  /*
+   * 第 233 轮 D4 第二批（用户要求「发现写死缺口就补，不考虑收益率」）：
+   * 复审后剩下的 13 个「所有档位都写死字面色」的语义令牌。
+   *
+   * 一律绑 dream 动态令牌（`--dream-accent` / `--dream-text-main` / `--dream-c*`），
+   * 换背景图时一起变；`--error-hover` 用 `--error` 加深而不是写死另一个红。
+   *
+   * 唯一**刻意不补**的是 `--skin-preview-hub-accent`：它是皮肤选择器里 **Hub 皮肤的预览色块**，
+   * 属于"描述别的皮肤"，在 dream 作用域里覆盖它反而是错的（判据 DREAM-TOK-4 显式允许它）。
+   */
+  --dropdown-hover: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 7%, transparent);
+  --surface-pressed: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 10%, transparent);
+  --field-border-hover: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 22%, transparent);
+  --tooltip-border: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 20%, transparent);
+  --tooltip-bg: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 96%, transparent);
+  --tooltip-text: var(--dream-c7);
+  --error-hover: color-mix(in srgb, var(--error, #c0263a) 82%, var(--dream-text-main, #1e1e2e));
+  --surface-content: var(--dream-c8);
+  --surface-opaque-raised: var(--dream-c8);
+  --surface-glass-raised: color-mix(in srgb, var(--dream-c7) 94%, transparent);
+  --shadow-inner-highlight: inset 0 1px 0 color-mix(in srgb, var(--dream-c7) 8%, transparent);
+  --terminal-bg: var(--dream-c1);
+  --window-close-bg: var(--dream-c6);
   /* 暗色状态色也收进令牌块：深色梦幻底不能沿用浅色档的深绿/深黄。 */
   --dream-status-success-dark: #3fb950;
   --dream-status-warning-dark: #d29922;

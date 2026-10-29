@@ -20,72 +20,110 @@ interface DiffLine {
   content: string;
 }
 
-/** Simple LCS-based line diff algorithm */
-function computeDiff(before: string, after: string): DiffLine[] {
+/** unified / split 视图最多渲染的 diff 行数（超出只渲染前 N 行并明确告知） */
+export const DIFF_RENDER_ROW_CAP = 400;
+
+/**
+ * DP 单元格上限（`中间段长度之积`）。超过就退化成「全删 + 全增」。
+ *
+ * 4M 格 ≈ 32 MB（数字数组按 8 字节算）且是毫秒级；超过这个量级用户也不会逐行看，
+ * 退化 + 说明比"卡住 3 秒再给一张没人看得完的表"更诚实。
+ */
+const DIFF_MAX_CELLS = 4_000_000;
+
+/**
+ * 逐行 LCS diff。
+ *
+ * ## 第 233 轮审计：三项有界化（语义不变）
+ *
+ * 1. **先剥公共前后缀**：两端的相同行必然是 `unchanged`，DP 只需跑中间那段。
+ *    一次只改 3 行的大文件从此几乎零成本（原来要跑整张 m×n 表）。
+ * 2. **结果 push + reverse**：原来逐行 `unshift` 是 O(L²)（1 万行要搬 5000 万次元素）。
+ * 3. **按"中间段格数"而不是"总行数"设上限**：原来 `m > 5000` 就退化成全删全增，
+ *    而"5000 行里改 1 行"本可以精确 diff。
+ *
+ * 导出是为了让判据直接测算法（组件判据只能看到渲染结果）。
+ */
+export function computeDiff(before: string, after: string): DiffLine[] {
   const oldLines = before.split("\n");
   const newLines = after.split("\n");
-  const m = oldLines.length;
-  const n = newLines.length;
 
-  // Build LCS table (optimized: only keep 2 rows for space)
-  // But for diff we need the full table to backtrack, so use full matrix
-  // For very large files, fall back to simple comparison
-  if (m > 5000 || n > 5000) {
-    // Fallback: show all as removed + all as added
-    const result: DiffLine[] = [];
+  // ===== 1) 剥公共前缀 / 后缀 =====
+  const maxPrefix = Math.min(oldLines.length, newLines.length);
+  let prefix = 0;
+  while (prefix < maxPrefix && oldLines[prefix] === newLines[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < maxPrefix - prefix &&
+    oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+
+  const midOld = oldLines.slice(prefix, oldLines.length - suffix);
+  const midNew = newLines.slice(prefix, newLines.length - suffix);
+  const m = midOld.length;
+  const n = midNew.length;
+
+  const head: DiffLine[] = [];
+  for (let k = 0; k < prefix; k++) {
+    head.push({ type: "unchanged", oldLineNum: k + 1, newLineNum: k + 1, content: oldLines[k] });
+  }
+  const tail: DiffLine[] = [];
+  for (let k = 0; k < suffix; k++) {
+    const oldNo = oldLines.length - suffix + k + 1;
+    const newNo = newLines.length - suffix + k + 1;
+    tail.push({
+      type: "unchanged",
+      oldLineNum: oldNo,
+      newLineNum: newNo,
+      content: oldLines[oldLines.length - suffix + k],
+    });
+  }
+
+  // ===== 2) 中间段：超过格数上限就退化成「全删 + 全增」 =====
+  if (m === 0 && n === 0) return [...head, ...tail];
+  if (m * n > DIFF_MAX_CELLS) {
+    const result: DiffLine[] = [...head];
     for (let i = 0; i < m; i++) {
-      result.push({ type: "removed", oldLineNum: i + 1, newLineNum: null, content: oldLines[i] });
+      result.push({ type: "removed", oldLineNum: prefix + i + 1, newLineNum: null, content: midOld[i] });
     }
     for (let j = 0; j < n; j++) {
-      result.push({ type: "added", oldLineNum: null, newLineNum: j + 1, content: newLines[j] });
+      result.push({ type: "added", oldLineNum: null, newLineNum: prefix + j + 1, content: midNew[j] });
     }
-    return result;
+    return [...result, ...tail];
   }
 
-  // LCS DP table
-  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  // ===== 3) LCS DP（只跑中间段）=====
+  const dp: number[][] = Array(m + 1)
+    .fill(null)
+    .map(() => Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
+      dp[i][j] = midOld[i - 1] === midNew[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
     }
   }
 
-  // Backtrack to build diff
-  const result: DiffLine[] = [];
-  let i = m, j = n;
+  // 回溯（push 完再 reverse —— 原来是逐行 unshift，O(L²)）
+  const mid: DiffLine[] = [];
+  let i = m;
+  let j = n;
   while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      result.unshift({
-        type: "unchanged",
-        oldLineNum: i,
-        newLineNum: j,
-        content: oldLines[i - 1],
-      });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      result.unshift({
-        type: "added",
-        oldLineNum: null,
-        newLineNum: j,
-        content: newLines[j - 1],
-      });
+    if (i > 0 && j > 0 && midOld[i - 1] === midNew[j - 1]) {
+      mid.push({ type: "unchanged", oldLineNum: prefix + i, newLineNum: prefix + j, content: midOld[i - 1] });
+      i--;
       j--;
-    } else if (i > 0) {
-      result.unshift({
-        type: "removed",
-        oldLineNum: i,
-        newLineNum: null,
-        content: oldLines[i - 1],
-      });
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      mid.push({ type: "added", oldLineNum: null, newLineNum: prefix + j, content: midNew[j - 1] });
+      j--;
+    } else {
+      mid.push({ type: "removed", oldLineNum: prefix + i, newLineNum: null, content: midOld[i - 1] });
       i--;
     }
   }
+  mid.reverse();
 
-  return result;
+  return [...head, ...mid, ...tail];
 }
 
 export function DiffViewer({ filePath, before, after, onAccept, onReject, onCustom, onClose }: DiffViewerProps) {
@@ -239,10 +277,16 @@ function PreviewDiffView({ before, after, isNewFile }: { before: string; after: 
 }
 
 function UnifiedDiffView({ lines }: { lines: DiffLine[] }) {
+  /**
+   * 第 233 轮审计：渲染量有上限（原来把全部 diff 行塞进 DOM；
+   * >5000 行时还会退化成"全删+全增"= 2L 行）。被截断必须**说出来**，不许静默少显示。
+   */
+  const truncated = lines.length > DIFF_RENDER_ROW_CAP;
+  const visible = truncated ? lines.slice(0, DIFF_RENDER_ROW_CAP) : lines;
   return (
     <table className="diff-table diff-unified">
       <tbody>
-        {lines.map((line, idx) => (
+        {visible.map((line, idx) => (
           <tr key={idx} className={`diff-line diff-${line.type}`}>
             <td className="diff-line-num diff-old-num">{line.oldLineNum ?? ""}</td>
             <td className="diff-line-num diff-new-num">{line.newLineNum ?? ""}</td>
@@ -255,6 +299,15 @@ function UnifiedDiffView({ lines }: { lines: DiffLine[] }) {
           </tr>
         ))}
       </tbody>
+      {truncated && (
+        <tfoot>
+          <tr>
+            <td colSpan={4} className="diff-truncated-note">
+              内容过长：仅显示前 {DIFF_RENDER_ROW_CAP} 行（共 {lines.length} 行 diff 行）
+            </td>
+          </tr>
+        </tfoot>
+      )}
     </table>
   );
 }
@@ -286,6 +339,12 @@ function SplitDiffView({ lines }: { lines: DiffLine[] }) {
     }
   }
 
+  /**
+   * 第 233 轮审计：与 unified 同一口径的**渲染上限**（配对后的行数同样可能上万）。
+   */
+  const truncated = rows.length > DIFF_RENDER_ROW_CAP;
+  const visibleRows = truncated ? rows.slice(0, DIFF_RENDER_ROW_CAP) : rows;
+
   return (
     <table className="diff-table diff-split">
       <thead>
@@ -295,7 +354,7 @@ function SplitDiffView({ lines }: { lines: DiffLine[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, idx) => (
+        {visibleRows.map((row, idx) => (
           <tr key={idx}>
             <td className="diff-line-num">{row.left?.oldLineNum ?? ""}</td>
             <td className={`diff-line-content diff-${row.left?.type || "empty"}`}>
@@ -308,6 +367,15 @@ function SplitDiffView({ lines }: { lines: DiffLine[] }) {
           </tr>
         ))}
       </tbody>
+      {truncated && (
+        <tfoot>
+          <tr>
+            <td colSpan={4} className="diff-truncated-note">
+              内容过长：仅显示前 {DIFF_RENDER_ROW_CAP} 行（共 {rows.length} 行对比行）
+            </td>
+          </tr>
+        </tfoot>
+      )}
     </table>
   );
 }

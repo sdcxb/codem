@@ -5,6 +5,8 @@ import { appendSessionTombstone } from "./session-jsonl";
 import { pendingMessageCountAdjustment, releaseSessionLogCache } from "./message";
 import { markSessionDeleted } from "./session-tombstones";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
+import { getStoragePort, hasStoragePort } from "./port";
+import { reportPersistFailure } from "./persist-failure";
 
 /**
  * `sessions` 域接入端口（P5 第 4 段）。
@@ -802,10 +804,77 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
      * （`core/store.ts:144` 的循环）都走这个函数，所以两条路都在。
      */
     releaseSessionLogCache(id, "会话已删除");
+    /**
+     * ★ 第 233 轮审计：**索引侧的两处残留必须一起清**（外键级联管不到它们）。
+     *
+     * 1. `session_fts` 是**虚拟表**，SQLite 不对虚拟表做外键级联；唯一能清它的命令
+     *    `fts.delete_session` 过去**零生产调用者** ⇒ 删掉的会话在全文索引里永久残留：
+     *    《搜索》命中已删会话（`content=""`、标题为空的幽灵结果），被删正文继续留在索引里。
+     * 2. `delegation_tasks` 既没有外键也没有 AFTER DELETE 触发器 ⇒ 任务行常驻，
+     *    「委派」页签继续展示指向已删会话的条目。
+     *
+     * 两条都是 fire-and-forget：删除本身已经成功，清理失败**不许**把删除改成失败，
+     * 但必须**如实上报**（静默失败 = 用户永远不知道搜索里有幽灵结果）。
+     */
+    void purgeSessionIndexResidue(id);
     return;
   }
   // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。
   reportWriteNotAccepted("session.delete", "会话未删除");
+}
+
+/**
+ * 清掉某个会话在**索引侧**的两处残留（`session_fts` 行 + `delegation_tasks` 行）。
+ *
+ * 见 `deleteSession` 成功分支里的说明：这两张表都不在 `sessions` 的外键级联范围内，
+ * 过去也没有任何清理入口。函数本身**不抛**（删除已经成功，清理是补偿性的），
+ * 失败走 `reportPersistFailure` 让用户/诊断看得到。
+ */
+function purgeSessionIndexResidue(sessionId: string): Promise<void> {
+  const port = hasStoragePort() ? getStoragePort() : null;
+  const data = port?.data as unknown as
+    | { execute?: (cmd: string, params?: unknown) => unknown; command?: (cmd: string, params?: unknown) => unknown }
+    | undefined;
+  const call = data?.execute
+    ? (cmd: string, params: unknown) => data.execute!(cmd, params)
+    : data?.command
+      ? (cmd: string, params: unknown) => data.command!(cmd, params)
+      : null;
+
+  const fts = call
+    ? Promise.resolve(call("fts.delete_session", { session_id: sessionId })).catch((e) => {
+        reportPersistFailure(
+          "session.delete.fts",
+          e,
+          "这个会话的**全文索引没清掉**：《搜索》仍可能命中已删除的会话（结果正文为空），被删内容也还留在索引里。",
+        );
+      })
+    : Promise.resolve(
+        reportWriteNotAccepted("session.delete.fts", "会话已删，但全文索引未清理（端口不可用）"),
+      );
+
+  /**
+   * 委派任务用**端口直发** `crud.delete`，不走 `domainDelete`：
+   * 后者要等域镜像就绪（`delegation_tasks` 既非热表也不在按需表里）⇒ 会白等 15s 老化后
+   * "如实放弃"，而那正好等于没清。补偿性清理要的是"现在就发出去"，失败再由通道上报。
+   */
+  const tasks = ["source_session_id", "target_session_id"].map((column) =>
+    call
+      ? Promise.resolve(call("crud.delete", { table: "delegation_tasks", where: { [column]: sessionId } })).catch(
+          (e) => {
+            reportPersistFailure(
+              "session.delete.delegation",
+              e,
+              "指向已删会话的**委派任务没清掉**（「委派」页签仍会显示指向已删会话的条目）。",
+            );
+          },
+        )
+      : Promise.resolve(
+          reportWriteNotAccepted("session.delete.delegation", "会话已删，但委派任务未清理（端口不可用）"),
+        ),
+  );
+
+  return Promise.all([fts, ...tasks]).then(() => undefined);
 }
 
 /**

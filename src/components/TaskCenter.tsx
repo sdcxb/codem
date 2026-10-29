@@ -10,6 +10,7 @@
  * 插件关闭时回退到宿主自带 Issues 看板，页签数量与行为完全不变。
  */
 
+import "../styles/task-center.css";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "./ui/portal";
 import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";

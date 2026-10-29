@@ -81,8 +81,17 @@ export async function indexSource(
       throw new Error('No chunks generated from text');
     }
 
-    // Delete existing chunks for this source (incremental re-index)
-    deleteChunksBySource(source.id);
+    /**
+     * ★ 第 233 轮审计：**旧块要留到 embedding 全部算完再删**（删除点移到 Step 4 之前）。
+     *
+     * 原来这里先 `deleteChunksBySource()` 再调 `generateEmbeddings`，而 embedding 失败是**常态**
+     * 而非例外（未配置 / 限流 / 本地模型加载失败，`multimodal.ts` 明确 throw）⇒
+     * 一次失败就「旧索引清空、新索引没写」，「重新索引」变成了不可撤销的数据丢失。
+     * 更糟的是失败分支只改 status、不改 `chunk_count`，界面继续显示旧块数，
+     * 而检索侧对空块返回 `[]`（不抛）⇒ 呈现成「没有相关内容」，是一句假陈述。
+     *
+     * 现在失败时库里的旧块原样保留，只有"拿到全部 embedding"之后才替换（见 Step 4）。
+     */
 
     // Step 3: Generate embeddings in batches
     // 本地模式使用更小的批次：每条文本内部还会进行子分块（≤128 token），
@@ -118,6 +127,11 @@ export async function indexSource(
       tokenCount: chunk.tokenCount,
     }));
 
+    /**
+     * 到这里 embedding 已经全部拿到（失败会在此之前抛出，旧块不受影响），
+     * 现在才删旧块再写新块 —— 两步紧邻，中间没有 await，不会留下"两边都没有"的窗口。
+     */
+    deleteChunksBySource(source.id);
     addChunksBulk(source.notebookId, source.id, chunksWithData);
 
     // Step 5: Update source status
@@ -400,8 +414,14 @@ export async function reindexSource(sourceId: string, onProgress?: IndexProgress
   const source = getSource(sourceId);
   if (!source) return;
 
-  // Reset to pending and re-index
-  updateSource(sourceId, { status: 'pending', chunkCount: 0, errorMessage: undefined });
+  /**
+   * ★ 第 233 轮审计：**不要在开始前就把 chunkCount 归零**。
+   *
+   * 归零发生在抽取/分块/embedding **之前**，任何一步失败都会留下"UI 说 0 块、
+   * 库里还躺着旧块"的矛盾（检索仍能命中，界面却说没有）；而成功后 `indexSource`
+   * 本来就会写真实块数，这个 0 只是失败时的假陈述。这里只重置状态。
+   */
+  updateSource(sourceId, { status: 'pending', errorMessage: undefined });
   await indexSource(source, onProgress);
 }
 

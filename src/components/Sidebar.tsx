@@ -11,7 +11,6 @@ import { OverflowText } from "./OverflowText";
 import { ProjectOverviewDialog } from "./ProjectOverviewDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
-import { SpaceSwitcher } from "./SpaceSwitcher";
 import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
 import { applyStoredUiFont, applyStoredUiFontFamily } from "../core/ui-font";
 import * as SessionStorage from "../core/storage/session";

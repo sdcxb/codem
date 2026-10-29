@@ -34,7 +34,7 @@ import { MultimodalPanel } from "./MultimodalPanel";
 import { VoiceSettingsPanel } from "./VoiceSettingsPanel";
 import { SecretStorageSetting } from "./SecretStorageSetting"; // 第 62 轮：凭据封存开关
 import { OllamaSettingsPanel } from "./OllamaSettingsPanel";
-import { getNotebookConfig } from "../core/knowledge";
+import { getNotebookConfig } from "../core/knowledge/indexer";
 import { SkinSelector } from "./SkinSelector";
 import { GitConfigSection, EnvironmentConfigSection } from "./GitEnvSettings";
 import { AgentProfileStorage, type AgentProfile } from "../core/storage/agent-profile-storage";

@@ -340,6 +340,13 @@ function attachmentsForLog(message: Message): Array<Record<string, unknown>> | u
   for (const att of atts) {
     const row: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(att as unknown as Record<string, unknown>)) {
+      /**
+       * 正文不进日志（`content` 整列跳过）。外置附件的**指针**（`file:<路径>`）在写入这一刻
+       * 还不存在 —— 外置是异步队列做的（`queueAttachmentExternalization`），
+       * 日志行写下时附件还是内联形态。所以"重建后怎么找回正文"不靠日志，而是靠
+       * `attachment-files.findExternalFileByAttachmentId`（按附件 id 扫附件目录），
+       * 见 `getAttachmentContent` 的第三条路径。
+       */
       if (k === "content") continue;
       if (v === undefined) continue;
       row[k] = v;
@@ -439,7 +446,19 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
       // Rust 侧 append_file 会补一个换行 —— 正好是 JSONL 需要的行分隔
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
     } catch (e) {
-      console.warn("[SessionJSONL] 追加消息失败（SQLite 索引仍在）:", e);
+      /**
+       * ★ 第 233 轮审计：**权威副本写失败必须对用户可见**。
+       *
+       * 日志是权威副本、SQLite 只是可重建的索引：这一行没写进去，这条消息就
+       * **只在索引里**，索引一旦重建/损坏（本仓真实发生过）它就没了。
+       * 原来只 `console.warn` —— 渲染侧 console 不进 runtime 日志、界面也无任何反应，
+       * 用户看到的是「消息发出去了、好好的」。
+       */
+      reportPersistFailure(
+        "sessionLog.appendMessage",
+        e,
+        `会话 ${sessionId} 的一条消息**没有写进权威日志**（只留在 SQLite 索引里）。索引损坏或重建之后这条消息会丢；请检查磁盘空间与数据目录占用。`,
+      );
     }
   })();
   trackPendingAppend(sessionId, task);
@@ -767,7 +786,15 @@ export async function appendMessageTombstone(sessionId: string, messageId: strin
       };
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
     } catch (e) {
-      console.warn("[SessionJSONL] 追加墓碑失败（索引已删除）:", e);
+      /**
+       * ★ 第 233 轮审计：墓碑写不进去 = **删掉的消息会复活**（重启/重建时日志仍含旧记录），
+       * 用户看到的是「删了」而实际没删干净。必须可见。
+       */
+      reportPersistFailure(
+        "sessionLog.messageTombstone",
+        e,
+        `会话 ${sessionId} 的「删除消息」记录**没有写进权威日志**：索引里已删，但日志里那条旧记录还在 ⇒ 重启或重建索引后这条消息会复活。`,
+      );
     }
   })();
   /**
@@ -876,7 +903,12 @@ export async function appendSessionTombstone(sessionId: string): Promise<void> {
       };
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
     } catch (e) {
-      console.warn("[SessionJSONL] 追加会话墓碑失败（会话行已删除，但重建时可能复活）:", e);
+      /** ★ 第 233 轮审计：会话墓碑失败 = 删掉的会话在重建索引时**复活**。必须可见。 */
+      reportPersistFailure(
+        "sessionLog.sessionTombstone",
+        e,
+        `会话 ${sessionId} 的「删除会话」记录**没有写进权威日志**：索引里已删，但日志里仍有整段会话 ⇒ 重启或重建索引后这个会话会复活。`,
+      );
     }
   })();
   // 与消息墓碑一致：登记在途，`flushSessionLogWrites()` 才等得到它（第 83 波的教训）

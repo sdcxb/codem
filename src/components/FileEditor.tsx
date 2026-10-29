@@ -28,6 +28,17 @@ interface FileEditorProps {
 
 // ==================== 文件类型判定 ====================
 
+/** 高亮去抖窗口（ms）：停手之后才算一次全文高亮（见下面 effect 的说明） */
+const HIGHLIGHT_DEBOUNCE_MS = 150;
+/**
+ * 超过这个字符数就不做语法高亮，直接降级成纯文本。
+ *
+ * 取值口径：Shiki 的 `codeToHtml` 是**同步且不可中断**的整文件高亮，
+ * 2 万字符（约 600 行）以内还在"一次编辑帧"的预算里；再大就明显掉帧，
+ * 而超大文件的编辑诉求是"能改"，不是"配色准"。
+ */
+const HIGHLIGHT_MAX_CHARS = 20_000;
+
 function getFileExt(path: string): string {
   const name = path.split(/[/\\]/).pop() || "";
   const dot = name.lastIndexOf(".");
@@ -595,30 +606,46 @@ const CodeEditor = ({ content, filePath, onChange, onSave, onClose, modified, sa
     return () => { cancelled = true; };
   }, []);
 
+  /**
+   * ★ 第 233 轮审计：高亮**去抖 + 大文件降级**。
+   *
+   * 原实现每个 `content` 变化立刻对**整份文件**跑一次 `codeToHtml`：Shiki 是同步、不可中断的，
+   * 3000 行文件连续键入 10 个字符就会排队 10 次全文高亮（累计几百 ms 卡顿；
+   * `cancelled` 只挡 setState，挡不住已经烧掉的 CPU）。
+   *
+   * 现在：停手 150ms 后才算一次；超过 `HIGHLIGHT_MAX_CHARS` 的正文直接降级成纯文本
+   * （编辑体验优先 —— 打字时用户看的是光标，不是配色）。
+   */
   useEffect(() => {
     if (!highlighterReady) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const highlighter = await getHighlighter();
-        const loadedLangs = highlighter.getLoadedLanguages();
-        const finalLang = loadedLangs.includes(lang) ? lang : "text";
-        const html = highlighter.codeToHtml(content, {
-          lang: finalLang,
-          theme: shikiTheme,
-        });
-        if (!cancelled) setHighlightedHtml(html);
-      } catch {
-        if (!cancelled) {
-          const escaped = content
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-          setHighlightedHtml(`<pre class="shiki"><code>${escaped}</code></pre>`);
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          if (content.length > HIGHLIGHT_MAX_CHARS) throw new Error("too large");
+          const highlighter = await getHighlighter();
+          const loadedLangs = highlighter.getLoadedLanguages();
+          const finalLang = loadedLangs.includes(lang) ? lang : "text";
+          const html = highlighter.codeToHtml(content, {
+            lang: finalLang,
+            theme: shikiTheme,
+          });
+          if (!cancelled) setHighlightedHtml(html);
+        } catch {
+          if (!cancelled) {
+            const escaped = content
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+            setHighlightedHtml(`<pre class="shiki"><code>${escaped}</code></pre>`);
+          }
         }
-      }
-    })();
-    return () => { cancelled = true; };
+      })();
+    }, HIGHLIGHT_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [content, lang, shikiTheme, highlighterReady]);
 
   const handleScroll = useCallback(() => {

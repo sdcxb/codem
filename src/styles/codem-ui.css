@@ -1919,6 +1919,16 @@ body.resizing-columns * {
   opacity: 0;
   pointer-events: none;
 }
+/**
+ * 第 233 轮审计：**进入「就绪」之后不许再吃点击**。
+ *
+ * 原来只有 `.fading-out` 才 `pointer-events:none`，而就绪 → 渐隐有 300ms 延迟 +
+ * 400ms 过渡 ⇒ 应用其实已经可用，用户的第一次点击却落在**盖住的启动屏**上（约 700ms 白点）。
+ * 现在 ready 立刻放行点击（视觉上还剩一小段渐隐，但那只是装饰）。
+ */
+.boot-splash.ready {
+  pointer-events: none;
+}
 .boot-splash-content {
   display: flex;
   flex-direction: column;
@@ -1996,127 +2006,6 @@ body.resizing-columns * {
 }
 
 /* ========== 17. Space Switcher ========== */
-.space-switcher {
-  position: relative;
-  padding: var(--space-3) var(--space-5);
-}
-.space-switcher-btn {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--glass-border);
-  background: var(--surface-1);
-  color: var(--text-primary);
-  cursor: pointer;
-  border-radius: var(--radius);
-  font-size: var(--fs-base);
-  font-weight: 500;
-  transition: var(--transition-color);
-}
-.space-switcher-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  border-color: var(--glass-border-strong);
-}
-.space-switcher-icon {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-.space-switcher-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.space-switcher-arrow {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-.space-switcher-btn[aria-expanded="true"] .space-switcher-arrow,
-.space-switcher-btn:is(:hover, :focus-visible) .space-switcher-arrow {
-  transform: rotate(180deg);
-}
-
-.space-switcher-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 10px;
-  right: 10px;
-  margin-top: var(--space-2);
-  min-width: 180px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-raise-3);
-  padding: var(--space-2);
-  z-index: var(--z-dropdown);
-}
-.space-switcher-list {
-  max-height: 240px;
-  overflow-y: auto;
-}
-.space-switcher-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3) var(--space-5);
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
-  text-align: left;
-  transition: var(--transition-color);
-}
-.space-switcher-item:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.space-switcher-item.active {
-  color: var(--accent);
-}
-.space-switcher-item-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.space-switcher-check {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-.space-switcher-new-btn {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3) var(--space-5);
-  margin-top: var(--space-1);
-  border: none;
-  border-top: 1px solid var(--glass-border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  text-align: left;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  transition: var(--transition-color);
-}
-.space-switcher-new-btn:is(:hover, :focus-visible) {
-  background: var(--accent-surface);
-  color: var(--accent-strong);
-}
-
 /* ========== 18. Enhanced Sidebar Rail Mode ========== */
 .sidebar-rail {
   width: 48px;
@@ -2921,18 +2810,12 @@ select:focus-visible,
   color: var(--accent-strong);
   border-color: var(--accent-strong);
 }
-.right-sidebar-resize-handle {
-  position: absolute;
-  left: -3px;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  cursor: col-resize;
-  z-index: 10;
-}
-.right-sidebar-resize-handle.active {
-  background: var(--accent);
-}
+/* 第 233 轮审计：`.right-sidebar-resize-handle` 的**权威定义在 styles.css**
+   （8px 命中区 + 2px `::after` 视觉线、默认透明、hover/拖动才显示）。
+   这里原本还留着一份 `left: -3px` + `.active { background: var(--accent) }` 的旧定义，
+   而本文件**后加载**（`main.tsx` 里 styles.css 在前）⇒ 旧值静默覆盖新值：
+   命中区偏 1px，拖动时整条 8px 还会被涂成实心 accent、盖住那条 2px 线。
+   同一个类的基属性只在基础表里写一次，是本文件第 51 波就立下的规矩。 */
 /* ========== 17. Dream skin: hide WorkspaceBackdrop ========== */
 /* DreamLayout provides its own background layer, so WorkspaceBackdrop
    must be hidden to avoid covering it with a solid dark background. */

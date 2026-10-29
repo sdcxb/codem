@@ -398,6 +398,40 @@ function tryParseBlockArrayItem(line: string): string | null {
 }
 
 // ========== Skill Parser ==========
+
+/**
+ * 技能名必须是**单一目录段**（第 233 轮审计 · 目录穿越）。
+ *
+ * ## 为什么名字要校验（不是"名字而已"）
+ *
+ * 技能名会被直接拼进安装/删除路径：`<技能根>\<name>`（`installer.ts` 与
+ * `skill-market-client.ts` 各有两三处）。而它的来源全都不可信：
+ * - ZIP 里 `SKILL.md` 的 `name:` 字段（`skill.ts` 里原本 `name = value`，零校验）；
+ * - 技能市场条目的名字（`preferredName` 直接覆盖 `skill.name`）。
+ *
+ * 于是 `name: ..\..\..\evil` 就把"安装一个技能"变成"往技能根之外写文件"；
+ * 写入侧 Rust 在 `workspace = None` 时不做沙箱判定，兜不住这一层。
+ * 卸载侧同一类形态：记录里的 `filePath` 带 `..` 时，词法比较的护栏也放行。
+ *
+ * ## 口径
+ *
+ * 只允许"能当一个目录名"的字符串：非空、不含路径分隔符、不是 `.`/`..`、
+ * 不是盘符/UNC 开头、不含控制字符。**允许中文与常见符号**（技能名会显示在界面上，
+ * 历史数据里就有中文名，收紧到 `[A-Za-z0-9_-]` 会误伤既有技能）。
+ */
+export function isSafeSkillName(name: unknown): name is string {
+  if (typeof name !== "string") return false;
+  const n = name.trim();
+  if (!n) return false;
+  if (n === "." || n === "..") return false;
+  if (n.includes("/") || n.includes("\\")) return false;
+  // 盘符（C:）与 UNC 前缀
+  if (/^[A-Za-z]:/.test(n) || n.startsWith("\\\\")) return false;
+  // 控制字符（含 NUL / 换行）：写盘与日志里都会变成怪东西
+  if (/[\u0000-\u001f\u007f]/.test(n)) return false;
+  return true;
+}
+
 export function parseSkillMarkdown(content: string, filePath: string): SkillDefinition | null {
   const lines = content.split(/\r?\n/);
   let name = "";
