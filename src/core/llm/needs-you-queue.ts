@@ -9,6 +9,14 @@
  * Key principle: only 1 needs_you per iteration + user can "skip and continue".
  */
 
+import {
+  deletePendingRow,
+  loadPendingRows,
+  onPendingPersistenceReady,
+  isPendingPersistenceAvailable,
+  upsertPendingRow,
+} from "./pending-persistence";
+
 export interface NeedsYouItem {
   id: string;
   sessionId: string;
@@ -76,6 +84,21 @@ export const NeedsYouQueue = {
     }
     queue.push(item);
     emit(item);
+    /**
+     * 2026-10-29：落库（表早就有，之前只写内存）。
+     * 异步写穿：失败只记日志，不阻断回合；重启后由 `hydrateNeedsYouFromStorage()` 回填。
+     */
+    void upsertPendingRow("needs_you_pending", {
+      id: item.id,
+      session_id: item.sessionId,
+      question: item.question,
+      context: item.context,
+      confirmed_facts: item.confirmedFacts,
+      options: JSON.stringify(item.options),
+      resume_path: item.resumePath,
+      iteration: item.iteration,
+      created_at: item.createdAt,
+    });
     return item;
   },
 
@@ -87,7 +110,9 @@ export const NeedsYouQueue = {
   consume(sessionId: string): NeedsYouItem | null {
     const queue = queues.get(sessionId);
     if (!queue || queue.length === 0) return null;
-    return queue.shift() || null;
+    const item = queue.shift() || null;
+    if (item) void deletePendingRow("needs_you_pending", item.id);
+    return item;
   },
 
   /**
@@ -109,6 +134,8 @@ export const NeedsYouQueue = {
       pending.resolve(answer);
       pendingAnswers.delete(itemId);
     }
+    // 已回答 = 该条不再需要跨重启保留
+    void deletePendingRow("needs_you_pending", itemId);
   },
 
   /**
@@ -126,14 +153,17 @@ export const NeedsYouQueue = {
    */
   skip(sessionId: string): void {
     const queue = queues.get(sessionId);
-    if (queue) queue.shift();
+    const item = queue?.shift();
+    if (item) void deletePendingRow("needs_you_pending", item.id);
   },
 
   /**
    * Clear all pending items for a session.
    */
   clear(sessionId: string): void {
+    const dropped = queues.get(sessionId) ?? [];
     queues.delete(sessionId);
+    for (const item of dropped) void deletePendingRow("needs_you_pending", item.id);
     // Clear pending answers for this session
     for (const [id, pending] of pendingAnswers) {
       pending.resolve("__skip__");
@@ -153,3 +183,53 @@ export const NeedsYouQueue = {
 export function getNeedsYouQueue(): typeof NeedsYouQueue {
   return NeedsYouQueue;
 }
+
+/**
+ * 从 SQLite 回填待处理问题（重启恢复）。
+ *
+ * 语义边界：重启后**没有**等待中的 `waitForAnswer` promise（那个回合已经结束），
+ * 所以回填只负责"让问题重新可见、可回答"；回答后按销账处理，不假装能恢复旧回合。
+ */
+let needsYouHydrated = false;
+
+export async function hydrateNeedsYouFromStorage(): Promise<number> {
+  if (needsYouHydrated) return 0;
+  needsYouHydrated = true;
+  const rows = await loadPendingRows("needs_you_pending");
+  let added = 0;
+  for (const row of rows) {
+    const id = String(row.id ?? "");
+    if (!id) continue;
+    const sessionId = String(row.session_id ?? "");
+    if (!sessionId) continue;
+    const queue = queues.get(sessionId) ?? [];
+    if (queue.some((x) => x.id === id)) continue;
+    let options: NeedsYouOption[] = [];
+    try {
+      const parsed = JSON.parse(String(row.options ?? "[]"));
+      if (Array.isArray(parsed)) options = parsed;
+    } catch {
+      /* 坏 options 不阻塞恢复：按空选项展示 */
+    }
+    queue.push({
+      id,
+      sessionId,
+      question: String(row.question ?? ""),
+      context: String(row.context ?? ""),
+      confirmedFacts: String(row.confirmed_facts ?? ""),
+      options,
+      resumePath: String(row.resume_path ?? ""),
+      iteration: Number(row.iteration ?? 0),
+      createdAt: Number(row.created_at ?? Date.now()),
+    });
+    queues.set(sessionId, queue);
+    added += 1;
+  }
+  return added;
+}
+
+if (isPendingPersistenceAvailable()) void hydrateNeedsYouFromStorage();
+onPendingPersistenceReady(() => {
+  needsYouHydrated = false;
+  void hydrateNeedsYouFromStorage();
+});

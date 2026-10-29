@@ -7586,3 +7586,19 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   判据 `usage-label` UL-1/2 + `D6-D` 的 kind 断言；变异（标签恒 null / 不传 kind）⇒ 各 1 红。
 - 顺带修 CSS 契约：新徽章类用了未定义的 `--border`，改成 `--border-secondary`；更新 `css-contract.json` 快照。
 - 门禁：`tsc` 0；全量 **779 文件 / 8769 用例（8752 通过 + 17 skipped + 0 失败）**；未发版。
+## 2026-10-29 14:20 — 第 257 波：队列真落库 + 场景矩阵 + 旧清单回填
+
+- **检查结论**：09 里“做过没回执”的——`showWorkbench`/`SpaceSwitcher` 已删、dream 令牌已定义/注入、
+  worktree 冲突已有“列表+打开+整体选边”（逐文件未做）——已回填；`needs_you_pending` / `agent_messages`
+  两个队列的文件头写着 “Persistence”，实际**只有内存 Map**，本轮补上。
+- **队列落库**：新增 [pending-persistence.ts](src/core/llm/pending-persistence.ts)，走通用
+  `crud.upsert/list/delete`（不新增 Rust 命令）；入队写穿、消费/回答/清空销账、端口注册后回填；
+  无端口时静默。判据 `PENDING-PERSIST` PP-1..4（假端口）。
+- **多智能体场景矩阵**：17 号文档新增「功能 → 场景」表（8 类机制 × 适用/不该用/更轻替代），
+  明确场景由代码契约推出，统计只决定优先级。
+- **仍然没做的两条（这次核实为真）**：
+  1. `session_events` 保留：现有 `events.prune_older_than` **只按会话+时间删、且除 session_meta 外全删**，
+     没有 `keep_types`；要“归档高频事件、保留语义事件”必须先加一条 Rust 命令（否则会删压缩/工具配对）；
+  2. stack 市场：现有技能市场已是真的（GitHub/ClawHub/Skills.sh/SkillHub，ZIP+审计），
+     但 stack 层没有 registry/发布流水线/UI；方案是 GitHub Releases + `stacks/index.json` + sha256。
+- 门禁：`tsc` 0；全量 **780 文件 / 8772 用例（8755 通过 + 17 skipped + 0 失败）**；未发版。

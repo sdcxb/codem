@@ -10,6 +10,14 @@
  * so context compaction does not affect them.
  */
 
+import {
+  deletePendingRow,
+  isPendingPersistenceAvailable,
+  loadPendingRows,
+  onPendingPersistenceReady,
+  upsertPendingRow,
+} from "./pending-persistence";
+
 export interface AgentMessage {
   id: string;
   sessionId: string;
@@ -111,6 +119,18 @@ export const AgentMessageQueue = {
     }
     queue.push(message);
     emit(message);
+    void upsertPendingRow("agent_messages", {
+      id: message.id,
+      session_id: message.sessionId,
+      from_agent: message.fromAgent,
+      to_agent: message.toAgent,
+      message_type: message.messageType,
+      subject: message.subject,
+      body: message.body,
+      status: message.status,
+      sequence: message.sequence,
+      created_at: message.createdAt,
+    });
     return message;
   },
 
@@ -123,6 +143,7 @@ export const AgentMessageQueue = {
     if (!queue || queue.length === 0) return [];
     const messages = [...queue];
     queues.set(toAgent, []);
+    for (const m of messages) void deletePendingRow("agent_messages", m.id);
     return messages;
   },
 
@@ -147,7 +168,9 @@ export const AgentMessageQueue = {
    */
   clearSession(sessionId: string): void {
     for (const [agent, queue] of queues) {
+      const removed = queue.filter((m) => m.sessionId === sessionId);
       const filtered = queue.filter((m) => m.sessionId !== sessionId);
+      for (const m of removed) void deletePendingRow("agent_messages", m.id);
       queues.set(agent, filtered);
     }
   },
@@ -159,3 +182,48 @@ export const AgentMessageQueue = {
     return queues.get(toAgent)?.length || 0;
   },
 };
+
+/**
+ * 从 SQLite 回填待处理消息（重启恢复）。
+ *
+ * 只回填 `status === "pending"`；已被 consume 的行在消费时已删除，
+ * 所以回填不会把“已经处理过的消息”再投一次。
+ */
+let agentMessagesHydrated = false;
+
+export async function hydrateAgentMessagesFromStorage(): Promise<number> {
+  if (agentMessagesHydrated) return 0;
+  agentMessagesHydrated = true;
+  const rows = await loadPendingRows("agent_messages", { status: "pending" });
+  let added = 0;
+  for (const row of rows) {
+    const id = String(row.id ?? "");
+    const toAgent = String(row.to_agent ?? "");
+    if (!id || !toAgent) continue;
+    const queue = queues.get(toAgent) ?? [];
+    if (queue.some((m) => m.id === id)) continue;
+    const sequence = Number(row.sequence ?? 0);
+    if (sequence > (sequenceCounter.get(toAgent) || 0)) sequenceCounter.set(toAgent, sequence);
+    queue.push({
+      id,
+      sessionId: String(row.session_id ?? ""),
+      fromAgent: String(row.from_agent ?? ""),
+      toAgent,
+      messageType: (String(row.message_type ?? "notification") as AgentMessage["messageType"]),
+      subject: String(row.subject ?? ""),
+      body: String(row.body ?? ""),
+      status: "pending",
+      sequence,
+      createdAt: Number(row.created_at ?? Date.now()),
+    });
+    queues.set(toAgent, queue);
+    added += 1;
+  }
+  return added;
+}
+
+if (isPendingPersistenceAvailable()) void hydrateAgentMessagesFromStorage();
+onPendingPersistenceReady(() => {
+  agentMessagesHydrated = false;
+  void hydrateAgentMessagesFromStorage();
+});
