@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **39 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **771 个测试文件 / 8707 个用例**（2026-10-29 全量实测：8690 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **771 个测试文件 / 8708 个用例**（2026-10-29 全量实测：8691 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -80,6 +80,7 @@
 | `14-P26-AND-DENSITY.md` | P2-6 现有页面复用矩阵、聚合页施工设计、全局 spacing 密度分阶段方案 | 中 | 做 P2-6 / 密度时 |
 | `15-VISUAL-REBUILD-PLAN.md` | 左栏/对话/Composer/设置的视觉重做施工单，含双基线验收和底栏排除 | 中 | 做视觉重做时 |
 | `16-MCODE-STACK-AUDIT.md` | mcode-stack 外部审计的结论：22 条清单逐条 pass/fail/unknown、上下文税实测读数、本轮借鉴落地了什么、哪些还不借 | 中 | 评估外部工作流 / 复查这几块机制时 |
+| `17-MULTI-AGENT-INVENTORY.md` | 5 套多智能体机制各是什么、真实使用计数（693 会话）、工具定义成本、合并/不合并的三个选项与推荐 | 中 | 决定团队/子代理/委派怎么收口时 |
 
 > 说明：本目录在 `docs/` 的子目录下，不受仓库根 `.gitignore` 的 `docs/*.md` 规则影响（已用 `git check-ignore` 验证），可以直接入库。
 
@@ -94,7 +95,7 @@
 | HEAD | 以 `git log -1` 为准（1.16.331 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-29 实测 exit 0） |
-| 全量测试 | **771 文件 / 8707 用例：8690 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
+| 全量测试 | **771 文件 / 8708 用例：8691 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
 | 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败已随未跟踪内容清理而消失，不是产品代码修复） | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | `.gitignore`、`.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪 | `git status --porcelain` |

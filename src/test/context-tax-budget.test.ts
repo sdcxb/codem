@@ -27,6 +27,34 @@ import path from "node:path";
 
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import {
+  createSubagentTool,
+  createSendMessageTool,
+  createInterruptAgentTool,
+  createListAgentsTool,
+} from "../core/llm/tools/subagent-tools";
+import {
+  createDelegateToSessionTool,
+  createHandoffToNewSessionTool,
+  createWaitForDelegationTool,
+  createQuerySessionResultTool,
+  createListSessionsTool,
+  createCancelDelegationTool,
+  createSetSessionInternalTool,
+} from "../core/session";
+import {
+  createSquadListTool,
+  createSquadDispatchTool,
+  createSquadStatusTool,
+} from "../core/squad/squad-tools";
+import { registerAgentTeamsTools } from "../core/agent-teams/tools";
+import {
+  createIssueCreateTool,
+  createIssueUpdateTool,
+  createIssueCommentTool,
+  createIssueListTool,
+} from "../core/issue/issue-tools";
+import { registerComputerUseTools } from "../core/computer-use/computer-use";
+import {
   clampSkillDescription,
   getSkillRegistry,
   SKILL_DESCRIPTION_PROMPT_LIMIT,
@@ -42,6 +70,17 @@ const TOOL_SCHEMA_CHAR_BUDGET = 31_000;
 
 /** 技能描述总字符预算（2026-10-29 实测 2,068，留出再加两三个技能的余量） */
 const SKILL_CATALOG_CHAR_BUDGET = 3_000;
+
+/**
+ * 运行时动态注册的工具（`LLMEngine.setupDelegationTools` 那六批 + `whenToolsReady`）。
+ *
+ * 为什么必须单独量：它们**不在** `createDefaultToolRegistry()` 里，却和静态工具一样每轮
+ * 都随请求发出去。只量静态那 40 个会把总成本低估三分之一（2026-10-29 实测：
+ * 静态 27,545 + 动态 16,622）。
+ */
+const DYNAMIC_TOOL_CHAR_BUDGET = 19_000;
+/** 静态 + 动态合计预算（2026-10-29 实测 44,167） */
+const TOTAL_TOOL_CHAR_BUDGET = 48_000;
 
 const REPO_SKILLS_DIR = path.join(__dirname, "..", "core", "skills");
 
@@ -87,6 +126,60 @@ describe("P0-2 上下文税账本", () => {
     }
     // 反向：tool_search 必须常驻，否则模型没法把延迟工具取回来
     expect(coreNames.has("tool_search"), "tool_search 必须常驻（否则延迟工具不可达）").toBe(true);
+  });
+
+  it("运行时动态工具（委派/团队/Issue/computer-use）也计入账本", () => {
+    const groups: Array<[string, any[]]> = [
+      ["subagent", [createSubagentTool(), createSendMessageTool(), createInterruptAgentTool(), createListAgentsTool()]],
+      [
+        "delegation",
+        [
+          createDelegateToSessionTool(),
+          createHandoffToNewSessionTool(),
+          createWaitForDelegationTool(),
+          createQuerySessionResultTool(),
+          createListSessionsTool(),
+          createCancelDelegationTool(),
+          createSetSessionInternalTool(),
+        ],
+      ],
+      ["squad", [createSquadListTool(), createSquadDispatchTool(), createSquadStatusTool()]],
+      ["agent-teams", [] as any[]],
+      ["issue", [createIssueCreateTool(), createIssueUpdateTool(), createIssueCommentTool(), createIssueListTool()]],
+      ["computer-use", [] as any[]],
+    ];
+    registerAgentTeamsTools((t: any) => groups[3][1].push(t));
+    registerComputerUseTools((t: any) => groups[5][1].push(t));
+
+    const defOf = (t: any) => ({ name: t.id, description: t.description, parameters: t.parameters });
+    let dynamicChars = 0;
+    let dynamicCount = 0;
+    const rows: string[] = [];
+    for (const [name, tools] of groups) {
+      const defs = tools.map(defOf);
+      const chars = JSON.stringify(defs).length;
+      dynamicChars += chars;
+      dynamicCount += defs.length;
+      rows.push(`${name}=${defs.length}/${chars}`);
+    }
+
+    const coreChars = JSON.stringify(createDefaultToolRegistry().getCoreDefinitions()).length;
+    console.log(
+      `[context-tax] 动态工具 ${dynamicCount} 个 / ${dynamicChars} 字符（${rows.join(" ")}）；` +
+        `静态+动态合计 ${dynamicChars + coreChars} 字符`,
+    );
+
+    expect(
+      dynamicChars,
+      `动态注册的工具定义 ${dynamicChars} 字符超过预算 ${DYNAMIC_TOOL_CHAR_BUDGET}`,
+    ).toBeLessThanOrEqual(DYNAMIC_TOOL_CHAR_BUDGET);
+    // 反向：漏测也要红 —— 否则"把测量循环删掉"会让预算永远通过
+    expect(dynamicCount, "动态工具数量不该是 0（测量被漏掉了吗？）").toBeGreaterThanOrEqual(30);
+    expect(dynamicChars, "动态工具字符数不该小到像没量").toBeGreaterThan(12_000);
+    expect(
+      dynamicChars + coreChars,
+      `工具定义合计 ${dynamicChars + coreChars} 字符超过预算 ${TOTAL_TOOL_CHAR_BUDGET}`,
+    ).toBeLessThanOrEqual(TOTAL_TOOL_CHAR_BUDGET);
   });
 
   it("技能清单：单条描述不超预算，总量不超预算", () => {

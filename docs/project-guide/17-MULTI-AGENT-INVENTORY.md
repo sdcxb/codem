@@ -1,0 +1,149 @@
+# 17 · 多智能体机制盘点：5 套到底是什么、谁在用、要不要合并
+
+> 基线：2026-10-29 ｜ 1.16.331 ｜ 数据：本机 **693 个会话 / 42,946 次工具调用**（只统计工具名与次数，不读消息内容）
+> 目的：把「5 套多智能体」摊平成可判断的事实。结论在 §0，成本在 §3，选项在 §5。
+
+---
+
+## 0. 结论（先看这三条）
+
+1. **它们不是 5 个并列实现。** `subagent` 是原语；`agent-teams` 建在 subagent 之上（成员就是可续聊的子 agent）；
+   `squad` 又是 agent-teams 的**模板层**（模板 → 实例化团队 → 派任务）。所谓"合并这三套" = 拆层，不是去重。
+2. **真正重叠的只有一处**：`subagent`（内部一次性会话）与 `delegate_to_session`（持久、用户可见的会话）
+   都是"在另一个会话里跑一轮"，差别在**可见性/持久化**，不在能力。
+3. **实测：`squad_*` 与 `agent_teams_*` 在 693 个会话里 0 次调用**，但它们占 **13 个工具定义 / 5,121 字符**
+   （占工具 schema 总成本的约 12%）。所以最该讨论的不是"合并"，而是"**要不要默认把它们摆在模型面前**"。
+
+---
+
+## 1. 五个机制分别是什么
+
+| # | 机制 | 模型看到的入口 | 它到底做什么 | 上下文 | 持久化 |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | **subagent** | `subagent` / `send_message` / `interrupt_agent` / `list_agents` | 开一个**内部会话**（`is_internal=1`），继承工具/安全模式/模型，后台跑 `AgenticLoop`；完成时把 settlement 通知注入父会话；可续聊 | **干净**（`inheritsParentContext = false`） | 内部会话行，不进对话目录 |
+| 2 | **跨会话委派 / 交接** | `delegate_to_session` / `handoff_to_new_session` / `wait_for_delegation` / `query_session_result` / `list_sessions` / `cancel_delegation` / `set_session_internal` | 把任务交给一个**真实会话**（已存在的，或新建的）；后台执行器跑，用户能看、能接手；深度 ≤2、环检测、并发 5、单轮预算 200k | 目标会话自己的上下文 | **持久、用户可见** |
+| 3 | **squad（模板层）** | `squad_list` / `squad_dispatch` / `squad_status` | 团队**模板**（角色集 + 团队指令）；`squad_dispatch` = 建运行时团队 + 每个 agent 角色 spawn 成子 agent + 建一个任务进共享池 | 成员各自干净上下文 | 模板在 SQLite（团队状态见下一行） |
+| 4 | **agent-teams（运行时）** | 10 个：`agent_teams_create` / `add_member` / `remove_member` / `create_task` / `reassign_task` / `claim_task` / `update_task` / `send_message` / `status` / `delete` | 成员 + 共享任务池 + 邮箱；确定性调度把任务派给空闲成员；**一人一队**（同一队长只能有一个活动团队） | 成员是子 agent | **localStorage**（有意：成员是进程内活对象，重启走 `reconcileAfterRestart` 对账） |
+| 5 | **side-session** | **不是工具**：`SideSessionPanel`（UI） | 拿主会话最近消息 + cwd 问一次，答案只回 UI，**不写库、不污染主会话** | 复用主会话最近上下文 | 不持久化 |
+
+**相邻但不同的一条**：项目工作台 thread（会话 + worktree + `project_report` + gate）—— 它不是 agent 机制，
+而是"多会话并行干同一项目"的**用户可见**形态；实测 `project_report` 134 次 / 11 个会话，是真在用的。
+
+### 关键结构事实（读代码确认）
+
+- `squad` 的注释写明了「B 深合并（2026-09-07）」：squad 记录**只作为团队模板**，`squad_dispatch` 会
+  `AgentTeamsService.create` + 逐角色 `addMember`（成员走 subagent provider）+ `createTask`。
+  也就是说 **squad ⊂ agent-teams ⊂ subagent** 是一条链。
+- 两层的持久化**刻意不同**：squad 模板在 SQLite；agent-teams 的状态在 **localStorage**，因为成员是
+  `SubagentRuntime` 里的活对象（AbortController / 等待 Promise），进程一重启必然不在 ——
+  所以代码里走 `reconcileAfterRestart()` 对账，而不是假装"库里有团队就还在跑"。
+- 建队**没有人类入口**：`AgentTeamsPanel` 明确是"只读监控面板——建队/派活由 LLM 通过 `agent_teams_*` 完成"。
+  人类只能在任务中心建/管理 **squad 模板**，以及把 Issue 标记为"分配给某个 squad"（元数据，不建队）。
+- 委派的限制是硬的：`maxDepth: 2`、`maxConcurrent: 5`、单轮 `turnTokenBudget: 200_000`（[types.ts](src/core/session/types.ts)）。
+- 子代理没有对称的深度限制，用的是**轮次预算**（`SUBAGENT_MAX_TURNS = 60`）+ 结算门。
+
+---
+
+## 2. 实测使用（本机 693 会话 / 42,946 次调用）
+
+| 工具 | 调用次数 | 出现在几个会话 |
+| --- | ---: | ---: |
+| `subagent` | 8 | 6 |
+| `send_message` / `interrupt_agent` | 0 / 0 | 0 |
+| `list_agents` | 12 | 7 |
+| `delegate_to_session` | **80** | 9 |
+| `handoff_to_new_session` | 23 | 5 |
+| `wait_for_delegation` | 86 | 12 |
+| `query_session_result` / `list_sessions` | 8 / 15 | 2 / 7 |
+| `cancel_delegation` / `set_session_internal` | 0 / 0 | 0 |
+| `squad_list` / `squad_dispatch` / `squad_status` | **0 / 0 / 0** | 0 |
+| `agent_teams_*`（10 个合计） | **0** | 0 |
+
+作为量级参照：`bash` 21,584 次、`read` 12,528 次、`grep` 3,383 次、`run_code` 286 次、`project_report` 134 次。
+
+**口径与偏差（必须一起读）**：
+
+- 样本是**本机**历史，且其中大量会话是本项目自己的开发/评测驱动 —— 不能代表所有用户；
+- 只统计"模型主动调工具"；人类从任务中心建 squad 模板不会出现在这里（但模板本身不 spawn、不占工具）；
+- 建队确实只有工具入口（见 §1），所以 **0 = 真的没建过队**，不是"UI 建队没被统计"。
+
+---
+
+## 3. 成本
+
+**工具定义（每轮都随请求发出去，2026-10-29 实测字符数）：**
+
+| 组 | 工具数 | 字符 | 占工具定义总成本 |
+| --- | ---: | ---: | ---: |
+| 静态核心（读/写/改/搜/命令/计划/PPT…） | 40 | 27,545 | 62% |
+| 子代理 | 4 | 1,889 | 4% |
+| 跨会话委派 | 7 | 3,665 | 8% |
+| **squad** | 3 | 1,735 | 4% |
+| **agent-teams** | 10 | 3,386 | 8% |
+| Issue | 4 | 2,721 | 6% |
+| computer-use | 11 | 3,226 | 7% |
+| **合计** | **79** | **44,167** | 100% |
+
+- **team + squad = 13 个工具 / 5,121 字符**（约 12%），实测使用 0 次。
+- 代码面：`subagent/` 约 66 KB；`agent-teams/` 约 39 KB；`squad/` 约 37 KB；委派那一套在 `session/`（tools 36 KB +
+  executor 65 KB + orchestrator 27 KB，但这三个文件同时承担非委派职责，不能全算给多智能体）。
+- 维护面：这几套各自有判据、覆盖率、可达性登记；删/合并的隐性成本主要在**表与迁移**。
+
+---
+
+## 4. 重叠矩阵（要不要合并，看这张）
+
+| 能力 | subagent | 委派 | squad | agent-teams | side-session |
+| --- | --- | --- | --- | --- | --- |
+| 独立上下文 | ✅ 干净 | ✅ 目标会话 | ✅ 成员 | ✅ 成员 | ✅ 只带最近窗口 |
+| 用户可见 / 可接手 | ❌ 内部 | ✅ | 仅成员可见 | 仅成员可见 | ❌ 只回 UI |
+| 跨进程/重启存活 | ❌ | ✅ | 表 | 表 | ❌ |
+| 任务池 / 调度 | ❌ | ❌ 单任务 | ✅ 派一个任务 | ✅ claim/reassign | ❌ |
+| 完成通知 | ✅ settlement | ✅ 等待/事件 | 继承成员 | 继承成员 | ❌ |
+| 深度/并发限制 | 轮次 60 | 深度 2 / 并发 5 | 继承 | 继承 | — |
+| 实测调用 | 8 | 80 | **0** | **0** | UI 未计 |
+
+---
+
+## 5. 三个选项 + 推荐
+
+### A. 删掉 team + squad（代码、模板表、13 个工具）
+- **收益**：每轮少 5,121 字符；少 76 KB 代码与两套判据。
+- **代价**：squad 模板表删了不可逆；agent-teams 的 localStorage 状态还要处理旧数据；「多智能体团队」是产品展示面；
+  而且 **0 使用可能是"它从没被讲清楚"**，不是"不需要"。
+- **不推荐**先做这个。
+
+### B. 默认不广告（**推荐**）：把 13 个工具改成按需加载 / 默认关闭，代码与监控面板保留
+- 具体切口：把它们加进延迟加载（`shouldDefer` + `searchHint`），模型仍可 `tool_search` 找到；
+  或加一个"启用团队功能"设置，默认关。
+- **收益**：context-tax 立刻降约 5,121 字符；模型少 13 个容易误选的相似工具；不改表、不删代码。
+- **风险**：延迟后发现率更低（但对 0 使用的东西没有损失）；`tool_search` 召回要能把
+  「team / squad / 团队」映射到它们（searchHint 要写清）。
+- **验收**：`context-tax-budget.test.ts` 的动态工具预算下调；`tool_search` 用中文与英文各查一次能命中；
+  UI 面板与模板管理不受影响。
+
+### C. 保持现状
+- 代价是每轮固定成本 + 13 个相似工具带来的误选概率。只有在"团队功能马上要推广"时才值得。
+
+### 关于 subagent ↔ 委派：**不建议合并**
+两者语义不同（临时工 vs 看得见的会话），合并会丢掉"用户可接手"这一条。能统一的是
+**通知格式**（结算通知的形状已经一致）与**引导语**（让模型按"结果要不要给人看"来选），这属于提示/契约层的小改，不是架构合并。
+
+---
+
+## 6. 复测口径（做完 B 之后两周）
+
+| 指标 | 怎么取 | 期望 |
+| --- | --- | --- |
+| 工具定义成本 | `npx vitest run src/test/context-tax-budget.test.ts` 打印 | 动态工具降约 5.1k 字符 |
+| 团队/模板真实使用 | 本文件 §2 的同一段扫描（工具名计数） | 若仍 0 → 讨论 A；若上升 → 证明是"没被发现" |
+| 任务质量 | 12 个 repo 任务的官方口径（`_collect.mjs --apply`） | 不下降 |
+| 误选率 | 评测轨迹里"本该用委派却用了团队/子代理"的次数 | 下降 |
+
+---
+
+## 7. 仍然不知道
+
+- 其他用户的使用分布（本机样本偏差，§2 已说明）；
+- 团队功能在**演示/推广**场景下的价值（不能用调用次数衡量）；
+- 把 13 个工具改成延迟加载后，`tool_search` 对中文「团队/小队/派活」的召回率（需要实测，不能拍）。
