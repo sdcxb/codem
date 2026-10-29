@@ -7574,3 +7574,15 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   我每轮从真实库**重新复制副本**，你拖窄只写进上一份副本（300）⇒ 新副本回到 556。
   发布的持久库没有这一步，所以另一台电脑正常。后续不再重建副本；要建就把当前宽度带过去。
 - 门禁：`tsc` 0；全量 **777 文件 / 8759 用例（8742 通过 + 17 skipped + 0 失败）**；knip ✅；未发版。
+## 2026-10-29 13:45 — 第 256 波：最后三个坑（project_report / 提示存活 / 压缩成本标签）
+
+- **`project_report` 下放**（2,489 字符，原最大常驻工具）：进入 `DEFERRED_BIG_TOOLS`，补 `searchHint`
+  与 `tool_search` 别名（项目报告/项目工作台/汇报进度）；普通会话每轮省约 600 token。
+  静态常驻读数 **39 / 25,055**，静态+动态 **78 / 41,677**；判据 `tool-search-recall` 两条 + 变异（移出 set）⇒ 2 红。
+- **提示段落存活**（16 §4 第 8 条从「未知」改「通过」）：系统提示是纯函数、每轮重建；子代理只拿调用方
+  传的核心段（有意裁剪）；历史尾部段按设计不跨轮。判据 [prompt-section-survival.test.ts](src/test/prompt-section-survival.test.ts)
+  PS-1..6；变异（`appendVolatileAppendix` 丢掉 base）⇒ PS-5 红。
+- **压缩成本可见**：`UsageRecord.kind="compaction"` + 历史页标签「上下文压缩」（老记录按 chat 显示，不编造）。
+  判据 `usage-label` UL-1/2 + `D6-D` 的 kind 断言；变异（标签恒 null / 不传 kind）⇒ 各 1 红。
+- 顺带修 CSS 契约：新徽章类用了未定义的 `--border`，改成 `--border-secondary`；更新 `css-contract.json` 快照。
+- 门禁：`tsc` 0；全量 **779 文件 / 8769 用例（8752 通过 + 17 skipped + 0 失败）**；未发版。

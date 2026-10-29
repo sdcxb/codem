@@ -1802,6 +1802,8 @@ Report earlier as well whenever a partial finding changes what that agent should
         duration: 0,
         toolCalls: 0,
         success: true,
+        /** 2026-10-29：让成本历史能把这条标成「上下文压缩」，而不是一条奇怪的 0 耗时调用 */
+        kind: "compaction",
       });
     } catch (recordErr) {
       console.warn(`[LLMEngine] recordCompactionUsage failed:`, recordErr);

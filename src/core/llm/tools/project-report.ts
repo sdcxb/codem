@@ -23,6 +23,10 @@ export function createProjectReportTool(): ToolDef {
     guidance:
       "Use project_report when you are a thread in a coordinated project: it writes the v3.1 report the coordinator reads. " +
       "status=done requires evidence kind=log; passed gates require verified_by=command plus evidence_ref; blocked requires options (>=2) and default.",
+    /** 延迟加载后，模型只能先看到这一行提示；把"什么时候用/什么时候别用"写在这里 */
+    searchHint:
+      "项目工作台：作为 coordinated project 的 thread，向协调者交 v3.1 契约报告（project_report）。" +
+      "只在项目 thread 里用；普通会话不需要（协调者不读聊天记录，报告才是事实来源）。",
     description: `Write a v3.1 thread report into the project's .codem/project/reports/ directory.
 
 The coordinator does NOT read your chat transcript. This report is your only supported way to tell it:

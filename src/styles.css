@@ -12207,6 +12207,18 @@ border-bottom: 1px solid var(--accent);
   font-weight: 600;
 }
 
+/* 压缩调用不是普通对话：明确标出来，避免"0 耗时记录"看起来像异常 */
+.usage-record-kind {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  vertical-align: middle;
+}
+
 .usage-record-cost {
   font-size: var(--fs-base);
   color: var(--accent);

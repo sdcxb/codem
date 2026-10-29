@@ -20176,6 +20176,16 @@
     "justify-content": "space-between",
     "margin-bottom": "var(--space-2)"
   },
+  "usage-record-kind": {
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-xs)",
+    "font-weight": "500",
+    "margin-left": "var(--space-2)",
+    "padding": "0 var(--space-1)",
+    "vertical-align": "middle"
+  },
   "usage-record-meta": {
     "color": "var(--text-muted)",
     "display": "flex",

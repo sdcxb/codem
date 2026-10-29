@@ -2520,6 +2520,12 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   const DEFERRED_BIG_TOOLS = new Set([
     "generate_ppt", "browser_automate", "figma_fetch", "github_tool",
     "workflow", "image_gen", "tts",
+    /**
+     * 2026-10-29：`project_report` 2,489 字符，是最大的常驻工具，但只有
+     * coordinated project 的 thread 用得到。放到延迟加载：普通会话每轮省约 600 token；
+     * 项目里的 thread 通过 tool_search（deferred 提示里有 name+hint）取回完整 schema。
+     */
+    "project_report",
   ]);
   const deferIfBig = (tool: ToolDef): ToolDef => {
     if (DEFERRED_BIG_TOOLS.has(tool.id)) tool.shouldDefer = true;
@@ -2575,7 +2581,7 @@ registry.register(createSessionEventSearchTool());
 registry.register(createSessionTraceTool());
 registry.register(createSessionEventReadTool());
   // 协调者 P0：thread 报告工具（写 .codem/project/reports）
-  registry.register(createProjectReportTool());
+  registry.register(deferIfBig(createProjectReportTool()));
   // P2-12: Goal tools — create/get/update goals for automatic continuation
   for (const tool of createGoalTools()) {
     registry.register(tool);

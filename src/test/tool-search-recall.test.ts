@@ -51,6 +51,8 @@ const cases: Array<[string, string]> = [
   ["生成图片", "image_gen"],
   ["ppt", "generate_ppt"],
   ["幻灯片", "generate_ppt"],
+  ["项目报告", "project_report"],
+  ["project_report", "project_report"],
 ];
 
 describe("TOOLSEARCH-RECALL：同义说法能召回对应工具", () => {

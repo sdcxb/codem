@@ -66,7 +66,7 @@
 | 5 | 位置（易变内容不许进前缀） | **通过** | 稳定前缀 + 哨兵 + 易变尾部；判据 `MEM-PLACE-25` / `dsh-d5-prefix-cache-stability` |
 | 6 | 不重写历史里的提醒 | **通过** | 提醒只影响未来轮次 |
 | 7 | 请求级提醒的频次 | **部分** | 有一次性/每回合一次/每轮一次三档；但没有统一的频次预算 |
-| 8 | 移除后会不会在压缩/恢复/子代理里彻底消失 | **未知** | 技能提示有「压缩后重注入」，记忆有固定槽位；其余段落没有逐项确认 |
+| 8 | 移除后会不会在压缩/恢复/子代理里彻底消失 | **通过（系统段）/ 设计上不保留（历史段）** | 系统提示是纯函数、每轮重建：压缩/恢复没有可丢的跨轮状态；子代理只拿调用方传的核心段（有意裁剪）。判据 [prompt-section-survival.test.ts](src/test/prompt-section-survival.test.ts) PS-1..6；历史里注入的尾部上下文/后台通知按设计不跨轮 |
 | 9 | 模式一致性（提示/工具集能否中途变） | **设计上会变** | plan 模式隐藏写工具、无附件隐藏 `read_attachment` —— 这是有意为之，代价是那次请求的前缀失效 |
 | 10 | 改动前后看缓存命中率/成本/质量，而不是只看 token | **通过** | 每请求 `cacheHitTokens` + 前缀指纹；本轮又加了字符棘轮 |
 
@@ -74,8 +74,8 @@
 
 | 项 | 读数 | 预算 |
 | --- | ---: | ---: |
-| 静态常驻工具（`createDefaultToolRegistry`） | **40 个 / 27,545 字符** | 31,000（棘轮） |
-| 其中最大的三个 | `project_report` 2,489 ／ `run_code` 2,370 ／ `glob` 1,262 | — |
+| 静态常驻工具（`createDefaultToolRegistry`） | **39 个 / 25,055 字符** | 31,000（棘轮） |
+| 其中最大的三个 | `run_code` 2,370 ／ `glob` 1,262 ／ `read_attachment` 1,122 | — |
 | 运行时动态工具（委派/团队/Issue/computer-use） | **39 个 / 16,622 字符** | 19,000（棘轮） |
 | 　subagent | 4 ／ 1,889 | — |
 | 　跨会话委派 | 7 ／ 3,665 | — |
@@ -83,17 +83,23 @@
 | 　agent-teams（运行时团队） | 10 ／ 3,386 | — |
 | 　Issue | 4 ／ 2,721 | — |
 | 　computer-use | 11 ／ 3,226 | — |
-| **静态 + 动态合计** | **79 个 / 44,167 字符** | 48,000（棘轮） |
-| 延迟加载工具 | 7 个（完整 schema 不在常驻集） | ≥1 |
+| **静态 + 动态合计** | **78 个 / 41,677 字符** | 48,000（棘轮） |
+| 延迟加载工具 | 8 个（完整 schema 不在常驻集；含 `project_report`） | ≥1 |
 | 注册技能 | **12 个 / description 合计 2,444 字符** | 3,000（棘轮） |
 | 最长技能描述 | 376 字符 | 1,024（硬上限） |
 
 > 口径修正（本轮发现）：上一版只量了静态 40 个，**漏掉运行时动态注册的 39 个**，把工具定义成本低估了约 38%。
-> MCP 服务器带来的工具无法静态计入（取决于用户装了什么），所以 44,167 是**下限**。
+> MCP 服务器带来的工具无法静态计入（取决于用户装了什么），所以 41,677 是**下限**。
+
+> **2026-10-29 已下放 `project_report`**（2,489 字符，原最大常驻工具）：进入 `DEFERRED_BIG_TOOLS`，
+> 普通会话每轮省约 600 token；项目 thread 通过 `tool_search`（deferred 提示含 name+hint）取回完整 schema。
+> 判据：`tool-search-recall` 的「项目报告 / project_report」两条 + `context-tax` 的静态读数（39 / 25,055）。
 
 > 口径说明：数的是**字符**不是 token。仓库里没有稳定的分词器，编一个换算系数只会制造假精度；字符数的用途是**相对棘轮**（这次比上次长还是短）。真实 token 以 provider 的 `usage` 为准。
 >
 > 一个值得下一轮讨论的候选：`project_report`（2,489 字符）是最大的常驻工具，但它只服务项目工作台。要不要像 PPT/浏览器那样放进 `DEFERRED_BIG_TOOLS`，是**产品取舍**（省每人每轮约 600 token，代价是项目模式下多一次 `tool_search`），本轮不动。
+>
+> **（已处理，2026-10-29）** 上面这条已落地：`project_report` 进入 `DEFERRED_BIG_TOOLS`，见本表第 77 行读数与 §5。
 
 ---
 
@@ -108,6 +114,9 @@
 | **P1-5 交接模板补两段** | `HANDOVER_TEMPLATE` 增加「已排除的方案」「已知坑 / 易抖动用例」（**可选**，不参与机械校验） | [handover-protocol.test.ts](src/test/handover-protocol.test.ts) HANDOVER-6 扩展 | 删掉任一段 ⇒ 红 |
 | **P2-7 技能包校验器** | 新增 `tools/audit/check-skill-packs.mjs`：frontmatter / name==目录 / description ≤1024 / BOM / 软预算告警；接入 `npm run audit` | [skill-packs-validate.test.ts](src/test/skill-packs-validate.test.ts)（真实目录 + 5 类坏夹具） | 关掉长度检查 ⇒ 夹具红 |
 | **P2-8 复盘只读报告** | 新增 `tools/audit/retro-interventions.mjs`：从本地会话史识别六类人工介入（retry/judge/approve/carry/trigger/stand-in），只读、脱路径、不给结论 | [retro-interventions.test.ts](src/test/retro-interventions.test.ts)（7 条） | 去掉「非人消息」过滤 ⇒ RETRO-2 红 |
+| **P2-9 `project_report` 下放** | 最大常驻工具（2,489 字符）进入 `DEFERRED_BIG_TOOLS`；普通会话每轮省约 600 token，项目 thread 经 `tool_search` 取回 | [context-tax-budget.test.ts](src/test/context-tax-budget.test.ts) 静态 39 / 25,055；`tool-search-recall` 的「项目报告 / project_report」 | 从 set 里移除 ⇒ 两条召回红 |
+| **§4-8 提示段落存活** | 系统提示纯函数、每轮重建；子代理只拿调用方传的核心段 | [prompt-section-survival.test.ts](src/test/prompt-section-survival.test.ts) PS-1..6 | `appendVolatileAppendix` 丢掉 base ⇒ PS-5 红 |
+| **压缩成本可见** | `UsageRecord.kind="compaction"` + 历史页标签「上下文压缩」 | [usage-label.test.ts](src/test/usage-label.test.ts) UL-1/2；`D6-D` 断言 kind | 标签恒 null ⇒ UL-1 红；不传 kind ⇒ D6-D 红 |
 
 命令：
 

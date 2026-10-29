@@ -59,6 +59,7 @@ const TOOL_ALIASES: Record<string, string[]> = {
   tts: ["朗读", "语音", "text to speech", "tts"],
   image_gen: ["生成图片", "画图", "图像生成", "image generation", "draw", "image"],
   generate_ppt: ["ppt", "幻灯片", "演示文稿", "slides"],
+  project_report: ["项目报告", "项目工作台", "汇报进度", "交报告", "project report"],
   cordis_define: ["动态插件", "cordis", "自定义插件"],
   cordis_inspect: ["动态插件", "cordis", "插件列表"],
   cordis_run: ["动态插件", "cordis", "运行插件"],

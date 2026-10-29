@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
+import { usageKindLabel } from "../core/llm/usage-label";
 import { beginSettingsWriteProbe, flushSettingsWrites } from "../core/storage/settings";
 import { formatCacheHitPercent } from "../core/llm/cache-percent";
 import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
@@ -258,7 +259,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {records.map((record) => (
               <div key={record.id} className={`usage-record ${record.success ? "" : "error"}`}>
                 <div className="usage-record-header">
-                  <span className="usage-record-model">{record.model}</span>
+                  <span className="usage-record-model">
+                    {record.model}
+                    {usageKindLabel(record.kind) && (
+                      <span className="usage-record-kind">{usageKindLabel(record.kind)}</span>
+                    )}
+                  </span>
                   <span className="usage-record-cost">${record.cost.toFixed(6)}</span>
                 </div>
                 <div className="usage-record-meta">

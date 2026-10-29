@@ -79,6 +79,14 @@ export interface UsageRecord {
   success: boolean;
   error?: string;
   /**
+   * 这条调用是什么：普通对话 / 上下文压缩。
+   *
+   * 为什么要记：压缩走独立的 `complete()`、duration=0，混在历史里只像一条"0 耗时的怪记录"。
+   * 有 `kind` 之后，成本面板能明确标成「上下文压缩」，用户才知道这笔钱花在哪。
+   * 老记录没有这个字段 ⇒ 一律按 `"chat"` 展示（向后兼容，不编造）。
+   */
+  kind?: "chat" | "compaction";
+  /**
    * ★ 第 184 波（G4）：这个模型**没有价目** —— `cost` 里的 0 是「不知道」，不是「免费」。
    *
    * 为什么要有这个字段：改前表外模型只留一个 0，界面上看起来免费、
@@ -256,6 +264,8 @@ export class CostTracker {
     toolCalls?: number;
     success?: boolean;
     error?: string;
+    /** 普通对话不传（= chat）；压缩调用显式传 "compaction" */
+    kind?: "chat" | "compaction";
   }): UsageRecord {
     const cost = this.calculateCost(params.model, params.usage);
 
@@ -275,6 +285,7 @@ export class CostTracker {
       toolCalls: params.toolCalls || 0,
       success: params.success !== false,
       error: params.error,
+      ...(params.kind ? { kind: params.kind } : {}),
     };
 
     /** 第 184 波（G4）：表外模型必须**显式标记**，不许让 0 被读成「免费」 */

@@ -164,6 +164,7 @@ type RecordedUsage = {
   toolCalls?: number;
   success?: boolean;
   error?: string;
+  kind?: "chat" | "compaction";
 };
 
 let engine: LLMEngine;
@@ -419,5 +420,8 @@ describe("D6：一轮对话的 token 消耗必须整轮累计记账", () => {
     expect(compaction!.duration, "压缩耗时不计入本回合时延统计").toBe(0);
     expect(compaction!.success, "压缩失败不改本回合成败（循环有兜底），这里恒记成功").toBe(true);
     expect(compaction!.sessionId).toBe("sess-d6-compaction");
+    // 2026-10-29：成本历史要能把它标成「上下文压缩」，而不是一条 0 耗时的怪记录
+    expect(compaction!.kind, "压缩记录必须带 kind=compaction").toBe("compaction");
+    expect(main!.kind, "普通对话不传 kind（展示按 chat 处理）").toBeUndefined();
   });
 });
