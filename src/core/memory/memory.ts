@@ -15,6 +15,8 @@ import { getStoragePort, hasStoragePort } from "../storage/port";
 import { notifyMemoryChanged } from "./memory-changed";
 import {
   clusterDuplicateMemories,
+  clusterDuplicateMemoriesChunked,
+  type DuplicateScanResult,
   memoryLooksDuplicate,
   type MemoryDuplicateGroup,
 } from "./similarity";
@@ -3311,9 +3313,30 @@ export class MemoryService {
    *
    * 跨桶是刻意的：真机上同一事实散落在不同桶（每次评测的工作目录不同 ⇒ projectId 不同），
    * 而那正是用户要清的那批。这里只**列出来给人看**，不做任何自动删除。
+   *
+   * ⚠️ 这是**同步全量**版本（O(n²)）。条目上千时会在主线程卡住十几秒 ——
+   * 界面**必须**用下面的 `findDuplicateGroupsAsync`（分块 + 进度 + 截断披露）。
+   * 保留它是因为判据/小数据（候选合并、几百条）需要同步语义。
    */
   findDuplicateGroups(): Array<MemoryDuplicateGroup & { entries: MemoryEntry[] }> {
     return clusterDuplicateMemories([...this.entries.values()]);
+  }
+
+  /**
+   * **重复记忆分组（界面用）**：分块扫描，块间让出主线程，超限如实披露。
+   *
+   * 为什么要单独一条（第 233 轮审计）：`findDuplicateGroups` 一次同步跑完 n² 对，
+   * 800 条 305ms、按平方外推 1500 条 ≈ 1s、5000 条 ≈ 12s —— 一次点击冻住界面十几秒。
+   * 这里：只扫**最近** `MEMORY_DUPLICATE_SCAN_LIMIT` 条 + 每 2 万对让出一次 +
+   * 进度回调（界面可画进度/可取消）+ 返回 `truncated`（**不假装全都比过了**）。
+   */
+  async findDuplicateGroupsAsync(opts: {
+    limit?: number;
+    chunkPairs?: number;
+    onProgress?: (donePairs: number, totalPairs: number) => void;
+    shouldCancel?: () => boolean;
+  } = {}): Promise<DuplicateScanResult<MemoryEntry>> {
+    return clusterDuplicateMemoriesChunked([...this.entries.values()], opts);
   }
 
   /**
@@ -3392,11 +3415,11 @@ export class MemoryService {
     return buildCreationOrderIndex(entries.values());
   }
 
-  private formatLine(e: MemoryEntry): string {
+  private formatLine(e: MemoryEntry, ctx?: InjectionScopeContext): string {
     // M-3：坏数据（content/key 不是字符串）**不许**把系统提示整个搞丢
     const date = safeDate(e.timestamp);
     // P-Link: Resolve [[name]] links to show related memory references
-    const resolvedContent = this.resolveLinks(e);
+    const resolvedContent = this.resolveLinks(e, ctx);
     const key = textOf(e.key).substring(0, MEMORY_INJECT_KEY_MAX);
     /**
      * ★ 全量审计（低·未确证）：**注入侧也脱敏**。
@@ -3458,7 +3481,7 @@ export class MemoryService {
         truncated += list.length - capped.length;
         const kept: MemoryEntry[] = [];
         for (const e of capped) {
-          const line = this.formatLine(e);
+          const line = this.formatLine(e, scopeCtx);
           // 总字符预算（S1）：超了就不再收，并如实计数（注入文本里会写明被截断多少条）
           if (chars + line.length > MEMORY_INJECT_CHAR_BUDGET) {
             truncated++;
@@ -3552,19 +3575,20 @@ export class MemoryService {
   /** 一个作用域里"手动块在前、自动块单独标注在后"的文本 */
   private buildBlock(scope: MemoryScope, ctx: InjectionScopeContext): string {
     const plan = this.computeInjection(ctx, [scope]);
-    return this.renderBlocks(plan.blocks, plan.truncated);
+    return this.renderBlocks(plan.blocks, plan.truncated, ctx);
   }
 
   /** 把注入计划渲染成文本（`truncated > 0` 时**如实披露**） */
   private renderBlocks(
     blocks: Array<{ scope: MemoryScope; kind: MemorySourceKind; entries: MemoryEntry[] }>,
     truncated: number,
+    ctx?: InjectionScopeContext,
   ): string {
     const chunks: string[] = [];
     for (const block of blocks) {
       if (block.kind === "manual") {
         chunks.push(
-          [MemoryService.manualHeader(block.scope), "", ...block.entries.map((e) => this.formatLine(e))].join("\n"),
+          [MemoryService.manualHeader(block.scope), "", ...block.entries.map((e) => this.formatLine(e, ctx))].join("\n"),
         );
         continue;
       }
@@ -3580,7 +3604,7 @@ export class MemoryService {
             "",
             memoryUnknownNote(block.entries.length),
             "",
-            ...block.entries.map((e) => this.formatLine(e)),
+            ...block.entries.map((e) => this.formatLine(e, ctx)),
           ].join("\n"),
         );
         continue;
@@ -3592,7 +3616,7 @@ export class MemoryService {
           "",
           `> 以下 ${block.entries.length} 条由自动流程从对话中提取，未经人工确认，可能不准确；如需以人工结论为准，请直接编辑或删除。`,
           "",
-          ...block.entries.map((e) => this.formatLine(e)),
+          ...block.entries.map((e) => this.formatLine(e, ctx)),
         ].join("\n"),
       );
     }
@@ -3633,7 +3657,7 @@ export class MemoryService {
       ? [scope]
       : ["platform", "project", "conversation"];
     const plan = this.computeInjection(ctx, scopes, options);
-    return this.renderBlocks(plan.blocks, plan.truncated);
+    return this.renderBlocks(plan.blocks, plan.truncated, ctx);
   }
 
   // ========== 写入审批 / 批次（信任边界） ==========
@@ -4445,19 +4469,30 @@ export class MemoryService {
    * M-3：`content` / `key` 不是字符串时**安全降级**（返回安全文本），绝不抛 ——
    * 这条路径在 `buildSystemPrompt` 里，抛一次就丢掉整轮系统提示。
    *
-   * ⚠️ 目标筛选必须过 `linkTargetAllowed`（稳定侧只解析同侧目标，见那里的说明）：
-   * 否则稳定前缀会被易变条目的内容间接改写（判据 `MEM-PLACE-19`）。
+   * ⚠️ 目标筛选必须过两道：
+   * 1. `linkTargetAllowed`（稳定侧只解析同侧目标，见那里的说明）——
+   *    否则稳定前缀会被易变条目的内容间接改写（判据 `MEM-PLACE-19`）；
+   * 2. **`visibleIn(target, ctx)`**（第 233 轮审计，P1 跨作用域泄漏）——
+   *    原来只在**全库**里按 key 找第一条、完全不看 scope/归属，于是一个项目 A 的条目里
+   *    写 `[[key]]`、只要项目 B 有同名条目，B 的正文就会被注入 A 的上下文
+   *    （`project` / `conversation` 作用域存在的全部意义就是隔离）。
+   *    不展开时的降级形态与「目标不存在」一致：`[[key]]` 原样留着（可见）。
+   *
+   * @param ctx 注入位置的作用域上下文；省略表示「非注入路径」（界面披露用），此时不加作用域上限
    */
-  private resolveLinks(entry: MemoryEntry): string {
+  private resolveLinks(entry: MemoryEntry, ctx?: InjectionScopeContext): string {
     const content = textOf(entry.content);
     const links = this.extractLinks(content);
     if (links.length === 0) return content;
 
     let resolved = content;
     for (const linkName of links) {
-      // Find the linked entry by key (case-insensitive) —— 且必须**允许展开**（同侧约束）
+      // Find the linked entry by key (case-insensitive) —— 且必须**允许展开**（同侧 + 同作用域）
       const target = Array.from(this.entries.values()).find(
-        e => textOf(e.key).toLowerCase() === linkName.toLowerCase() && this.linkTargetAllowed(entry, e)
+        e =>
+          textOf(e.key).toLowerCase() === linkName.toLowerCase() &&
+          this.linkTargetAllowed(entry, e) &&
+          (!ctx || visibleIn(e, ctx))
       );
       if (target) {
         const snippet = textOf(target.content).substring(0, 100);

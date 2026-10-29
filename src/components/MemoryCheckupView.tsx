@@ -15,7 +15,7 @@
  * 2. **归属解析失败一律显示"未知"**：不许猜、更不许把"归属未知"静默归到平台级；
  * 3. **不 N+1**：项目/会话名**批量**取一次（`buildOwnershipIndexFrom`），渲染几百条也只有一次解析。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useProjectStore } from "../core/store";
 import { confirmDialog } from "../core/ui/native-dialog";
 import {
@@ -98,6 +98,15 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    * 每次挂载都算一遍会让"打开记忆体检"变慢 —— 而这功能是"偶尔整理一次"的入口。
    */
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroupView[] | null>(null);
+  /**
+   * 第 233 轮审计：扫描进度（`null` = 没在扫）。
+   *
+   * 为什么要它：`findDuplicateGroups` 是同步 O(n²)，上千条时**一次点击冻住十几秒**。
+   * 现在走 `findDuplicateGroupsAsync`（分块 + 每 2 万对让出一次主线程），
+   * 于是"正在比对"能画出来、界面也能滚动/响应。
+   */
+  const dupScanTotalRef = useRef(0);
+  const [dupProgress, setDupProgress] = useState<number | null>(null);
 
   /**
    * 归属索引**批量**建一次（用 store 里已加载的项目/会话，不额外打存储）；
@@ -337,15 +346,35 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    * 真机上"同一条事实"会散落在不同桶（每次评测的工作目录不同 ⇒ projectId 不同），
    * 自动流程按作用域隔离**不该**跨桶去猜；判断"这两条是不是同一件事"交给用户。
    */
-  const handleFindDuplicates = () => {
-    const groups = getMemoryService().findDuplicateGroups();
-    setDuplicateGroups(groups);
-    const entries = groups.reduce((n, g) => n + g.ids.length, 0);
-    setNotice(
-      groups.length === 0
-        ? "没有找到相似重复的记忆（判定口径：标题+正文的 2-gram 相似度，详见「去重」那一节的说明）。"
-        : `找到 ${groups.length} 组相似重复，共 ${entries} 条。每组都给了相似度读数，删除由你逐组确认。`,
-    );
+  const handleFindDuplicates = async () => {
+    /**
+     * 第 233 轮审计：改走**分块扫描**（`findDuplicateGroupsAsync`）。
+     *
+     * 同步版一次跑完 n² 对：800 条 305ms、1500 条 ≈ 1s、5000 条 ≈ 12s —— 整段冻住界面。
+     * 分块版每 2 万对让出一次主线程，所以这里能画出进度；超限时**如实披露**
+     * （"共 N 条，先扫最近 M 条"），而不是假装全都比过了。
+     */
+    if (dupProgress !== null) return; // 防重复点击
+    setDupProgress(0);
+    try {
+      const res = await getMemoryService().findDuplicateGroupsAsync({
+        onProgress: (done, total) => {
+          if (total > 0) setDupProgress(Math.min(99, Math.round((done / total) * 100)));
+        },
+      });
+      setDuplicateGroups(res.groups);
+      const entries = res.groups.reduce((n, g) => n + g.ids.length, 0);
+      const scope = res.truncated
+        ? `（共 ${res.total} 条记忆，本次先比对**最近 ${res.scanned} 条**；更早的未参与，清理后可再点一次）`
+        : `（比对 ${res.scanned} 条，用时 ${res.elapsedMs}ms）`;
+      setNotice(
+        res.groups.length === 0
+          ? `没有找到相似重复的记忆${scope}。判定口径：标题+正文的 2-gram 相似度，详见「去重」那一节的说明。`
+          : `找到 ${res.groups.length} 组相似重复，共 ${entries} 条${scope}。每组都给了相似度读数，删除由你逐组确认。`,
+      );
+    } finally {
+      setDupProgress(null);
+    }
   };
 
   /**
@@ -640,8 +669,13 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             批量删除选中（{selected.size}）
           </button>
           {/* 第 197 波：找出相似重复（人工清理一波）。只列候选，删除仍要逐组确认 */}
-          <button className="mc-action-btn" onClick={handleFindDuplicates}>
-            找出相似重复
+          <button
+            className="mc-action-btn"
+            onClick={() => void handleFindDuplicates()}
+            disabled={dupProgress !== null}
+            title="按标题+正文的 2-gram 相似度聚类；条目多时只比对最近一批并如实说明"
+          >
+            {dupProgress === null ? "找出相似重复" : `正在比对… ${dupProgress}%`}
           </button>
           <button className="mc-action-btn danger" onClick={handleClearAll}>清空全部</button>
         </div>

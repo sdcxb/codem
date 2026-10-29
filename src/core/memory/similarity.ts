@@ -93,6 +93,47 @@ export function memorySimilarity(a: string, b: string): number {
   return inter / (A.size + B.size - inter);
 }
 
+/**
+ * 预计算好的 2-gram 集合（第 233 轮审计 · P2 卡顿）。
+ *
+ * `clusterDuplicateMemories` 原来是 O(n²) 次 `memorySimilarity` 调用，
+ * 每次都重新规范化文本 + 重建 bigram 集合 ⇒ 同一条记忆的集合被重建 n−1 遍。
+ * 实测 600 条 ≈ 3 s、按平方外推到 1500 条 ≈ 19 s（界面冻住）。
+ *
+ * 这里把「规范化 + 建集合」提前到 n 次，之后每对只做集合求交。
+ */
+interface PreparedText {
+  grams: Set<string>;
+}
+
+function prepare(text: string): PreparedText {
+  return { grams: bigrams(normalizeMemoryText(text)) };
+}
+
+/** 两个已备好的集合的 Jaccard（与 `memorySimilarity` 逐字节同值） */
+function jaccardPrepared(A: PreparedText, B: PreparedText): number {
+  if (A.grams.size === 0 || B.grams.size === 0) return 0;
+  let inter = 0;
+  // 用较小的一侧迭代（求交是对称的，但迭代开销与集合大小成正比）
+  const [small, large] = A.grams.size <= B.grams.size ? [A.grams, B.grams] : [B.grams, A.grams];
+  for (const g of small) if (large.has(g)) inter += 1;
+  return inter / (A.grams.size + B.grams.size - inter);
+}
+
+/**
+ * Jaccard 的**上界**：`min(|A|,|B|) / max(|A|,|B|)`。
+ *
+ * 为什么要它：上界小于阈值 ⇒ 真值必然小于阈值（精确，不是近似）。
+ * 于是"规模差太多 / 完全不相干"的那些对可以整对跳过 ——
+ * 这一步不会漏任何真命中，见判据 `DUP-P3`。
+ */
+function jaccardUpperBound(A: PreparedText, B: PreparedText): number {
+  const a = A.grams.size;
+  const b = B.grams.size;
+  if (a === 0 || b === 0) return 0;
+  return Math.min(a, b) / Math.max(a, b);
+}
+
 /** 合并相似度（标题 + 正文一起算；标题是模型对这条事实的概括，权重天然更高） */
 function memoryCombinedSimilarity(a: MemoryDuplicateShape, b: MemoryDuplicateShape): number {
   return memorySimilarity(`${a.key}\n${a.content}`, `${b.key}\n${b.content}`);
@@ -125,6 +166,182 @@ export interface MemoryDuplicateGroup {
 }
 
 /**
+ * 「找出相似重复」一次扫描的**条目上限**（第 233 轮审计）。
+ *
+ * 5000 条（`maxTotalEntries` 的上限）全量 O(n²) 是 1250 万对 ≈ 十几秒的同步卡顿 ——
+ * 一次点击让界面冻住十几秒，比"少扫一部分"糟得多。所以：
+ * - 只扫**最近** `MEMORY_DUPLICATE_SCAN_LIMIT` 条（最近的记忆最可能是那批需要清的）；
+ * - 超限**如实披露**（`truncated` + `total`），不假装"全都比过了"。
+ */
+export const MEMORY_DUPLICATE_SCAN_LIMIT = 2000;
+
+/** 分块大小：每块 2 万对比对，块间让出一次事件循环 */
+const DUPLICATE_CHUNK_PAIRS = 20_000;
+
+export interface DuplicateScanResult<T> {
+  groups: Array<MemoryDuplicateGroup & { entries: T[] }>;
+  /** 实际参与比对的条数 */
+  scanned: number;
+  /** 候选总数（> `scanned` 说明被上限截断） */
+  total: number;
+  truncated: boolean;
+  /** 比对耗时（ms），界面可以如实显示 */
+  elapsedMs: number;
+}
+
+/** 让出一次事件循环（Node/浏览器都可用；不依赖 DOM） */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * 同 `clusterDuplicateMemories`，但**分块 + 让出主线程 + 进度回调**。
+ *
+ * 判据见 `memory-duplicate-scale.test.ts` 的 DUP-P4/P5/P6：
+ * - 5000 条也要"有界且可披露"（`truncated: true`、`scanned: 2000`）；
+ * - 分块之间真的让出（进度回调 ≥ 2 次 ⇒ 界面能画进度、能响应取消）；
+ * - 小规模时与同步版**结果逐组相同**。
+ */
+export async function clusterDuplicateMemoriesChunked<
+  T extends MemoryDuplicateShape & { id: string; order?: number },
+>(
+  entries: readonly T[],
+  opts: {
+    threshold?: number;
+    /** 条目上限（默认 `MEMORY_DUPLICATE_SCAN_LIMIT`）；传 `Infinity` 表示不截断 */
+    limit?: number;
+    /** 每块比对的对数（默认 2 万）；判据可以调小以便观察让出 */
+    chunkPairs?: number;
+    onProgress?: (donePairs: number, totalPairs: number) => void;
+    /** 允许取消（返回 true 就停止扫描，已得到的组照样返回） */
+    shouldCancel?: () => boolean;
+  } = {},
+): Promise<DuplicateScanResult<T>> {
+  const startedAt = Date.now();
+  const threshold = opts.threshold ?? MEMORY_DUPLICATE_THRESHOLD;
+  const limit = opts.limit ?? MEMORY_DUPLICATE_SCAN_LIMIT;
+  const chunkPairs = Math.max(1, opts.chunkPairs ?? DUPLICATE_CHUNK_PAIRS);
+
+  const total = entries.length;
+  /** 截断时取**最近**的（调用方给的是创建序 ⇒ 取尾部） */
+  const scannedEntries = limit === Infinity || total <= limit ? entries.slice() : entries.slice(total - limit);
+
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    let cur = x;
+    while (parent.get(cur) !== root) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  for (const e of scannedEntries) parent.set(e.id, e.id);
+
+  const pairScore = new Map<string, { score: number; pair: [string, string] }>();
+  const preparedCombined: PreparedText[] = scannedEntries.map((e) => prepare(e.key + "\n" + e.content));
+  const preparedKey: PreparedText[] = scannedEntries.map((e) => prepare(e.key));
+  const minCombined = Math.min(threshold, MEMORY_DUPLICATE_KEY_ASSIST_MIN, MEMORY_DUPLICATE_SAME_TITLE_MIN);
+  const minKey = Math.min(MEMORY_DUPLICATE_KEY_ASSIST_KEY, MEMORY_DUPLICATE_SAME_TITLE_KEY);
+
+  const n = scannedEntries.length;
+  /** 总对数（用于进度百分比） */
+  let totalPairs = 0;
+  for (let i = 0; i < n; i++) totalPairs += n - i - 1;
+  let donePairs = 0;
+
+  const finish = (): DuplicateScanResult<T> => {
+    const groups = new Map<string, T[]>();
+    for (const e of scannedEntries) {
+      const root = find(e.id);
+      const list = groups.get(root) ?? [];
+      list.push(e);
+      groups.set(root, list);
+    }
+    const out: Array<MemoryDuplicateGroup & { entries: T[] }> = [];
+    for (const [root, members] of groups) {
+      if (members.length < 2) continue;
+      const sorted = [...members];
+      const best = pairScore.get(root);
+      out.push({
+        ids: sorted.map((m) => m.id),
+        similarity: best?.score ?? 0,
+        pair: best?.pair ?? ["", ""],
+        entries: sorted,
+      });
+    }
+    out.sort((a, b) => b.similarity - a.similarity);
+    return {
+      groups: out,
+      scanned: n,
+      total,
+      truncated: n < total,
+      elapsedMs: Date.now() - startedAt,
+    };
+  };
+
+  /** 块末让出：进度 + 取消点 */
+  const checkpoint = async (): Promise<boolean> => {
+    opts.onProgress?.(donePairs, totalPairs);
+    await yieldToEventLoop();
+    return opts.shouldCancel?.() ?? false;
+  };
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = scannedEntries[i];
+      const b = scannedEntries[j];
+      donePairs += 1;
+
+      /** 精确预筛（上界是**真值上界**，跳过的对一定不可能命中） */
+      let skip = false;
+      if (a.key !== b.key) {
+        const combinedBound = jaccardUpperBound(preparedCombined[i], preparedCombined[j]);
+        if (combinedBound < minCombined) {
+          const keyBound = jaccardUpperBound(preparedKey[i], preparedKey[j]);
+          if (keyBound < minKey) skip = true;
+        }
+      }
+
+      if (!skip) {
+        const combined = a.key === b.key ? 1 : jaccardPrepared(preparedCombined[i], preparedCombined[j]);
+        const keySim = a.key === b.key ? 1 : jaccardPrepared(preparedKey[i], preparedKey[j]);
+        const hit =
+          a.key === b.key ||
+          combined >= threshold ||
+          (combined >= MEMORY_DUPLICATE_KEY_ASSIST_MIN && keySim >= MEMORY_DUPLICATE_KEY_ASSIST_KEY) ||
+          (keySim >= MEMORY_DUPLICATE_SAME_TITLE_KEY && combined >= MEMORY_DUPLICATE_SAME_TITLE_MIN);
+        if (hit) {
+          const ra = find(a.id);
+          const rb = find(b.id);
+          if (ra !== rb) {
+            parent.set(ra, rb);
+            const sa = pairScore.get(ra);
+            const sb = pairScore.get(rb);
+            const best = !sa ? sb : !sb ? sa : sa.score >= sb.score ? sa : sb;
+            if (best) pairScore.set(rb, best);
+          }
+          const root = find(a.id);
+          const prev = pairScore.get(root);
+          if (!prev || combined > prev.score) {
+            pairScore.set(root, { score: combined, pair: [a.key, b.key] });
+          }
+        }
+      }
+
+      if (donePairs % chunkPairs === 0 && (await checkpoint())) return finish();
+    }
+    /** 行末也报一次进度（小数据时也能看到 ≥1 次回调） */
+    if (i % Math.max(1, Math.floor(n / 20)) === 0 && (await checkpoint())) return finish();
+  }
+  opts.onProgress?.(totalPairs, totalPairs);
+
+  return finish();
+}
+
+/**
  * 把一批记忆按"像不像"聚成重复组（**跨桶**：真机上同一事实散落在不同桶里，正是要清的那批）。
  *
  * 用并查集做传递闭包（A~B、B~C ⇒ A/B/C 一组），阈值**故意比写入侧更宽**
@@ -152,12 +369,41 @@ export function clusterDuplicateMemories<T extends MemoryDuplicateShape & { id: 
 
   /** 每一对命中的读数（取组内最大的一对作为展示证据） */
   const pairScore = new Map<string, { score: number; pair: [string, string] }>();
+  /**
+   * 第 233 轮审计：每条只算一次 bigram 集合（原来每对重算 ⇒ O(n²·L)）。
+   * `combined` 与 `key` 各备一份，与 `memorySimilarity` 的口径逐字对应。
+   */
+  const preparedCombined: PreparedText[] = entries.map((e) => prepare(`${e.key}\n${e.content}`));
+  const preparedKey: PreparedText[] = entries.map((e) => prepare(e.key));
+
+  /**
+   * 预筛阈值取"所有能触发命中的规则里最小的那个"：
+   * `min(threshold, KEY_ASSIST_MIN, SAME_TITLE_MIN)`。
+   * 只有 `combined` 低于它、**且** `keySim` 也低于 `KEY_ASSIST_KEY`/`SAME_TITLE_KEY`
+   * 时才可能完全不可能命中 —— 所以判断时两个上界都要看（见下面的 `possible`）。
+   */
+  const minCombined = Math.min(threshold, MEMORY_DUPLICATE_KEY_ASSIST_MIN, MEMORY_DUPLICATE_SAME_TITLE_MIN);
+  const minKey = Math.min(MEMORY_DUPLICATE_KEY_ASSIST_KEY, MEMORY_DUPLICATE_SAME_TITLE_KEY);
+
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       const a = entries[i];
       const b = entries[j];
-      const combined = memoryCombinedSimilarity(a, b);
-      const keySim = memorySimilarity(a.key, b.key);
+      /**
+       * 精确预筛（上界是**真值上界**，跳过的对一定不可能命中）：
+       * - `combined` 的上界低于 `minCombined`，且
+       * - `keySim` 的上界低于 `minKey`
+       * 两条同时成立 ⇒ 任何规则都不可能命中；同 key 的那条规则单独先判。
+       */
+      if (a.key !== b.key) {
+        const combinedBound = jaccardUpperBound(preparedCombined[i], preparedCombined[j]);
+        if (combinedBound < minCombined) {
+          const keyBound = jaccardUpperBound(preparedKey[i], preparedKey[j]);
+          if (keyBound < minKey) continue;
+        }
+      }
+      const combined = a.key === b.key ? 1 : jaccardPrepared(preparedCombined[i], preparedCombined[j]);
+      const keySim = a.key === b.key ? 1 : jaccardPrepared(preparedKey[i], preparedKey[j]);
       const hit =
         a.key === b.key ||
         combined >= threshold ||
