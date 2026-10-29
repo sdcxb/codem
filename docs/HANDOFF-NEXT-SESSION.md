@@ -7738,3 +7738,13 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   `ste-zh-toggle.test.tsx`（按钮）；fail-open 白名单登记 `isSteZhEnabled`（纯风格开关，失败⇒关闭）。
 - 文档：`docs/STE-ZH-PLUGIN.md`。
 - 全量 **788 文件 / 8795 用例（8778 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 20:05 — 第 268 波：STE-ZH 智能策略 + 回复后告警 + 复测
+
+- 三态：关 / 智能 / 全量；智能模式按消息选 minimal/full，子 agent 走字段模式。
+- 子 agent prompt 也接入 `@codem/ste-zh`；主 prompt 传入 userMessage 供策略判断。
+- 回复后告警：正文声称“已验证”但本轮无测试/构建命令 → 黄色提示，不改写正文。
+- 真机复测（关 vs 智能）：D 短任务 197→78 字（-60%），首句状态 + 未验证保留，目标达成；
+  A 状态词 2→8 但长 27%；B 无净收益；C 短 53% 但编号仍未遵守。
+- 真实子 agent 复测：最终仍是散文，没有 `status/...` 字段，且违反“不要调用工具”；
+  字段模式在真实子 agent 路径上**未达成**，需 report 工具/JSON schema 硬约束。
+- 全量 789 文件 / 8798 用例（8781 通过 + 17 skipped + 0 失败）；tsc 0；未发版。

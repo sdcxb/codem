@@ -1,5 +1,5 @@
 /**
- * @codem/ste-zh provider：服务面必须真的读取设置并返回规则段。
+ * @codem/ste-zh provider：服务面必须真的读取三态设置并返回规则段/校验。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -19,7 +19,7 @@ describe("STE-ZH provider", () => {
     store = {};
   });
 
-  it("STE-P1: apply 提供 steZh 服务，启停与规则段一致", () => {
+  it("STE-P1: apply 提供 steZh 服务，模式/规则/校验一致", () => {
     let service: any = null;
     const dispose = steZhProvider({
       provide: (name: string, value: any) => {
@@ -29,11 +29,12 @@ describe("STE-ZH provider", () => {
       },
     } as any);
     expect(service).toBeTruthy();
-    expect(service.enabled()).toBe(false);
+    expect(service.mode()).toBe("off");
     expect(service.section()).toBe("");
-    service.setEnabled(true);
-    expect(service.enabled()).toBe(true);
-    expect(service.section()).toContain("汇报规范（STE-ZH");
+    service.setMode("smart");
+    expect(service.mode()).toBe("smart");
+    expect(service.section({ userMessage: "改一下颜色" })).toContain("STE-ZH 精简");
+    expect(service.validate("已验证", [])).toHaveLength(1);
     if (typeof dispose === "function") dispose();
   });
 });

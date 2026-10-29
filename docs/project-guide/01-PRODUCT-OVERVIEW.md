@@ -116,14 +116,14 @@
 | 指标 | 值（2026-10-26） |
 |---|---|
 | 版本 | 1.16.332（2026-10-29） |
-| 前端 | `src/` 约 44.4 万行；`core/` 788 文件 / 16.5 万行；`components/` 197 文件 / 5.6 万行；`test/` 755 文件 / 16.3 万行 |
+| 前端 | `src/` 约 44.4 万行；`core/` 789 文件 / 16.5 万行；`components/` 197 文件 / 5.6 万行；`test/` 755 文件 / 16.3 万行 |
 | Rust | `src-tauri/src` 28 文件 / 约 2.2 万行；`codem-db` 11 文件 / 约 1 万行 |
 | 核心单文件 | `App.tsx` 6251 行；`agentic-loop.ts` 6810 行；`lib.rs` 7784 行；`styles.css` 21547 行 |
 | 模块 | `core/` 60 个子域；`components/` 152 顶层组件 + 6 子目录；插件 3 个（monopoly-game / library-ops / shell-ops） |
 | 数据 | 39 张实表 + `session_fts` + `storage_audit`；43 索引；29 条迁移 ALTER |
 | 命令 | 118 个 `#[tauri::command]` 注解 / 117 个注册命令（`get_process_token_info` 平台双写） |
 | 插件装配 | `config/codem.base.yml` 171 条 + desktop 覆盖层 |
-| 测试 | 788 文件 / 8795 用例（8778 通过、17 跳过、0 失败） |
+| 测试 | 789 文件 / 8798 用例（8781 通过、17 跳过、0 失败） |
 | 工具链 | Node 24.19 / npm 11.17 / rustc 1.97.1 |
 
 **版本历程（只列结构性节点）**

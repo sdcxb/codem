@@ -36,6 +36,7 @@ import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
 import { ErrorCard } from "./ErrorCard";
 import { ToolCallGroup } from "./ToolCallGroup";
+import { SteZhReportNotice } from "./SteZhReportNotice";
 import type { ToolCallCardProps } from "./ToolCallCard";
 import { StatsLine } from "./StatsLine";
 import { TurnStatus } from "./TurnStatus";
@@ -1069,6 +1070,11 @@ const opLabel = tc.tool === 'create_note'
               </div>
             )}
           </div>
+        )}
+
+        {/* @codem/ste-zh：回复后只提示，不改写正文 */}
+        {!isUser && !isStreaming && message.content && (
+          <SteZhReportNotice text={message.content} toolCalls={message.toolCalls} />
         )}
 
         {/* #2: Floating toolbar — shown on hover, not during streaming */}

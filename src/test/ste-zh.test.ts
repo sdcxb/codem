@@ -1,9 +1,5 @@
 /**
- * STE-ZH 汇报插件：设置开关与主 prompt 注入。
- *
- * 只测两条用户可见语义：
- * 1. 默认关闭，开启后才生成规则段；
- * 2. 规则段确实进入 system prompt，关闭时不进入。
+ * STE-ZH 汇报插件：三态策略、prompt 注入、假验证告警。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -18,10 +14,11 @@ vi.mock("../core/storage/settings", async () => ({
 }));
 
 import {
-  STE_ZH_SETTING,
-  isSteZhEnabled,
-  setSteZhEnabled,
+  STE_ZH_MODE_SETTING,
+  getSteZhMode,
+  setSteZhMode,
   buildSteZhPromptSection,
+  validateSteZhReport,
 } from "../core/ste-zh";
 import { buildSystemPrompt } from "../core/prompt/prompt";
 
@@ -33,29 +30,53 @@ describe("STE-ZH 汇报插件", () => {
   });
 
   it("STE-1: 默认关闭，不生成规则段", () => {
-    expect(isSteZhEnabled()).toBe(false);
+    expect(getSteZhMode()).toBe("off");
+    expect(getSteZhMode() !== "off").toBe(false);
     expect(buildSteZhPromptSection()).toBe("");
   });
 
-  it("STE-2: 开启后生成固定规则，包含状态/验证/证据/子智能体字段", () => {
-    setSteZhEnabled(true);
-    expect(store[STE_ZH_SETTING]).toBe(true);
-    const section = buildSteZhPromptSection();
-    expect(section).toContain("已完成");
-    expect(section).toContain("未验证");
-    expect(section).toContain("路径:行号");
-    expect(section).toContain("status");
-    expect(section).toContain("evidence");
+  it("STE-2: 智能模式按回合结构选规则", () => {
+    setSteZhMode("smart");
+    expect(store[STE_ZH_MODE_SETTING]).toBe("smart");
+    expect(buildSteZhPromptSection({ userMessage: "改一下按钮颜色" })).toContain("STE-ZH 精简");
+    expect(buildSteZhPromptSection({ userMessage: "请向我汇报本次修复的验证结果" })).toContain("STE-ZH，启用中");
+    expect(buildSteZhPromptSection({ isSubagent: true })).toContain("子智能体汇报字段");
+    expect(buildSteZhPromptSection({ userMessage: "简短汇报一下" })).toContain("STE-ZH 精简");
   });
 
-  it("STE-3: 规则段进入 system prompt；关闭后不进入", () => {
+  it("STE-3: 全量模式始终完整规则，关闭则不注入", () => {
+    setSteZhMode("full");
+    expect(buildSteZhPromptSection({ userMessage: "改一下按钮颜色" })).toContain("STE-ZH，启用中");
+    setSteZhMode("off");
+    expect(buildSteZhPromptSection({ userMessage: "请汇报" })).toBe("");
+  });
+
+  it("STE-4: 规则段进入 system prompt；关闭后不进入", () => {
     const base = buildSystemPrompt({ agent, steZhSection: "" });
     expect(base).not.toContain("汇报规范（STE-ZH");
-    setSteZhEnabled(true);
+    setSteZhMode("full");
     const withRule = buildSystemPrompt({ agent, steZhSection: buildSteZhPromptSection() });
     expect(withRule).toContain("汇报规范（STE-ZH");
-    setSteZhEnabled(false);
+    setSteZhMode("off");
     const off = buildSystemPrompt({ agent, steZhSection: buildSteZhPromptSection() });
     expect(off).not.toContain("汇报规范（STE-ZH");
+  });
+
+  it("STE-5: 声称已验证但没有测试/构建命令 → 告警；有命令 → 不告警", () => {
+    setSteZhMode("smart");
+    const noCmd = validateSteZhReport("已完成，已验证。", []);
+    expect(noCmd).toHaveLength(1);
+    expect(noCmd[0].code).toBe("verified-without-command");
+
+    const withCmd = validateSteZhReport("已完成，已验证。", [
+      { tool: "bash", args: { command: "npm test auth" } },
+    ]);
+    expect(withCmd).toHaveLength(0);
+
+    // 普通工具（读文件）不能证明测试通过
+    const readOnly = validateSteZhReport("已完成，已验证。", [
+      { tool: "read", args: { path: "a.ts" } },
+    ]);
+    expect(readOnly).toHaveLength(1);
   });
 });

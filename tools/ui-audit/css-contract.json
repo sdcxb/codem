@@ -18176,6 +18176,18 @@
     "font-size": "var(--fs-xs)",
     "margin-left": "auto"
   },
+  "ste-zh-report-warning": {
+    "align-items": "flex-start",
+    "background": "var(--warning-surface)",
+    "border": "1px solid var(--warning-border)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--warning)",
+    "display": "flex",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-2)",
+    "margin": "var(--space-2) var(--space-4)",
+    "padding": "var(--space-2) var(--space-3)"
+  },
   "step-progress-container": {
     "display": "flex",
     "justify-content": "center",

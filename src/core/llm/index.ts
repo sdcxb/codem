@@ -41,7 +41,7 @@ import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
 import { buildCoordinatorContext } from "../project/coordinator/context";
 import { buildPersonaPromptSection } from "../persona/persona";
-import { buildSteZhPromptSection } from "../ste-zh";
+import { buildSteZhPromptSection, type SteZhTurnContext } from "../ste-zh";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
@@ -965,7 +965,7 @@ function readContextCompactionThreshold(): number {
    * AGENTS.md files (global → project → current directory).
    * Use this when cwd is available for layered project instructions.
    */
-  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode, knowledgeContext?: SystemPromptConfig["knowledgeContext"], userSelectedSkills?: string[]): Promise<string> {
+  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode, knowledgeContext?: SystemPromptConfig["knowledgeContext"], userSelectedSkills?: string[], steZhContext?: SteZhTurnContext): Promise<string> {
     const agent = this.agents.get(agentId || this.config.defaultAgent || "build");
     if (!agent) return "";
 
@@ -1111,8 +1111,8 @@ function readContextCompactionThreshold(): number {
       personaSection: this.isPersonaAvailable()
         ? await buildPersonaPromptSection()
         : "",
-      // @codem/ste-zh：插件服务在场且用户开启时才注入；只影响汇报文字。
-      steZhSection: this.isSteZhAvailable() ? buildSteZhPromptSection() : "",
+      // @codem/ste-zh：插件服务在场且用户开启时才注入；按回合结构选 minimal/full/subagent。
+      steZhSection: this.isSteZhAvailable() ? buildSteZhPromptSection(steZhContext) : "",
     };
 
     const basePrompt = buildSystemPrompt(config);
@@ -1355,6 +1355,12 @@ Deliver your result with the report tool before you finish: call it once with a 
 The agent that started you shares your workspace but does not automatically receive your transcript, tool output, or reasoning, so a closing remark such as "done" leaves it nothing it can use.
 Report earlier as well whenever a partial finding changes what that agent should do next; reporting never ends your turn.`
     );
+
+    // @codem/ste-zh：子智能体汇报字段（插件在场且开启时才注入）
+    if (this.isSteZhAvailable()) {
+      const steZhSection = buildSteZhPromptSection({ isSubagent: true });
+      if (steZhSection) sections.push(steZhSection);
+    }
 
     return sections.join("\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
   }
@@ -1638,7 +1644,10 @@ Report earlier as well whenever a partial finding changes what that agent should
       yield { type: "knowledge_sources", sources: autoRetrievedSources };
     }
 
-    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills);
+    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills, {
+      userMessage: message,
+      isSubagent: agentId !== undefined && agentId !== "main",
+    });
 
     const startTime = Date.now();
     yield* this.runLoopAndRecordUsage({
