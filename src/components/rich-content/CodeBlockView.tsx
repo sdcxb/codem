@@ -6,11 +6,14 @@
  */
 
 import { memo, useState, useCallback, useEffect } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
+import { ensurePrismLanguagesRegistered, resolvePrismLanguage } from "./prism-languages";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ContentFrame } from "./ContentFrame";
 import { getSetting } from "../../core/storage/settings";
 import { ActionIcons } from "../../core/icons/icon-map";
+
+ensurePrismLanguagesRegistered();
 
 interface CodeBlockViewProps {
   code: string;
@@ -28,6 +31,12 @@ export const CodeBlockView = memo(function CodeBlockView({
   collapsible = true,
 }: CodeBlockViewProps) {
   const [fullscreen, setFullscreen] = useState(false);
+  /**
+   * 第 233 轮审计：`PrismLight` 只认**已注册**的语言名。
+   * 别名（`ts` / `sh` / `yml` …）与未注册语言都归一到"已注册 or undefined"；
+   * undefined ⇒ 渲染纯文本（`COLD-4` 钉着"不抛、要能显示"）。
+   */
+  const resolvedLanguage = resolvePrismLanguage(language);
   const CloseIcon = ActionIcons.close;
   const theme = typeof getSetting === "function" ? getSetting("codem-theme") : null;
   const [dataTheme, setDataTheme] = useState<string>(() =>
@@ -80,7 +89,7 @@ export const CodeBlockView = memo(function CodeBlockView({
           </div>
           <div className="content-fullscreen-body">
             <SyntaxHighlighter
-              language={language || "text"}
+              language={resolvedLanguage ?? "text"}
               style={isDark ? oneDark : oneLight}
               customStyle={{
                 margin: 0,
@@ -112,7 +121,7 @@ export const CodeBlockView = memo(function CodeBlockView({
       className={`code-block-view ${streaming ? "streaming" : ""}`}
     >
       <SyntaxHighlighter
-        language={language || "text"}
+        language={resolvedLanguage ?? "text"}
         style={isDark ? oneDark : oneLight}
         customStyle={{
           margin: 0,

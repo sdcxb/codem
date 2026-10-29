@@ -1,7 +1,7 @@
 // ========== Settings Types ==========
 import { reportPersistFailure } from "../storage/persist-failure";
 import { getSettingJSON } from "../storage/settings";
-import { CREDENTIAL_VALUE_SHAPES } from "../utils/credential-shapes";
+import { CREDENTIAL_VALUE_SHAPES, CREDENTIAL_REDACT_RES } from "../utils/credential-shapes";
 
 export type SettingsSource =
   | "cli"           // Command line arguments (highest priority)
@@ -189,7 +189,7 @@ export const POLICY_SETTING_KEY = "codem-policy";
  * 形状的值出现在 reasoning / tool 结果 / 事件载荷里）；只看值形状会漏掉"形状不像但确实是密钥"
  * 的自定义 provider（比如自建网关的短 token）。
  */
-export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
+export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?keys?|apikeys?|tokens?|secrets?|passwords?|passwds?|authorizations?|auth[-_]?tokens?|cookies?|set[-_]?cookie|session[-_]?ids?)$/i;
 /**
  * ★★ 第 49 波修正（真机**误报** ✓，用户实报 ✓）→ ★★ 第 188 波 R5 收口：
  *
@@ -231,30 +231,41 @@ export const CREDENTIAL_SHAPE_LABELS: string[] = CREDENTIAL_VALUE_SHAPES.map((sh
 
 export function redactCredentialShapes<T>(value: T): { value: T; redacted: number } {
   let redacted = 0;
-  const walk = (node: unknown, keyName: string | null): unknown => {
+  /**
+   * `underCredentialKey`???**????**????`apiKeys` / `tokens` / `cookies` ???
+   * ???**??**?????????
+   *
+   * ? 233 ?????????????????? ?? ?? `{ tokens: { primary: "..." } }`
+   * ?????????????????????`primary` ??????
+   * ????????/??????????????????????
+   */
+  const walk = (node: unknown, keyName: string | null, underCredentialKey: boolean): unknown => {
+    const isCredentialKey = underCredentialKey || Boolean(keyName && CREDENTIAL_KEY_RE.test(keyName));
     if (typeof node === "string") {
       let text = node;
-      for (const re of CREDENTIAL_VALUE_RES) {
+      // ? 233 ??????**???**??????????? / password= / Bearer??
+      // ??????redact.ts??????? ?? ???????????????????
+      for (const re of CREDENTIAL_REDACT_RES) {
         text = text.replace(re, () => {
           redacted += 1;
           return "<redacted:credential-shape>";
         });
       }
-      if (keyName && CREDENTIAL_KEY_RE.test(keyName) && node.trim().length > 0 && text === node) {
+      if (isCredentialKey && node.trim().length > 0 && text === node) {
         redacted += 1;
         return "<redacted:credential-field>";
       }
       return text;
     }
-    if (Array.isArray(node)) return node.map((item) => walk(item, keyName));
+    if (Array.isArray(node)) return node.map((item) => walk(item, keyName, isCredentialKey));
     if (node && typeof node === "object") {
       const next: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(node as Record<string, unknown>)) next[k] = walk(v, k);
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) next[k] = walk(v, k, isCredentialKey);
       return next;
     }
     return node;
   };
-  const value2 = walk(value, null) as T;
+  const value2 = walk(value, null, false) as T;
   return { value: value2, redacted };
 }
 

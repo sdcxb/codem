@@ -36,6 +36,17 @@ async function getCordisContext(): Promise<Context> {
   console.log('[Cordis] getCordisContext started');
 
   _codemCtxPromise = (async () => {
+  /*
+   * ★ 第 233 轮审计（P1）：**先等存储端口就绪，再构造引擎**。
+   *
+   * 原来这两条 effect 并行起跑：引擎构造 → `getMemoryService()` → **同步** load()，
+   * 而端口在另一条 effect 里 `await port.start()` 之后才注册 ⇒ 每次启动都会
+   * "记忆先读、端口后到"，打出一条 advisory + 把迁移推迟，并且让写入在窗口内被拒。
+   * `ensureStoragePortRegistered()` 是单飞承诺：这里等它，保证第一次 load() 看得见端口
+   * （或看得见一个确定的失败）。判据见 `memory-boot-order.test.ts`。
+   */
+  const { ensureStoragePortRegistered } = await import("./core/storage/bootstrap");
+  await ensureStoragePortRegistered().catch(() => undefined);
   const ctx = new Context();
   console.log('[Cordis] Context created');
 
@@ -248,17 +259,97 @@ import { readRendererCrashRecord, clearRendererCrashRecord } from "./components/
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { BootSplash } from "./components/BootSplash";
+import { withSuspense } from "./components/withSuspense";
 import { WorkspaceBackdrop } from "./components/WorkspaceBackdrop";
 import { ToastContainer } from "./components/ToastNotification";
 import { ChatPanel } from "./components/ChatPanel";
 import { FileLinkContextMenu } from "./components/FileLinkContextMenu";
 import { Sidebar } from "./components/Sidebar";
-import { TerminalPanel } from "./components/TerminalPanel";
-import { FileExplorer } from "./components/FileExplorer";
-import { FileEditor } from "./components/FileEditor";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { ProjectManager } from "./components/ProjectManager";
-import { ConfigEditor } from "./components/ConfigEditor";
+/**
+ * ★ 第 233 轮审计（冷启动）：**这几个面板按需加载**。
+ *
+ * 它们都是"用户点开才出现"的模态面板，却原来是静态 import ⇒ 全部进主 chunk。
+ * 光 `SettingsPanel` 就有 **4129 行 / 199 KB**（内含全部管理器面板），
+ * 首帧根本用不到它，却要先下载、解析、执行。
+ *
+ * 用 `lazy()` 之后它们各自成 chunk，首帧只付主包的钱；`SlotBridge` 的 `fallback`
+ * 接受任意组件类型，所以传 lazy 组件即可（下面有一个统一的 `<Suspense>` 边界）。
+ */
+const SettingsPanelLazy = withSuspense(
+  lazy(() => import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel }))),
+);
+const ProjectManagerLazy = withSuspense(
+  lazy(() => import("./components/ProjectManager").then((m) => ({ default: m.ProjectManager }))),
+);
+const ConfigEditorLazy = withSuspense(
+  lazy(() => import("./components/ConfigEditor").then((m) => ({ default: m.ConfigEditor }))),
+);
+const McpManagerLazy = withSuspense(
+  lazy(() => import("./components/McpManager").then((m) => ({ default: m.McpManager }))),
+);
+const SkillManagerLazy = withSuspense(
+  lazy(() => import("./components/SkillManager").then((m) => ({ default: m.SkillManager }))),
+);
+const MemoryManagerLazy = withSuspense(
+  lazy(() => import("./components/MemoryManager").then((m) => ({ default: m.MemoryManager }))),
+);
+const SessionRecoveryLazy = withSuspense(
+  lazy(() => import("./components/SessionRecovery").then((m) => ({ default: m.SessionRecovery }))),
+);
+const UsageStatsLazy = withSuspense(
+  lazy(() => import("./components/UsageStats").then((m) => ({ default: m.UsageStats }))),
+);
+const TaskCenterLazy = withSuspense(
+  lazy(() => import("./components/TaskCenter").then((m) => ({ default: m.TaskCenter }))),
+);
+const AgentManagerLazy = withSuspense(
+  lazy(() => import("./components/AgentManager").then((m) => ({ default: m.AgentManager }))),
+);
+const NotebookManagerLazy = withSuspense(
+  lazy(() => import("./components/NotebookManager").then((m) => ({ default: m.NotebookManager }))),
+);
+const NotebookWorkspaceLazy = withSuspense(
+  lazy(() => import("./components/NotebookWorkspace").then((m) => ({ default: m.NotebookWorkspace }))),
+);
+const CicdPanelLazy = withSuspense(
+  lazy(() => import("./components/CicdPanel").then((m) => ({ default: m.CicdPanel }))),
+);
+const PerformanceDashboardLazy = withSuspense(
+  lazy(() => import("./components/PerformanceDashboard").then((m) => ({ default: m.PerformanceDashboard }))),
+);
+const JobsPanelLazy = withSuspense(
+  lazy(() => import("./components/JobsPanel").then((m) => ({ default: m.JobsPanel }))),
+);
+const TerminalPanelLazy = withSuspense(
+  lazy(() => import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel }))),
+);
+const FileExplorerLazy = withSuspense(
+  lazy(() => import("./components/FileExplorer").then((m) => ({ default: m.FileExplorer }))),
+);
+const InlineDiffReviewLazy = withSuspense(
+  lazy(() => import("./components/InlineDiffReview").then((m) => ({ default: m.InlineDiffReview }))),
+);
+const InteractiveFormDialogLazy = withSuspense(
+  lazy(() => import("./components/InteractiveFormDialog").then((m) => ({ default: m.InteractiveFormDialog }))),
+);
+const PromptChangeReviewDialogLazy = withSuspense(
+  lazy(() => import("./components/PromptChangeReviewDialog").then((m) => ({ default: m.PromptChangeReviewDialog }))),
+);
+const GitHubCloneDialogLazy = withSuspense(
+  lazy(() => import("./components/GitHubCloneDialog").then((m) => ({ default: m.GitHubCloneDialog }))),
+);
+const SearchDialogLazy = withSuspense(
+  lazy(() => import("./components/SearchDialog").then((m) => ({ default: m.SearchDialog }))),
+);
+const SourceViewerLazy = withSuspense(
+  lazy(() => import("./components/SourceViewer").then((m) => ({ default: m.SourceViewer }))),
+);
+const PluginManagerLazy = withSuspense(
+  lazy(() => import("./components/PluginManager").then((m) => ({ default: m.PluginManager }))),
+);
+const OnboardingTourLazy = withSuspense(
+  lazy(() => import("./components/OnboardingTour").then((m) => ({ default: m.OnboardingTour }))),
+);
 import { BootstrapWizard } from "./components/BootstrapWizard";
 import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
@@ -270,10 +361,6 @@ import { Drawer } from "./components/Drawer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NeedsYouPanel } from "./components/NeedsYouPanel";
 import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
-import { McpManager } from "./components/McpManager";
-import { PluginManager } from "./components/PluginManager";
-import { SkillManager } from "./components/SkillManager";
-import { MemoryManager } from "./components/MemoryManager";
 import { projectIdFromCwd, safeMemoryText } from "./core/memory/memory";
 // 第 201 波：免费模型插件（dsh-our-free-model standalone）—— 独立本地服务 + 模型清单优先
 import { freeModelPlugin } from "./core/free-model-plugin/service";
@@ -281,27 +368,14 @@ import { freeModelPlugin } from "./core/free-model-plugin/service";
 import { isFreeModelId, MANAGED_FREE_MODEL_PROVIDER_ID } from "./core/free-model-plugin/model-index";
 // S4 / O-45：记忆面板与外壳角标的作用域**唯一实现**（两侧不可能读到不同的 ctx）
 import { memoryPanelScope } from "./core/memory/panel-scope";
-import { SessionRecovery } from "./components/SessionRecovery";
-import { UsageStats } from "./components/UsageStats";
-import { TaskCenter, type TaskCenterTab } from "./components/TaskCenter";
-import { AgentManager } from "./components/AgentManager";
-import { DiffViewer } from "./components/DiffViewer";
-import { InlineDiffReview } from "./components/InlineDiffReview";
-import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
-import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
-import { NotebookManager } from "./components/NotebookManager";
-import { NotebookWorkspace } from "./components/NotebookWorkspace";
-import { SourceViewer } from "./components/SourceViewer";
-import { setActiveSourceFilter as setNotebookSourceFilter, createNote, listSources } from "./core/knowledge";
-import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
-import { CicdPanel } from "./components/CicdPanel";
-import { PerformanceDashboard } from "./components/PerformanceDashboard";
-import { JobsPanel, type JobsPanelTask } from "./components/JobsPanel";
+import type { TaskCenterTab } from "./components/TaskCenter";
+import type { JobsPanelTask } from "./components/JobsPanel";
+import { setActiveSourceFilter as setNotebookSourceFilter } from "./core/knowledge/retriever";
+import { createNote, listSources } from "./core/knowledge/storage";
 /* 第 233 波：页签栏隐藏后，成员/门控/入口登记的唯一来源（该组件已删除，不再渲染入口栏） */
 import { BOTTOM_PANEL_GATE_FLAGS, type BottomPanelTabId } from "./core/ui/bottom-tab-entries";
 import { PlanApprovalCard } from "./components/PlanApprovalCard";
 import { setPlanApprovalCallback, clearPlanApprovalCallback, type PlanApprovalOutcome } from "./core/llm/tools/exit-plan-mode";
-import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import { loadInstalledSkills } from "./core/skill/installer";
@@ -347,7 +421,6 @@ import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
 import { DreamLayout } from "./components/DreamLayout";
-import { OnboardingTour } from "./components/OnboardingTour";
 // 第 47 轮补：写盘/操作失败的常驻提示（原来那条通道只在流式期间渲染）
 import { PersistFailureBanner } from "./components/PersistFailureBanner";
 // 第 202 波：免费模型插件缺 Node 时的「现在安装 / 以后再说」选择框
@@ -1919,13 +1992,13 @@ flushStreamBuffer(); // flush all on unmount
     (async () => {
       try {
         performance.mark('boot:start');
-        const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb } = await import("./core/storage/bootstrap");
+        const { ensureStoragePortRegistered, importSettingsFromLegacyDb, migrateFromLegacyDb } = await import("./core/storage/bootstrap");
 
         // ① 注册端口（唯一的数据源）
-        let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
+        let boot: Awaited<ReturnType<typeof ensureStoragePortRegistered>> = { kind: "skipped", reason: "未尝试" };
         try {
           performance.mark('boot:port-start');
-          boot = await registerRustStoragePort();
+          boot = await ensureStoragePortRegistered();
           performance.measure('boot:registerPort','boot:port-start');
         } catch (e) {
           // 注册函数内部已把失败如实上报 + 广播"存储不可用"；这里只补一行诊断
@@ -5198,7 +5271,7 @@ engineRef.current?.abort();
   const renderBottomPanelBody = () => (
     <>
       {perfEnabled && bottomTab === "perf" && (
-        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} showDegraded />
+        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboardLazy} onClose={() => setBottomTab("chat")} showDegraded />
       )}
       {workspacePanelEnabled && bottomTab === "files" && (
         /*
@@ -5209,7 +5282,7 @@ engineRef.current?.abort();
          */
         <SlotBridge
           name="app.file-explorer"
-          fallback={FileExplorer}
+          fallback={FileExplorerLazy}
           cwd={currentProject?.path || appRoot}
           onFileClick={(filePath: string) => {
             // 与侧边栏文件树同一条链路：打开文件编辑器（App 里有 codem:open-file 的监听）
@@ -5224,7 +5297,7 @@ engineRef.current?.abort();
          */
         <SlotBridge
           name="app.jobs"
-          fallback={JobsPanel}
+          fallback={JobsPanelLazy}
           onClose={() => setBottomTab("chat")}
           tasks={subagentTasks.map(
             (task): JobsPanelTask => ({
@@ -5241,7 +5314,7 @@ engineRef.current?.abort();
       )}
       {/* perf / cicd 两个槽位**有**贡献者（ui-misc / ui-panels），关掉那个插件时横幅是真话，保持原样 */}
       {cicdEnabled && bottomTab === "cicd" && (
-        <SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")} showDegraded />
+        <SlotBridge name="app.cicd-panel" fallback={CicdPanelLazy} onClose={() => setBottomTab("chat")} showDegraded />
       )}
     </>
   );
@@ -5396,7 +5469,7 @@ notebookId={activeNotebookId || undefined}
     </button>
   </div>
   <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
   </div>
 </div>
 )}
@@ -5504,7 +5577,7 @@ notebookId={activeNotebookId || undefined}
     </button>
   </div>
   <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
   </div>
 </div>
 )}
@@ -5647,7 +5720,7 @@ notebookId={activeNotebookId || undefined}
     </button>
   </div>
   <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
   </div>
 </div>
 )}
@@ -5712,8 +5785,10 @@ onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
             />
           </Drawer>
 
+      {/* 第 233 轮审计：下面四个面板是 lazy 的，统一给一个 Suspense 边界（加载中不挡界面） */}
+      <Suspense fallback={null}>
 {showSettings && (
-<SlotBridge name="app.settings" fallback={SettingsPanel}
+<SlotBridge name="app.settings" fallback={SettingsPanelLazy}
 onClose={() => { setSettingsInitialTab("general"); setShowSettings(false); }}
 initialTab={settingsInitialTab}
 fullPage
@@ -5722,9 +5797,9 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
           setShowOnboardingReplay={(v) => { setShowOnboardingReplay(v); setShowSettings(false); }}
         />
       )}
-      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManager} onClose={() => setShowProjectManager(false)}  />}
+      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManagerLazy} onClose={() => setShowProjectManager(false)}  />}
       {showConfigEditor && currentProject && (
-        <SlotBridge name="app.config-editor" fallback={ConfigEditor}
+        <SlotBridge name="app.config-editor" fallback={ConfigEditorLazy}
           appRoot={appRoot}
           projectPath={currentProject.path}
           onClose={() => setShowConfigEditor(false)}
@@ -5740,10 +5815,11 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
             aria-label="MCP 管理"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)}  />
+            <SlotBridge name="app.mcp-manager" fallback={McpManagerLazy} onClose={() => setShowMcpManager(false)}  />
           </div>
         </div>
       )}
+      </Suspense>
 
       {showPluginManager && (
         <div className="modal-overlay" onClick={() => setShowPluginManager(false)}>
@@ -5754,7 +5830,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
             aria-label="插件管理"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)}  />
+            <SlotBridge name="app.plugin-manager" fallback={PluginManagerLazy} onClose={() => setShowPluginManager(false)}  />
           </div>
         </div>
       )}
@@ -5768,7 +5844,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
             aria-label="技能管理"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)}  />
+            <SlotBridge name="app.skill-manager" fallback={SkillManagerLazy} onClose={() => setShowSkillManager(false)}  />
           </div>
         </div>
       )}
@@ -5789,7 +5865,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
             */}
             <SlotBridge
               name="app.memory-manager"
-              fallback={MemoryManager}
+              fallback={MemoryManagerLazy}
               onClose={() => setShowMemoryManager(false)}
               sessionId={memoryScope.sessionId}
               projectId={memoryScope.projectId}
@@ -5799,7 +5875,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       )}
 
       {showGitHubClone && (
-        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)}  />
+        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialogLazy} onClose={() => setShowGitHubClone(false)}  />
       )}
 
       {/* P0-3: Plan Approval Card — shown when model calls exit_plan_mode */}
@@ -5838,7 +5914,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       )}
 
       {showSearchDialog && (
-        <SlotBridge name="app.search-dialog" fallback={SearchDialog}
+        <SlotBridge name="app.search-dialog" fallback={SearchDialogLazy}
           onClose={() => setShowSearchDialog(false)}
           onSwitchProject={(projectId) => { useProjectStore.getState().openProject(projectId); setShowSearchDialog(false); }}
           onNewSession={() => { if (currentProject) createSession(); setShowSearchDialog(false); }}
@@ -5856,7 +5932,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
   style={{ maxWidth: '900px', height: '80vh', maxHeight: 'calc(100vh - 36px)' }}
   onClick={(e) => e.stopPropagation()}
 >
-<SlotBridge name="app.notebook-manager" fallback={NotebookManager}
+<SlotBridge name="app.notebook-manager" fallback={NotebookManagerLazy}
 onClose={() => setShowNotebookManager(false)}
 onOpenWorkspace={(notebookId, notebookName) => {
 setNotebookWorkspaceId(notebookId);
@@ -5875,7 +5951,7 @@ setShowNotebookManager(false);
 
       {notebookWorkspaceId && (
         <div className="nb-workspace-overlay">
-          <SlotBridge name="app.notebook-workspace" fallback={NotebookWorkspace}
+          <SlotBridge name="app.notebook-workspace" fallback={NotebookWorkspaceLazy}
             notebookId={notebookWorkspaceId}
             notebookName={notebookWorkspaceName}
             onBack={() => { setNotebookWorkspaceId(null); setShowNotebookManager(true); }}
@@ -5893,7 +5969,7 @@ setShowNotebookManager(false);
 
 {/* B4: Citation viewer — opens SourceViewer when user clicks a source citation in chat */}
 {citationViewer && (
-<SlotBridge name="app.source-viewer" fallback={SourceViewer}
+<SlotBridge name="app.source-viewer" fallback={SourceViewerLazy}
 sourceId={citationViewer.sourceId}
 notebookId={citationViewer.notebookId}
 highlightChunkIndex={citationViewer.chunkIndex}
@@ -5910,7 +5986,7 @@ onClose={() => setCitationViewer(null)}
             aria-label="会话恢复"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)}  />
+            <SlotBridge name="app.session-recovery" fallback={SessionRecoveryLazy} onClose={() => setShowSessionRecovery(false)}  />
           </div>
         </div>
       )}
@@ -5924,13 +6000,13 @@ onClose={() => setCitationViewer(null)}
             aria-label="用量统计"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)}  />
+            <SlotBridge name="app.usage-stats" fallback={UsageStatsLazy} onClose={() => setShowUsageStats(false)}  />
           </div>
         </div>
       )}
 
       {showTaskCenter && (
-        <SlotBridge name="app.task-center" fallback={TaskCenter}
+        <SlotBridge name="app.task-center" fallback={TaskCenterLazy}
           onClose={() => setShowTaskCenter(false)}
           initialTab={taskCenterTab}
           subagentTasks={subagentTasks}
@@ -5957,7 +6033,7 @@ onClose={() => setCitationViewer(null)}
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 900, maxHeight: "85vh" }}
           >
-            <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)}  />
+            <SlotBridge name="app.agent-manager" fallback={AgentManagerLazy} onClose={() => setShowAgentManager(false)}  />
           </div>
         </div>
       )}
@@ -6140,7 +6216,7 @@ onClose={() => setCitationViewer(null)}
       {/* S4: Inline Diff Review for file overwrites (replaces modal popup) */}
       {pendingWriteConfirm && (
         <div className="inline-diff-container">
-          <SlotBridge name="app.inline-diff-review" fallback={InlineDiffReview}
+          <SlotBridge name="app.inline-diff-review" fallback={InlineDiffReviewLazy}
             filePath={pendingWriteConfirm.filePath}
             before={pendingWriteConfirm.existingContent}
             after={pendingWriteConfirm.newContent}
@@ -6169,7 +6245,7 @@ onClose={() => setCitationViewer(null)}
 
       {/* D3: Interactive Form Dialog */}
       {pendingInteractiveForm && (
-        <SlotBridge name="app.interactive-form-dialog" fallback={InteractiveFormDialog}
+        <SlotBridge name="app.interactive-form-dialog" fallback={InteractiveFormDialogLazy}
           questions={pendingInteractiveForm.questions}
           onSubmit={(answers: Record<string, any>) => {
             pendingInteractiveForm.resolve(answers);
@@ -6264,7 +6340,7 @@ onClose={() => setCitationViewer(null)}
 
       {/* D2: Prompt Change Review Dialog */}
       {pendingPromptChanges && (
-        <SlotBridge name="app.prompt-change-review-dialog" fallback={PromptChangeReviewDialog}
+        <SlotBridge name="app.prompt-change-review-dialog" fallback={PromptChangeReviewDialogLazy}
           changes={pendingPromptChanges.changes}
           onApply={(appliedChanges: any[]) => {
             // Here you would apply the changes to the actual system prompt
@@ -6300,7 +6376,7 @@ onClose={() => setCitationViewer(null)}
 
       {/* P2: Onboarding tour for first-time users or replay from Help */}
       {(showOnboarding || showOnboardingReplay) && (
-        <SlotBridge name="app.onboarding-tour" fallback={OnboardingTour}
+        <SlotBridge name="app.onboarding-tour" fallback={OnboardingTourLazy}
           steps={[
             { target: ".chat-panel", title: lang === "zh" ? "对话面板" : "Chat Panel", content: lang === "zh" ? "在这里与 AI 进行对话交互" : "Chat with AI here", position: "right" },
             { target: ".sidebar-toggle", title: lang === "zh" ? "侧边栏" : "Sidebar", content: lang === "zh" ? "管理会话历史和项目" : "Manage sessions and projects", position: "right" },

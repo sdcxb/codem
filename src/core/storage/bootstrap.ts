@@ -74,6 +74,56 @@ export type StorageBootResult =  | {
   | { kind: "failed"; error: unknown };
 
 /**
+ * **存储端口就绪的单飞承诺**（第 233 轮审计 · P1 启动顺序）。
+ *
+ * ## 缺陷形态（每次启动都发生，不是偶发）
+ *
+ * `App.tsx` 里两条 effect 并行起跑：
+ * - 「Cordis 初始化」→ `getLLMEngine()` → `getMemoryService()` → **同步** `load()`；
+ * - 「存储引导」→ `registerRustStoragePort()` → `await port.start()`（开库 + 预热，异步）。
+ *
+ * 于是记忆**必然**先读、端口**必然**后到，每次启动都会打出：
+ *
+ * ```
+ * [Advisory] memory.load：记忆尚未就绪（启动期暂时状态…）：没有可用的存储端口
+ * [memory] 迁移推迟（不写标记、不覆盖）：没有可用的存储端口
+ * ```
+ *
+ * 后果有三条，都不是"看起来吵"这么简单：
+ * 1. **fail-closed 窗口**：`loadState.ok=false` 期间所有记忆写入被拒（`save()` 只兜一次重试）；
+ * 2. **迁移被推迟**：这段时间打开记忆面板会看到"为什么没迁移"的解释，而它只是启动顺序问题；
+ * 3. **真故障被噪声淹没**：真正的"没有存储"与这个启动竞态**输出一模一样**，排查时无法区分。
+ *
+ * ## 修法
+ *
+ * 把"端口就绪"变成**一个可以被 await 的事实**：`ensureStoragePortRegistered()` 单飞缓存
+ * 同一个注册承诺；`getCordisContext()` 先 await 它、再构造引擎 ⇒ 记忆的第一次 `load()`
+ * 一定看得见端口（或看见一个**确定的**失败）。
+ *
+ * 幂等：重复调用返回同一个承诺；注册失败也缓存结果（不反复重试开库 —— 那是启动期的抖动放大器）。
+ */
+let storagePortRegistration: Promise<StorageBootResult> | null = null;
+
+/**
+ * @param transport 仅判据/测试使用（注入假的 IPC）；生产调用不传，走真实 `invoke`。
+ *   单飞语义：**第一次**调用的 transport 生效，后续调用复用同一个承诺。
+ */
+export function ensureStoragePortRegistered(transport?: StorageTransport): Promise<StorageBootResult> {
+  if (hasStoragePort()) return Promise.resolve({ kind: "registered", engine: "rust", opened: false });
+  if (!storagePortRegistration) {
+    storagePortRegistration = registerRustStoragePort(transport).catch(
+      (error): StorageBootResult => ({ kind: "failed", error }),
+    );
+  }
+  return storagePortRegistration;
+}
+
+/** 仅判据/测试使用：清掉单飞缓存（生产代码不许调） */
+export function __resetStoragePortRegistrationForTests(): void {
+  storagePortRegistration = null;
+}
+
+/**
  * 注册 Rust 存储端口并预热配置面。
  *
  * - 已经注册过 → 幂等复用（热重载 / StrictMode 双调用不会重复预热）

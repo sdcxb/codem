@@ -7,16 +7,14 @@ import { Buffer } from "./stubs/buffer-polyfill";
 
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fortawesome/fontawesome-free/css/all.min.css";
 import App from "./App";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { applyAppearanceAttributes } from "./core/theme/appearance-modes";
+import { startWithMaterialHint } from "./core/boot/material-hint";
 import "./styles.css";
 import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
-import "./styles/notebook-workspace.css";
 import "./styles/codem-ui.css";
-import "./styles/task-center.css";
 
 // 全局错误捕获 — 静默记录到 console（App.tsx 另有 console 级监听）。
 // 之前用 alert() 弹原生对话框：任何未捕获错误都会阻塞打断用户操作，
@@ -79,21 +77,20 @@ function renderApp(): void {
 }
 
 /**
- * 启动顺序：**先探测材质、再渲染**。
- * ⚠️ 不能用顶层 `await` —— 构建目标（esbuild 的 safari 档）不支持，实测直接编译失败
- * （`Top-level await is not available in the configured target environment`）。
- * 另加一个超时兜底：万一 IPC 卡住，也不能让界面一直空着。
+ * 启动顺序：**先探测材质、再渲染** —— 但只等很短一段时间（第 233 轮审计收紧）。
+ *
+ * 旧写法 `await Promise.race([探测, sleep(400)])` 之后才渲染 ⇒ IPC 慢的时候是
+ * **最长 400ms 的白屏**，而探测只是给 `<html>` 打一个属性。现在交给
+ * `startWithMaterialHint`：`limitMs`（60ms）内回来就"属性先落地、再渲染"（不闪一帧实色），
+ * 超时就**先渲染**，探测在后台继续（晚到也能生效）。
+ *
+ * ⚠️ 不能用顶层 `await` —— 构建目标（esbuild 的 safari 档）不支持。
  */
-const MATERIAL_HINT_TIMEOUT_MS = 400;
 async function bootstrap(): Promise<void> {
   /* 外观档位（高对比/密度）先按**镜像**应用一次：用户上次选的档要立刻生效，
      不然会先按默认档渲染一帧再跳（DB 的真值由 TitleBar 在 dbReady 后再校正一次）。 */
   applyAppearanceAttributes();
-  await Promise.race([
-    applyNativeMaterialHint(),
-    new Promise((resolve) => setTimeout(resolve, MATERIAL_HINT_TIMEOUT_MS)),
-  ]);
-  renderApp();
+  await startWithMaterialHint({ probe: applyNativeMaterialHint, render: renderApp });
 }
 
 void bootstrap();

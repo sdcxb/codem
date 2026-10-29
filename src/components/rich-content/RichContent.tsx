@@ -16,11 +16,9 @@
  * 自主实现，组件命名和逻辑均独立编写。
  */
 
-import { memo, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { memo, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import { Copy, Check, Quote } from "lucide-react";
 import { CodeBlockView } from "./CodeBlockView";
 import { TableScrollView } from "./TableScrollView";
@@ -83,8 +81,6 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
   );
 });
 
-// KaTeX CSS — bundled locally to avoid CSP violations from CDN
-import "katex/dist/katex.min.css";
 
 export interface RichContentProps {
   /** Markdown 内容 */
@@ -99,6 +95,20 @@ export interface RichContentProps {
   className?: string;
   /** 文件提及解析器：基于本轮工具调用记录，将 inline code 中的文件名解析为可点击链接 */
   fileMentions?: FileMentions | null;
+}
+
+/**
+ * **仅判据使用**：记录「真的发起了数学插件动态 import」的次数。
+ *
+ * 为什么不用 `vi.mock` 工厂计数：模块工厂只在**首次** import 时执行，
+ * 多个用例之间会被缓存 —— 第二个用例就永远读到 0（本判据踩过）。
+ */
+let mathLoadCountForTests = 0;
+export function __mathLoadCountForTests(): number {
+  return mathLoadCountForTests;
+}
+export function __resetMathLoadCountForTests(): void {
+  mathLoadCountForTests = 0;
 }
 
 export const RichContent = memo(function RichContent({
@@ -305,6 +315,44 @@ export const RichContent = memo(function RichContent({
   // 长内容（提示词模板/大代码块）在流式时每次 100ms flush 若都跑完整
   // react-markdown + Prism 高亮，主线程被同步解析阻塞 → UI 卡死。
   // 纯文本 pre + streaming 光标动画保持"正在生成"的视觉反馈；
+  /**
+   * ★ 第 233 轮审计：**数学插件按需加载**。
+   *
+   * KaTeX（插件 + 库 + CSS）约 270KB，而绝大多数消息没有公式。检测到数学标记才动态
+   * import `markdown-math`，Vite 会把它切成独立 chunk。
+   *
+   * ⚠️ 这两个 hook 必须在 `if (streaming) return …` **之前**：hooks 数量不能随渲染分支变化，
+   * 否则流式→非流式切换时会触发 React 的 "Rendered fewer hooks than expected"。
+   *
+   * 代价（如实记）：带公式的消息**第一帧是原文**（`$…$` 原样显示），chunk 到了再变成公式；
+   * 只影响带公式的消息，且全应用只发生一次（之后走模块缓存）。
+   */
+  const hasMath = useMemo(
+    () =>
+      /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(^|[^\\$])\$(?=\S)(?:[^\n$])+?(?<=\S)\$/.test(
+        processedContent,
+      ),
+    [processedContent],
+  );
+  const [mathPlugins, setMathPlugins] = useState<{ remark: unknown[]; rehype: unknown[] }>({
+    remark: [],
+    rehype: [],
+  });
+  useEffect(() => {
+    if (!hasMath || mathPlugins.remark.length > 0) return;
+    let cancelled = false;
+    mathLoadCountForTests += 1;
+    void import("./markdown-math")
+      .then((m) => {
+        if (cancelled) return;
+        setMathPlugins({ remark: m.mathRemarkPlugins, rehype: m.mathRehypePlugins });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [hasMath, mathPlugins.remark.length]);
+
   // 流结束后（streaming=false）才执行完整 Markdown 渲染。
   if (streaming) {
     return (
@@ -325,8 +373,9 @@ export const RichContent = memo(function RichContent({
       data-reveal-revision={revealRevision}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        /* 数学插件来自按需加载的模块（加载完成前是空数组 ⇒ 公式先按原文显示） */
+        remarkPlugins={[remarkGfm, ...(mathPlugins.remark as never[])]}
+        rehypePlugins={mathPlugins.rehype as never[]}
         urlTransform={(url) => {
           // Allow file:// protocol for local file path links
           if (url.startsWith("file://")) return url;
