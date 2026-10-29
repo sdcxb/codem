@@ -13,7 +13,7 @@ import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { initDefaultPipeline, type ToolPipelineHost } from "./tool-pipeline";
 // 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
-import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
+import { mutatesWorkspace, needsPreCallSnapshotForCall } from "./tool-contract";
 /** 第 169 波：**还原型命令的识别**（纯函数 ✓，必须静态导入后**同步**判 ✓ —— 异步会与收尾检查竞态 ✗）。 */
 import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./completion-guards";
 /** ★ 第 46 波：回归判定（治本 ✓）—— 纯函数，判据见 `src/test/test-regression-detection.test.ts` ✓ */
@@ -42,6 +42,8 @@ import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
+import { recordVerificationCheck } from "../environment/verification-checks";
+import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { reportPersistFailure } from "../storage/persist-failure";
@@ -4830,14 +4832,39 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // 旧写法 `["write","edit","bash"]` 漏了 `multi_edit`（它同样能改文件），
         // 于是同类工具漏登记就静默失去快照保护。
         const callContract = this.tools.getContract(name);
-        if (needsPreCallSnapshot(callContract) && ctx.cwd) {
+        /**
+         * ? ? 233 ?????????????????? + shell ??????
+         *
+         * `bash` ???? `sideEffectScope: "system"`???? shell ?????
+         * ?`npm install` / `git apply` / `prettier --write`???????????
+         * ???????**???**????? before ?????????????
+         * ??????????????????? `needsPreCallSnapshotForCall`?
+         */
+        if (needsPreCallSnapshotForCall(name, callContract, args) && ctx.cwd) {
           /**
            * ★ 第 46 波：告诉追踪器"**这个工具可能改工作区**" ✓ ⇒
            * 它下次 `finalize()` 才会去发 git ✓；否则（纯读的迭代 ✓）**一次 git 都不发** ✓。
            * 取证与取舍见 `file-change-tracker.ts` 里 `finalize()` 顶部的长说明 ✓。
            */
           this.fileChangeTracker?.noteMutation();
-          await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
+          /**
+           * ★ 第 233 轮审计：**快照失败不许让工具不执行**。
+           *
+           * 快照是"改动前证据"（辅助），工具执行才是用户要的那件事。
+           * 原来这里直接 `await` —— 存储未就绪 / git 不可用（判据夹具里就是这种环境、
+           * 真机上也可能是盘满或权限）时，异常会冒到工具的 try/catch 之外，
+           * 于是那一次工具调用**根本没跑**，而 `echo y >> file` 这类命令正是
+           * "验证之后又改"守卫用来判断有没有改文件的输入（判据 `VU-2` 因此变红）。
+           */
+          try {
+            await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
+          } catch (e) {
+            reportActionFailure(
+              "loop.preCallSnapshot",
+              e,
+              "改动前快照没取到（本次照常执行工具，但这次改动可能缺少回滚证据）",
+            );
+          }
           // 逐文件快照只对「按 path 改单个文件」的工具做（write/edit 系列）
           if (
             mutatesWorkspace(callContract) &&
@@ -5324,6 +5351,22 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // errorSource:"tool" 让执行器知道这是"工具自己汇报的失败"（模型可自行纠正），
         // 不要按执行层异常处理（那会累加 consecutiveErrors 并可能提前终止整轮）。
         const verdict = classifyToolResult(name, result.output, result.isError);
+
+        /*
+         * 第 233 轮（Phase C）：把**验证类命令**的结果记一条，供右栏 Inspector 的「最近检查」。
+         * 只记 shell 工具里被判定为验证命令的那部分；不记输出（可能很大、含用户代码）。
+         * 记录本身失败不影响工具执行（recordVerificationCheck 内部吞异常）。
+         */
+        try {
+          const cmd = typeof (args as { command?: unknown })?.command === "string"
+            ? ((args as { command: string }).command)
+            : "";
+          if (cmd && isShellCommandTool(name) && isVerificationCommand(cmd) && this.currentSessionId) {
+            recordVerificationCheck(this.currentSessionId, { command: cmd, ok: verdict.status !== "error" });
+          }
+        } catch {
+          // 记录失败不影响主流程
+        }
         return {
           id: "",
           name,

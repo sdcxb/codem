@@ -13,7 +13,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { executeCommand } from "../core/file-api";
-import { mergeWorktreeToProject, removeWorktree } from "../core/environment";
+import { mergeWorktreeToProject, removeWorktree, conflictAbsolutePath } from "../core/environment";
+import { openFileDirectly } from "../utils/file-link";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
@@ -372,7 +373,24 @@ export function GitInfoPanel() {
 
       {conflictFiles.length > 0 && (
         <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div>{zh ? "冲突文件（选一边后合并，工作树会清理）" : "Conflicted files (pick a side; worktree will be removed)"}: {conflictFiles.join(", ")}</div>
+          <div>{zh ? "冲突文件（可先打开看，再选一边合并；工作树会清理）" : "Conflicted files (you can open them first, then pick a side; worktree will be removed)"}</div>
+          <div className="wt-conflict-list">
+            {conflictFiles.map((rel) => (
+              <div key={rel} className="wt-conflict-file">
+                <span className="wt-conflict-path">{rel}</span>
+                <button
+                  className="wt-conflict-open"
+                  onClick={() => {
+                    const main = currentProject?.path;
+                    if (!main) return;
+                    void openFileDirectly(conflictAbsolutePath(main, rel));
+                  }}
+                >
+                  {zh ? "打开" : "Open"}
+                </button>
+              </div>
+            ))}
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={() => handleMergeWorktree("worktree")}

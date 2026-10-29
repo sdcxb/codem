@@ -10,6 +10,7 @@ export {
   createWorktree,
   removeWorktree,
   mergeWorktreeToProject,
+  conflictAbsolutePath,
   scanWorktrees,
   decideWorktreeDirtyGuard,
   hasUncommittedChanges,

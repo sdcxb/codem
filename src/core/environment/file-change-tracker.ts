@@ -243,6 +243,24 @@ async function isGitRepo(cwd: string): Promise<boolean> {
  * **同一回合内复用"改动前快照"** ✓（第 186 波 ✓）—— 见 \`start()\` 顶部的长说明 ✓。
  * 键 = 工作区路径 ✓；\`finalize()\` 之后清掉 ✓（下一回合重新拍 ✓）。
  */
+/**
+ * **同一回合内复用"改动前快照"** ✓（第 186 波 ✓）—— 见 `start()` 顶部的长说明 ✓。
+ *
+ * 键 = **工作区 + 会话 id**（第 233 轮审计修正）。
+ *
+ * 原来键只有工作区路径 ⇒ 两处真实形态会互相污染：
+ * 1. 子代理（`spawn_subagent`）与父会话**共用同一个 cwd**，子 loop 的 `start()`
+ *    会命中父会话的缓存 ⇒ 子记录里含**父本轮的早期改动**；
+ * 2. 子代理 `finalize()` 又把它的 after 写进同一个键 ⇒ 父会话下一轮的 before 变成
+ *    "子代理改完之后"⇒ 子代理的改动从父记录里消失（反过来也一样）。
+ *
+ * 两条记录因此**重叠/互缺**，而回滚是按记录回滚的 —— 对任一条回滚都会连带撤销另一轮的产物。
+ * 带上会话 id 之后，每个会话各自持有自己的基准；代价只是"同 cwd 的并发会话各拍一次"。
+ */
+function snapshotCacheKey(workspace: string, sessionId: string): string {
+  return `${workspace}\u0000${sessionId}`;
+}
+
 const beforeSnapshotCache = new Map<string, { tree: string; snapshot: WorkingTreeSnapshot }>();
 /** 仅判据使用 ✓：真实取快照的次数 / 复用次数（**不靠计时** ✗ —— CI 会抖 ✓）。 */
 let snapshotTakenCount = 0;
@@ -274,13 +292,18 @@ export function __resetFileChangeSnapshotCache(): void {
  * 播种之后，判据就能**不依赖 git** 地验证"复用"与"失效"两条行为 ✓
  * （与 `MTC-*` 同一思路：测**行为**，不测**计时** ✓）。
  */
-export function __seedFileChangeSnapshot(workspace: string, tree: string, snapshot: WorkingTreeSnapshot): void {
-  beforeSnapshotCache.set(workspace, { tree, snapshot });
+export function __seedFileChangeSnapshot(
+  workspace: string,
+  tree: string,
+  snapshot: WorkingTreeSnapshot,
+  sessionId = "",
+): void {
+  beforeSnapshotCache.set(snapshotCacheKey(workspace, sessionId), { tree, snapshot });
 }
 
-/** **仅判据使用** ✓：某工作区当前有没有可复用的快照 ✓（用于验证 `finalize()` 的失效 ✓）。 */
-export function __hasFileChangeSnapshot(workspace: string): boolean {
-  return beforeSnapshotCache.has(workspace);
+/** **仅判据使用** ✓：某工作区（+会话）当前有没有可复用的快照 ✓（用于验证 `finalize()` 的失效 ✓）。 */
+export function __hasFileChangeSnapshot(workspace: string, sessionId = ""): boolean {
+  return beforeSnapshotCache.has(snapshotCacheKey(workspace, sessionId));
 }
 
 interface WorkingTreeSnapshot {
@@ -381,7 +404,7 @@ export class FileChangeTracker {
      *
      * 失效 ✓：`finalize()` 结束后清掉 ✓（下一回合重新拍 ✓）；工作区路径变了也重新拍 ✓（按 workspace 作键 ✓）。
      */
-    const cached = beforeSnapshotCache.get(this.workspace);
+    const cached = beforeSnapshotCache.get(snapshotCacheKey(this.workspace, this.sessionId));
     if (cached) {
       this.beforeTree = cached.tree;
       this.beforeSnapshot = cached.snapshot;
@@ -418,7 +441,7 @@ export class FileChangeTracker {
        */
       this.beforeSnapshot = await snapshotWorkingTree(this.workspace);
       /** 第 186 波：**存下来给同一回合的后续迭代复用** ✓（见 `start()` 顶部的说明 ✓）。 */
-      beforeSnapshotCache.set(this.workspace, { tree: this.beforeTree, snapshot: this.beforeSnapshot });
+      beforeSnapshotCache.set(snapshotCacheKey(this.workspace, this.sessionId), { tree: this.beforeTree, snapshot: this.beforeSnapshot });
       snapshotTakenCount++;
       this.active = true;
       return true;
@@ -486,7 +509,7 @@ export class FileChangeTracker {
        * 正确性 ✓：若用户在迭代之间手改了文件 ✓，那些改动会在**下一轮**的 diff 里出现 ✓
        * （对照的是这里的 after ✓）—— 与原来的行为一致 ✓，只是不再重复拍同一棵树 ✓。
        */
-      beforeSnapshotCache.set(this.workspace, { tree: afterTree, snapshot: afterSnapshot });
+      beforeSnapshotCache.set(snapshotCacheKey(this.workspace, this.sessionId), { tree: afterTree, snapshot: afterSnapshot });
       snapshotTakenCount++;
       const newUntracked = afterSnapshot.untracked.filter((f) => !this.beforeSnapshot!.untracked.includes(f));
 
@@ -500,11 +523,15 @@ export class FileChangeTracker {
        * `--binary` 依赖 `--stat` 的预检结果（补丁过大就跳过 ✗）⇒ 必须留在后面**单独**发 ✓。
        * 收益口径：每省一条 git 就省一个 PowerShell 进程 ✓（实测 ~240ms/条 ✗）。
        */
-      const [nameStatusRes, statRes] = await runGitBatch(this.workspace, [
+      const [nameStatusRes, statRes, numstatRes] = await runGitBatch(this.workspace, [
         ["diff", "--name-status", this.beforeTree, afterTree],
         ["diff", "--stat", this.beforeTree, afterTree],
+        // 第 233 轮（Phase C 数据前置）：每文件 +/− 逐行统计，供 Inspector 的 "path +N −M"
+        ["diff", "--numstat", this.beforeTree, afterTree],
       ]);
       const nameStatus = nameStatusRes?.stdout ?? "";
+      /** path → {additions, deletions}；二进制文件在 numstat 里是 "-\t-\tpath" ⇒ 跳过 */
+      const lineStats = this.parseNumstat(numstatRes?.stdout ?? "");
 
       const changedFiles = this.parseNameStatus(nameStatus);
       // 未跟踪的新文件不在 git diff 里（`stash create` 不含 untracked），单独补上 —— 否则
@@ -555,6 +582,18 @@ export class FileChangeTracker {
         patchTruncated = true;
       }
 
+      /*
+       * Phase C：把每文件 +/− 并进记录（字段可选 —— 老记录没有这两列时界面显示「—」，不猜 0）。
+       * 二进制 / 未跟踪文件在 numstat 里没有行 ⇒ 保持 undefined。
+       */
+      for (const f of changedFiles) {
+        const stat = lineStats.get(f.path);
+        if (stat) {
+          f.additions = stat.additions;
+          f.deletions = stat.deletions;
+        }
+      }
+
       // Build changed files JSON (with hashes if available)
       const changedFilesJson = JSON.stringify(changedFiles).slice(0, MAX_FILES_LIST_BYTES);
 
@@ -596,6 +635,28 @@ export class FileChangeTracker {
       console.warn("[FileChangeTracker] finalize failed:", e);
       return null;
     }
+  }
+
+  /**
+   * Parse `git diff --numstat` output into path → {additions, deletions}（Phase C）。
+   *
+   * 格式：`12\t3\tsrc/a.ts`；二进制文件是 `-\t-\tfoo.bin` ⇒ 跳过（界面显示「—」，不猜 0）。
+   * 重命名行形如 `0\t0\told => new`：取箭头右侧的新路径（与 name-status 的 R 分支一致）。
+   */
+  private parseNumstat(output: string): Map<string, { additions: number; deletions: number }> {
+    const stats = new Map<string, { additions: number; deletions: number }>();
+    for (const raw of output.split("\n")) {
+      if (!raw.trim()) continue;
+      const parts = raw.split("\t");
+      if (parts.length < 3) continue;
+      const add = Number.parseInt(parts[0], 10);
+      const del = Number.parseInt(parts[1], 10);
+      if (!Number.isFinite(add) || !Number.isFinite(del)) continue; // 二进制
+      const rawPath = parts.slice(2).join("\t");
+      const path = rawPath.includes(" => ") ? rawPath.split(" => ").pop()!.trim() : rawPath;
+      stats.set(path, { additions: add, deletions: del });
+    }
+    return stats;
   }
 
   /**
@@ -745,6 +806,14 @@ export class FileChangeTracker {
        * 反向打补丁自然不会删掉它们 —— 于是"回滚"之后新建文件还留在工作区。
        * 这里对记录里标记为 A（新增）的文件再确认一次：既没被 git 跟踪、又还在磁盘上 → 删掉。
        */
+      /**
+       * ★ 第 233 轮审计：清理结果必须**看 exitCode**，失败要计数并上报。
+       *
+       * 原实现 `Remove-Item … -ErrorAction SilentlyContinue` 把错误全吞掉、
+       * 调用方也不看返回码 ⇒ 文件被占用时"回滚完成"这句话是假的
+       * （工作区里还留着本轮新建的文件，而界面说已经回滚干净了）。
+       */
+      const leftoverFiles: string[] = [];
       try {
         const listed = JSON.parse(record.changed_files || "[]") as Array<{ path: string; status: string }>;
         for (const f of listed) {
@@ -755,13 +824,24 @@ export class FileChangeTracker {
             timeout_ms: GIT_TIMEOUT_MS,
           });
           if ((tracked.exitCode ?? 1) === 0) continue; // 已被跟踪：patch 会处理
-          await invoke("execute_command", {
+          const removed = await invoke("execute_command", {
             command: `powershell -Command "Remove-Item -LiteralPath ${psQuote(f.path)} -Force -ErrorAction SilentlyContinue"`,
             cwd: workspace,
           });
+          if ((removed?.exitCode ?? 0) !== 0) leftoverFiles.push(f.path);
         }
       } catch (e) {
         console.warn("[FileChangeTracker] revert: 清理新增文件失败（补丁已回滚）:", e);
+        leftoverFiles.push("<清理命令抛错>");
+      }
+      if (leftoverFiles.length > 0) {
+        reportPersistFailure(
+          "fileChange.revertResidue",
+          new Error(`${leftoverFiles.length} 个本轮新建文件没能删除`),
+          `回滚已把补丁打回去，但工作区里还留着 ${leftoverFiles.length} 个本轮新建的文件` +
+            `（${leftoverFiles.slice(0, 3).join("、")}${leftoverFiles.length > 3 ? " 等" : ""}）—— ` +
+            `它们被占用或权限不足，请手动删除后再确认工作区状态。`,
+        );
       }
 
       // 第 84 波：状态更新必须确认真的改到了行 —— 原来无脑 return true，
@@ -769,8 +849,14 @@ export class FileChangeTracker {
       // 第 269 波：接口改成按需读 + 写回，返回值的**含义一字不变**（1 = 真改到了，0 = 那行不在）。
       const statusRows = await FileChangeStorage.updateStatus(artifactId, "reverted");
       if (statusRows === 0) {
-        console.warn(
-          `[FileChangeTracker] revert: 补丁已回滚，但记录 ${artifactId} 的状态没更新（该行不存在）—— 变更历史里会一直显示为未回滚`,
+        /**
+         * 第 233 轮审计：这里原来只有 `console.warn`。渲染侧 console **不进 runtime 日志**
+         * （AGENTS §8），界面也无任何反应 ⇒ 用户看到"已回滚"，而变更历史里永远是"未回滚"。
+         */
+        reportPersistFailure(
+          "fileChange.revertStatus",
+          new Error(`turn_file_changes 里没有 id=${artifactId}（状态没写进去）`),
+          "补丁已回滚，但这条变更记录的**状态没更新**（该行不存在）—— 变更历史里会一直显示为未回滚，请刷新后确认。",
         );
       }
       return true;

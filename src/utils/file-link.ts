@@ -86,9 +86,57 @@ async function resolveFilePath(rawHref: string): Promise<string> {
   return absPath;
 }
 
+/**
+ * 在系统浏览器里打开一个外部 URL。
+ *
+ * ## 为什么单独抽出来（第 233 轮审计）
+ *
+ * 原来 `openFileLink` 里那段「外部 URL → `window.open`」写在 `resolveFilePath` **之后**，
+ * 而 `resolveFilePath` 的第一条就是「外部 URL ⇒ 返回空串」——于是 `if (!absPath) return`
+ * 先把整条链路吞掉了：**那段分支是死代码**，用户消息里贴的网址点了没任何反应。
+ *
+ * 现在外部 URL 在**路径解析之前**分流到这里。三级兜底都留着：
+ * `plugin:shell|open`（capabilities 已含 `shell:allow-open`）→ v1 全局 `__TAURI__.shell.open`
+ * → `window.open`（纯浏览器/测试环境）。
+ */
+async function openExternalUrl(url: string): Promise<void> {
+  const tauri = (window as unknown as { __TAURI__?: any }).__TAURI__;
+  const invoke = tauri?.core?.invoke;
+  if (invoke) {
+    try {
+      await invoke("plugin:shell|open", { path: url });
+      return;
+    } catch (err) {
+      console.warn("[openExternalUrl] plugin:shell|open failed:", err);
+    }
+  }
+  try {
+    if (tauri?.shell?.open) {
+      await tauri.shell.open(url);
+      return;
+    }
+  } catch (err) {
+    console.warn("[openExternalUrl] shell.open failed:", err);
+  }
+  try {
+    window.open(url, "_blank");
+  } catch (err) {
+    console.error("[openExternalUrl] All methods failed:", err);
+  }
+}
+
 /** Open a file link — call from onClick or context menu. */
 export async function openFileLink(rawHref: string): Promise<void> {
   if (!rawHref) return;
+
+  /**
+   * ★ 外部 URL 必须先判（见 `openExternalUrl` 的注释）：
+   *   `resolveFilePath` 对 URL 返回空串，放在它后面就永远到不了。
+   */
+  if (/^https?:\/\//i.test(rawHref) || /^mailto:/i.test(rawHref)) {
+    await openExternalUrl(rawHref);
+    return;
+  }
 
   const absPath = await resolveFilePath(rawHref);
   if (!absPath) return;
@@ -96,12 +144,6 @@ export async function openFileLink(rawHref: string): Promise<void> {
   const { invoke } = (window as any).__TAURI__?.core || {};
   if (!invoke) {
     console.error("[openFileLink] Tauri not available");
-    return;
-  }
-
-  // External URLs — open in system browser
-  if (/^https?:\/\//i.test(rawHref) || /^mailto:/i.test(rawHref)) {
-    window.open(rawHref, "_blank");
     return;
   }
 

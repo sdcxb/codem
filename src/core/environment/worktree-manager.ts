@@ -284,6 +284,25 @@ export async function removeWorktree(
  *
  * 注意：只合并 git 跟踪 + 未忽略的文件；`git add -A` 尊重 .gitignore。
  */
+/**
+ * 把 git 报出来的冲突路径拼成**绝对路径**（供 UI 打开文件用）。
+ *
+ * 为什么要这一步：`git diff --name-only --diff-filter=U` 给的是**仓库内相对路径**
+ * （正斜杠）；而打开文件需要绝对路径。Windows 下用户主工作区是反斜杠写法，
+ * 混用会让路径解析失败，所以这里统一成平台分隔符。
+ *
+ * 已经是绝对路径时原样返回（git 在少数配置下会给绝对路径）。
+ */
+export function conflictAbsolutePath(mainPath: string, relPath: string): string {
+  const rel = relPath.trim();
+  if (!rel) return mainPath;
+  const isAbsolute = /^[A-Za-z]:[\\/]/.test(rel) || rel.startsWith("\\\\") || rel.startsWith("/");
+  if (isAbsolute) return rel;
+  const base = mainPath.replace(/[\\/]+$/, "");
+  const normalizedRel = rel.replace(/\\/g, "/");
+  return base.replace(/\\/g, "/") + "/" + normalizedRel;
+}
+
 export type MergeConflictChoice = "abort" | "worktree" | "main";
 
 export interface MergeWorktreeResult {

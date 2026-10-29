@@ -312,6 +312,33 @@ export function usePaneResize(config: PaneResizeConfig) {
   }, [width, widthForX, endResize]);
 
   /**
+   * 把宽度夹紧后写入 state 并落盘（**键盘路径**，第 233 轮审计）。
+   *
+   * 为什么不能用返回的裸 `setWidth`：它不夹紧、也不落盘 —— 键盘调完宽度，
+   * 重启就丢；越界时还能把面板顶出屏幕。这里复用与拖拽收尾完全相同的
+   * 「clamp → widthRef → persist」三步，保证两条输入路径的语义一致。
+   */
+  const commitWidth = useCallback((next: number) => {
+    const clamped = clamp(next);
+    if (clamped === widthRef.current) return false;
+    widthRef.current = clamped;
+    pendingWidthRef.current = clamped;
+    setWidth(clamped);
+    persist(clamped);
+    return true;
+  }, [clamp, persist]);
+
+  /** 键盘微调：正值变宽、负值变窄 */
+  const resizeBy = useCallback((delta: number) => {
+    commitWidth(widthRef.current + delta);
+  }, [commitWidth]);
+
+  /** 键盘直达（Home/End）：夹紧到指定宽度 */
+  const resizeTo = useCallback((target: number) => {
+    commitWidth(target);
+  }, [commitWidth]);
+
+  /**
    * 卸载路径通过 ref 取**最新**的 endResize。
    *
    * 为什么不把 endResize 直接放进 deps：它的依赖里有 `config.storageKey`，
@@ -331,5 +358,5 @@ export function usePaneResize(config: PaneResizeConfig) {
     };
   }, []);
 
-  return { width, isResizing, onResizeStart, setWidth, endResize };
+  return { width, isResizing, onResizeStart, setWidth, endResize, resizeBy, resizeTo };
 }

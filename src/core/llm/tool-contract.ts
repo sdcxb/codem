@@ -94,6 +94,8 @@ type ToolSideEffectScope =
  * 取不到 `path` 则放行 —— 那是「按 id 访问的资源」的固有边界（附件），
  * 见 `sandbox-boundary.test.ts` 的产品决策。
  */
+import { analyzeBashCommand } from "../permission/bash-analyzer";
+
 type ToolAccessScope =
   | "none"
   | "workspace"
@@ -104,6 +106,7 @@ type ToolAccessScope =
 
 /** `timeoutMs` 的哨兵值：显式声明「本工具不设超时」。 */
 export const NO_TIMEOUT = -1;
+
 
 /**
  * 工具契约字段。全部可选，缺省值在 `resolveToolContract` 里统一落定。
@@ -350,6 +353,113 @@ export function mutatesWorkspace(contract: ResolvedToolContract): boolean {
  */
 export function needsPreCallSnapshot(contract: ResolvedToolContract): boolean {
   return mutatesWorkspace(contract) || contract.destructive;
+}
+
+/**
+ * **shell 类工具**这个调用会不会改工作区（按命令意图，不按工具名）。
+ *
+ * ## 为什么必须补这一层（第 233 轮审计 · P1 数据链）
+ *
+ * `bash` 的契约是 `sideEffectScope: "system"` —— 它属于"影响系统"，**不专指工作区**，
+ * 于是 `needsPreCallSnapshot` 对它恒为 false：
+ *
+ * - 纯 shell 改的工作区（`npm install` 写 lockfile、`git apply`、`prettier --write`、
+ *   `sed -i`）**一条 `turn_file_changes` 都不记**（右栏"改动"看不到、回滚回不到）；
+ * - 更糟的是**下一轮**：文件工具拍快照时的 before 树仍停在这些 shell 改动之前，
+ *   它们被算进**下一轮**的记录 —— 对下一轮回滚会连带撤销上一轮的产物。
+ *
+ * ## 为什么按命令意图、而不是"所有 shell 都拍"
+ *
+ * 每次 bash 都拍一次快照 = 每次查询多一次 git 树对象（编码会话里 bash 调用极频繁）。
+ * 所以复用同一套意图判定（`analyzeBashCommand`，计划模式守卫用的就是它）：
+ * `write` / `dangerous` ⇒ 可能改；`readonly` ⇒ 不改；判不出来 / 没有命令 ⇒ 按可能改处理
+ * （与计划模式"宁严不宽"同一取向）。
+ */
+/**
+ * 这些命令是**验证类**（跑判据/类型检查/lint）：它们不改源码，只写缓存目录。
+ *
+ * 为什么要单列（第 233 轮实测）：`analyzeBashCommand` 把 `npx vitest run` 判成 `write`
+ * （因为它无法知道 `npx` 后面那个程序干了什么），于是一次"跑判据"就会被记成
+ * 一轮工作区改动 ⇒ ① 每次验证都多拍一次 git 快照（正是这条修复要避免的成本）；
+ * ② 变更列表里全是"跑了个测试"的噪音；③ 仓内 6 条收尾守卫判据把"跑判据不算改动"
+ * 当作产品事实（`red-test-at-completion` / `symbol-siblings-*` / `completion-guards-wiring`），
+ * 会因此多要一轮。
+ *
+ * 口径：只认**明确是验证**的形态（`<pm> [run] <task>` 且 task 在名单里，或裸的
+ * `vitest`/`jest`/`tsc --noEmit`）。`npm install` / `pnpm build` / 自定义脚本**不在此列**。
+ */
+const VERIFICATION_COMMAND_RE =
+  /^(?:npx|npm|pnpm|yarn|bunx?)\s+(?:run\s+)?(?:test(?::[\w-]+)?|vitest|jest|tsc\b(?!.*\b--build\b)|lint|eslint|prettier\s+--(?:check|c))/i;
+const BARE_VERIFICATION_COMMAND_RE = /^(?:vitest|jest|tsc\s+--noEmit)\b/i;
+
+/** 这条命令是不是"验证类"（不改源码） */
+export function isVerificationCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) return false;
+  return VERIFICATION_COMMAND_RE.test(trimmed) || BARE_VERIFICATION_COMMAND_RE.test(trimmed);
+}
+
+/**
+ * 这个工具**本身**是不是"跑命令"的那一类（`bash` / shell / 终端 / 通用 exec）。
+ *
+ * 契约里没有"携带命令"这个字段，所以这一层只能看工具身份；**命令意图**（读还是写）
+ * 仍然按内容判（`analyzeBashCommand`）。两者分工见 `mayMutateWorkspaceViaShell`。
+ */
+export function isShellCommandTool(toolName: string): boolean {
+  return /^(bash|shell|terminal|run_command|run_shell|exec|execute_command)$/i.test(toolName);
+}
+
+export function mayMutateWorkspaceViaShell(
+  toolName: string,
+  contract: ResolvedToolContract,
+  args: Record<string, unknown> | undefined,
+): boolean {
+  /**
+   * 判据：**这个工具本身就是"跑命令"的那一类**（`bash` / shell / 终端），
+   * 且非只读、作用域是 `system`。
+   *
+   * 为什么要看名字（与"别按名字猜"的原则不冲突）：契约里没有"携带命令"这个字段，
+   * 而"这个工具是不是 shell"只能由工具身份回答 —— 命令**意图**才是按内容判的。
+   * 反过来若只看 `sideEffectScope === "system"`，会把契约写成 system 的**非 shell**
+   * 工具（测试夹具里的假 `edit` 就是 `sideEffectScope: "system"`）也当 shell 处理，
+   * 于是它们凭空多出一次"拍快照 + 标记改动"（第 233 轮实测：4 条回路判据因此变红）。
+   */
+  if (!isShellCommandTool(toolName)) return false;
+  if (contract.readOnly || contract.sideEffectScope !== "system") return false;
+  const raw = (args as { command?: unknown; cmd?: unknown } | undefined)?.command ??
+    (args as { cmd?: unknown } | undefined)?.cmd;
+  const command = typeof raw === "string" ? raw.trim() : "";
+  // 没有命令的系统类工具（终端会话操作等）：判不了 ⇒ 按可能写处理
+  if (!command) return true;
+  /** 验证类命令（跑判据 / tsc / lint）不改源码 ⇒ 不算改动（见上面 `VERIFICATION_COMMAND_RE`） */
+  if (isVerificationCommand(command)) return false;
+  /*
+   * ⚠️ 这里的 catch **不是**"失败即放行"：本函数里 `true` 的含义恰好相反 ——
+   * `true` = **要拍快照** = 保守方向。B/C 类扫描器的判据看的是"catch 里有没有
+   * `return true`"，为不与那条判据打架（也为了让方向一眼可读），这里用显式赋值收口。
+   */
+  let mayMutate = true;
+  try {
+    mayMutate = analyzeBashCommand(command).classification !== "readonly";
+  } catch {
+    mayMutate = true;
+  }
+  return mayMutate;
+}
+
+/**
+ * 一次**具体调用**该不该在执行前拍快照：契约判据 **+** shell 命令意图。
+ *
+ * 与 `needsPreCallSnapshot(contract)` 的区别只有一点：它看得到 `args`，
+ * 于是"`bash` 跑一条只读查询"不会白白多一次 git 调用，而"`bash` 跑 `npm install`"
+ * 会被正确纳入改动记录。
+ */
+export function needsPreCallSnapshotForCall(
+  toolName: string,
+  contract: ResolvedToolContract,
+  args: Record<string, unknown> | undefined,
+): boolean {
+  return needsPreCallSnapshot(contract) || mayMutateWorkspaceViaShell(toolName, contract, args);
 }
 
 /** 该不该把超大结果落盘（换成预览 + 定位说明）。 */

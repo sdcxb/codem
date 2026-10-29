@@ -15,10 +15,18 @@ import { FileChangeTracker } from "../core/environment/file-change-tracker";
 import { onFileChangesTracked } from "../core/environment/file-change-tracker";
 import { DiffViewer } from "./DiffViewer";
 import { confirmDialog } from "../core/ui/native-dialog";
+import { listVerificationChecks, type VerificationCheck } from "../core/environment/verification-checks";
 
 interface FileChangesListProps {
   sessionId: string;
   workspace: string;
+}
+
+/** 把 git 状态码映射成一个**完整**的类名字符串（避免在 JSX 里拼字符串，扫描器与人都更难读） */
+function gitStatusClass(status: string): string {
+  const s = (status || "").toLowerCase();
+  const kind = s === "m" ? "modified" : s === "a" ? "added" : s === "d" ? "deleted" : "untracked";
+  return `change-file-status git-status-${kind}`;
 }
 
 export function FileChangesList({ sessionId, workspace }: FileChangesListProps) {
@@ -34,6 +42,8 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null);
   const [diffFile, setDiffFile] = useState<{ path: string; before: string; after: string } | null>(null);
   const [patchPreview, setPatchPreview] = useState<{ id: string; add: number; del: number; lines: string[] } | null>(null);
+  /** Phase C：本会话最近的验证命令结果（设置面读取，同步、有界） */
+  const [checks, setChecks] = useState<VerificationCheck[]>([]);
 
   useEffect(() => {
     if (!expandedTurn) { setPatchPreview(null); return; }
@@ -164,6 +174,28 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
     }
   };
 
+  /**
+   * Phase C：读出本会话最近跑过的**验证命令**（测试/类型检查/构建/lint）。
+   *
+   * 口径如实：记录不绑定具体轮次（工具执行在 agent 循环里、turn 边界在跟踪器里，
+   * 两处没有共享计数器）⇒ 标题写「最近检查」而不是「本轮检查」。
+   * 没有记录时明确说「没有检查记录」，不画一个看起来正常的空块。
+   *
+   * ⚠️ 这两个 hook 必须在下面 `if (records.length === 0) return …` **之前**：
+   * hooks 顺序不能随渲染分支变化（否则 React 会抛 "change in the order of Hooks"）。
+   */
+  const refreshChecks = useCallback(() => {
+    try {
+      setChecks(listVerificationChecks(sessionId));
+    } catch {
+      setChecks([]);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    refreshChecks();
+  }, [refreshChecks, records.length]);
+
   if (records.length === 0) {
     return (
       <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: 'var(--fs-sm)', textAlign: "center" }}>
@@ -182,8 +214,104 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
 
   const visibleRecords = records.filter((r) => FileChangeStorage.parseChangedFiles(r).length > 0);
 
+
+  /**
+   * Phase C：**最近一轮**单独置于顶部（历史轮次仍在下面）。
+   *
+   * "最近"取 `turn_index` 最大的那条（不是数组第一项 —— 读回来的顺序是存储实现细节，
+   * 拿它当"最新"就是把实现细节当契约）。
+   */
+  const latest = [...visibleRecords].sort((a, b) => b.turn_index - a.turn_index)[0] ?? null;
+  const latestFiles = latest ? FileChangeStorage.parseChangedFiles(latest) : [];
+  /** 汇总只对**有 numstat 的文件**求和；一个都没有时显示「—」（不把"不知道"画成 +0 −0） */
+  const withStats = latestFiles.filter((f) => typeof f.additions === "number" || typeof f.deletions === "number");
+  const totalAdd = withStats.reduce((n, f) => n + (f.additions ?? 0), 0);
+  const totalDel = withStats.reduce((n, f) => n + (f.deletions ?? 0), 0);
+  const hasTotals = withStats.length > 0;
+
   return (
     <div className="file-changes-list">
+      {latest && (
+        <section className="inspector-latest" aria-label="最近一轮改动">
+          <div className="inspector-latest-head">
+            <span className="inspector-latest-title">最近一轮</span>
+            <span className="inspector-latest-turn">第 {latest.turn_index} 轮</span>
+            <span className="inspector-latest-stats">
+              {hasTotals ? (
+                <>
+                  <span className="diff-stat-add">+{totalAdd}</span>{" "}
+                  <span className="diff-stat-del">−{totalDel}</span>
+                </>
+              ) : (
+                <span className="inspector-stats-unknown" title="这次改动没有逐行统计（二进制或旧记录）">
+                  +— −—
+                </span>
+              )}
+            </span>
+            <span className="inspector-latest-count">{latestFiles.length} 个文件</span>
+          </div>
+
+          <div className="inspector-file-rows" role="list">
+            {latestFiles.map((file, i) => (
+              <button
+                key={i}
+                type="button"
+                role="listitem"
+                className="inspector-file-row"
+                onClick={() => handleViewDiff(latest, file)}
+                title={file.path}
+              >
+                <FileText className="icon-xs change-file-icon" />
+                <span className="inspector-file-path">{file.path}</span>
+                <span
+                  className={gitStatusClass(file.status)}
+                >
+                  {file.status}
+                </span>
+                <span className="inspector-file-stat diff-stat-add">
+                  {typeof file.additions === "number" ? `+${file.additions}` : "+—"}
+                </span>
+                <span className="inspector-file-stat diff-stat-del">
+                  {typeof file.deletions === "number" ? `−${file.deletions}` : "−—"}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="inspector-checks">
+            <div className="inspector-checks-title">最近检查</div>
+            {checks.length === 0 ? (
+              <div className="inspector-checks-empty empty-hint">
+                本轮没有检查记录（未运行测试 / 类型检查 / 构建）
+              </div>
+            ) : (
+              <ul className="inspector-check-list">
+                {checks.slice(0, 5).map((c, i) => (
+                  <li key={i} className={c.ok ? "inspector-check ok" : "inspector-check failed"}>
+                    <span className="inspector-check-dot" aria-hidden="true" />
+                    <code className="inspector-check-cmd" title={c.command}>
+                      {c.command.length > 60 ? `${c.command.slice(0, 60)}…` : c.command}
+                    </code>
+                    <span className="inspector-check-verdict">{c.ok ? "通过" : "失败"}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <button
+            className="revert-btn"
+            onClick={(e) => { e.stopPropagation(); handleRevert(latest); }}
+            disabled={latest.status === "reverted"}
+            title="回滚最近一轮的变更"
+          >
+            <RotateCcw className="icon-xs" /> 回滚本轮
+          </button>
+        </section>
+      )}
+
+      {visibleRecords.length > 0 && <div className="inspector-history-title">历史轮次</div>}
+
       {visibleRecords.map((record) => {
         const files = FileChangeStorage.parseChangedFiles(record);
         const isExpanded = expandedTurn === record.id;
@@ -231,12 +359,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
                       {file.path.split(/[/\\]/).pop()}
                     </span>
                     <span
-                      className={"change-file-status git-status-" + (
-                        file.status.toLowerCase() === "m" ? "modified"
-                        : file.status.toLowerCase() === "a" ? "added"
-                        : file.status.toLowerCase() === "d" ? "deleted"
-                        : "untracked"
-                      )}
+                      className={gitStatusClass(file.status)}
                     >
                       {file.status}
                     </span>

@@ -25,6 +25,7 @@ import { FileEditor } from "./FileEditor";
 import { FileChangesList } from "./FileChangesList";
 import { useStableContextWaterLevel } from "../core/context/water-level";
 import { usePaneResize } from "../hooks/usePaneResize";
+import { RightSidebarResizeHandle } from "./RightSidebarResizeHandle";
 
 interface RightSidebarProps {
   /** 外部控制收起状态（由顶部 TitleBar 的 rightRailOpen 驱动） */
@@ -76,11 +77,25 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const [browserUrl, setBrowserUrl] = useState("");
   const [browserInput, setBrowserInput] = useState("");
 
-const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
+const RIGHT_SIDEBAR_DEFAULT_WIDE = 400;
+const RIGHT_SIDEBAR_DEFAULT_NARROW = 360;
+
+/**
+ * 本档默认宽度（第 233 轮 · 二次升级 Phase B）。
+ *
+ * 抽成函数而不是直接写进 `initial`：双击复位也要用**同一个**口径，
+ * 否则"默认值"会出现第二套真相（这正是本仓库反复吃过的亏）。
+ */
+function rightSidebarDefaultWidth(): number {
+  if (typeof window === "undefined") return RIGHT_SIDEBAR_DEFAULT_WIDE;
+  return window.innerWidth <= 1440 ? RIGHT_SIDEBAR_DEFAULT_NARROW : RIGHT_SIDEBAR_DEFAULT_WIDE;
+}
+
+const { width: sidebarWidth, isResizing, onResizeStart, resizeBy, resizeTo } = usePaneResize({
 min: 300,
 max: 800,
 /* P2-2：1440 宽给 360，宽屏给 400；持久化值仍优先。 */
-initial: typeof window !== "undefined" && window.innerWidth <= 1440 ? 360 : 400,
+initial: rightSidebarDefaultWidth(),
 storageKey: "right-sidebar-width",
 });
 
@@ -112,14 +127,17 @@ const effectiveWidth = sidebarWidth;
 
   return (
     <aside className="right-sidebar" style={{ width: effectiveWidth, flexShrink: 0 }}>
-      {/* Resize handle */}
-      <div
-        className={`right-sidebar-resize-handle ${isResizing ? "active" : ""}`}
+      {/* Resize handle：8px 命中区 + 2px 视觉线；可聚焦，方向键同样能调宽 */}
+      <RightSidebarResizeHandle
+        width={sidebarWidth}
+        min={300}
+        max={800}
+        active={isResizing}
+        label={zh ? "拖动调整右侧栏宽度" : "Resize right sidebar"}
         onPointerDown={onResizeStart}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="拖动调整右侧栏宽度"
-        title="拖动调整右侧栏宽度"
+        onResizeBy={resizeBy}
+        onResizeTo={resizeTo}
+        onReset={() => resizeTo(rightSidebarDefaultWidth())}
       />
 
       {/* Collapse button */}
