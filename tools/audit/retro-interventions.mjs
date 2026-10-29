@@ -206,7 +206,19 @@ export function analyzeSessions(sessions, options = {}) {
 
     for (const hit of hits) perRole[hit.role] += 1;
 
-    const first = users.find((m) => typeof m.content === "string" && isHumanMessage(m.content));
+    /**
+     * 「开场白」不能取**字面上的第一条**用户消息。
+     *
+     * 真机与夹具都撞到过：会话被续跑时第一条常是「继续」「可以」这类应答，
+     * 于是同一类任务的两次会话永远配不上对（夹具里就是这么漏掉 trigger 的）。
+     * 取第一条**实质内容**（不是批准/重试）的消息；全是应答时退回第一条。
+     */
+    const humanMessages = users.filter((m) => typeof m.content === "string" && isHumanMessage(m.content));
+    const first =
+      humanMessages.find((m) => {
+        const role = classifyIntervention(m.content)?.role;
+        return role !== "approve" && role !== "retry";
+      }) ?? humanMessages[0];
     if (first) {
       const key = openingKey(first.content);
       if (key.length >= 4) {

@@ -72,14 +72,16 @@ describe("P2-8 复盘只读报告", () => {
     expect(report.sessions).toBe(2);
   });
 
-  it("RETRO-5: 两个会话用同一个开场白 ⇒ trigger 候选", () => {
+  it("RETRO-5: 两个会话用同一个开场白 ⇒ trigger 候选（首条是应答时取第一条实质内容）", () => {
     const report = analyzeSessions([
       { id: "a", messages: [user("帮我修一下登录页的报错", 1), user("可以", 2)] },
       { id: "b", messages: [user("帮我修一下登录页的报错！", 1)] },
+      // 续跑会话：第一条是「继续」，真正的话题在第二条 —— 不能因此漏掉配对
+      { id: "d", messages: [user("继续", 1), user("帮我修一下登录页的报错", 2)] },
       { id: "c", messages: [user("写个 README", 1)] },
     ]);
     expect(report.repeatedOpenings.length).toBe(1);
-    expect(report.repeatedOpenings[0].sessions.sort()).toEqual(["a", "b"]);
+    expect(report.repeatedOpenings[0].sessions.sort()).toEqual(["a", "b", "d"]);
   });
 
   it("RETRO-6: 示例截断，绝对路径被抹掉", () => {
