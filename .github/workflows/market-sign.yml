@@ -37,7 +37,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # `gh release upload` 用文件 basename 作为资产名；注释里的 `#label` 不会改名。
+          # App 端拉的是 stacks-index.json / stacks-index.json.sig，所以先复制成目标名再上传。
+          cp stacks/index.json /tmp/stacks-index.json
+          cp stacks/index.json.sig /tmp/stacks-index.json.sig
           gh release upload "$GITHUB_REF_NAME" \
-            stacks/index.json#stacks-index.json \
-            stacks/index.json.sig#stacks-index.json.sig \
+            /tmp/stacks-index.json \
+            /tmp/stacks-index.json.sig \
             --clobber
