@@ -1,0 +1,568 @@
+{
+  "capturedAt": "2026-10-29T00:43:54.675Z",
+  "tabCount": 23,
+  "results": [
+    {
+      "label": "通用",
+      "clicked": true,
+      "metrics": {
+        "titles": [
+          {
+            "text": "身份配置",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          },
+          {
+            "text": "关于你",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          },
+          {
+            "text": "API 配置",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          }
+        ],
+        "rowCount": 39,
+        "measuredRows": 22,
+        "rowHeights": [
+          46,
+          160,
+          233,
+          200,
+          69
+        ],
+        "controlWidths": [
+          101,
+          200,
+          852
+        ],
+        "rightEdgeDeltas": [
+          99.4,
+          0,
+          210,
+          12
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 4220,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-01-通用.png"
+    },
+    {
+      "label": "外观",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 9,
+        "measuredRows": 8,
+        "rowHeights": [
+          223,
+          46,
+          60,
+          65,
+          79
+        ],
+        "controlWidths": [
+          200,
+          154
+        ],
+        "rightEdgeDeltas": [
+          0,
+          46
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 778,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-02-外观.png"
+    },
+    {
+      "label": "多模态",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 1,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 247,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-03-多模态.png"
+    },
+    {
+      "label": "语音",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 839,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-04-语音.png"
+    },
+    {
+      "label": "Ollama",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 542,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-05-Ollama.png"
+    },
+    {
+      "label": "工具",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 743,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-06-工具.png"
+    },
+    {
+      "label": "知识",
+      "clicked": true,
+      "metrics": {
+        "titles": [
+          {
+            "text": "📓 知识笔记本设置",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          }
+        ],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 353,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-07-知识.png"
+    },
+    {
+      "label": "自动化",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 239,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-08-自动化.png"
+    },
+    {
+      "label": "人设",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 252,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-09-人设.png"
+    },
+    {
+      "label": "记忆体检",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 12535,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-10-记忆体检.png"
+    },
+    {
+      "label": "代码图谱",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 589,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-11-代码图谱.png"
+    },
+    {
+      "label": "安全",
+      "clicked": true,
+      "metrics": {
+        "titles": [
+          {
+            "text": "🔐 权限规则",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          }
+        ],
+        "rowCount": 6,
+        "measuredRows": 3,
+        "rowHeights": [
+          47,
+          73,
+          237
+        ],
+        "controlWidths": [
+          200,
+          357
+        ],
+        "rightEdgeDeltas": [
+          0,
+          508
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 910,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-12-安全.png"
+    },
+    {
+      "label": "电脑操作",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 4,
+        "measuredRows": 1,
+        "rowHeights": [
+          60
+        ],
+        "controlWidths": [
+          200
+        ],
+        "rightEdgeDeltas": [
+          0
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 671,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-13-电脑操作.png"
+    },
+    {
+      "label": "Git",
+      "clicked": true,
+      "metrics": {
+        "titles": [
+          {
+            "text": "🌿 Git 偏好配置",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          }
+        ],
+        "rowCount": 1,
+        "measuredRows": 1,
+        "rowHeights": [
+          750
+        ],
+        "controlWidths": [
+          876
+        ],
+        "rightEdgeDeltas": [
+          0
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 890,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-14-Git.png"
+    },
+    {
+      "label": "环境",
+      "clicked": true,
+      "metrics": {
+        "titles": [
+          {
+            "text": "🏗️ 环境脚本配置",
+            "fontSize": "13px",
+            "fontWeight": "620"
+          }
+        ],
+        "rowCount": 1,
+        "measuredRows": 1,
+        "rowHeights": [
+          347
+        ],
+        "controlWidths": [
+          876
+        ],
+        "rightEdgeDeltas": [
+          0
+        ],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 487,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-15-环境.png"
+    },
+    {
+      "label": "工作树",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 1,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 528,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-16-工作树.png"
+    },
+    {
+      "label": "微信 ClawBot",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 5,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 599,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-17-微信ClawBot.png"
+    },
+    {
+      "label": "连接手机",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 7,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 1196,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-18-连接手机.png"
+    },
+    {
+      "label": "宠物",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 462,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-19-宠物.png"
+    },
+    {
+      "label": "用量统计",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 1529,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-20-用量统计.png"
+    },
+    {
+      "label": "性能",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 671,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-21-性能.png"
+    },
+    {
+      "label": "高级",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 0,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 860,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-22-高级.png"
+    },
+    {
+      "label": "帮助",
+      "clicked": true,
+      "metrics": {
+        "titles": [],
+        "rowCount": 3,
+        "measuredRows": 0,
+        "rowHeights": [],
+        "controlWidths": [],
+        "rightEdgeDeltas": [],
+        "horizontalOverflow": false,
+        "scrollWidth": 900,
+        "clientWidth": 900,
+        "contentHeight": 536,
+        "bodyOverflowY": false
+      },
+      "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-audit-2026-10-29\\tab-23-帮助.png"
+    }
+  ],
+  "problems": [
+    {
+      "label": "通用",
+      "deltas": [
+        99.4,
+        0,
+        210,
+        12
+      ],
+      "bad": [
+        99.4,
+        0,
+        210,
+        12
+      ],
+      "overflow": false,
+      "title": {
+        "text": "身份配置",
+        "fontSize": "13px",
+        "fontWeight": "620"
+      }
+    },
+    {
+      "label": "外观",
+      "deltas": [
+        0,
+        46
+      ],
+      "bad": [
+        0,
+        46
+      ],
+      "overflow": false,
+      "title": null
+    },
+    {
+      "label": "安全",
+      "deltas": [
+        0,
+        508
+      ],
+      "bad": [
+        0,
+        508
+      ],
+      "overflow": false,
+      "title": {
+        "text": "🔐 权限规则",
+        "fontSize": "13px",
+        "fontWeight": "620"
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "capturedAt": "2026-10-28T09:18:57.274Z",
+  "exe": "C:\\mimo-gui\\src-tauri\\target\\release\\codem.exe",
+  "note": "走产品路径：点「展开」→ 聚焦分隔条 → 方向键 ×8（每步 +16px）",
+  "expanded": false,
+  "handleInfo": {
+    "focused": true,
+    "value": "428"
+  },
+  "before": {
+    "viewport": 1400,
+    "contentColumn": 642,
+    "composerWidth": 664,
+    "railWidth": 428,
+    "railCollapsed": false,
+    "chatPanelMinWidth": "0px",
+    "horizontalOverflow": false,
+    "scrollWidth": 1400,
+    "clientWidth": 1400
+  },
+  "after": {
+    "viewport": 1400,
+    "contentColumn": 514,
+    "composerWidth": 536,
+    "railWidth": 556,
+    "railCollapsed": false,
+    "chatPanelMinWidth": "0px",
+    "horizontalOverflow": false,
+    "scrollWidth": 1400,
+    "clientWidth": 1400
+  },
+  "screenshot": {
+    "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-f-rail-480.png",
+    "bytes": 460477,
+    "sha256": "719087d041a1fb14704c2db0ad245fd934dca10e2abb1fae13ab399353ab18ac"
+  }
+}

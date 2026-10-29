@@ -1,0 +1,147 @@
+{
+  "capturedAt": "2026-10-28T09:12:21.050Z",
+  "exe": "C:\\mimo-gui\\src-tauri\\target\\release\\codem.exe",
+  "note": "视口用 CDP Emulation 切换（渲染视口，不是注入假 DOM）；应用为 release 构建的真实窗口",
+  "shots": [
+    {
+      "name": "phase-a-b-1600",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-a-b-1600.png",
+      "bytes": 162122,
+      "sha256": "478129eebeca10e6a9d7a483b5287e4a4e499583569aac725af3c7b4c5c3cd5c",
+      "metrics": {
+        "viewport": 1750,
+        "dpr": 0.9142857665107371,
+        "contentColumn": 820,
+        "composerWidth": 820,
+        "messagesMaxWidth": "868px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 300,
+        "railCollapsed": false,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-a-b-1400",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-a-b-1400.png",
+      "bytes": 151134,
+      "sha256": "746daa94a96bea9667d9199797f99d0b0a867dcc7b1dd292aeebb981ca01ec5b",
+      "metrics": {
+        "viewport": 1531,
+        "dpr": 0.9142857665107371,
+        "contentColumn": 820,
+        "composerWidth": 820,
+        "messagesMaxWidth": "868px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 300,
+        "railCollapsed": false,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-a-b-1280",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-a-b-1280.png",
+      "bytes": 160538,
+      "sha256": "4eeac4598f5a1e2328b32b192b0263a25de2aeef4b750e89b2cadc5fb00dc379",
+      "metrics": {
+        "viewport": 1400,
+        "dpr": 0.9142857665107371,
+        "contentColumn": 732,
+        "composerWidth": 732,
+        "messagesMaxWidth": "780px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 300,
+        "railCollapsed": false,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-e-1080-125",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-e-1080-125.png",
+      "bytes": 210492,
+      "sha256": "cd8093197991a009d76499772953b6dd61320cc5cdda7ae385a49afb77d60ce7",
+      "metrics": {
+        "viewport": 1680,
+        "dpr": 1.142857146830785,
+        "contentColumn": 820,
+        "composerWidth": 820,
+        "messagesMaxWidth": "868px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 300,
+        "railCollapsed": false,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-e-1080-150",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-e-1080-150.png",
+      "bytes": 237755,
+      "sha256": "225c252639432842da2e7e1e240d05cee3064ba27fbe528dd1e4fdbbecb78d88",
+      "metrics": {
+        "viewport": 1400,
+        "dpr": 1.3714286088943481,
+        "contentColumn": 732,
+        "composerWidth": 732,
+        "messagesMaxWidth": "780px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 300,
+        "railCollapsed": false,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-d-narrow-520",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-d-narrow-520.png",
+      "bytes": 87400,
+      "sha256": "85d311b04981410affea08777b8cb44cc1a05a485fde81b195abe291e31f8a1a",
+      "metrics": {
+        "viewport": 568,
+        "dpr": 0.9142857665107371,
+        "contentColumn": 475,
+        "composerWidth": 545,
+        "messagesMaxWidth": "100%",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 24,
+        "railCollapsed": true,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    },
+    {
+      "name": "phase-f-rail-480",
+      "file": "C:\\mimo-gui\\docs\\evidence\\second-visual-upgrade-2026-10-28\\phase-f-rail-480.png",
+      "bytes": 123640,
+      "sha256": "93e7e175dd4ae4688d4e900a5d102509adf033c41c29bb96225f63ec56d0e20b",
+      "metrics": {
+        "viewport": 1531,
+        "dpr": 0.9142857665107371,
+        "contentColumn": 820,
+        "composerWidth": 820,
+        "messagesMaxWidth": "868px",
+        "chatPanelMinWidth": "0px",
+        "railWidth": 24,
+        "railCollapsed": true,
+        "fontFamily": "AlimamaFangYuanTi, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+        "fontSize": "13px",
+        "textRendering": "auto",
+        "scrollbarGutter": "stable both-edges"
+      }
+    }
+  ]
+}

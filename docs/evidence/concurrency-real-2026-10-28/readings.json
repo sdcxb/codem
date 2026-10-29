@@ -1,0 +1,74 @@
+{
+  "capturedAt": "2026-10-28T14:41:27.237Z",
+  "model": "deepseek-flash",
+  "prompts": [
+    "请用 3 句话解释递归，并给出一个 5 行的 Python 例子。",
+    "请用 3 句话解释哈希表，并给出一个 5 行的 Python 例子。",
+    "请用 3 句话解释二分查找，并给出一个 5 行的 Python 例子。"
+  ],
+  "runStart": 1793198425013,
+  "sends": [
+    {
+      "i": 0,
+      "opened": true,
+      "typedLength": 33,
+      "at": 561
+    },
+    {
+      "i": 1,
+      "opened": true,
+      "typedLength": 34,
+      "at": 1267
+    },
+    {
+      "i": 2,
+      "opened": true,
+      "typedLength": 35,
+      "at": 1984
+    }
+  ],
+  "newSessions": [
+    {
+      "id": "1793198425016-h2bp0qlxc",
+      "created": 1793198425017,
+      "user": 1,
+      "assistant": 1,
+      "first": 1793198425551,
+      "last": 1793198427099
+    },
+    {
+      "id": "1793198425729-1w8f099hq",
+      "created": 1793198425730,
+      "user": 2,
+      "assistant": 3,
+      "first": 1793198426262,
+      "last": 1793198433803
+    },
+    {
+      "id": "1793198426444-33nqat271",
+      "created": 1793198426444,
+      "user": 2,
+      "assistant": 4,
+      "first": 1793198426980,
+      "last": 1793198442810
+    }
+  ],
+  "completedSessions": 3,
+  "overlappingPairs": 3,
+  "pairwiseOverlap": [
+    [
+      "1793198425016-h2bp0qlxc",
+      "1793198425729-1w8f099hq"
+    ],
+    [
+      "1793198425016-h2bp0qlxc",
+      "1793198426444-33nqat271"
+    ],
+    [
+      "1793198425729-1w8f099hq",
+      "1793198426444-33nqat271"
+    ]
+  ],
+  "note": "证明「3 个会话的回合时间窗相交且都完成」；同会话内多路并发的状态隔离由 concurrency-three-sessions.test.ts 钉住",
+  "pythonError": null
+}

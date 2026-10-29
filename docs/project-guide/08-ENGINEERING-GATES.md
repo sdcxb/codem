@@ -44,7 +44,7 @@
 npm run dev                 # Vite 前端（浏览器调试；没有 Tauri IPC）
 npm run tauri:dev           # 完整桌面开发（Vite + Tauri）
 npx tsc --noEmit            # 类型检查（必须 0 错误）
-npx vitest run              # 全量（约 2.5 分钟；当前 733 文件 / 8516 用例）
+npx vitest run              # 全量（约 2.5 分钟；当前 764 文件 / 8674 用例）
 npx vitest run src/test/<某个>.test.ts   # 单跑
 npm run test:e2e            # vitest.e2e.config.ts
 npm run test:snapshot       # vitest.snapshot.config.ts

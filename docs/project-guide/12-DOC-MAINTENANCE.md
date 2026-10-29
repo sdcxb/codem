@@ -42,7 +42,7 @@ npm run audit:docs
 npm run verify
 ```
 
-> 测试数字（733 / 8516）来自**全量跑批**，`docs:sync` 不会替你编；把最近一次 `npx vitest run` 的真实结果写进 `09-CURRENT-STATE.md §3`，并注明日期。
+> 测试数字（764 / 8674）来自**全量跑批**，`docs:sync` 不会替你编；把最近一次 `npx vitest run` 的真实结果写进 `09-CURRENT-STATE.md §3`，并注明日期。
 
 ---
 

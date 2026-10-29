@@ -1,0 +1,52 @@
+{
+  "capturedAt": "2026-10-28T11:29:23.897Z",
+  "model": "deepseek-flash",
+  "opened": {
+    "ok": true
+  },
+  "fillerChars": 400081,
+  "typed": {
+    "ok": true,
+    "length": 400081
+  },
+  "sent": true,
+  "elapsedMs": 75464,
+  "before": {
+    "textareaLength": 400081,
+    "usage": [],
+    "messages": 0
+  },
+  "after": {
+    "messages": 2,
+    "notices": [],
+    "usage": [],
+    "bodyTail": "值 68361。 第 8761 行：这是一段用于测试上下文压缩的填充文本，编号 8761，数值 76280。 第 8762 行：这是一段用于测试上下文压缩的填充文本，编号 8762，数值 84199。 第 8763 行：这是一段用于测试上下文压缩的填充文本，编号 8763，数值 92118。 第 8764 行：这是一段用于测试上下文压缩的填充文本，编号 8764，数值 34。 第 8765 行：这是一段用于测试上下文压缩的填充文本，编号 8765，数值 7953。 展开 ▼ Codem 19:28 思考 · 26 字 · 用户只要求回答一个字面数字：1。我应该直接回答 1。 1 👍 👎 1 轮 · 1 步 | 缓存命中 8.3% | 141K 入 / 18 出 任务完成 ＋ 完全访问 搜索 临时会话 超高 deepseek-flash 改动 文件 子代理 浏览器 选择项目后可浏览文件"
+  },
+  "logHits": [],
+  "consoleHits": [
+    {
+      "type": "log",
+      "text": "[AgenticLoop.run] sessionId: 1793186880903-2bww9wsqm, userMessage: 下面是一段用来把上下文压到 70% 以上的长文本，请只回答一个字面数字：1。\n\n第 0 行：这是一段用于测试上下文压缩的填充文本，编号 0，数值 0。\n第 1 ..."
+    },
+    {
+      "type": "log",
+      "text": "[agent-loop] prep打点 pressure t=1793186891129"
+    },
+    {
+      "type": "log",
+      "text": "[agent-loop] prep打点 compactionIn t=1793186891129"
+    },
+    {
+      "type": "log",
+      "text": "[agent-loop] prep打点 compactionOut t=1793186891129"
+    }
+  ],
+  "screenshot": {
+    "file": "C:\\mimo-gui\\docs\\evidence\\realmachine-compaction-2026-10-28\\compaction-pressure.png",
+    "bytes": 469002
+  },
+  "limitations": [
+    "一轮超长消息只能验证「压缩触发 / 水位下降 / 回执」；「近 3 轮保留」需要多轮",
+    "若模型窗口大于 100k tokens，本轮可能仍未到 70% —— 日志里会显示实际水位"
+  ]
+}

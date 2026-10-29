@@ -113,7 +113,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 | 发布 | GitHub `Codem v1.16.330` = `Latest`（2026-10-23） |
 | HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce` |
 | `tsc --noEmit` | **0 错误** |
-| 全量测试 | **733 文件 / 8516 用例：8497 通过、17 跳过、2 失败**（约 149 秒） |
+| 全量测试 | **764 文件 / 8674 用例：8657 通过、17 跳过、0 失败**（约 149 秒） |
 | 两条失败 | ① `no-bom.test.ts`：18 个**未跟踪**游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺“历史文档”横幅。**都不是产品代码回归** |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
 | 上报点分诊 | 267 = 267（`node tools/audit/scan-report-sites.mjs --check`） |
@@ -144,7 +144,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.16.330，tsc 0，733 测试文件 / 8516 用例（2 条失败来自未跟踪游戏文档）。
+当前基线：1.16.330，tsc 0，764 测试文件 / 8674 用例（0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 

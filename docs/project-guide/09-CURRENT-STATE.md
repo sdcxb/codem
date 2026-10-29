@@ -47,7 +47,7 @@
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **733 文件 / 8516 用例：8497 通过、17 跳过、2 失败**（148.65s） |
+| `npx vitest run` | **764 文件 / 8674 用例：8657 通过、17 跳过、0 失败**（148.65s） |
 | 失败 1 | `no-bom.test.ts`：18 个未跟踪游戏文档带 BOM |
 | 失败 2 | `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺历史横幅 |
 
@@ -63,7 +63,7 @@
 
 - `AGENTS.md` 写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **733 / 8516**。
+- 当前实测 **764 / 8674**。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---

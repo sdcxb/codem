@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-10-28T15:10:31.869Z",
+  "opened": true,
+  "picked": {
+    "labels": [
+      "默认 经典暗色/亮色主题",
+      "Hub 深色科技感 Hub 界面，三栏布局",
+      "梦幻 浅色梦幻氛围感，支持背景图自适应主题色"
+    ],
+    "clicked": "梦幻\n浅色梦幻氛围感，支持背景图自适应主题色"
+  },
+  "skinAttrAtShot": "dream",
+  "restored": {
+    "clickedDefault": null,
+    "skinAfterRestore": null
+  },
+  "shots": [
+    "dream-1-settings-appearance.png",
+    "dream-2-chat.png",
+    "dream-3-right-rail.png"
+  ]
+}

@@ -2,17 +2,31 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 270,
-    "triaged": 270,
+    "total": 278,
+    "triaged": 278,
     "pending": 0
   },
   "sites": [
+    {
+      "site": "src/App.tsx::app.concurrency::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "并发上限拒绝回合属于动作失败；已用 safeAddMessage 写进归属会话，用户可见",
+      "round": 256
+    },
     {
       "site": "src/App.tsx::app.forkSession::#1",
       "kind": "action",
       "status": "triaged",
       "reason": "分叉会话创建失败 ⇒ action（会话没建起来，功能没生效）。",
       "round": 104
+    },
+    {
+      "site": "src/App.tsx::app.persistWorktreePath::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "worktree 路径写后回读仍为空（下次发送会重复建 worktree、Git 面板看不到路径）⇒ 真失败，action",
+      "round": 254
     },
     {
       "site": "src/App.tsx::app.rewind.linkParent::#1",
@@ -27,6 +41,20 @@
       "status": "triaged",
       "reason": "回退后的消息计数没重算 ⇒ action（计数没更新，不是写盘失败）。",
       "round": 104
+    },
+    {
+      "site": "src/App.tsx::freeModelPlugin.start::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "免费模型插件**没启动起来**（没装 Node / 端口被占 / 上游取不到清单）⇒ advisory：这不是「Codem 的某次操作失败」，而是**另一个独立扩展的状态发现** —— 用户可以去装 Node 或到插件卡片上重试，而 Codem 自身功能完全不受影响（这正是「独立存在、不影响 codem」那条要求）。用 action 的语气会让用户以为 Codem 坏了。",
+      "round": 201
+    },
+    {
+      "site": "src/App.tsx::freeModelPlugin.start::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "启动钩子里起插件时**抛了异常**（文件系统/进程权限/宿主命令不可用）⇒ advisory，理由同上：受影响的只有那个独立扩展，用户的应对是「到插件卡片看状态/手动开启」，Codem 自己照常可用。",
+      "round": 201
     },
     {
       "site": "src/App.tsx::store.saveMessages::#1",
@@ -155,6 +183,20 @@
       "round": 104
     },
     {
+      "site": "src/core/context/context.ts::context.refreshFromStorage::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "启动时没能从存储读到压缩配置（会退回默认值 0.8，与用户保存的不一致）⇒ 真失败，persist",
+      "round": 104
+    },
+    {
+      "site": "src/core/context/context.ts::context.updateConfig::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "用户改了压缩配置但没保存成功（重启后回退）⇒ 真失败，persist",
+      "round": 104
+    },
+    {
       "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
       "kind": "action",
       "status": "triaged",
@@ -188,6 +230,22 @@
       "status": "triaged",
       "reason": "按需读变更记录**本身失败**（命令抛错 / 存储不可用）⇒ action：回滚这个动作没执行，而它是**可重试**的（不是「记录不存在」那条业务失败）。第 269 波新增：这张表不再有域镜像，读改成按需查询，于是「读不到」与「确实没有」必须在**上报文案**上分开 —— 混成一句会让用户以为变更历史丢了。不是 persist：没有任何写入发生。",
       "round": 269
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revertResidue::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "回滚已把补丁打回去，但本轮新建的文件没删掉（被占用/权限不足）⇒ persist：工作区的**磁盘状态**没有回到用户以为的样子，且没有第二次自动清理路径。",
+      "family": "文件改动追踪（快照 / 补丁 / 回滚）的写与失败——回滚残留与状态未写回都属 persist：磁盘/索引状态没有变成用户以为的样子"
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revertStatus::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "补丁已回滚，但 turn_file_changes 的状态没写进去（0 行）⇒ persist：变更是真的回滚了，而**记录**永远显示未回滚 —— 不是 action（动作执行了），也不是 advisory（这是写失败）。",
+      "family": "文件改动追踪（快照 / 补丁 / 回滚）的写与失败——回滚残留与状态未写回都属 persist：磁盘/索引状态没有变成用户以为的样子"
     },
     {
       "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
@@ -414,6 +472,28 @@
       "round": 100
     },
     {
+      "site": "src/core/llm/agentic-loop.ts::loop.compactionDeleteIncomplete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "压缩的软删没有完全落地（索引侧没回应 / 有 id 查不到归属）⇒ 用户会以为旧消息已移除而其实还在，必须可见",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/agentic-loop.ts::loop.foldToolOutputs::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具输出折叠失败（本次未折叠、上下文可能偏高）⇒ 真失败，persist",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/agentic-loop.ts::loop.preCallSnapshot::#1",
+      "kind": "action",
+      "status": "triaged",
+      "round": 233,
+      "reason": "取改动前快照失败（存储未就绪 / git 不可用 / 盘满）⇒ action：这次工具**照常执行**，但用户需要知道「这次改动可能没有回滚证据」——不是 persist（没有写失败），也不是 advisory（会影响可回滚性，用户可采取动作：确认工作区或用 git 自己看）。",
+      "family": "agent 循环的写前证据链（快照 / 变更记录 / 回滚）——取不到证据属于动作级失败：工具会执行，但回滚能力下降"
+    },
+    {
       "site": "src/core/llm/agentic-loop.ts::loop.retryBudget::#1",
       "kind": "action",
       "status": "triaged",
@@ -446,6 +526,20 @@
       "kind": "action",
       "status": "triaged",
       "reason": "computer-use 工具没注册 ⇒ action（模型无法读屏/操作桌面）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::engine.readCompactionThreshold::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "读取压缩阈值失败时用默认值继续 ⇒ 属自检发现，advisory",
+      "round": 122
+    },
+    {
+      "site": "src/core/llm/index.ts::engine.updateLoopConfig::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "压缩阈值没能推给正在跑的循环（用户改了设置却仍按旧值压缩）⇒ 必须可见",
       "round": 104
     },
     {
@@ -554,10 +648,31 @@
       "round": 187
     },
     {
+      "site": "src/core/memory/memory.ts::memory.entriesDropped::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "回退到迁移前时跳过的不合法条目数（与 load 同口径的如实披露）",
+      "round": 187
+    },
+    {
       "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "「暂停注入旧版跨项目记忆」开关没写进设置 ⇒ **写盘失败**：本次运行内已生效、重启会回到默认（关），必须让用户知道旧行为会回来。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认式写入返回 false ⇒ 开关未落库、重启后会恢复注入（第 228 波审计新增，回执据此说「未落库」）",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认式写入抛错 ⇒ 同上，且要说清「本次运行内仍生效」",
       "round": 187
     },
     {
@@ -582,11 +697,39 @@
       "round": 191
     },
     {
+      "site": "src/core/memory/memory.ts::memory.portChanged::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认链执行前存储端口被替换 ⇒ 本次写入被放弃（改动仍在内存里）⇒ 必须可见并让用户重试（原来静默 return）",
+      "round": 191
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.portChanged::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认链执行前存储端口被替换 ⇒ 本次写入被放弃（改动仍在内存里）⇒ 必须可见并让用户重试（原来静默 return）",
+      "round": 191
+    },
+    {
       "site": "src/core/memory/memory.ts::memory.preMigrationSnapshot::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "第 188 波 F4：**迁移前快照**（唯一可逆凭据）没被确认写入 ⇒ 写盘失败。后果不是通用的『重启会丢』而是『这次迁移整体没执行，旧数据保持原样、下次启动会重来』—— 所以这里上报是必须的：用户/命令要知道『为什么没迁移』（同一次失败也写进迁移报告的 snapshotDeferred）。",
       "round": 188
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.rejectionsPruned::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "「已拒绝」记录超出上限被丢弃 ⇒ 此后同类事实可能重新被提取并再次请用户批准，属自检发现，advisory",
+      "round": 122
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.rejectionsTruncated::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "拒绝记录读盘时被截短（原文永久缩水）⇒ 属自检发现，advisory（不需要用户立即动作，但要知道这件事）",
+      "round": 122
     },
     {
       "site": "src/core/memory/memory.ts::memory.rollback::#1",
@@ -642,6 +785,13 @@
       "kind": "persist",
       "status": "triaged",
       "reason": "写入审批开关没落到设置里 ⇒ **写盘失败**（不是动作失败：开关在本次运行内已生效、重启会回到旧值，用户可再切一次）。也不属 advisory：用户有可介入的动作，不是'已自动修好'。",
+      "round": 209
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.setWriteApproval::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认式写入返回 false / 抛错 ⇒ 写入审批开关未落库（重启后回到旧值，甚至回到「直接生效」）⇒ 必须如实回执",
       "round": 209
     },
     {
@@ -1440,11 +1590,35 @@
       "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
     },
     {
+      "site": "src/core/storage/session-jsonl.ts::sessionLog.appendMessage::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "????????? ? persist?????????SQLite ?????????????????????????/?????????? action???? advisory ?? ?????????",
+      "family": "???????/?????????????????????????FTS ???????????? **????**???????????????"
+    },
+    {
       "site": "src/core/storage/session-jsonl.ts::sessionLog.compact::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "日志压缩没做成（读不出来）⇒ persist：权威副本的**磁盘状态**没有改善（体积一直是这样），属持久状态问题；不是 action（压缩不是一个「动作没生效」就结束的功能点），也不是 advisory（这条是失败，不是发现）。",
       "round": 104
+    },
+    {
+      "site": "src/core/storage/session-jsonl.ts::sessionLog.messageTombstone::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "????????? ? persist?????????????????????????????????????????????????",
+      "family": "???????/?????????????????????????FTS ???????????? **????**???????????????"
+    },
+    {
+      "site": "src/core/storage/session-jsonl.ts::sessionLog.sessionTombstone::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "????????? ? persist??????????????????????????????????",
+      "family": "???????/?????????????????????????FTS ???????????? **????**???????????????"
     },
     {
       "site": "src/core/storage/session-log-bridge.ts::sessionLog.backfill::#1",
@@ -1459,6 +1633,22 @@
       "status": "triaged",
       "reason": "索引重建失败 ⇒ persist（本次重建没完成）。⚠️ 本轮**修掉了这条 extra 里的假话**：原写「已回退旧路径重试」，而回退第 17 轮就删了。",
       "round": 104
+    },
+    {
+      "site": "src/core/storage/session.ts::session.delete.delegation::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "会话已删，但 delegation_tasks 里 source/target 指向它的行没清掉 ⇒ persist：库里留下指向不存在会话的任务行，读侧会把它当成活动任务。",
+      "family": "会话删除的补偿清理（全文索引 / 委派任务）——**残留**属于持久状态问题：删掉的会话还能被搜索命中、委派页签仍指向它"
+    },
+    {
+      "site": "src/core/storage/session.ts::session.delete.fts::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "round": 233,
+      "reason": "会话已删，但 session_fts 里的行没清掉 ⇒ persist：被删的正文仍留在索引里（隐私残留），且搜索会返回指向已删会话的幽灵结果。",
+      "family": "会话删除的补偿清理（全文索引 / 委派任务）——**残留**属于持久状态问题：删掉的会话还能被搜索命中、委派页签仍指向它"
     },
     {
       "site": "src/core/storage/settings.ts::<动态>::#1",
@@ -1487,6 +1677,13 @@
       "status": "triaged",
       "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.save，第 73 行）",
       "round": 104
+    },
+    {
+      "site": "src/core/store.ts::store.createCoordinatorSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "协调者会话已创建，但 coordinatorSessionId 没写进项目状态 ⇒ 上下文不会注入，属写盘失败",
+      "round": 255
     },
     {
       "site": "src/core/store.ts::store.createProject::#1",
@@ -1727,6 +1924,13 @@
       "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
     },
     {
+      "site": "src/store.ts::store.saveMessagesDuringCompaction::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "压缩窗口内收到写入请求（同步窗口，正常不可达）：跳过写库必须可见并让用户可反馈，不许冒充「已排队不丢」",
+      "round": 104
+    },
+    {
       "site": "src/store.ts::store.setFeedback::#1",
       "kind": "persist",
       "status": "triaged",
@@ -1739,146 +1943,6 @@
       "status": "triaged",
       "reason": "反馈写入抛错 ⇒ 未保存",
       "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-    },
-    {
-      "site": "src/App.tsx::freeModelPlugin.start::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "免费模型插件**没启动起来**（没装 Node / 端口被占 / 上游取不到清单）⇒ advisory：这不是「Codem 的某次操作失败」，而是**另一个独立扩展的状态发现** —— 用户可以去装 Node 或到插件卡片上重试，而 Codem 自身功能完全不受影响（这正是「独立存在、不影响 codem」那条要求）。用 action 的语气会让用户以为 Codem 坏了。",
-      "round": 201
-    },
-    {
-      "site": "src/App.tsx::freeModelPlugin.start::#2",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "启动钩子里起插件时**抛了异常**（文件系统/进程权限/宿主命令不可用）⇒ advisory，理由同上：受影响的只有那个独立扩展，用户的应对是「到插件卡片看状态/手动开启」，Codem 自己照常可用。",
-      "round": 201
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#2",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认式写入返回 false ⇒ 开关未落库、重启后会恢复注入（第 228 波审计新增，回执据此说「未落库」）",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#3",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认式写入抛错 ⇒ 同上，且要说清「本次运行内仍生效」",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.setWriteApproval::#2",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认式写入返回 false / 抛错 ⇒ 写入审批开关未落库（重启后回到旧值，甚至回到「直接生效」）⇒ 必须如实回执",
-      "round": 209
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.portChanged::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认链执行前存储端口被替换 ⇒ 本次写入被放弃（改动仍在内存里）⇒ 必须可见并让用户重试（原来静默 return）",
-      "round": 191
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.portChanged::#2",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认链执行前存储端口被替换 ⇒ 本次写入被放弃（改动仍在内存里）⇒ 必须可见并让用户重试（原来静默 return）",
-      "round": 191
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.entriesDropped::#2",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "回退到迁移前时跳过的不合法条目数（与 load 同口径的如实披露）",
-      "round": 187
-    },
-    {
-      "site": "src/store.ts::store.saveMessagesDuringCompaction::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "压缩窗口内收到写入请求（同步窗口，正常不可达）：跳过写库必须可见并让用户可反馈，不许冒充「已排队不丢」",
-      "round": 104
-    },
-    {
-      "site": "src/core/llm/agentic-loop.ts::loop.compactionDeleteIncomplete::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "压缩的软删没有完全落地（索引侧没回应 / 有 id 查不到归属）⇒ 用户会以为旧消息已移除而其实还在，必须可见",
-      "round": 104
-    },
-    {
-      "site": "src/core/llm/index.ts::engine.updateLoopConfig::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "压缩阈值没能推给正在跑的循环（用户改了设置却仍按旧值压缩）⇒ 必须可见",
-      "round": 104
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.rejectionsTruncated::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "拒绝记录读盘时被截短（原文永久缩水）⇒ 属自检发现，advisory（不需要用户立即动作，但要知道这件事）",
-      "round": 122
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.rejectionsPruned::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "「已拒绝」记录超出上限被丢弃 ⇒ 此后同类事实可能重新被提取并再次请用户批准，属自检发现，advisory",
-      "round": 122
-    },
-    {
-      "site": "src/core/context/context.ts::context.updateConfig::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "用户改了压缩配置但没保存成功（重启后回退）⇒ 真失败，persist",
-      "round": 104
-    },
-    {
-      "site": "src/core/context/context.ts::context.refreshFromStorage::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "启动时没能从存储读到压缩配置（会退回默认值 0.8，与用户保存的不一致）⇒ 真失败，persist",
-      "round": 104
-    },
-    {
-      "site": "src/core/llm/index.ts::engine.readCompactionThreshold::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "读取压缩阈值失败时用默认值继续 ⇒ 属自检发现，advisory",
-      "round": 122
-    },
-    {
-      "site": "src/core/llm/agentic-loop.ts::loop.foldToolOutputs::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "工具输出折叠失败（本次未折叠、上下文可能偏高）⇒ 真失败，persist",
-      "round": 104
-    },
-    {
-      "site": "src/App.tsx::app.persistWorktreePath::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "worktree 路径写后回读仍为空（下次发送会重复建 worktree、Git 面板看不到路径）⇒ 真失败，action",
-      "round": 254
-    },
-    {
-      "site": "src/core/store.ts::store.createCoordinatorSession::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "协调者会话已创建，但 coordinatorSessionId 没写进项目状态 ⇒ 上下文不会注入，属写盘失败",
-      "round": 255
-    },
-    {
-      "site": "src/App.tsx::app.concurrency::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "并发上限拒绝回合属于动作失败；已用 safeAddMessage 写进归属会话，用户可见",
-      "round": 256
     }
   ],
   "_families": {

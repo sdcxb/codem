@@ -1,0 +1,21 @@
+{
+  "capturedAt": "2026-10-28T15:56:26.268Z",
+  "setDream": true,
+  "resolved": {
+    "--accent-strong": "color-mix(in srgb, #e88c9a 72%, #1a1a2e)",
+    "--reasoning-accent": "color-mix(in srgb, #e88c9a 60%, #1a1a2e)",
+    "--text-base": "#1a1a2e",
+    "--border-strong": "color-mix(in srgb, #1a1a2e 34%, transparent)",
+    "--shadow-color": "color-mix(in srgb, #1a1a2e 16%, transparent)",
+    "--shadow-color-soft": "color-mix(in srgb, #1a1a2e 8%, transparent)",
+    "--text-on-status": "#ffffff",
+    "--text-ramp-paper": "#fdf5f7",
+    "--accent-surface": "color-mix(in srgb, #e88c9a 8%, transparent)",
+    "--error-border": "color-mix(in srgb, #c0263a 30%, transparent)",
+    "--focus-ring-color": "color-mix(in srgb, #e88c9a 75%, transparent)",
+    "__skin": "dream",
+    "__dreamAccent": "#e88c9a"
+  },
+  "restored": true,
+  "skinAfter": null
+}

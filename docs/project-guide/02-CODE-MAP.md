@@ -58,7 +58,7 @@ src\
 ├─ types\                   共享类型
 ├─ utils\                   file-mentions / auto-link-paths / file-link
 ├─ assets\                  logo 等
-└─ test\                    733 个 .test.ts(x) + helpers/fixtures（约 16.3 万行）
+└─ test\                    764 个 .test.ts(x) + helpers/fixtures（约 16.3 万行）
 ```
 
 ### 2.1 关键前端文件（按“改得最多/最大”）

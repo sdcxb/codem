@@ -1,0 +1,229 @@
+{
+  "capturedAt": "2026-10-28T14:35:33.559Z",
+  "tabs": 24,
+  "picked": [
+    "通用",
+    "外观",
+    "工具",
+    "知识",
+    "记忆体检",
+    "安全"
+  ],
+  "readings": [
+    {
+      "label": "通用",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "通用",
+        "titleFontSize": "13px",
+        "titleFontWeight": "620",
+        "titleText": "身份配置",
+        "rows": [
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 101
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": null
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          }
+        ],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-1-通用.png",
+        "bytes": 269954
+      }
+    },
+    {
+      "label": "外观",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "外观",
+        "titleFontSize": null,
+        "titleFontWeight": null,
+        "titleText": null,
+        "rows": [
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": null
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 154
+          }
+        ],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-2-外观.png",
+        "bytes": 418923
+      }
+    },
+    {
+      "label": "工具",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "工具",
+        "titleFontSize": null,
+        "titleFontWeight": null,
+        "titleText": null,
+        "rows": [],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-3-工具.png",
+        "bytes": 364833
+      }
+    },
+    {
+      "label": "知识",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "知识",
+        "titleFontSize": "13px",
+        "titleFontWeight": "620",
+        "titleText": "📓 知识笔记本设置",
+        "rows": [],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-4-知识.png",
+        "bytes": 236922
+      }
+    },
+    {
+      "label": "记忆体检",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "记忆体检",
+        "titleFontSize": null,
+        "titleFontWeight": null,
+        "titleText": null,
+        "rows": [],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-5-记忆体检.png",
+        "bytes": 711354
+      }
+    },
+    {
+      "label": "安全",
+      "clicked": true,
+      "metrics": {
+        "activeTabLabel": "安全",
+        "titleFontSize": "13px",
+        "titleFontWeight": "620",
+        "titleText": "🔐 权限规则",
+        "rows": [
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": null
+          },
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": null
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "666.008px 199.997px",
+            "display": "grid",
+            "controlWidth": 200
+          },
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": null
+          },
+          {
+            "grid": "none",
+            "display": "flex",
+            "controlWidth": 357
+          }
+        ],
+        "contentScrollWidth": 900,
+        "viewport": 1400
+      },
+      "screenshot": {
+        "file": "C:\\mimo-gui\\docs\\evidence\\settings-tabs-2026-10-28\\settings-6-安全.png",
+        "bytes": 418832
+      }
+    }
+  ]
+}
