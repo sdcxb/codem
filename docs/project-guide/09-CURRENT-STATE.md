@@ -47,7 +47,7 @@
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **780 文件 / 8772 用例：8755 通过、17 跳过、0 失败**（约 160s） |
+| `npx vitest run` | **781 文件 / 8775 用例：8758 通过、17 跳过、0 失败**（约 160s） |
 | 已知失败 | **0** |
 
 ### 3.1 2026-10-26 那两条失败已经消失
@@ -61,7 +61,7 @@
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **774 / 8772**（2026-10-29）。
+- 当前实测 **774 / 8775**（2026-10-29）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---
@@ -127,7 +127,10 @@
 - **PR/CI**：只读同步；不创建/合并/修 CI；
 - **真实模型并发**：自动化重复触发已加并发上限，但“3 并发稳定产出报告”未证明；
 - **`needs_you_pending` / `agent_messages`**：**已补（2026-10-29）**——走通用 `crud.upsert/list/delete` 写穿与重启回填（表早就有，之前只写内存）；判据 `PENDING-PERSIST` PP-1..4；
-- **`session_events`**：只增不减；`keepEventsPerSession` **明确是 no-op**（截断会删掉不可重建的压缩/工具事件）——要做只能「归档后再删」，不能直接 TTL；
+- **`session_events`**：**已补（2026-10-29）**——`events.archive_before` 按 `keep_types` 保留语义事件
+  （`session_meta` / `compaction` / `tool_call` / `tool_result`），其余 >90 天事件先写
+  `archives/events/<date>/<session>.jsonl` 再删；维护每天最多一次、每次最多 100 会话；
+  可回退：设置 `codem-event-retention { enabled:false }`；
 - **`execute_command` 的工作区校验：已决定不做**（不是缺口）。只读越界是必要能力（用户明确裁定）；
   历史上 5–6 次用 `cwd`/字符串判定收紧，都因误伤正常命令（git/npm/跨目录只读）而回退。
   要做只能是 OS 级沙箱（Job Object / 受限令牌），属独立产品决策；**不要再按“加一个工作区校验”重试**。
@@ -140,7 +143,7 @@
 
 | # | 风险 | 影响 | 证据 |
 |---:|---|---|---|
-| 1 | `session_events` 只增不减、无 TTL | 长会话库持续增长；维护不压缩它（含不可重建信息） | `maintenance.ts:2112-2168` |
+| 1 | `session_events` 增长 | **已缓解（2026-10-29）**：90 天前的高频事件先归档 JSONL 再删，语义事件永久保留；见 `event-archive.ts` / `events.archive_before` | `maintenance.ts`、`event-archive.ts` |
 | 2 | `execute_command` 不做工作区校验（**设计取舍，非缺口**） | 只读越界是必要能力；写文件的沙箱仍独立生效；历史上多次收紧均误伤正常命令后回退（见 §9） | `lib.rs:2243-2491` |
 | 3 | 无 Job Object，只 `taskkill /T /F` | 退出/超时可能留孤儿进程 | 全仓 0 命中 `JobObject` |
 | 4 | `needs_you_pending` / `agent_messages` 有表无实现 | 队列不持久化；重启丢失 | `needs-you-queue.ts:8`、`agent-message-queue.ts:8` |
@@ -196,7 +199,7 @@
 8. ~~`execute_command` 的工作区/沙箱边界~~（**已决定不做**：只读越界必要，历史多次收紧回退；见 §5.6/§9）；
 9. Job Object `KILL_ON_JOB_CLOSE`；
 10. ~~`needs_you_pending` / `agent_messages` 落库~~（**已补**；见 §5.6，判据 `PENDING-PERSIST`）；
-11. `session_events` 的保留/归档策略（**未做**；直接 TTL 会丢不可重建事件，需先归档）；
+11. ~~`session_events` 的保留/归档策略~~（**已补**；90 天 + 语义事件保留 + JSONL 归档，见 §5.6）；
 12. worktree 合并冲突逐文件选边 UI（列表/打开/整体选边已有，逐文件未做）；
 13. dream 皮肤令牌：定义/注入/回退已有（`skin-dream.css` + `--dream-*`）；只剩「值优先编号 → 语义命名」可选；
 14. ~~`ChatPanel.showWorkbench` / `SpaceSwitcher`~~（**已删除**；Sidebar 只剩一行注释，2026-10-29 核实）。

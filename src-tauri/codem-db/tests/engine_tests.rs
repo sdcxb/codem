@@ -3874,6 +3874,97 @@ fn append_events(engine: &Engine, sid: &str, n: usize, base_ts: i64, step: i64) 
     }
 }
 
+/// ARCHIVE-1：按时间删，但**保留 keep_types 指定的类型**；返回被删行；meta 永不返回/删除。
+#[test]
+fn archive_before_respects_keep_types_and_returns_rows() {
+    let (_dir, engine) = temp_engine("archive_types");
+    let now = 1_700_000_000_000i64;
+    call(&engine, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&engine, "sessions.upsert", json!({ "id": "s1", "project_id": "p1" }));
+    // meta + 2 条 user_message
+    append_events(&engine, "s1", 3, now, 1000);
+    call(
+        &engine,
+        "events.append",
+        json!({
+            "session_id": "s1",
+            "event_type": "compaction",
+            "payload": { "summary": "s" },
+            "timestamp": now + 3000,
+        }),
+    );
+    call(
+        &engine,
+        "events.append",
+        json!({
+            "session_id": "s1",
+            "event_type": "tool_call",
+            "payload": { "id": "t1" },
+            "timestamp": now + 4000,
+        }),
+    );
+
+    let res = call(
+        &engine,
+        "events.archive_before",
+        json!({
+            "session_id": "s1",
+            "before_ts": now + 10_000,
+            "keep_types": ["compaction", "tool_call"],
+            "limit": 100,
+        }),
+    );
+    assert_eq!(res["removed"], 2, "只该删 2 条 user_message");
+    let rows = res["rows"].as_array().expect("rows");
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r["type"] == "user_message"), "返回的必须是被删的那两条");
+    assert!(rows.iter().all(|r| r["payload"].is_string()), "payload 以原始 JSON 字符串返回，便于写归档");
+
+    let list = call(&engine, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+    let left = list["items"].as_array().expect("items");
+    assert_eq!(left.len(), 3, "meta + compaction + tool_call 必须留下");
+    assert!(left.iter().any(|r| r["type"] == "session_meta"));
+    assert!(left.iter().any(|r| r["type"] == "compaction"));
+    assert!(left.iter().any(|r| r["type"] == "tool_call"));
+
+    let again = call(
+        &engine,
+        "events.archive_before",
+        json!({
+            "session_id": "s1",
+            "before_ts": now + 10_000,
+            "keep_types": ["compaction", "tool_call"],
+            "limit": 100,
+        }),
+    );
+    assert_eq!(again["removed"], 0, "重复执行必须是空操作");
+}
+
+/// ARCHIVE-2：limit 分批，返回行数不超过 limit。
+#[test]
+fn archive_before_batches_by_limit() {
+    let (_dir, engine) = temp_engine("archive_limit");
+    let now = 1_700_000_000_000i64;
+    call(&engine, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&engine, "sessions.upsert", json!({ "id": "s1", "project_id": "p1" }));
+    append_events(&engine, "s1", 6, now, 1000);
+
+    let first = call(
+        &engine,
+        "events.archive_before",
+        json!({ "session_id": "s1", "before_ts": now + 10_000, "keep_types": [], "limit": 2 }),
+    );
+    assert_eq!(first["removed"], 2);
+    assert_eq!(first["rows"].as_array().unwrap().len(), 2);
+
+    let second = call(
+        &engine,
+        "events.archive_before",
+        json!({ "session_id": "s1", "before_ts": now + 10_000, "keep_types": [], "limit": 2 }),
+    );
+    assert_eq!(second["removed"], 2);
+}
+
 /// PRUNE-1：只删「早于 TTL 且不在最近 keep 条里」的事件；meta 永不删；重复执行幂等。
 #[test]
 fn prune_older_than_keeps_tail_and_meta() {

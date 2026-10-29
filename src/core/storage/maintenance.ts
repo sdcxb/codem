@@ -2842,6 +2842,22 @@ export async function runDatabaseMaintenance(
       }),
   );
   performance.measure('maint:total','maint:start');
+  /**
+   * 事件保留（2026-10-29）：先归档、再删过期的高频事件。
+   * 不并进上面的 DB 维护事务：归档要写文件，失败只影响本批；引擎命令缺失/端口未就绪时跳过。
+   * 每天最多一次（event-archive 内部按设置节流），不会拖慢每次启动。
+   */
+  try {
+    const { runEventArchiveMaintenance } = await import("./event-archive");
+    const archived = await runEventArchiveMaintenance();
+    if (archived.archived > 0) {
+      console.log(`[maintenance] 事件归档：${archived.sessions} 个会话 / ${archived.archived} 条事件`);
+    } else if (archived.skipped && archived.skipped !== "throttled") {
+      console.warn(`[maintenance] 事件归档跳过：${archived.skipped}`);
+    }
+  } catch (e) {
+    console.warn("[maintenance] 事件归档失败（不影响数据库维护）:", e);
+  }
   return result;
 }
 

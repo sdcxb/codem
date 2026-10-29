@@ -589,6 +589,98 @@ pub fn events_prune_older_than(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// 按时间归档/删除事件，**但保留指定类型**（2026-10-29：事件保留策略的引擎半边）。
+///
+/// 与 `events_prune_older_than` 的差别：
+/// - 它除 `session_meta` 外**全删**，适合“这些事件都不要了”；
+/// - 本命令只删 `keep_types` **之外**的类型，并把被删行**返回**给调用方先写归档文件。
+///   `compaction` / `tool_call` / `tool_result` 是不可重建的（快照压缩会丢配对与时间上下文），
+///   所以保留清单必须由调用方显式给出，不能在这里猜。
+///
+/// 语义：
+/// - `session_meta` 永远不返回、不删除（会话身份）；
+/// - 按 `seq` 升序取一批（`limit` 夹在 1..=1000），返回后由调用方写盘；
+/// - 删除与查询在**同一事务**里，返回的行就是实际被删的行。
+pub fn events_archive_before(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let before_ts = req_i64(p, "before_ts")?;
+    let limit = limit_of(p)?.clamp(1, 1000) as i64;
+    let keep_types: Vec<String> = p
+        .get("keep_types")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    engine.write_tx(|tx| {
+        let mut sql = String::from(
+            "SELECT seq, event_type, payload, timestamp FROM session_events \
+             WHERE session_id = ?1 AND timestamp < ?2 AND event_type <> 'session_meta'",
+        );
+        let mut vals: Vec<SqlValue> = vec![
+            SqlValue::Text(session_id.clone()),
+            SqlValue::Integer(before_ts),
+        ];
+        if !keep_types.is_empty() {
+            let mut marks = Vec::with_capacity(keep_types.len());
+            for t in &keep_types {
+                vals.push(SqlValue::Text(t.clone()));
+                marks.push(format!("?{}", vals.len()));
+            }
+            sql.push_str(&format!(" AND event_type NOT IN ({})", marks.join(",")));
+        }
+        vals.push(SqlValue::Integer(limit));
+        sql.push_str(&format!(" ORDER BY seq ASC LIMIT ?{}", vals.len()));
+
+        let mut stmt = tx.prepare(&sql).map_err(DbError::from)?;
+        let mapped = stmt
+            .query_map(params_from_iter(vals.iter()), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+        let mut collected = Vec::new();
+        for row in mapped {
+            collected.push(row.map_err(DbError::from)?);
+        }
+        drop(stmt);
+        if collected.is_empty() {
+            return Ok(json!({ "removed": 0, "rows": [] }));
+        }
+
+        let seqs: Vec<i64> = collected.iter().map(|r| r.0).collect();
+        let mut delete_sql =
+            String::from("DELETE FROM session_events WHERE session_id = ?1 AND seq IN (");
+        let mut dvals: Vec<SqlValue> = vec![SqlValue::Text(session_id.clone())];
+        let mut marks = Vec::with_capacity(seqs.len());
+        for seq in &seqs {
+            dvals.push(SqlValue::Integer(*seq));
+            marks.push(format!("?{}", dvals.len()));
+        }
+        delete_sql.push_str(&marks.join(","));
+        delete_sql.push(')');
+        let removed = tx
+            .execute(&delete_sql, params_from_iter(dvals.iter()))
+            .map_err(DbError::from)?;
+
+        let rows: Vec<Value> = collected
+            .into_iter()
+            .map(|(seq, ty, payload, ts)| {
+                json!({ "seq": seq, "type": ty, "payload": payload, "timestamp": ts })
+            })
+            .collect();
+        Ok(json!({ "removed": removed, "rows": rows }))
+    })
+}
+
 /// ???????? 233 ?????? B???????????
 ///
 /// ? `events_prune_older_than` ???????**???**???????????????

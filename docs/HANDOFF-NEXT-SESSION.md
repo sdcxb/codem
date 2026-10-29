@@ -7602,3 +7602,16 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   2. stack 市场：现有技能市场已是真的（GitHub/ClawHub/Skills.sh/SkillHub，ZIP+审计），
      但 stack 层没有 registry/发布流水线/UI；方案是 GitHub Releases + `stacks/index.json` + sha256。
 - 门禁：`tsc` 0；全量 **780 文件 / 8772 用例（8755 通过 + 17 skipped + 0 失败）**；未发版。
+## 2026-10-29 14:55 — 第 258 波：事件归档（引擎命令 + 维护任务）
+
+- **引擎**：新增 `events.archive_before { session_id, before_ts, keep_types, limit }`：
+  只删 `keep_types` 之外、早于截止时间的事件，**返回被删行**；`session_meta` 永不返回/删除；
+  删除与查询同一事务。测试 `archive_before_respects_keep_types_and_returns_rows` / `..._batches_by_limit`。
+- **维护**：`event-archive.ts` 逐会话分批调用，先把行写 `archives/events/<本地日>/<session>.jsonl`
+  再进入下一批；默认 90 天、保留 `session_meta/compaction/tool_call/tool_result`；每天最多一次、
+  每次最多 100 会话；设置 `codem-event-retention` 可关；判据 `EVENT-ARCHIVE` EA-1..3。
+- **为什么保留清单是显式的**：`compaction/tool_call/tool_result` 不可从消息重建（快照会丢配对/时间上下文），
+  旧 `events.prune_older_than` 除 meta 外全删，不能直接拿来做 TTL。
+- **结构门禁**：时间口径改用 `localDateString` / `setDate`（不写裸 24h），设置键补写入方；
+  `settings-keys-symmetry` / `settings-mock-parity` / `time-single-source` / `time-window-dst` 全绿。
+- 门禁：`tsc` 0；全量 **781 文件 / 8775 用例（8758 通过 + 17 skipped + 0 失败）**；Rust 引擎测试通过；未发版。
