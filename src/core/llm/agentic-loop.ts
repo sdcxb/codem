@@ -30,6 +30,8 @@ import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
 /** P1-3：后台任务完成通知（会话之外的一张未读表；播报走尾部上下文，不碰前缀）。 */
 import { collectBackgroundJobNotices } from "./background-job-notices";
+/** 协作路由：用户的措辞 → 该走哪条协作路（只在命中时追加到尾部）。 */
+import { buildCollaborationRoutingHint, detectCollaborationRoutes } from "./collaboration-routing";
 import { formatAttachmentsInline } from "./attachment-formatter";
 import type { MessageAttachment } from "../../store";
 import { getNeedsYouQueue } from "./needs-you-queue";
@@ -44,6 +46,8 @@ import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
+/** P0：工具调用/结果配对的唯一实现（请求侧最后一道结构保证）。 */
+import { enforceToolPairing } from "./tool-pairing";
 import { recordVerificationCheck } from "../environment/verification-checks";
 import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
 import { recordLoopStop } from "./loop-stop-log";
@@ -57,7 +61,6 @@ import { summarizeModelContext, estimateRawContextTokens } from "./compaction-bu
 import {
   FOLD_TARGET_RATIO,
   foldToolOutputsUnderTarget,
-  protectedFromIndexForTurns,
   shouldFoldToolOutputs,
 } from "./tool-output-fold";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
@@ -2549,6 +2552,24 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       const jobNotices = collectBackgroundJobNotices(sessionId, this.currentTurnId);
       if (jobNotices) {
         trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + jobNotices;
+      }
+
+      /**
+       * 协作路由（场景 → 工具）：只在**用户这条消息**出现明确的团队/委派/并行意图时注入。
+       *
+       * 为什么放在尾部而不是 system：它随用户措辞变化（同一会话不同回合不同），
+       * 进前缀就会击穿缓存；而且这是"这一轮该走哪条路"，本质是易变上下文。
+       * 没有命中时一个字都不写 —— 绝大多数任务本来就该在主循环里做完。
+       */
+      const collaborationHint = buildCollaborationRoutingHint(userMessage);
+      if (collaborationHint) {
+        trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + collaborationHint;
+        // 可观测：路由命中/转换率要靠这一行统计（`codem-debug=agent-loop` 时可见）
+        debugLog(
+          "agent-loop",
+          "collaboration route:",
+          detectCollaborationRoutes(userMessage).map((r) => r.route).join(","),
+        );
       }
 
       // P2-12（第 118 轮修正 / 第？波改走尾部消息）：把活跃目标真正注入给模型。
@@ -5545,7 +5566,6 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       const before = estimateRawContextTokens(messages as never[]);
       if (shouldFoldToolOutputs(before / available)) {
         const fold = foldToolOutputsUnderTarget(messages, {
-          protectedFromIndex: protectedFromIndexForTurns(messages),
           targetTokens: Math.floor(available * FOLD_TARGET_RATIO),
           estimate: (ms) => estimateRawContextTokens(ms as never[]),
         });
@@ -5553,7 +5573,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           messages = fold.messages;
           foldedToolOutputs = fold.candidates.length;
           console.log(
-            `[fold] 已折叠 ${foldedToolOutputs} 条较远的工具输出（省 ${fold.savedChars} 字符；最近 3 轮未动）`,
+            `[fold] 已折叠 ${foldedToolOutputs} 条较远的工具输出（省 ${fold.savedChars} 字符；最近 2 条结果未动）`,
           );
         }
       }
@@ -5645,69 +5665,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     const selected = this.selectMessagesByPriority(prunedForSelect, selectBudgetTokens);
     phase("select");
 
-    // Filter orphan tool messages AND strip dangling tool_calls
-    // 1. If a "tool" message has no preceding assistant with tool_calls → drop it
-    // 2. If an assistant has tool_calls but its tool results were dropped by selection
-    //    → strip tool_calls from the assistant so the LLM doesn't see "pending" tool calls
-    //    and retry them (root cause of tool call loops)
-    // 3. (FIX) If an assistant declares N tool_calls but only M<N results survived
-    //    context selection, keep ONLY the M fulfilled tool_calls and drop the rest —
-    //    otherwise the API rejects the payload with 400 "insufficient tool messages
-    //    following tool_calls message" (DeepSeek/OpenAI strict pairing requirement).
-    //    Previously we only checked whether ANY tool result followed the assistant,
-    //    so a partially-truncated pair slipped through.
-    const declaredToolCallIds = new Set<string>();
-    for (const msg of selected) {
-      if (msg.role === "assistant" && (msg as any).tool_calls) {
-        for (const tc of (msg as any).tool_calls) declaredToolCallIds.add(tc.id);
-      }
-    }
-    const presentToolResultIds = new Set<string>();
-    for (const msg of selected) {
-      if (msg.role === "tool" && (msg as any).toolCallId) presentToolResultIds.add((msg as any).toolCallId);
-    }
-
-    const valid: any[] = [];
+    // Filter orphan tool messages AND strip dangling tool_calls —— 实现已抽到
+    // `tool-pairing.ts`（唯一实现 + 纯函数判据）。三种形态：
+    // 1. 孤儿 tool 结果（没有 assistant 声明）→ 丢；
+    // 2. assistant 有 tool_calls 但一条结果都没有 → 整块剥掉（否则模型重试"挂起的调用"）；
+    // 3. 部分结果 → 只保留有结果的那些（DeepSeek/OpenAI 严格配对，不然 400）。
+    const pairing = enforceToolPairing(selected);
+    const valid: any[] = pairing.messages;
     /**
-     * 第 122 轮 B 项：这两处剥离原来**只写 console.warn**（用户在界面上完全看不到），
+     * 第 122 轮 B 项：这些剥离原来**只写 console.warn**（界面上完全看不到），
      * 而它们正是"模型突然忘了自己调过什么工具"的直接原因。计数后交给
      * `context-visibility` 投给界面（见下面 `recordContextDrop` 的注释）。
      */
-    let strippedToolCallMessages = 0;
-    let strippedToolCalls = 0;
-    for (const msg of selected) {
-      if (msg.role === "tool") {
-        // Drop orphan tool results — no assistant in the selected window declares this tool_call_id.
-        // Keeping them triggers API 400 "missing field tool_call_id" (a tool message must
-        // immediately follow the assistant message that declared its tool_call).
-        if ((msg as any).toolCallId && declaredToolCallIds.has((msg as any).toolCallId)) {
-          valid.push(msg);
-        }
-        continue;
-      }
-      if (msg.role === "assistant" && (msg as any).tool_calls && (msg as any).tool_calls.length > 0) {
-        // Keep only tool_calls that actually have a surviving result; strip unfulfilled ones.
-        const matched = (msg as any).tool_calls.filter((tc: any) => presentToolResultIds.has(tc.id));
-        if (matched.length === 0) {
-          // No results at all → strip tool_calls entirely; the LLM only sees the text content.
-          const { tool_calls, ...rest } = msg;
-          valid.push(rest);
-          strippedToolCallMessages++;
-          strippedToolCalls += (msg as any).tool_calls.length;
-          console.warn(`[buildMessages] Stripped dangling tool_calls from assistant ${msg.id} (tool results were dropped by context selection)`);
-        } else if (matched.length !== (msg as any).tool_calls.length) {
-          // Partial results → keep only the fulfilled tool_calls so the API pairing is exact.
-          valid.push({ ...msg, tool_calls: matched });
-          strippedToolCallMessages++;
-          strippedToolCalls += (msg as any).tool_calls.length - matched.length;
-          console.warn(`[buildMessages] Stripped ${(msg as any).tool_calls.length - matched.length} unfulfilled tool_calls from assistant ${msg.id} (results dropped by context selection)`);
-        } else {
-          valid.push(msg);
-        }
-        continue;
-      }
-      valid.push(msg);
-    }
+    const strippedToolCallMessages = pairing.strippedToolCallMessages;
+    const strippedToolCalls = pairing.strippedToolCalls;
 
     // --- 上下文折叠（防"失忆"重复劳动 → 省 token）---
     // selectMessagesByPriority 超预算时会丢弃最早消息（无摘要）。对长任务，
@@ -6628,7 +6599,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       ? `这是之前对话的已有摘要：\n\n${existingSummary}\n\n---\n\n以下是新增的对话内容：\n\n${truncatedConv}\n\n---\n\n${compactionInstruction}`
       : `请为以下对话生成结构化摘要：\n\n${truncatedConv}\n\n---\n\n${compactionInstruction}`;
 
-    // Use the same provider/model as the main conversation for prefix cache reuse
+    // 用**同一个 provider/model**（配置层可覆盖）：不是为了让缓存命中（见下面 189 波的说明），
+    // 而是为了压缩能力不依赖额外凭据/模型路由。
     const resolved = this.config.resolveProvider?.("compaction");
     const compactionProvider = resolved?.provider || this.provider;
     const compactionModel = resolved?.model || this.config.model || this.provider.id;
@@ -6647,6 +6619,28 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     };
 
     const response = await compactionProvider.complete(request);
+    /**
+     * 压缩调用的**独立读数**（P0 缺口）。
+     *
+     * 为什么单独打一行：压缩走 `complete()`，它的 usage **不会**经过流式那条
+     * `applyUsage` 路径，所以既不计入 `totalUsage`、也没有 `[prompt-cache]` 日志 ——
+     * 于是「压缩花了多少 token、命中多少缓存」在真机上根本量不到。
+     *
+     * 口径：provider 没上报的字段一律打 `?`，不编 0（与 `usage-normalize.ts` 同一条纪律）。
+     * 缓存命中在这里**预期为 0/极低**：压缩请求的 system 只有一句摘要提示，与主会话前缀不同 ——
+     * 这一行就是用来证实/证伪这句话的（真机装完跑一次长会话，grep `[compact]` 即可）。
+     */
+    const usage: any = (response as any)?.usage;
+    if (usage) {
+      const prompt = Number(usage.promptTokens ?? 0);
+      const hit = usage.cacheHitTokens;
+      const miss = hit === undefined ? "?" : (usage.uncachedInputTokens ?? Math.max(0, prompt - hit));
+      console.log(
+        `[compact] usage prompt=${prompt} completion=${Number(usage.completionTokens ?? 0)} ` +
+          `cacheHit=${hit === undefined ? "?" : hit} miss=${miss} model=${compactionModel} ` +
+          `convChars=${truncatedConv.length}`,
+      );
+    }
     return response.content;
   }
 

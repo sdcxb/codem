@@ -42,7 +42,6 @@ describe("ARGSFOLD 旧工具参数折叠", () => {
     expect(before, "构造场景必须真的超预算").toBeGreaterThan(0.7);
 
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: 0,
       targetTokens: Math.floor(AVAILABLE * 0.45),
       estimate,
     });
@@ -70,7 +69,6 @@ describe("ARGSFOLD 旧工具参数折叠", () => {
       { id: "x", role: "assistant", content: "完成" },
     ];
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: 0,
       targetTokens: 1,
       estimate,
     });
@@ -84,14 +82,14 @@ describe("ARGSFOLD 旧工具参数折叠", () => {
     const msgs: any[] = [user("u0")];
     for (let i = 0; i < 10; i++) msgs.push(writeCall(`w${i}`, `f${i}`, 20_000));
     const snapshot = JSON.stringify(msgs);
-    foldToolOutputsUnderTarget(msgs, { protectedFromIndex: 0, targetTokens: 1, estimate });
+    foldToolOutputsUnderTarget(msgs, { targetTokens: 1, estimate });
     expect(JSON.stringify(msgs)).toBe(snapshot);
   });
 
   it("ARGSFOLD-4: 参数折叠后 JSON 仍然可序列化（tool-call 协议不坏）", () => {
     const msgs: any[] = [user("u0")];
     for (let i = 0; i < 6; i++) msgs.push(writeCall(`w${i}`, `f${i}`, 30_000));
-    const result = foldToolOutputsUnderTarget(msgs, { protectedFromIndex: 0, targetTokens: 1, estimate });
+    const result = foldToolOutputsUnderTarget(msgs, { targetTokens: 1, estimate });
     for (const m of result.messages) {
       for (const tc of m.toolCalls ?? []) {
         expect(() => JSON.stringify(tc.args)).not.toThrow();

@@ -250,7 +250,10 @@ for await (event of provider.stream(request)):
 
 **为什么**：服务端前缀缓存（DeepSeek KV cache）按字节匹配；把每分钟变的 date 和易变记忆放最后，稳定前缀才能命中。判据 `MEM-PLACE-*`、`dsh-d5-prefix-cache-stability`。
 
-**易变内容另有一条通道**：时间戳、活跃目标、计划上下文、surface 状态作为**独立的尾部 user 消息**注入，而不是拼进 system；否则同轮跨迭代的前缀会变。
+**易变内容另有一条通道**：时间戳、活跃目标、计划上下文、surface 状态、**后台任务完成通知**、以及
+**协作路由提示**（用户这句话命中"团队 / 交给另一个会话 / 并行"时才注入，见 [collaboration-routing.ts](src/core/llm/collaboration-routing.ts)）
+作为**独立的尾部 user 消息**注入，而不是拼进 system；否则同轮跨迭代的前缀会变。判据 `dsh-d5-prefix-cache-stability`、
+`ROUTE-5`（路由提示到达模型但不进 system 前缀）。
 
 ---
 

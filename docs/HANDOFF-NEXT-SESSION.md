@@ -7500,3 +7500,30 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 门禁：`tsc` 0；全量 **771 文件 / 8708 用例（8691 通过 + 17 skipped + 0 失败，155.70s）**；
   `audit:docs` 通过；文档计数同步到 8708/8691。
 - 未发布（版本仍 1.16.331）。仍然未知：自动压缩真机、压缩 usage、`tool_search` 召回、其他用户的团队使用分布。
+## 2026-10-29 11:12 — 第 253 波：四项技术缺口补齐 + 多智能体「场景路由」（不再按"没人用"隐藏）
+
+- **自动压缩触发路径（判据层端到端）**：新增 `auto-compaction-trigger.test.ts` —— 假端口预置 60 条消息 + 24k 窗口，
+  从 `run()` 真跑出压缩；断言 `compaction_start/end`、`messagesRemoved > 0`、摘要 `complete()` 被调用、
+  历史出现压缩标记、压缩后请求更小。变异（禁用触发条件）⇒ 红。**真机（打包应用横幅/重载）仍未验**。
+- **压缩请求的 usage 读数**：`generateCompactionSummaryCacheAware` 打一行
+  `[compact] usage prompt=… completion=… cacheHit=… miss=… model=… convChars=…`；provider 没报的字段打 `?`。
+  端到端用例断言这行存在且不伪造 `cacheHit=0`。仍**没有**把压缩 usage 计入 `totalUsage`（评测口径取舍）。
+- **配对/折叠不变量**：剥离逻辑抽成唯一实现 + 纯函数 `src/core/llm/tool-pairing.ts`（孤儿 tool、悬空/部分 tool_calls），
+  新增 `tool-pairing.test.ts` 7 条（折叠不拆对 + 三种非法形状 + 消息/调用/结果都在）。
+  顺带发现并修掉一个**真缺陷**：折叠的 `protectedFromIndex` / `protectedFromIndexForTurns` 是**死参数**
+  （声明、传参、从未读取），而文档承诺「最近 3 轮不折」；该承诺与长回合折叠的前提冲突。
+  已删死参数、改文档为真实语义（只保护最近 2 条结果），并更新 5 个既有测试里"用 0 关保护"的写法。
+  `context-drop-visibility` 的 CD-6 静态接线判据同步改为断言「循环把 `pairing` 计数接进可见通道」（变异 ⇒ 红）。
+- **记忆截断可见性**：复核已有判据（`memory-placement-boundary` 断言「未注入」+ 预算 + 条数；写入侧有回执）
+  ⇒ 结论「通过」，无新增代码。
+- **多智能体：按用户意见改为"修会不会用"**：新增 `src/core/llm/collaboration-routing.ts` ——
+  只在用户话里出现**团队 / 团队状态 / 交给另一个会话 / 并行**时，把「该走哪条路 + 第一步调什么 + 什么时候不该用」
+  注入**尾部上下文**（不进 system 前缀；没命中不写）。另给 5 个关键工具补跨机制对照 guidance
+  （subagent ⇄ handoff、delegate ⇄ subagent、squad ⇄ agent_teams、以及"一件小事就在主循环做完"）。
+  新增 `collaboration-routing.test.ts` 6 条（三类说法命中、普通请求不误报、提示含反例、最多两条、
+  命中到达模型且不进 system）。变异（去掉注入）⇒ ROUTE-5 红。
+  **没有**把 13 个团队工具改为延迟加载/默认关闭（用户明确否掉）；693 会话的 0 使用只作为"样本偏差"记录，
+  不作为隐藏依据（见 `17-MULTI-AGENT-INVENTORY.md` §5）。
+- **门禁**：`tsc` 0；全量 **774 文件 / 8722 用例（8705 通过 + 17 skipped + 0 失败）**；
+  上报点 278=278；可达性、语法、控制字节、`audit:docs` 全过；`BASELINE.json` testFiles 771 → 774。
+- 未发布（版本仍 1.16.331）。仍未验：自动压缩真机、压缩 usage 计入成本、路由的**真实转化率**（需要带模型的评测）。

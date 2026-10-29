@@ -150,9 +150,17 @@ describe("第 122 轮 · 上下文丢弃的可见通道", () => {
     expect(cond).toContain("droppedCount");
     expect(cond).toContain("strippedToolCallMessages");
 
-    // ③ 计数变量必须真的被自增（否则守卫恒假，"接了"是假的）
-    expect(src).toMatch(/strippedToolCallMessages\+\+/);
-    expect(src).toMatch(/strippedToolCalls \+=/);
+    // ③ 计数必须真的被自增（否则守卫恒假，"接了"是假的）
+    /**
+     * 2026-10-29：剥离逻辑已抽到 `tool-pairing.ts`（唯一实现 + 纯函数判据），
+     * 所以自增发生在那里；循环必须把它的计数**接进来**，否则守卫恒假。
+     */
+    expect(src).toMatch(/const pairing = enforceToolPairing\(selected\)/);
+    expect(src).toMatch(/strippedToolCallMessages = pairing\.strippedToolCallMessages/);
+    expect(src).toMatch(/strippedToolCalls = pairing\.strippedToolCalls/);
+    const pairingSrc = readFileSync("src/core/llm/tool-pairing.ts", "utf8");
+    expect(pairingSrc, "剥离计数必须在真实实现里自增").toMatch(/strippedToolCallMessages \+= 1/);
+    expect(pairingSrc).toMatch(/strippedToolCalls \+=/);
     expect(src).toMatch(/droppedCount = dropped\.length/);
     // 折叠摘要是否插入也要如实记录（它只进模型的消息数组，不落库）
     expect(src).toMatch(/foldSummaryInserted:\s*foldInserted/);

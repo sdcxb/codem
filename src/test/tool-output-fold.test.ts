@@ -16,7 +16,6 @@ import {
   foldToolOutputsUnderTarget,
   isReproducibleTool,
   planToolOutputFold,
-  protectedFromIndexForTurns,
 } from "../core/llm/tool-output-fold";
 import { summarizeModelContext } from "../core/llm/compaction-budget";
 
@@ -72,9 +71,7 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
       "前提：折叠前确实超过目标档（否则这条判据没意义）",
     ).toBeGreaterThan(target);
 
-    const protectedFrom = protectedFromIndexForTurns(msgs);
     const folded = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: protectedFrom,
       targetTokens: target,
       estimate: chars,
     });
@@ -88,8 +85,7 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
 
   it("FD-2：最近 2 条工具结果绝不被折", () => {
     const msgs = longHistory();
-    const protectedFrom = protectedFromIndexForTurns(msgs);
-    const candidates = planToolOutputFold(msgs, { protectedFromIndex: protectedFrom });
+    const candidates = planToolOutputFold(msgs, {});
     /* 最近 N 条工具结果（无论在第几轮）不许折 */
     const withResults = msgs.filter((m) => m.toolCalls?.length).map((m) => String(m.id));
     const recentResults = new Set(withResults.slice(-FOLD_KEEP_RECENT_RESULTS));
@@ -102,9 +98,7 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
   it("FD-3：折叠是读时视图 —— 原文一个字都不少（不销毁信息）", () => {
     const msgs = longHistory();
     const original = JSON.stringify(msgs);
-    const protectedFrom = protectedFromIndexForTurns(msgs);
     const folded = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: protectedFrom,
       targetTokens: 1000,
       estimate,
     });
@@ -124,7 +118,7 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
       usr("u2", 3),
       asst("a2", [1000], 4, ["read"]),
     ];
-    const plan = planToolOutputFold(msgs, { protectedFromIndex: 4, keepRecentResults: 0 });
+    const plan = planToolOutputFold(msgs, { keepRecentResults: 0 });
     const web = plan.find((c) => c.tool === "web_fetch");
     const read = plan.find((c) => c.tool === "read");
     expect(web, "网页抓取必须被当成候选（但不能折狠）").toBeTruthy();
@@ -147,14 +141,13 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
       usr("ru1", 4),
       asst("ra1", [500], 5, ["read"]),
     ];
-    const plan = planToolOutputFold(msgs, { protectedFromIndex: 3, keepRecentResults: 0 });
+    const plan = planToolOutputFold(msgs, { keepRecentResults: 0 });
     expect(plan[0].messageId, "省得最多的那条必须排第一（距离×体积）").toBe("new-big");
   });
 
   it("FD-6：确定性 —— 同一输入两次折叠结果完全一致（否则水位会抖、横幅会闪）", () => {
     const msgs = longHistory();
-    const protectedFrom = protectedFromIndexForTurns(msgs);
-    const opts = { protectedFromIndex: protectedFrom, targetTokens: 5000, estimate };
+    const opts = { targetTokens: 5000, estimate };
     const a = foldToolOutputsUnderTarget(msgs, opts);
     const b = foldToolOutputsUnderTarget(msgs, opts);
     expect(JSON.stringify(a.messages)).toBe(JSON.stringify(b.messages));

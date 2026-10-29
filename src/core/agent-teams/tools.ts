@@ -47,8 +47,9 @@ export function createAgentTeamsCreateTool(): ToolDef {
       ? "创建多智能体团队。调用方成为队长。之后用 agent_teams_add_member 添加成员、agent_teams_create_task 拆解带依赖的任务。"
       : "Create a multi-agent team. The caller becomes the captain. Then use agent_teams_add_member to add members and agent_teams_create_task to break goals into dependency-aware tasks.",
     guidance: zh()
-      ? "当用户要求'用团队/多名 agent 协作完成 X'时，先 create 团队再逐项派活。"
-      : "When the user asks for a team of agents to collaborate on X, create the team first, then dispatch tasks.",
+      ? "当用户要求'用团队/多名 agent 协作完成 X'时，先 create 团队再逐项派活。若已有合适的 squad 模板，squad_dispatch 更短；只有一件小事就不要建团队。"
+      : "When the user asks for a team of agents to collaborate on X, create the team first, then dispatch tasks. " +
+        "If a squad template already fits, squad_dispatch is the shorter path; for one small job do not build a team at all.",
     parameters: {
       type: "object",
       properties: {

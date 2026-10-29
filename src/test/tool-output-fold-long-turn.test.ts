@@ -13,7 +13,6 @@
 import { describe, it, expect } from "vitest";
 import {
   foldToolOutputsUnderTarget,
-  protectedFromIndexForTurns,
   planToolOutputFold,
   FOLD_KEEP_TAIL_MESSAGES,
 } from "../core/llm/tool-output-fold";
@@ -70,7 +69,6 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
       .map((m) => m.toolCalls[0].result);
 
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: protectedFromIndexForTurns(msgs),
       targetTokens: Math.floor(AVAILABLE * 0.45),
       estimate,
     });
@@ -96,7 +94,7 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
 
   it("FOLD-LONGTURN-2: 小结果不折；最近 2 条结果永远不动", () => {
     const short = [userMsg("u0"), toolMsg("t0", 1_500), { id: "a0", role: "assistant", content: "好" }];
-    expect(planToolOutputFold(short, { protectedFromIndex: 0 }), "小于阈值的工具结果不折").toHaveLength(0);
+    expect(planToolOutputFold(short, {}), "小于阈值的工具结果不折").toHaveLength(0);
   });
 
   it("FOLD-LONGTURN-4: 最近 2 条工具结果即使落在末尾保护之外，也不许折", () => {
@@ -105,7 +103,7 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
     // 末尾 10 条都是纯文本消息 ⇒ 最后 2 条工具结果在"末尾 8 条"之外，
     // 只能靠 FOLD_KEEP_RECENT_RESULTS 保护它们。
     for (let k = 0; k < 10; k++) msgs.push({ id: `x${k}`, role: "assistant", content: "说明。" });
-    const candidates = planToolOutputFold(msgs, { protectedFromIndex: 0 });
+    const candidates = planToolOutputFold(msgs, {});
     const ids = new Set(candidates.map((c) => c.messageId));
     expect(ids.has("t5"), "最近 1 条工具结果不许折").toBe(false);
     expect(ids.has("t4"), "最近 2 条工具结果不许折").toBe(false);
@@ -126,7 +124,6 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
     expect(before, "构造场景必须真的很高").toBeGreaterThan(1);
 
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: 0,
       targetTokens: Math.floor(AVAILABLE * 0.45),
       estimate,
     });
@@ -148,7 +145,6 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
       });
     }
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: 0,
       targetTokens: Math.floor(AVAILABLE * 0.45),
       estimate,
     });
@@ -167,7 +163,6 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
     expect(before, "构造场景必须真的很高").toBeGreaterThan(1);
 
     const result = foldToolOutputsUnderTarget(msgs, {
-      protectedFromIndex: protectedFromIndexForTurns(msgs),
       targetTokens: Math.floor(AVAILABLE * 0.45),
       estimate,
     });
@@ -189,7 +184,7 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
       msgs.push(toolMsg(`t${t}`, 9_000));
       msgs.push({ id: `a${t}`, role: "assistant", content: "好。" });
     }
-    const candidates = planToolOutputFold(msgs, { protectedFromIndex: protectedFromIndexForTurns(msgs) });
+    const candidates = planToolOutputFold(msgs, {});
     // 18 条消息、尾部保护 3 条 + 最近 2 条结果（t4/t5）⇒ 可折 t0..t3
     expect(candidates.map((c) => c.messageId).sort()).toEqual(["t0", "t1", "t2", "t3"]);
   });

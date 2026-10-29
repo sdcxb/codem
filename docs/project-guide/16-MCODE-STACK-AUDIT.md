@@ -138,9 +138,10 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
   这两个事件目前只被「类型可构造」断言过（`regression-p0-p4-full` / `regression-coding-cross-impact`）。
 - 所以 `09` §5.1 那句仍然成立：**真机完整验证未完成**；而且现在可以说得更准：缺的不是压缩算法，
   是「**压力 → 自动触发**这条链的端到端证据」+「打包应用里的横幅/重载」。
-- 下一步（可执行、成本可控）：用假存储端口预置约 80% 窗口的消息 + 调小 `contextWindow`，
-  从 `run()` 断言 `compaction_start` → `messagesRemoved` → 保留集 ≥ 最近 3 轮 → 水位下降；
-  做完判据再做一次真机（可丢弃长会话）。
+- **已补（2026-10-29）**：[auto-compaction-trigger.test.ts](src/test/auto-compaction-trigger.test.ts) 用假存储端口预置 60 条消息 +
+  24k 窗口，从 `run()` 真的跑出压缩：断言 `compaction_start/end`、`messagesRemoved > 0`、摘要 `complete()` 被调用、
+  历史里出现压缩标记、压缩后的请求更小。变异（禁用触发条件）⇒ 红。
+- **仍然缺的只有真机**：打包应用里的横幅/重载、真实 provider 与真实长会话。判据层已不再缺口。
 
 ### 6.2 压缩请求的缓存命中：**不命中**（结构决定，不是没量）
 
@@ -149,18 +150,22 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
 - 源码里 189 波已经把「replay 主系统提示、复用 KV 缓存」这句错误注释删掉，并写明「与实现不符」。
 - 另一半问题「压缩会不会频繁击穿缓存」：每次压缩都会重写历史（摘要标记替换旧消息）⇒
   下一次主请求前缀**必然失效一次**；频率受 70% 阈值 + 连续最多 3 次约束，正常会话一天 0–2 次。
-- **可测性缺口（新增的已知项）**：压缩调用的 usage 既没进 `totalUsage`/成本，也没有日志
-  ⇒ 现在量不到「压缩花了多少 token、命中多少」。要量就得先加一行 `[compact] usage …`（本轮未做，属独立小项）。
+- **已补（2026-10-29）**：压缩调用现在打一行 `[compact] usage prompt=… completion=… cacheHit=… miss=… model=… convChars=…`；
+  provider 没上报的字段打 `?`（不编 0）。端到端用例断言这行存在，且 `cacheHit=?` 不被伪造成 0。
+  **仍然没做**：把这笔 usage 计入 `totalUsage`/成本（会影响评测口径里的 token 数，属独立取舍）。
 
 ### 6.3 折叠是否保持调用/结果成对：**是**，而且有两层结构保证
 
 1. **折叠层**只改 `toolCalls[].result` / `args` 的文本，不删消息、不删调用
-   （[tool-output-fold.ts:369](src/core/llm/tool-output-fold.ts#L369) 的 `{ ...m, toolCalls: calls }`）。
-2. **请求构建层**有显式配对清理：丢掉没有 assistant 声明的孤儿 `tool` 消息；把「没有结果」或
-   「部分结果」的 `tool_calls` 剥掉，注释直接点名 DeepSeek/OpenAI 的严格配对要求
-   （[agentic-loop.ts:5648](src/core/llm/agentic-loop.ts#L5648)）。
-3. 被剥掉的调用数经 `recordContextDrop` 投给界面（不是静默）。
-- 残余未知：这层清理只在「选择之后」生效；更上游的软删/隐藏如果造出孤儿，不会走到这里 —— 目前没找到这样的路径。
+   （[tool-output-fold.ts](src/core/llm/tool-output-fold.ts) 的 `{ ...m, toolCalls: calls }`）。
+2. **请求构建层**的配对清理已抽成唯一实现 + 纯函数：[tool-pairing.ts](src/core/llm/tool-pairing.ts)
+   （隔离孤儿 `tool`、剥掉无结果/部分结果的 `tool_calls`；注释点名 DeepSeek/OpenAI 的严格配对要求）。
+3. 判据：[tool-pairing.test.ts](src/test/tool-pairing.test.ts) 7 条（**折叠不拆对** + 三种非法形状 + 消息数/调用数/结果都在），
+   变异：把「最近 2 条结果保护」改成 0 ⇒ 红。
+- **顺带修掉一个真缺陷**：折叠模块的 `protectedFromIndex` / `protectedFromIndexForTurns` 是**死参数**
+  （声明了、一路传进来、从没被读过），而文档却承诺「最近 3 轮不折」。那条承诺本身与折叠存在的前提冲突
+  （长回合正是水位爆掉的场景，按轮次保护会让折叠失效）。现在删掉死参数，文档改成真实语义：
+  **只保护最近 2 条结果**，更早的（哪怕同一轮）都可折。
 
 ### 6.4 记忆截断可见性：**可见**（推翻上一版的「未知」）
 

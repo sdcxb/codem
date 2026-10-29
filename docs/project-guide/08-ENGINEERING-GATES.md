@@ -44,7 +44,7 @@
 npm run dev                 # Vite 前端（浏览器调试；没有 Tauri IPC）
 npm run tauri:dev           # 完整桌面开发（Vite + Tauri）
 npx tsc --noEmit            # 类型检查（必须 0 错误）
-npx vitest run              # 全量（约 2.6 分钟；当前 771 文件 / 8708 用例）
+npx vitest run              # 全量（约 2.6 分钟；当前 774 文件 / 8722 用例）
 npx vitest run src/test/<某个>.test.ts   # 单跑
 npm run test:e2e            # vitest.e2e.config.ts
 npm run test:snapshot       # vitest.snapshot.config.ts
@@ -93,8 +93,8 @@ node tools\maintenance\clean-orphan-test-browsers.mjs   # 清测试遗留 Edge
 ### 2.2 当前基线（2026-10-29 实测）
 
 ```text
-Test Files  771 passed (771)
-Tests       8691 passed | 17 skipped (8708)
+Test Files  774 passed (774)
+Tests       8705 passed | 17 skipped (8722)
 Duration    157.55s
 ```
 
@@ -125,7 +125,7 @@ Duration    157.55s
 |---|---|---|
 | 类型 | `npx tsc --noEmit` | 0 错误 |
 | 文档新鲜度 | `npm run audit:docs` | 版本/必读文档/BOM/索引/章节；版本变了文档没跟上会红 |
-| 全量测试 | `npx vitest run` | 8691 通过 / 17 跳过 / 0 失败 |
+| 全量测试 | `npx vitest run` | 8705 通过 / 17 跳过 / 0 失败 |
 | 上报点分诊 | `node tools/audit/scan-report-sites.mjs --check` | 278 = 278（三数相等：扫描/登记/缓存） |
 | 变异产物 | `node tools/mutate/check-artifacts.mjs` | 65+ 波、`restored=true`、未过期 |
 | 未使用导出 | `node tools/audit/knip-gate.mjs` | 不增长（历史基线 exports 49 / types 21 / entry 20，以脚本为准） |

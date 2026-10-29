@@ -40,7 +40,7 @@ function resetHandoverRejections(): void {
 export function createDelegateToSessionTool(): ToolDef {
   return {
     id: "delegate_to_session",
-  guidance: "Use delegate_to_session to send a task to another session for execution. The target session runs independently.",
+  guidance: "Use delegate_to_session to send a task to an EXISTING, visible session. For a throwaway subtask whose intermediate output you do not need, use subagent instead; to start a brand-new session for a handover, use handoff_to_new_session.",
     description:
       "Delegate a task to another session's agent. The target session will auto-start processing in the background. " +
       "Returns immediately with a delegation task ID. Use wait_for_delegation to get the result when the target session completes. " +
@@ -195,7 +195,8 @@ export function createHandoffToNewSessionTool(): ToolDef {
     contract: { readOnly: false, accessScope: "session", persistResult: true },
     guidance:
       "Use handoff_to_new_session when the user asks to hand the work over to a NEW conversation/session. " +
-      "It creates a brand-new session and delegates the handover there. Do NOT reuse an existing session for this.",
+      "It creates a brand-new session and delegates the handover there. Do NOT reuse an existing session for this. " +
+      "For an existing session use delegate_to_session; for a throwaway subtask use subagent.",
     description:
       "Hand the current work over to a BRAND-NEW session. Creates the session (unique title with a timestamp) " +
       "and delegates the handover text to it. Use this whenever the user says 新对话 / 新会话 / 移交 / hand off / start fresh. " +

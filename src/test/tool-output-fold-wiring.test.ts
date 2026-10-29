@@ -16,7 +16,16 @@ describe("FD-7 折叠阶梯接线：三处同一把尺子", () => {
     const src = read("src/core/llm/agentic-loop.ts");
     expect(src, "必须调用折叠（否则模型照样收到全量）").toMatch(/shouldFoldToolOutputs\(/);
     expect(src, "必须真的按目标折").toMatch(/foldToolOutputsUnderTarget\(/);
-    expect(src, "必须保护最近几轮").toMatch(/protectedFromIndexForTurns\(/);
+    /*
+     * 2026-10-29：这里原来断言「必须保护最近几轮」（`protectedFromIndexForTurns`）——
+     * 那条承诺与折叠存在的前提冲突（长回合正是水位爆掉的场景，按轮次保护会让折叠在最需要它的
+     * 地方失效），而且那个参数从来没有被实现读过。现在钉真正的不变量：**最近 N 条结果不动**
+     * 由折叠模块自己的常量保证（`FOLD_KEEP_RECENT_RESULTS`），引擎侧只需要不再传死参数。
+     */
+    expect(src, "不该再传那个从未被实现的死参数").not.toMatch(/protectedFromIndex/);
+    expect(read("src/core/llm/tool-output-fold.ts"), "最近 N 条结果的保护必须是折叠模块自己的常量").toMatch(
+      /FOLD_KEEP_RECENT_RESULTS/,
+    );
   });
 
   it("水位（water-level）按折叠后的视图算，并带出折叠痕迹", () => {

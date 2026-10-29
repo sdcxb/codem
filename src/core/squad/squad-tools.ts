@@ -76,7 +76,9 @@ export function createSquadListTool(): ToolDef {
 export function createSquadDispatchTool(): ToolDef {
   return {
     id: "squad_dispatch",
-  guidance: "Use squad_dispatch to turn a team template (squad) into a running agent-teams team for a task.",
+  guidance: "Use squad_dispatch to turn a team template (squad) into a running agent-teams team for a task. " +
+    "Use it only when a template exists and the task genuinely splits by role; with no suitable template use " +
+    "agent_teams_create for an ad-hoc team, and for one small job do it in the main loop.",
     description:
       "Instantiate a team template (squad) into a running agent-teams team and dispatch a task to it. " +
       "The current session becomes the captain; template member roles are spawned as continuable subagents; " +

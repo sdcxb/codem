@@ -78,7 +78,8 @@ export function createSubagentTool(): ToolDef {
         : 'Use subagent in the background by default. Start independent delegations together in one assistant '
         + 'message and continue useful work while they run. Set `run_in_background: false` only when your next '
         + 'action depends on that subagent\'s result. When a background run settles, the runtime sends you a '
-        + 'notice containing its outcome and any final assistant message.',
+        + 'notice containing its outcome and any final assistant message.'
+        + ' Use this only for a self-contained subtask whose intermediate output you do NOT need. If the user must be able to open or take over the work, use handoff_to_new_session instead; if the work belongs to an existing session, use delegate_to_session.',
     parameters: {
       type: 'object',
       properties: {

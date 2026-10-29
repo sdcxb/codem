@@ -13,8 +13,16 @@
  * 1. **不销毁文本**：这是**读时视图**（`foldToolOutputs` 只产生新数组，不动入参、不写库）——
  *    权威日志里原文一直在，"取回"就是重跑工具或直接看历史；水位与发送都按**折叠后的视图**算，
  *    于是"面板数字"与"模型真正收到的"始终是同一口径。
- * 2. **最近的东西绝不折**：最近 `FOLD_MIN_KEEP_TURNS` 轮、以及最近 `FOLD_KEEP_RECENT_RESULTS`
- *    条工具结果一律原样（当前正在干的事依赖它们）。这条与压缩侧的"最近 3 轮不切断"同一条纪律。
+ * 2. **最近的东西绝不折**：最近 `FOLD_KEEP_RECENT_RESULTS` 条工具结果一律原样
+ *    （当前正在干的事依赖它们）。
+ *
+ *    ★ 2026-10-29 修正：这里原来写着「最近 `FOLD_MIN_KEEP_TURNS`（3）轮**也**一律不折」，
+ *    并配了一个 `protectedFromIndexForTurns()` + `protectedFromIndex` 参数 —— 但那个参数
+ *    **从头到尾没有被读过**（死参数）。更重要的是那条承诺本身是错的：
+ *    长回合（一轮里几十次工具调用）正是水位爆掉的场景，按轮次保护会让折叠在**最需要它的
+ *    地方失效**（只剩压缩，而压缩又保留最近 3 轮 ⇒ 那一轮原样留下、水位仍高）。
+ *    现在按实际语义写：**只保护最近 2 条结果**；更早的（哪怕在同一轮里）都可以折 ——
+ *    它们是只读视图、原文可重取。`protectedFromIndex` 与 `FOLD_MIN_KEEP_TURNS` 已删除。
  * 3. **分两类**：可重放（读文件/列目录/grep/构建/测试）折得狠一些；
  *    不可重放（网页抓取、外部 API、一次性命令、写文件后的结果）折得保守并**在片段里说明原因**。
  *
@@ -29,8 +37,6 @@ import { pruneLargeToolResult } from "./context-fold";
 export const FOLD_TRIGGER_RATIO = 0.5;
 /** 折叠目标：跌破 0.45（留一点余量，别在阈值上抖动） */
 export const FOLD_TARGET_RATIO = 0.45;
-/** 最近多少"轮"绝不折（轮 = 一条 user 到下一轮之前） */
-export const FOLD_MIN_KEEP_TURNS = 3;
 /** 最近多少条工具结果绝不折（与请求侧 `pruneStaleToolResults` 的默认值同源） */
 export const FOLD_KEEP_RECENT_RESULTS = 2;
 /**
@@ -166,13 +172,6 @@ function foldOne(text: string, reproducible: boolean): string {
   return `${text.slice(0, IRREPRODUCIBLE_HEAD)}${IRREPRODUCIBLE_NOTE}${text.slice(-IRREPRODUCIBLE_TAIL)}`;
 }
 
-/**
- * 选出该折哪些工具结果（**按 距离 × 体积** 排序，绝不碰最近几轮/最近几条）。
- *
- * @param messages 可见消息（时间升序）
- * @param opts.protectedFromIndex 从这个下标起（含）属于"最近 FOLD_MIN_KEEP_TURNS 轮"，一律保护；
- *                                调用方可用 `protectedFromIndexForTurns()` 算出来。
- */
 /** 把参数里的长字符串（文件正文等）换成"可重读"标记；只读视图，不改入参 */
 function foldToolArgs(args: unknown, depth = 0): unknown {
   if (depth > 3 || args === null || args === undefined) return args;
@@ -191,10 +190,16 @@ function foldToolArgs(args: unknown, depth = 0): unknown {
   return args;
 }
 
+/**
+ * 选出该折哪些工具结果（**按 距离 × 体积** 排序；最近 `keepRecentResults` 条结果一律保护）。
+ *
+ * @param messages 可见消息（时间升序）
+ * @param opts.keepRecentResults 最近多少条工具结果不动（默认 2）
+ * @param opts.minFoldChars 小于这个尺寸的结果不进候选（默认 240）
+ */
 export function planToolOutputFold(
   messages: any[],
   opts: {
-    protectedFromIndex: number;
     keepRecentResults?: number;
     minFoldChars?: number;
   },
@@ -344,7 +349,6 @@ export function planToolOutputFold(
 export function foldToolOutputsUnderTarget(
   messages: any[],
   opts: {
-    protectedFromIndex: number;
     targetTokens: number;
     estimate: (msgs: any[]) => number;
     keepRecentResults?: number;
@@ -352,7 +356,6 @@ export function foldToolOutputsUnderTarget(
   },
 ): FoldResult {
   const all = planToolOutputFold(messages, {
-    protectedFromIndex: opts.protectedFromIndex,
     keepRecentResults: opts.keepRecentResults,
   });
   const limit = opts.maxFold ?? all.length;
@@ -426,27 +429,6 @@ export function foldToolOutputsUnderTarget(
 }
 
 /**
- * 从消息数组算出"最近 FOLD_MIN_KEEP_TURNS 轮"的起点下标（轮 = 一条 user 到下一轮之前）。
- *
- * 与压缩侧 `compactionMinKeep` 同一条纪律：**最近几轮绝不切断** ——
- * 这里用它决定"哪些工具结果不许折"。
- */
-export function protectedFromIndexForTurns(
-  messages: any[],
-  turns = FOLD_MIN_KEEP_TURNS,
-): number {
-  if (turns <= 0) return messages.length;
-  let seen = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === "user") {
-      seen += 1;
-      if (seen >= turns) return i;
-    }
-  }
-  return 0;
-}
-
-/**
  * 共享入口：**需要折就折**，返回折叠后的消息与两侧的比例。
  *
  * 水位、面板、引擎请求三处必须走这**同一个函数** —— 否则会出现
@@ -464,7 +446,6 @@ export function foldForLevelIfNeeded(
     return { messages, folded: 0, savedChars: 0, ratioBefore, ratioAfter: ratioBefore };
   }
   const fold = foldToolOutputsUnderTarget(messages, {
-    protectedFromIndex: protectedFromIndexForTurns(messages),
     targetTokens: Math.floor(opts.available * FOLD_TARGET_RATIO),
     estimate: opts.estimate,
     keepRecentResults: opts.keepRecentResults,
