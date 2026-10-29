@@ -160,10 +160,8 @@ export const CREDENTIAL_VALUE_SHAPES: readonly CredentialShape[] = CREDENTIAL_SH
  * `password=…` / `Bearer …`，**导出文件里原样带出去**。形状只有一份，出口也必须取同一批；
  * 报告型出口（凭据普查）仍只取值形状（上下文形状需要上下文，普查另有键名判据）。
  */
-export const CREDENTIAL_ALL_SHAPES: readonly CredentialShape[] = CREDENTIAL_SHAPES;
 
 /** 全部形状的正则（改写型出口用；顺序即 `CREDENTIAL_SHAPES` 的顺序） */
-export const CREDENTIAL_ALL_RES: RegExp[] = CREDENTIAL_ALL_SHAPES.map((s) => s.pattern);
 
 /**
  * **改写顺序**：上下文形状在前，值形状在后。

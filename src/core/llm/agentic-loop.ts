@@ -49,6 +49,7 @@ import { classifyToolResult } from "./tool-result-status";
 /** P0：工具调用/结果配对的唯一实现（请求侧最后一道结构保证）。 */
 import { enforceToolPairing } from "./tool-pairing";
 import { recordVerificationCheck } from "../environment/verification-checks";
+import { decidePreCallSnapshot } from "../environment/pre-call-snapshot";
 import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
@@ -3315,6 +3316,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             type: "stop",
             reason: "too_many_errors",
             usage: this.state.totalUsage,
+            /**
+             * 2026-10-29：把**最后一次真实错误**带出去。
+             * 只给一句"连续失败"没法定位（服务端 401 / 超时 / 上下文过长 长得一样）；
+             * 这条 detail 由 `describeTurnOutcome` 拼进用户可见的那条提示。
+             */
+            detail: {
+              lastError: this.state.lastError ?? null,
+              consecutiveErrors: this.state.consecutiveErrors,
+            },
           });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -4918,7 +4928,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
            * "验证之后又改"守卫用来判断有没有改文件的输入（判据 `VU-2` 因此变红）。
            */
           try {
-            await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
+            /**
+             * 2026-10-29（真机取证）：工作区目录不存在时（项目被删/移动，或测试用的空副本），
+             * `ensureSnapshot` 必然抛 `os error 3`，而 `reportActionFailure` 会弹一条
+             * 「操作没有生效（loop.preCallSnapshot）：系统找不到指定的路径」——
+             * 用户会以为功能坏了，其实只是"没有工作区可快照"。
+             * 判定抽到 `decidePreCallSnapshot`（纯决策 + 判据），这里只负责执行。
+             */
+            const { exists } = await import("../file-api");
+            const decision = await decidePreCallSnapshot(ctx.cwd, exists);
+            if (decision.skip) {
+              debugLog("agent-loop", "preCallSnapshot skipped:", decision.reason ?? "workspace missing");
+            } else {
+              await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
+            }
           } catch (e) {
             reportActionFailure(
               "loop.preCallSnapshot",

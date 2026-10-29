@@ -197,10 +197,22 @@ export function describeTurnOutcome(
 
       // 连续错误到上限：与循环里那条可见文案同义（这一条原来被死判据挡着，从未显示过）。
       if (reason === "too_many_errors") {
+        /**
+         * 2026-10-29：带上**最后一次真实错误**（循环通过 `detail.lastError` 传出）。
+         * 只写"连续失败"会让 401 / 超时 / 上下文过长 三种原因在界面上长得一样，
+         * 用户无法判断该换 key、重试、还是压缩上下文。截断到 160 字并去掉换行。
+         */
+        const lastErrorRaw =
+          result && typeof result === "object" && (result as any).detail && typeof (result as any).detail.lastError === "string"
+            ? String((result as any).detail.lastError)
+            : "";
+        const lastError = lastErrorRaw.replace(/\s+/g, " ").trim().slice(0, 160);
         const msg = zhOr(
           zh,
-          "LLM 调用连续失败多次，任务已停止。可能是 LLM 服务端无响应或上下文过长。请检查服务状态后重试。",
-          "The LLM call failed repeatedly — the turn stopped. Check the service or retry.",
+          "LLM 调用连续失败多次，任务已停止。可能是 LLM 服务端无响应或上下文过长。请检查服务状态后重试。" +
+            (lastError ? ` 最后一次错误：${lastError}` : ""),
+          "The LLM call failed repeatedly — the turn stopped. Check the service or retry." +
+            (lastError ? ` Last error: ${lastError}` : ""),
         );
         return {
           kind: "stopped",

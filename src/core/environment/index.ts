@@ -3,7 +3,6 @@ export {
   runCleanupScript,
   runCustomOperation,
   getCustomOperations,
-  type ScriptRunResult,
 } from "./environment-runner";
 
 export {
@@ -14,11 +13,7 @@ export {
   scanWorktrees,
   decideWorktreeDirtyGuard,
   hasUncommittedChanges,
-  getCurrentBranch,
-  listBranches,
   isGitRepo,
-  enforceMaxWorktrees,
-  getWorktreeCount,
   getWorktreeRoot,
   getWorktreeSettings,
   setWorktreeSettings,
@@ -26,5 +21,4 @@ export {
   setProjectExecutionMode,
   type ExecutionMode,
   type WorktreeInfo,
-  type WorktreeSettings,
 } from "./worktree-manager";

@@ -133,6 +133,22 @@ describe("TURN：end 事件的呈现决策（渲染层与后台路径共用的�
     expect(outcome.turnStatus?.code).toBe("too_many_errors");
   });
 
+  it("TURN-TOOMANY-DETAIL: 最后一次真实错误要显示（否则 401/超时/上下文过长在界面上一样）", () => {
+    const outcome = describeTurnOutcome(
+      {
+        type: "stop",
+        reason: "too_many_errors",
+        detail: { lastError: "API error 401: invalid api key\n  at provider.stream" },
+      },
+      { lang: "zh" },
+    );
+    const notice = String(outcome.notice);
+    expect(notice).toContain("最后一次错误");
+    expect(notice).toContain("API error 401");
+    expect(notice, "错误里的换行必须压平，不能撑坏提示条").not.toMatch(/\n\s*at provider/);
+    expect(outcome.turnStatus?.code).toBe("too_many_errors");
+  });
+
   /**
    * 第 93 波：`plan_stale` = 循环被**停滞守卫杀掉**，必须有自己的终态。
    *

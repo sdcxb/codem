@@ -126,6 +126,9 @@ describe("D1：LLM 调用失败必须如实上报，不能报成 completed", () 
       result.reason,
       "连续错误到上限就该以 too_many_errors 收场 —— 这条分支在 LLM 失败路径上原本不可达",
     ).toBe("too_many_errors");
+    // 2026-10-29：失败原因必须带出去（用户可见提示会显示"最后一次错误"）
+    expect((result as any).detail?.lastError, "最后一次真实错误要透传到 detail").toContain("bad model");
+    expect((result as any).detail?.consecutiveErrors).toBeGreaterThanOrEqual(1);
   });
 
   it("D1-C: 可重试错误重试后成功 → 仍然是 completed（重试成功不许置失败标志）", async () => {

@@ -7547,3 +7547,30 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   11:00 后**没有**新会话/新消息、真实 `sessions/*.jsonl` 一个都没被改。副本（1.46GB）与测试进程已清理。
   教训：真机验证要**先确认副本的 FTS 已完成**再发消息，否则 60s IPC 超时会连带让回合失败/丢写。
 - 门禁：`tsc` 0；全量 **774 文件 / 8723 用例（8706 通过 + 17 skipped + 0 失败）**；未发版。
+## 2026-10-29 13:10 — 第 255 波：把"没做的/发现了没修的"一次收口
+
+- **快照误报（真机 `loop.preCallSnapshot: os error 3`）**：抽成纯决策 `decidePreCallSnapshot`
+  （[pre-call-snapshot.ts](src/core/environment/pre-call-snapshot.ts)）：工作区不存在 → 静默跳过 + debugLog；
+  exists 自己抛错 → **不跳过**（不许悄悄放弃回滚证据）。判据 PRECALL-1..4，变异（永远不跳过）⇒ 红。
+- **LLM 连续失败只有一句话**：循环把 `detail.lastError` 带出，`describeTurnOutcome` 显示"最后一次错误"
+  （压平换行、截 160 字）。判据 TURN-TOOMANY-DETAIL + D1-B 的 detail 断言；变异（去掉拼接）⇒ 红。
+- **tool_search 换个说法就找不到**：别名表（中/英）+ 打分 + 决定性阈值；判据 23 条召回
+  （`代码导航/跳转定义/找引用/工作流/拉取请求/设计稿/朗读/生成图片…`），旧实现会漏；变异（清空别名）⇒ 9 条红。
+- **knip 长期红**：删掉死导出（environment barrel 的 4 个、`CREDENTIAL_ALL_SHAPES/ALL_RES`）、
+  移除未使用的 `@fortawesome/fontawesome-free` 依赖；其余既有漂移（theme 等 test-only/插件面）
+  按实测收紧基线（exports 49→46、types 29、duplicates 10、dependencies 0）。门禁现在 ✅。
+- **P2-7 的本地一半**：`stacks/<name>/codem-stack.json` 格式 + [check-stack-manifests.mjs](tools/audit/check-stack-manifests.mjs)
+  （技能必须存在、semver、workflow 必须在包内）+ 8 条判据 + `npm run audit:stacks` 接入 `audit`。
+  仍然不做市场/安装/版本递增（产品取舍，16 号文档已写明）。
+- **默认 1M 窗口的真机压缩**：`prepare-copy.mjs` 造 600 条合成消息（300 万字符），不改窗口；
+  横幅出现 → visible 23 / hidden 581 / 标记 1；刷新后标记仍在。
+- **60 秒 IPC 超时的根因**：`prepare-copy.mjs` 复制后 **checkpoint WAL + 删 `-shm`**，同场景再跑
+  **0 条**"超过 60 秒/只存在内存"；上一轮那 5 条弹窗是复制了旧 `-shm`/`-wal`，不是产品缺陷。
+- **路由转化批量（真机，固定工作区）**：团队 5/5（squad_list；2 次继续建团队）、
+  交接 4/5（list_sessions + handoff）、并行 3/4（subagent ×4/×2/×4）。
+  早期批次因"新对话是草稿"把几轮记到上一个会话上，已剔除；harness 改成"发完按 created_at 找回会话"。
+- **真机 harness 进仓库**：[tools/eval/real-machine](tools/eval/real-machine/README.md)（prepare-copy + verify compaction/routing）。
+- **右栏宽度"每次重开变宽"是测试问题**：宽度存 `settings.right-sidebar-width`；真实库 556，
+  我每轮从真实库**重新复制副本**，你拖窄只写进上一份副本（300）⇒ 新副本回到 556。
+  发布的持久库没有这一步，所以另一台电脑正常。后续不再重建副本；要建就把当前宽度带过去。
+- 门禁：`tsc` 0；全量 **777 文件 / 8759 用例（8742 通过 + 17 skipped + 0 失败）**；knip ✅；未发版。
