@@ -548,6 +548,95 @@ pub fn events_compact(
 ///   同一份规模闸门（口径与 `events.compact` 一致：维护路径默认放行，但规模永远可见）。
 /// - 删除会被 `audit::install` 的 `AFTER DELETE` 触发器记进 `storage_audit`
 ///   （`audit.recent` 查得到"哪张表、哪个会话、什么时候"）。
+/// 保留策略：删除某会话**早于 TTL 且不在最近 keep 条里**的事件（第 233 轮，用户拍板 B）。
+///
+/// ## 为什么不用 `events.compact`
+///
+/// `events.compact` 是"有损替换"：把旧事件换成一条投影快照。而 `maintenance.ts` 里
+/// 已复核过的消费方（`runtime-invariants` 的缺口判定、`tool_call`/`tool_result` 配对、
+/// `time-context` 的时间戳）读的是**事件**，不是投影 ⇒ 快照会让它们的输入悄悄变样。
+/// 独立保留策略（按 TTL 删旧事件）是那段注释里推荐的方向：语义只有"旧事件没了"，
+/// 没有"旧事件被换成别的东西"。
+///
+/// ## 两条下界（缺一不可）
+///
+/// - `event_type <> 'session_meta'`：会话身份事件**永不删**（与 `events.compact` 同口径）；
+/// - `seq < (第 keep+1 新的那条)`：**活跃会话永远保留最近 keep 条**。
+///   若该会话事件不足 keep 条，子查询返回 NULL ⇒ `seq < NULL` 为假 ⇒ **一条都不删**。
+///
+/// 判据：`engine_tests.rs::prune_older_than_keeps_tail_and_meta`（含反向对照：
+/// 一律删光会把 `keep` 与 meta 的保证打破）。
+pub fn events_prune_older_than(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    // OFFSET 从 0 开始：要保留 keep 条时，截点应是「第 keep 新的那条」⇒ OFFSET = keep − 1。
+    // keep=0 会让语义变成「删光」，那不是保留策略，所以下界取 1。
+    let keep = req_i64(p, "keep")?.max(1);
+    let before_ts = req_i64(p, "before_ts")?;
+    engine.write_tx(|tx| {
+        let removed = tx
+            .execute(
+                "DELETE FROM session_events \
+                  WHERE session_id = ?1 \
+                    AND event_type <> 'session_meta' \
+                    AND timestamp < ?2 \
+                    AND seq < (SELECT seq FROM session_events \
+                                WHERE session_id = ?1 AND event_type <> 'session_meta' \
+                                ORDER BY seq DESC LIMIT 1 OFFSET ?3 - 1)",
+                params![session_id, before_ts, keep],
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "removed": removed }))
+    })
+}
+
+/// ???????? 233 ?????? B???????????
+///
+/// ? `events_prune_older_than` ???????**???**???????????????
+/// ????????**????**??????????????
+///
+/// ## ?????"???"???????
+///
+/// ????**???**??? TTL ????????? keep ????????"??"?
+/// ????`runtime-invariants` / tool ?? / `time-context`?????"??????"?
+/// ???"??????????" ?? ???? `events.compact` ?????????????
+///
+/// ## ????????
+///
+/// ???????? 16 ????? 16 ??????`row_number() OVER (PARTITION BY session_id)`
+/// ????????"????????????"?SQLite 3.25+ ???????????
+///
+/// ???`engine_tests.rs::prune_all_keeps_per_session_tail`?
+pub fn events_prune_all(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let keep = req_i64(p, "keep")?.max(1);
+    let before_ts = req_i64(p, "before_ts")?;
+    engine.write_tx(|tx| {
+        /*
+         * 两条规则（合起来才是"保留策略"的完整语义）：
+         *
+         * 1. **陈旧会话**（该会话最新事件都早于 TTL）⇒ 删掉它**全部**非 meta 事件。
+         *    这是"30 天前的事件不该再占 500 MB"的真实诉求；只按"每会话保留 N 条"删，
+         *    对"每个会话只有几百条、但都很老"的库**一条都删不掉**（本机实测就是这样：
+         *    164 210 条事件、最大的会话才 1 516 条 ⇒ keep=5000 永不生效）。
+         * 2. **活跃会话**（还有 TTL 内的事件）⇒ 只删超出 `keep` 的旧尾部，保护最近上下文。
+         *
+         * 都不碰 `session_meta`（会话在事件层的身份）。
+         */
+        let stale = tx
+            .execute(
+                "DELETE FROM session_events\n  WHERE event_type <> 'session_meta'\n    AND session_id IN (\n      SELECT session_id FROM session_events\n       GROUP BY session_id\n      HAVING MAX(timestamp) < ?1\n    )",
+                params![before_ts],
+            )
+            .map_err(DbError::from)?;
+        let beyond_keep = tx
+            .execute(
+                "DELETE FROM session_events WHERE seq IN (\n   SELECT seq FROM (\n     SELECT seq, timestamp,\n            row_number() OVER (PARTITION BY session_id ORDER BY seq DESC) AS rn\n       FROM session_events\n      WHERE event_type <> 'session_meta'\n   ) WHERE rn > ?1 AND timestamp < ?2)",
+                params![keep, before_ts],
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "removed": stale + beyond_keep, "stale_sessions": stale, "beyond_keep": beyond_keep }))
+    })
+}
+
 pub fn events_dedup_text(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = opt_text(p, "session_id")?;
     let apply = p.get("apply").and_then(|x| x.as_bool()).unwrap_or(false);

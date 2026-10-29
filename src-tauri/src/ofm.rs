@@ -403,6 +403,13 @@ pub async fn ofm_start(
     let mut child = cmd.spawn().map_err(|e| format!("启动插件进程失败（{node_exe}）：{e}"))?;
     let pid = child.id();
 
+    /* 第 233 轮（297-①）：插件进程也挂进 Job（应用崩溃时不留下孤儿 node） */
+    if let Some(pid) = child.id() {
+        if let Err(e) = crate::child_job::assign_pid(pid) {
+            crate::runtime_log::append_line("WARN", &format!("ofm child_job assign failed: {e}"));
+        }
+    }
+
     /*
      * stdout/stderr **必须被读走**（管道写满会阻塞子进程），而且**要落盘**：
      *

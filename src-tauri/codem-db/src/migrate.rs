@@ -1230,10 +1230,24 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
         // 孤儿行：FTS 里有、但 `messages` 里已经没有（FTS 是虚拟表，没有外键级联）。
         // 旧实现靠"整表 DELETE"顺带清掉它们；改成增量写入后必须显式清，
         // 否则会搜出已经不存在的 message_id（渲染侧点进去是空）。
+        //
+        // ★ 第 233 轮审计：**三值逻辑让这条清理整条失效**。
+        //
+        // 原写法 `message_id NOT IN (SELECT id FROM messages WHERE hidden = 0)`：
+        // 只要 `messages` 里有**一行 id IS NULL**（真库出现过 —— `id` 是 `TEXT PRIMARY KEY`，
+        // SQLite 允许 NULL；本函数上方 1160 行那段注释正是为这行写的），
+        // `IN` 子查询里就含 NULL ⇒ `NOT IN` 恒为 NULL ⇒ **一行孤儿都不删**，
+        // 且没有任何信号（`orphans_removed` 安静地报 0）。
+        //
+        // `NOT EXISTS` 对 NULL 免疫（NULL 行只是"不匹配"），语义与原意一致：
+        // 没有任何**可见的** messages 行指向它 ⇒ 孤儿。
         let orphans = tx
             .execute(
                 "DELETE FROM session_fts \
-                 WHERE message_id NOT IN (SELECT id FROM messages WHERE hidden = 0)",
+                 WHERE NOT EXISTS ( \
+                     SELECT 1 FROM messages m \
+                     WHERE m.id = session_fts.message_id AND m.hidden = 0 \
+                   )",
                 [],
             )
             .map_err(DbError::from)?;
@@ -2147,6 +2161,81 @@ mod tests {
         // 空数组 = 调用方没想清楚要删什么 → 必须报错，而不是"静默什么都没做"
         let err = fts_remove(&engine, &json!({ "session_id": "s1", "ids": [] })).unwrap_err();
         assert_eq!(err.code, ErrorCode::Other);
+    }
+
+    /// 第 233 轮审计：全局重建的**孤儿清理**必须对 NULL id 免疫。
+    ///
+    /// 修复前是 `DELETE … WHERE message_id NOT IN (SELECT id FROM messages WHERE hidden = 0)`：
+    /// `messages` 里只要有一行 `id IS NULL`（真库出现过；`id` 是 `TEXT PRIMARY KEY`，
+    /// SQLite 允许 NULL），`NOT IN` 的集合含 NULL ⇒ 谓词恒为 NULL ⇒ **一行孤儿都不删**，
+    /// 而 `orphans_removed` 安静地报 0（既没删、也没有信号）。
+    #[test]
+    fn rebuild_fts_orphan_cleanup_is_null_safe() {
+        let (_d, engine) = eng("rebuild-fts-null-safe");
+
+        // 一条可见消息（它的索引行必须留）
+        seed_message(&engine, "sess-a", "m-visible", "可见消息正文");
+
+        // 真库出现过的那一行：`id IS NULL`
+        engine
+            .write_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO messages (id, session_id, role, content, timestamp, status, hidden) \
+                     VALUES (NULL, 'sess-a', 'user', '坏行', 1, 'done', 0)",
+                    [],
+                )
+                .map_err(DbError::from)?;
+                Ok(())
+            })
+            .unwrap();
+
+        // FTS 行：可见消息 + 一条孤儿（没有任何 messages 行指向它）
+        for (mid, content) in [
+            ("m-visible", "可见消息正文"),
+            ("m-orphan", "已经没有对应消息的孤儿行"),
+        ] {
+            fts_upsert(
+                &engine,
+                &json!({
+                    "session_id": "sess-a",
+                    "message_id": mid,
+                    "content": content,
+                    "role": "user",
+                    "timestamp": 1
+                }),
+            )
+            .unwrap();
+        }
+
+        let out = rebuild_fts(&engine, &json!({})).unwrap();
+        assert!(
+            out["orphans_removed"].as_i64().unwrap_or(0) >= 1,
+            "孤儿行必须被清掉（一行 NULL id 不许让整条清理失效）：{out}"
+        );
+
+        let orphan_left = engine
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM session_fts WHERE message_id = 'm-orphan'",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(orphan_left, 0, "孤儿行必须被删掉");
+
+        let visible_left = engine
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM session_fts WHERE message_id = 'm-visible'",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(visible_left, 1, "可见消息的索引行必须留着");
     }
 
     // ========== 导入的**非破坏性**契约（第 11 轮，真机数据事故的根因）==========

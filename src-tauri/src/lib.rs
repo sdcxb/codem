@@ -13,6 +13,7 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 // 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
 mod js_sandbox;
+mod child_job;
 mod js_sandbox_session;
 mod runtime_log;
 // 渲染进程崩溃取证（第 71 轮）：WebView2 `ProcessFailed` → 运行时日志 +
@@ -2358,6 +2359,10 @@ async fn execute_command(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn command: {}", e))?;
+    // ? 233 ??297 ??? ????????? Job????????? OS ????
+    if let Err(e) = child_job::assign(&child) {
+        runtime_log::append_line("WARN", &format!("child_job assign failed: {e}"));
+    }
 
     // Take child pid before moving child into a thread
     let child_pid = child.id();
@@ -3391,6 +3396,13 @@ async fn mcp_stdio_connect(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
+
+    /* 第 233 轮（297-①）：MCP 子进程同样挂进 Job —— 应用没了它也不许活着 */
+    if let Some(mcp_pid) = child.id() {
+        if let Err(e) = child_job::assign_pid(mcp_pid) {
+            runtime_log::append_line("WARN", &format!("mcp child_job assign failed: {e}"));
+        }
+    }
 
     // ★ 第 185 波：**只有经 cmd.exe 包装的那条路**才需要探测"目标到底起没起"。
     // 直接 CreateProcess 的路子上，目标不存在时 `spawn` 自己就返回 Err（已经如实报了），
@@ -4614,7 +4626,42 @@ fn install_panic_hook() {
 }
 
 pub fn run() {
-install_panic_hook();// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
+install_panic_hook();
+    /**
+     * ★ 第 233 轮（297 波遗留 ②）：**WebView2 去节流**。
+     *
+     * WebView2 与 Chromium 一样，在窗口被遮挡/最小化时会把渲染进程降频甚至冻结
+     * （后台定时器节流、rAF 停摆）。对普通网页是省电；对**工具型桌面应用**是缺陷：
+     * agent 跑长任务时窗口常被切到后台，而渲染侧的轮询/心跳/流式渲染全靠定时器 ——
+     * 一冻结，界面看起来"卡住"，日志里表现为「回合还在跑、但 UI 十几秒不动」。
+     *
+     * 用环境变量而不是逐窗口参数：WebView2 的浏览器参数必须在**创建环境之前**确定，
+     * 而本进程只创建一个环境，所以在 `run()` 最开头设置覆盖面最全（主窗口/托盘窗口都算）。
+     *
+     * 只加三个与"后台降频"直接相关的开关（不加 `--disable-gpu` 这类重手段）：
+     * - `--disable-background-timer-throttling`
+     * - `--disable-backgrounding-occluded-windows`
+     * - `--disable-renderer-backgrounding`
+     *
+     * 纪律：**已存在就不覆盖、只追加**（排障时可能自己设了调试参数，例如开 CDP 端口）。
+     */
+    #[cfg(target_os = "windows")]
+    {
+        const THROTTLE_OFF_ARGS: &str = "--disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding";
+        match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+            Ok(existing) if !existing.trim().is_empty() => {
+                if !existing.contains("--disable-background-timer-throttling") {
+                    std::env::set_var(
+                        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                        format!("{existing} {THROTTLE_OFF_ARGS}"),
+                    );
+                }
+            }
+            _ => std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", THROTTLE_OFF_ARGS),
+        }
+        runtime_log::append_line("INFO", "webview2: background throttling disabled");
+    }
+// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
 let ilink_state = ilink::IlinkState::new();
 // ===== 手机连接（phone-link）管理态 =====
 let phone_state = phone::PhoneState::new();
@@ -4799,6 +4846,48 @@ path_exists,
             // 捕获 ilink_state（Arc owned）以满足 setup 闭包的 'static 约束。
             let ilink_state = ilink_state.clone();
             move |app| {
+            /**
+             * 第 233 轮（用户拍板 B）：**事件保留策略，默认开**。
+             *
+             * `session_events` 是库体积的大头（本机实测 164 210 行 / 520 MB，占 898 MB 的 58%）。
+             * 策略是**按 TTL 删旧事件**（不是快照压缩 —— 后者会改变 `runtime-invariants` /
+             * tool 配对 / `time-context` 这些「读事件」消费方的输入，理由见 `maintenance.ts`）。
+             *
+             * 两条下界：每个会话**永远保留最近 5000 条**；只删 **30 天前**的。
+             * 放后台线程 + 延迟 3 秒：不阻塞首帧（删十几万行要几百毫秒到几秒）。
+             */
+            {
+                const EVENT_RETENTION_KEEP: i64 = 5000;
+                const EVENT_RETENTION_DAYS: i64 = 14;
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let before = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0)
+                        - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+                    let state = handle.state::<storage::StorageState>();
+                    match storage::prune_old_events(&state, EVENT_RETENTION_KEEP, before) {
+                        Ok(0) => runtime_log::append_line(
+                            "INFO",
+                            &format!(
+                                "events retention: nothing to prune (keep={EVENT_RETENTION_KEEP}, ttl={EVENT_RETENTION_DAYS}d)"
+                            ),
+                        ),
+                        Ok(n) => runtime_log::append_line(
+                            "INFO",
+                            &format!(
+                                "events retention: pruned {n} old event(s) (keep={EVENT_RETENTION_KEEP}, ttl={EVENT_RETENTION_DAYS}d)"
+                            ),
+                        ),
+                        Err(e) => runtime_log::append_line(
+                            "WARN",
+                            &format!("events retention skipped: {e}"),
+                        ),
+                    }
+                });
+            }
             // ===== 运行时日志：清理过期文件 + 启动记录（对标 dsh log-files）=====
             app.manage(phone::aa_account::AaAccountStore::new(phone::phone_dir(app.handle())));
             runtime_log::purge_old_logs();

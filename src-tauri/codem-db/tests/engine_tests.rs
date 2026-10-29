@@ -3855,3 +3855,116 @@ fn semantic_not_null_columns_still_reject_explicit_null() {
         );
     }
 }
+
+// ========== 第 233 轮：事件保留策略（events.prune_older_than） ==========
+
+/// 给某个会话按给定 timestamp 追加 n 条事件（第 0 条是 session_meta）。
+fn append_events(engine: &Engine, sid: &str, n: usize, base_ts: i64, step: i64) {
+    for i in 0..n {
+        call(
+            engine,
+            "events.append",
+            json!({
+                "session_id": sid,
+                "event_type": if i == 0 { "session_meta" } else { "user_message" },
+                "payload": { "i": i },
+                "timestamp": base_ts + i as i64 * step,
+            }),
+        );
+    }
+}
+
+/// PRUNE-1：只删「早于 TTL 且不在最近 keep 条里」的事件；meta 永不删；重复执行幂等。
+#[test]
+fn prune_older_than_keeps_tail_and_meta() {
+    let (_dir, engine) = temp_engine("prune_tail");
+    let now = 1_700_000_000_000i64;
+    call(&engine, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&engine, "sessions.upsert", json!({ "id": "s1", "project_id": "p1" }));
+    append_events(&engine, "s1", 10, now, 1000);
+
+    let res = call(
+        &engine,
+        "events.prune_older_than",
+        json!({ "session_id": "s1", "keep": 3, "before_ts": now + 100_000 }),
+    );
+    assert_eq!(res["removed"], 6, "10 条里除 meta 与最近 3 条之外应删掉 6 条");
+
+    let list = call(&engine, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+    // ???? { items, has_more, next_cursor }????? "type" ?? "event_type"?
+    let rows = list["items"].as_array().expect("items");
+    assert_eq!(rows.len(), 4, "剩 4 行：meta + 最近 3 条");
+    assert!(
+        rows.iter().any(|r| r["type"] == "session_meta"),
+        "会话身份事件必须留下（删掉它 = 会话在事件层失去身份）"
+    );
+
+    let again = call(
+        &engine,
+        "events.prune_older_than",
+        json!({ "session_id": "s1", "keep": 3, "before_ts": now + 100_000 }),
+    );
+    assert_eq!(again["removed"], 0, "重复执行必须是空操作");
+}
+
+/// PRUNE-2（反向对照）：事件不足 keep 条 ⇒ 一条都不删；
+/// PRUNE-3：全部事件都晚于 TTL ⇒ 一条都不删。
+#[test]
+fn prune_older_than_never_touches_below_keep_or_fresh_events() {
+    let (_dir, engine) = temp_engine("prune_guards");
+    let now = 1_700_000_000_000i64;
+    call(&engine, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&engine, "sessions.upsert", json!({ "id": "s2", "project_id": "p1" }));
+    append_events(&engine, "s2", 3, now, 1000);
+
+    let res = call(
+        &engine,
+        "events.prune_older_than",
+        json!({ "session_id": "s2", "keep": 50, "before_ts": now + 100_000 }),
+    );
+    assert_eq!(res["removed"], 0, "不足 keep 条时必须一条都不删（子查询 NULL ⇒ 条件为假）");
+
+    call(&engine, "sessions.upsert", json!({ "id": "s3", "project_id": "p1" }));
+    append_events(&engine, "s3", 6, 1_900_000_000_000, 1000);
+    let res3 = call(
+        &engine,
+        "events.prune_older_than",
+        json!({ "session_id": "s3", "keep": 1, "before_ts": 1_800_000_000_000i64 }),
+    );
+    assert_eq!(res3["removed"], 0, "全部事件都晚于 TTL ⇒ 一条都不删");
+}
+
+/// PRUNE-4??????? = ????????? meta?????????? keep ????
+///
+/// ?????? ? ????? ??? ??????? keep ? ? removed=0??????
+#[test]
+fn prune_all_keeps_per_session_tail() {
+    let (_dir, engine) = temp_engine("prune_all");
+    let now = 1_700_000_000_000i64;
+    call(&engine, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    // a/b???????? TTL??????
+    for sid in ["a", "b"] {
+        call(&engine, "sessions.upsert", json!({ "id": sid, "project_id": "p1" }));
+        append_events(&engine, sid, 6, now, 1000);
+    }
+    // c????? TTL ???????
+    call(&engine, "sessions.upsert", json!({ "id": "c", "project_id": "p1" }));
+    append_events(&engine, "c", 6, 1_900_000_000_000, 1000);
+
+    let res = call(
+        &engine,
+        "events.prune_all",
+        json!({ "keep": 2, "before_ts": now + 100_000 }),
+    );
+    assert_eq!(res["removed"], 10, "???????? 5 ?? meta ??");
+
+    for sid in ["a", "b"] {
+        let list = call(&engine, "events.list", json!({ "session_id": sid, "limit": 100 }));
+        let rows = list["items"].as_array().expect("items");
+        assert_eq!(rows.len(), 1, "{sid} ??? meta??????????");
+        assert_eq!(rows[0]["type"], "session_meta", "{sid} ??????????");
+    }
+
+    let c = call(&engine, "events.list", json!({ "session_id": "c", "limit": 100 }));
+    assert_eq!(c["items"].as_array().expect("items").len(), 6, "????????");
+}
