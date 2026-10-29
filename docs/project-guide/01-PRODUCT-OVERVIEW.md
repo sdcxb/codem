@@ -123,7 +123,7 @@
 | 数据 | 39 张实表 + `session_fts` + `storage_audit`；43 索引；29 条迁移 ALTER |
 | 命令 | 118 个 `#[tauri::command]` 注解 / 117 个注册命令（`get_process_token_info` 平台双写） |
 | 插件装配 | `config/codem.base.yml` 171 条 + desktop 覆盖层 |
-| 测试 | 784 文件 / 8783 用例（8766 通过、17 跳过、0 失败） |
+| 测试 | 785 文件 / 8786 用例（8769 通过、17 跳过、0 失败） |
 | 工具链 | Node 24.19 / npm 11.17 / rustc 1.97.1 |
 
 **版本历程（只列结构性节点）**

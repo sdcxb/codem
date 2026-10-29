@@ -7635,3 +7635,14 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 签名私钥问题写进 16 号文档：客户端只内置公钥；私钥走离线机/CI secret/KMS 三选一；
   不复用仓库里的 updater 私钥；按 key id 轮换/吊销。
 - 全量 **784 文件 / 8783 用例（8766 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 16:10 — 第 261 波：stack 市场签名（RSA-PSS + GitHub Actions Secret）
+
+- 生成 RSA-3072 密钥对；**私钥只写到用户目录** `C:\Users\abee\codem-market-signing-key.pem`（不进仓库），
+  公钥 `tools/market/market-public-key.pem` 入库，指纹 `bf214468…cfff7`。
+- `tools/market/gen-key.mjs` / `sign-index.mjs`（`--verify` 自检）；`stacks/index.json.sig` 已提交。
+- App 内置公钥（`market-signature.ts`，WebCrypto RSA-PSS/SHA-256），索引未签名/验签失败一律拒绝；
+  Release 资产优先、master 回退，两条都必须验签；判据 `MARKET-SIG` MS-1/2（真签名）。
+- `.github/workflows/market-sign.yml`：tag/手动触发 + environment `market-signing`（required reviewer），
+  用 Secret `CODEM_MARKET_SIGNING_KEY` 签，上传 Release 资产；完整操作见 `docs/MARKET-SIGNING.md`。
+- 触发权限：只有 write 权限能推 tag；fork PR 拿不到 Secret；再加 environment 手动批准。
+- 全量 **785 文件 / 8786 用例（8769 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

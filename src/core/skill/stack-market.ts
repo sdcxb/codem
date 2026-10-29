@@ -12,10 +12,18 @@
  * - 网络/解析失败 → 抛给调用方（调用方显示“市场不可用”），不静默返回空。
  */
 import type { MarketSkill, MarketSearchResult } from "./skill-market-client";
+import { verifyStackIndexSignature } from "./market-signature";
 
-/** 默认索引：仓库里的 stacks/index.json（真实 HTTPS，随 master 更新） */
+/** 默认索引：优先用最新 Release 的原子资产（索引+签名同一版本），失败再回退 master */
 export const STACK_INDEX_URL =
   "https://raw.githubusercontent.com/sdcxb/codem/master/stacks/index.json";
+/** 与索引同目录的签名文件；缺失/验签失败一律拒绝索引 */
+const STACK_INDEX_SIG_URL = `${STACK_INDEX_URL}.sig`;
+/** Release 资产（由 .github/workflows/market-sign.yml 在 tag 上生成并上传） */
+const STACK_RELEASE_INDEX_URL =
+  "https://github.com/sdcxb/codem/releases/latest/download/stacks-index.json";
+const STACK_RELEASE_SIG_URL =
+  "https://github.com/sdcxb/codem/releases/latest/download/stacks-index.json.sig";
 
 export interface StackIndexEntry {
   name: string;
@@ -26,6 +34,8 @@ export interface StackIndexEntry {
 
 export interface StackInstallDeps {
   httpGet?: (url: string) => Promise<string>;
+  httpGetSignature?: (url: string) => Promise<string>;
+  verifySignature?: (body: string, signatureBase64: string) => Promise<boolean>;
   listSkills?: () => Promise<MarketSearchResult>;
   installSkill?: (skill: MarketSkill) => Promise<{ success: boolean; error?: string }>;
 }
@@ -44,6 +54,9 @@ async function defaultHttpGet(url: string): Promise<string> {
   const res = await invoke("http_get", { url });
   if (typeof res === "string") return res;
   // Rust HttpResponse { status, body, headers }
+  if (res && typeof res.status === "number" && res.status >= 400) {
+    throw new Error(`HTTP ${res.status}`);
+  }
   if (res && typeof res.body === "string") return res.body;
   throw new Error("http_get 返回形状不认识（缺 body）");
 }
@@ -57,10 +70,38 @@ function validateEntry(raw: any): StackIndexEntry | null {
   return { name, version, description: typeof raw.description === "string" ? raw.description : undefined, skills };
 }
 
-/** 拉取并解析索引；返回去重后的合法条目（坏条目丢弃，不阻塞其它包） */
+/** 拉取并验签、解析索引；返回去重后的合法条目（坏条目丢弃，不阻塞其它包） */
 export async function fetchStackIndex(deps: StackInstallDeps = {}): Promise<StackIndexEntry[]> {
   const httpGet = deps.httpGet ?? defaultHttpGet;
-  const body = await httpGet(STACK_INDEX_URL);
+  const httpGetSignature = deps.httpGetSignature ?? defaultHttpGet;
+  const verify = deps.verifySignature ?? verifyStackIndexSignature;
+
+  let body: string;
+  let signature: string;
+  try {
+    // 优先 Release 资产：索引与签名同一次发布，原子对应
+    body = await httpGet(STACK_RELEASE_INDEX_URL);
+    signature = await httpGetSignature(STACK_RELEASE_SIG_URL);
+  } catch {
+    // 老 release 还没有市场资产 / 离线：回退 master，但仍必须验签
+    body = await httpGet(STACK_INDEX_URL);
+    try {
+      signature = await httpGetSignature(STACK_INDEX_SIG_URL);
+    } catch (e) {
+      throw new Error(
+        `stack 索引签名缺失（${STACK_INDEX_SIG_URL}）：${e instanceof Error ? e.message : String(e)}。已拒绝加载。`,
+      );
+    }
+  }
+  let ok = false;
+  try {
+    ok = await verify(body, signature);
+  } catch (e) {
+    throw new Error(`stack 索引验签失败：${e instanceof Error ? e.message : String(e)}。已拒绝加载。`);
+  }
+  if (!ok) {
+    throw new Error("stack 索引签名无效（索引可能被篡改）。已拒绝加载。");
+  }
   let parsed: any;
   try {
     parsed = JSON.parse(body);
@@ -98,7 +139,11 @@ export async function installStackFromMarket(
     return { success: r.success, error: r.error };
   });
 
-  const entries = await fetchStackIndex({ httpGet });
+  const entries = await fetchStackIndex({
+    httpGet,
+    httpGetSignature: deps.httpGetSignature,
+    verifySignature: deps.verifySignature,
+  });
   const entry = entries.find((e) => e.name === name);
   if (!entry) throw new Error(`stack 不存在：${name}`);
 

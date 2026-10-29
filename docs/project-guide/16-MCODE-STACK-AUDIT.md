@@ -142,15 +142,16 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
 
 **仍然没做**（明确是产品取舍/发布流水线，不是遗漏）：
 
-- 索引自动发布与签名（当前靠 git 提交 + HTTPS，完整性由仓库本身保证；签名方案见下）；
 - 版本递增门禁（"改了文件必须升版本"）；
-- 与 DSH 插件市场的映射。
+- 与 DSH 插件市场的映射；
+- 多 key id 轮换列表（当前单 key，轮换需发版；流程已写在 [MARKET-SIGNING.md](docs/MARKET-SIGNING.md)）。
 
-**签名私钥放哪（给公开分发）**：客户端**只内置公钥**，私钥永远不进安装包/仓库。三种可行托管：
-① 离线签名机（发布前签 `stacks/index.json`，只上传 `.sig`）；
-② CI Secret（打 tag 时由 CI 签，私钥只存在于 secret）；
-③ KMS/硬件（私钥不出硬件）。公钥按 key id 列表内置，支持轮换与吊销。
-**不要复用 updater 私钥**——它现在就在仓库里，本来就是风险；市场应独立密钥。
+**签名已落地（2026-10-29）**：RSA-PSS/SHA-256；客户端只内置公钥
+（[market-signature.ts](src/core/skill/market-signature.ts)），索引未签名/验签失败一律拒绝；
+`stacks/index.json.sig` 已提交，判据 `MARKET-SIG` 钉住“索引与签名必须匹配”。
+发布侧用 GitHub Actions Secret `CODEM_MARKET_SIGNING_KEY` + environment `market-signing`
+（tag 触发 + 你手动批准），私钥不进仓库/安装包；完整操作见
+[docs/MARKET-SIGNING.md](docs/MARKET-SIGNING.md)。**不要复用 updater 私钥**——它现在就在仓库里。
 
 ---
 

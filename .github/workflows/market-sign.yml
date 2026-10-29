@@ -1,0 +1,43 @@
+name: market-sign
+
+# 只在维护者推 tag（或手动触发）时运行；fork 的 PR 拿不到 secret。
+# 触发权限：能推 v* tag 的人 = 仓库 write 权限；再加 environment 的 required reviewer，
+# 即使 token 泄露也需要仓库 owner 在 GitHub 上手动批准。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    environment: market-signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sign stacks/index.json
+        env:
+          CODEM_MARKET_SIGNING_KEY: ${{ secrets.CODEM_MARKET_SIGNING_KEY }}
+        run: node tools/market/sign-index.mjs
+
+      - name: Verify signature (fail closed)
+        run: node tools/market/sign-index.mjs --verify
+
+      - name: Upload signed index to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            stacks/index.json#stacks-index.json \
+            stacks/index.json.sig#stacks-index.json.sig \
+            --clobber

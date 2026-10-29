@@ -10,6 +10,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fetchStackIndex, installStackFromMarket, STACK_INDEX_URL } from "../core/skill/stack-market";
 
+const signed = { verifySignature: async () => true, httpGetSignature: async () => "sig" };
+
 const indexBody = JSON.stringify({
   schemaVersion: 1,
   stacks: [
@@ -21,9 +23,12 @@ const indexBody = JSON.stringify({
 });
 
 describe("STACK-MARKET", () => {
-  it("SM-1: 索引只保留合法且不重名的条目", async () => {
-    const httpGet = vi.fn(async () => indexBody);
-    const entries = await fetchStackIndex({ httpGet });
+  it("SM-1: Release 资产缺失时回退 master；索引只保留合法且不重名的条目", async () => {
+    const httpGet = vi.fn(async (url: string) => {
+      if (url.includes("releases/latest")) throw new Error("HTTP 404");
+      return indexBody;
+    });
+    const entries = await fetchStackIndex({ httpGet, ...signed });
     expect(httpGet).toHaveBeenCalledWith(STACK_INDEX_URL);
     expect(entries.map((e) => e.name)).toEqual(["review-pack"]);
     expect(entries[0].skills).toEqual(["code-review", "missing-skill"]);
@@ -37,6 +42,7 @@ describe("STACK-MARKET", () => {
     const installSkill = vi.fn(async () => ({ success: true }));
     const r = await installStackFromMarket("review-pack", {
       httpGet: async () => indexBody,
+      ...signed,
       listSkills: listSkills as any,
       installSkill: installSkill as any,
     });
@@ -49,6 +55,7 @@ describe("STACK-MARKET", () => {
     installSkill.mockResolvedValueOnce({ success: false, error: "zip 坏了" } as any);
     const r2 = await installStackFromMarket("review-pack", {
       httpGet: async () => indexBody,
+      ...signed,
       listSkills: listSkills as any,
       installSkill: installSkill as any,
     });
@@ -56,12 +63,21 @@ describe("STACK-MARKET", () => {
   });
 
   it("SM-3: 索引不是 JSON / 包不存在 → 明确抛错", async () => {
-    await expect(fetchStackIndex({ httpGet: async () => "<html>" })).rejects.toThrow(/不是合法 JSON/);
+    await expect(fetchStackIndex({ httpGet: async () => "<html>", ...signed })).rejects.toThrow(/不是合法 JSON/);
     await expect(
       installStackFromMarket("nope", {
         httpGet: async () => indexBody,
+      ...signed,
         listSkills: async () => ({ skills: [], errors: [] }) as any,
       }),
     ).rejects.toThrow(/不存在/);
   });
-});
+
+  it("SM-4: 验签失败/缺签名 → 拒绝加载", async () => {
+    await expect(
+      fetchStackIndex({ httpGet: async () => indexBody, httpGetSignature: async () => "sig", verifySignature: async () => false }),
+    ).rejects.toThrow(/签名无效/);
+    await expect(
+      fetchStackIndex({ httpGet: async () => indexBody, httpGetSignature: async () => { throw new Error("404"); } }),
+    ).rejects.toThrow(/签名缺失/);
+  });});

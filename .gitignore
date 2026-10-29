@@ -102,7 +102,10 @@ tauri2.txt
 notebook-section.txt
 
 # GitHub workflows from reference project
-.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/market-sign.yml
 
 # Reference project (not part of codebase)
 .oh-my-ppt-ref/
