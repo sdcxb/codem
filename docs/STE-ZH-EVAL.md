@@ -156,13 +156,26 @@ D 智能版原文：
 - 但连续两次要求子 agent“必须调用 report”，它仍未调用；父会话里 `subagent_report` 消息数为 **0**；
 - 因此当前只能证明“工具与解析链路在”，不能证明“子 agent 会按契约交报告”。
 
-这说明还缺最后一道硬门：**子 agent 未调用 report 时，runtime 必须把它结算为 `unknown/failed`，不能只把文本解析成 unknown 就继续当 completed。** 否则父 agent 仍可能从散文里读到“已完成”。
+这说明还缺最后一道硬门。该门已在同日晚些时候补上：
 
-下一步应做：
+- runtime 增加 `setReportRequired()`；前台 run 也有 `ForegroundReportSink`，不再因为“没有 Activation”而收不到 report；
+- 缺失 report 时 `settleSubagentReport()` 返回 failed；前台 `SubagentRun.result` 的 `stopReason` 改为 `refusal`，summary 写“未提交结构化报告”；
+- STE 子 agent 模式开启时才要求 report；插件关闭不改变旧行为。
 
-1. subagent 启用结构化模式时，结算前检查 `lastReport`；缺失 → `stopReason=refusal`、task 失败、通知父 agent“未提交报告”；
-2. 或在 report 工具的 schema 上加 `required: ["status","summary"]`（但模型仍可能不调用，需 runtime 兜底）；
-3. 用留出任务集验证，不要再用“只回答 2+2”这种容易被任务约束覆盖的用例。
+真机复测（子 agent 未调用 report）：
+
+> 工具返回体包含 `refusal: 未提交结构化报告；父 agent 不应把这段文本当作完成结论`
+
+但主 agent 仍在自己的散文里写了“已完成”，随后才补一句“那是运行时提示，不属于子智能体输出”。这说明：
+
+1. runtime 结果已经是 refusal，结构门生效；
+2. 主 agent 仍可能把 refusal 读成“子 agent 完成 + 附带说明”，**父 agent 的总结本身需要再看 stopReason/status，不能只看散文**。
+
+下一步不是再加 prompt，而是：
+
+- 父 agent 的 `subagent` 工具结果把 `stopReason=refusal` 放在首行/结构化字段，避免被当成普通文本；
+- UI 任务卡直接显示 failed/refusal；
+- 再用留出任务集验证，不要用“只回答 2+2”这种会被任务约束覆盖的用例。
 
 ## 总评
 

@@ -7757,3 +7757,12 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 真机：tool scope 里 report 工具 registered=true/visible=true；但子 agent 仍未调用，subagent_report 消息 0 条。
   结论：链路在，模型不交报告；下一步需要“缺报告即失败”的 runtime 门，而不是再加 prompt。
 - 测试：report-contract/report-tool/parser 新判据；全量 791 文件 / 8805 用例（8788 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
+## 2026-10-29 21:10 — 第 270 波：子 agent 缺报告硬门 + 前台 report 支持
+
+- `SubagentRuntime` 增加 `setReportRequired()`；前台 run 增加 ForegroundReportSink，report 工具在
+  `run_in_background:false` 路径也能投递（不再因为没有 Activation 报错）。
+- 缺报告：`settleSubagentReport()` 返回 failed；前台 `SubagentRun.result.stopReason=refusal`，
+  summary 写“未提交结构化报告”；后台 task 失败；STE 关闭时不要求。
+- 真机：子 agent 未调用 report 时，工具结果出现 `refusal: 未提交结构化报告...`；
+  但主 agent 仍会在散文里写“已完成”，说明父 agent 必须读 stopReason/status，不能只看散文。
+- 新增 `subagent-report-gate.test.ts`；全量 792 文件 / 8807 用例（8790 通过 + 17 skipped + 0 失败）；tsc 0；未发版。

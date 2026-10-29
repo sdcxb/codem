@@ -40,6 +40,8 @@ export interface SubagentTask {
   activities?: SubagentActivity[];
   /** P1-7: Agent Profile ID — links to agent_profiles table for persistent identity */
   profile_id?: string;
+  /** 本次子任务是否必须提交结构化 report（STE 子 agent 模式开启） */
+  reportRequired?: boolean;
 }
 
 export interface SubagentResult {

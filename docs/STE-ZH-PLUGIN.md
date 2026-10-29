@@ -59,7 +59,7 @@
 - 规则与策略：`src/core/ste-zh/index.ts`；
 - UI：`src/components/SteZhToggle.tsx`（三态开关）、`SteZhReportNotice.tsx`（回复后告警）。
 
-主 agent 的 `buildSystemPromptAsync` 和子 agent 的 `buildSubagentSystemPrompt` 都已接入。子 agent 的最终结算以 `report` 结构化结果为准；没有 `report` 时 `parseTaskResult` 返回 `unknown`，不默认成功。
+主 agent 的 `buildSystemPromptAsync` 和子 agent 的 `buildSubagentSystemPrompt` 都已接入。STE 子 agent 模式要求 `report`：缺失时前台 run 的 `stopReason=refusal`、后台 task 失败；插件关闭不要求，旧行为不变。
 
 ## 与外部 DSH 插件的关系
 
@@ -74,6 +74,7 @@ Codem 的外部 DSH 插件管理只负责 npm 安装/升级，不执行插件代
 - `src/test/ste-zh-toggle.test.tsx`：三态按钮；
 - `src/test/ste-zh-report-notice.test.tsx`：回复后告警显示/隐藏；
 - `src/test/subagent-report-contract.test.ts`：报告契约/信封往返；
-- `src/test/subagent-report-tool.test.ts`：report 工具拒绝坏报告、旧 output 兼容。
+- `src/test/subagent-report-tool.test.ts`：report 工具拒绝坏报告、旧 output 兼容；
+- `src/test/subagent-report-gate.test.ts`：前台缺报告 → refusal。
 
 规则是提示词约束，不是验证器；`verified` 字段仍要主 agent 复核。

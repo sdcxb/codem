@@ -1897,6 +1897,11 @@ Report earlier as well whenever a partial finding changes what that agent should
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
     const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd, profileId);
+    // STE 子 agent 模式开启时，要求 report 工具提交结构化结果；缺失按 failed 结算。
+    // 插件关闭时 section 为空，不改变旧子智能体行为。
+    if (this._subagentRuntime && buildSteZhPromptSection({ isSubagent: true })) {
+      this._subagentRuntime.setReportRequired(sessionId, true);
+    }
 
     // Filter out <system-reminder> tags from the message
     const cleanMessage = message.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();

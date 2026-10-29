@@ -137,3 +137,34 @@ export function extractSubagentReport(text: string): SubagentReport | null {
     return null;
   }
 }
+
+export interface ReportSettlement {
+  status: SubagentReportStatus;
+  summary: string;
+  missing: boolean;
+}
+
+/**
+ * 结算规则（纯函数，便于单测）：
+ * - 有结构化 report：以 report 为准；
+ * - 要求 report 但缺失：failed + “未提交结构化报告”，绝不按散文 success；
+ * - 未要求 report：沿用旧解析结果（可能是 unknown）。
+ */
+export function settleSubagentReport(input: {
+  reportRequired: boolean;
+  report?: SubagentReport;
+  parsedStatus: SubagentReportStatus;
+  parsedSummary: string;
+}): ReportSettlement {
+  if (input.report) {
+    return { status: input.report.status, summary: input.report.summary, missing: false };
+  }
+  if (input.reportRequired) {
+    return {
+      status: "failed",
+      summary: "未提交结构化报告；父 agent 不应把这段文本当作完成结论",
+      missing: true,
+    };
+  }
+  return { status: input.parsedStatus, summary: input.parsedSummary, missing: false };
+}

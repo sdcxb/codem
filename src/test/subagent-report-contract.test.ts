@@ -6,6 +6,7 @@ import {
   parseSubagentReport,
   formatSubagentReport,
   extractSubagentReport,
+  settleSubagentReport,
 } from "../core/subagent/report-contract";
 
 describe("子智能体报告契约", () => {
@@ -33,7 +34,30 @@ describe("子智能体报告契约", () => {
     expect(parseSubagentReport({ status: "bogus", summary: "x" }).ok).toBe(false);
   });
 
-  it("REPORT-3: 信封可往返，extract 能取回", () => {
+  it("REPORT-3: 要求报告但缺失 -> failed，不能按散文成功", () => {
+    const missing = settleSubagentReport({
+      reportRequired: true,
+      parsedStatus: "unknown",
+      parsedSummary: "散文",
+    });
+    expect(missing.status).toBe("failed");
+    expect(missing.missing).toBe(true);
+
+    const parsed = parseSubagentReport({ status: "success", summary: "完成" });
+    expect(
+      settleSubagentReport({
+        reportRequired: true,
+        report: parsed.report,
+        parsedStatus: "unknown",
+        parsedSummary: "x",
+      }).status,
+    ).toBe("success");
+    expect(
+      settleSubagentReport({ reportRequired: false, parsedStatus: "unknown", parsedSummary: "散文" }).status,
+    ).toBe("unknown");
+  });
+
+  it("REPORT-4: 信封可往返，extract 能取回", () => {
     const parsed = parseSubagentReport({
       status: "success",
       summary: "完成",
