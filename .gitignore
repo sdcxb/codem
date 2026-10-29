@@ -61,6 +61,7 @@ docs/*.docx
 !docs/HANDOVER-*.md
 !docs/HANDOFF-NEXT-SESSION.md
 !docs/GAP-LIST.md
+!docs/MARKET-SIGNING.md
 !docs/NEW-SESSION-START.md
 !docs/RELEASE-GUIDE.md
 !docs/DEAD-CODE-TRIAGE.md
