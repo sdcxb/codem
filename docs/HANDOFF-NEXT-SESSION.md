@@ -7692,3 +7692,10 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - **帮助页空白**：`.sp-card--narrow`（500px）只被帮助页使用，在 900px 内容区里留下大片空白；
   移除该 class 与 CSS，帮助卡真机宽度 **876px**（内容区 900px）。
 - 全量 **785 文件 / 8787 用例（8770 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 17:38 — 第 265 波：retired 视觉模型的旧缓存也要过滤
+
+- 只删目录条目不够：`codem-dynamic-models` 里历史刷新留下的 `deepseek-v4-flash-vision-exp`
+  仍会被 `mergeModelsWithCatalog` 原样保留。新增 `RETIRED_MODEL_IDS`，在合并入口过滤掉
+  `deepseek-v4-flash-vision-exp` / `deepseek-v4-flash-vision`；判据 CAT-10。
+- 帮助页 `.sp-card--narrow` 移除（上一提交）：真机卡片 876px / 内容区 900px。
+- 全量 **785 文件 / 8788 用例（8771 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

@@ -96,11 +96,22 @@ export function catalogFor(providerId: string): CatalogModel[] {
  * 则该目录条目**不再补进来** —— 目录只负责"服务器没覆盖的空档"，
  * 否则设置里会出现两条一模一样的模型（一条还挂着"服务器未列出"的标签），看起来像凭空多出来的。
  */
+/** 已 retired、只保留临时路由的 id：任何来源（缓存/服务器/手动）都不再展示 */
+const RETIRED_MODEL_IDS: Record<string, ReadonlySet<string>> = {
+  deepseek: new Set(["deepseek-v4-flash-vision-exp", "deepseek-v4-flash-vision"]),
+};
+
+function isRetiredModelId(providerId: string, modelId: string): boolean {
+  return RETIRED_MODEL_IDS[providerId]?.has(modelId.toLowerCase()) ?? false;
+}
+
 export function mergeModelsWithCatalog<T extends LightModel>(
   providerId: string,
   serverModels: T[] | undefined | null,
 ): Array<T & CatalogModel> {
-  const out: Array<T & CatalogModel> = Array.isArray(serverModels) ? [...(serverModels as Array<T & CatalogModel>)] : [];
+  const out: Array<T & CatalogModel> = (Array.isArray(serverModels) ? [...serverModels] : []).filter(
+    (m) => !isRetiredModelId(providerId, String(m.id || m.name)),
+  ) as Array<T & CatalogModel>;
   const seen = new Set(out.map((m) => String(m.id || m.name).toLowerCase()));
   for (const entry of catalogFor(providerId)) {
     if (seen.has(entry.id.toLowerCase())) continue;

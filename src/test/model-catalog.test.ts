@@ -138,4 +138,12 @@ describe("模型 id 大小写 —— API 敏感，必须纠正显示名当 id �
     expect(ids).not.toContain("deepseek-v4-flash-vision-exp");
     expect(merged.find((m) => m.id === "deepseek-v4-flash")?.catalogOnly).toBe(true);
   });
+
+  it("CAT-10: 旧缓存里已经存了 retired 视觉模型 → 读取时过滤掉（不靠用户手动刷新）", () => {
+    const merged = mergeModelsWithCatalog("deepseek", [
+      { id: "deepseek-flash", name: "deepseek-flash" },
+      { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision (实验)" },
+    ]);
+    expect(merged.map((m) => m.id)).toEqual(["deepseek-flash"]);
+  });
 });
