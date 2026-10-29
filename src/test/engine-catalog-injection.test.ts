@@ -58,13 +58,12 @@ describe("引擎的模型注入范围（界面与引擎必须同源）", () => {
     engine.loadDynamicModels();
     const models = (engine.providers.get("deepseek") as any)?.dynamicModels || [];
     const ids = models.map((m: any) => m.id);
-    expect(ids, "目录里的视觉模型必须被引擎认识").toContain("deepseek-v4-flash-vision-exp");
-    expect(ids).toContain("deepseek-v4-pro");
-    // 标记来源，便于排查
-    expect(models.find((m: any) => m.id === "deepseek-v4-flash-vision-exp")?.catalogOnly).toBe(true);
+    expect(ids, "旧 Flash 兜底必须被引擎认识").toContain("deepseek-v4-flash");
+    expect(ids).not.toContain("deepseek-v4-flash-vision-exp");
+    expect(models.find((m: any) => m.id === "deepseek-v4-flash")?.catalogOnly).toBe(true);
   });
 
-  it("ENG-2: 缓存里只有服务器两条时，注入 = 服务器 ∪ 目录（旧名不重复）", () => {
+  it("ENG-2: 缓存里只有服务器两条时，注入 = 服务器 ∪ 目录（旧名/retired 不重复）", () => {
     setDynamicModels({
       deepseek: [
         { id: "deepseek-flash", name: "deepseek-flash" },
@@ -74,9 +73,9 @@ describe("引擎的模型注入范围（界面与引擎必须同源）", () => {
     const engine = new LLMEngine();
     engine.loadDynamicModels();
     const ids = dynamicIds(engine, "deepseek");
-    expect(ids).toContain("deepseek-flash");
-    expect(ids).toContain("deepseek-v4-flash-vision-exp");
-    expect(ids, "已改名的旧名不该与服务器当前名同时出现").not.toContain("deepseek-v4-flash");
+    expect(ids).toEqual(["deepseek-flash", "deepseek-v4-pro"]);
+    expect(ids).not.toContain("deepseek-v4-flash");
+    expect(ids).not.toContain("deepseek-v4-flash-vision-exp");
   });
 
   it("ENG-3: 缓存里的旧数据照样补 contextWindow（迁移不被新的遍历方式弄丢）", () => {

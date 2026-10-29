@@ -63,7 +63,7 @@ export function getConfiguredApiModels(): ModelOption[] {
 
     // 读取设置页面从 API 服务器获取并持久化的动态模型列表
     // （合并手动添加的自定义模型 + 内置目录兜底：服务器 /models 不是可调用模型的完整真相，
-    //   例如 deepseek-v4-flash-vision-exp 不在列表里但能正常调用）
+    //   例如旧 vision-exp 已 retired，现在由 deepseek-flash 覆盖）
     const dynamicModels = getMergedDynamicModels();
 
     const result: ModelOption[] = [];

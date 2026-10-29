@@ -17342,9 +17342,6 @@
   "sp-card--mt": {
     "margin-top": "var(--space-8)"
   },
-  "sp-card--narrow": {
-    "max-width": "500px"
-  },
   "sp-card--secondary": {
     "background": "var(--bg-secondary)"
   },

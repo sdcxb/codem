@@ -1108,8 +1108,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           supportsTools: sm.supports_tools ?? sm.supportsTools ?? true,
           supportsStreaming: sm.supports_streaming ?? sm.supportsStreaming ?? true,
         }));
-        // 服务器 /models 不列"能调用但未公开"的模型（实测 deepseek-v4-flash-vision-exp
-        // 不在列表里却返回 200），所以保存**并集**：服务器事实 + 内置目录兜底。
+        // 服务器 /models 不一定是完整真相（旧别名/未公开模型可能不在列表）
+        // 所以保存**并集**：服务器事实 + 内置目录兜底（V4.1-Flash 已合并视觉，旧 vision-exp 已 retired）。
         const models = mergeModelsWithCatalog(providerId, serverList);
         const catalogOnly = models.filter((m) => m.catalogOnly).length;
 
@@ -2716,7 +2716,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 </>
 )}
 {activeTab === "help" && (
-  <div className="sp-card sp-card--col sp-card--narrow">
+  <div className="sp-card sp-card--col">
     <h3 className="sp-title sp-title--lg">{lang === "zh" ? "帮助" : "Help"}</h3>
     
     <div className="setting-group">

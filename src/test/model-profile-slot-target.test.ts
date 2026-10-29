@@ -75,7 +75,7 @@ describe("模型档案：编辑槽位必须打到被编辑的那个档案", () =
      * —— 顺带证明这次更新没有把别的东西塞进内置档案。
      */
     expect(stored("default"), "内置档案只应等于代码里的定义（含它的 vision 槽位）").toEqual({
-      vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
+      vision: { provider: "deepseek", model: "deepseek-flash" },
     });
   });
 

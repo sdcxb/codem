@@ -51,11 +51,9 @@ describe("方案面板的 provider/模型列表", () => {
     expect(ds).toBeDefined();
     const ids = ds!.models.map((m) => m.id);
     expect(ids).toContain("deepseek-flash");
-    expect(ids, "视觉槽位指向的目录模型必须可选").toContain("deepseek-v4-flash-vision-exp");
-    // 与主设置的并集口径一致（3 条：服务器 2 + 目录补充 1）
-    expect(ids).toHaveLength(3);
-    // 来源标记跟着走，界面若要标注也有依据
-    expect(ds!.models.find((m) => m.id === "deepseek-v4-flash-vision-exp")?.catalogOnly).toBe(true);
+    expect(ids).not.toContain("deepseek-v4-flash-vision-exp");
+    // 与主设置的并集口径一致（服务器 2 条；retired 视觉模型不再补）
+    expect(ids).toHaveLength(2);
   });
 
   it("MPS-2: 没有 key 的 provider 不进列表；mimo 始终在（CLI 模式）", () => {

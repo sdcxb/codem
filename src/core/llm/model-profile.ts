@@ -68,7 +68,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     enabled: true,
     isBuiltIn: true,
     slots: {
-      vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
+      vision: { provider: "deepseek", model: "deepseek-flash" },
     },
   },
   {
@@ -82,7 +82,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-      vision:     { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
+      vision:     { provider: "deepseek", model: "deepseek-flash" },
     },
   },
   {
@@ -96,7 +96,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-      vision:     { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
+      vision:     { provider: "deepseek", model: "deepseek-flash" },
     },
   },
   {
@@ -219,7 +219,7 @@ export class ModelProfileManager {
    * 历史版本把**显示名**当模型 id 存进了 slot（`DeepSeek-V4-Flash-Vision-Exp`），
    * 而 DeepSeek API 对模型名大小写敏感 —— 实测该写法直接 400：
    *   "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed …"
-   * 正确写法是 `deepseek-v4-flash-vision-exp`（HTTP 200）。
+   * 正确写法是 `deepseek-flash`（HTTP 200）。
    * 已保存的用户方案没法批量改，所以在**读取处**统一纠正。
    */
   private normalizeSlot(slot: ModelSlotConfig): ModelSlotConfig {

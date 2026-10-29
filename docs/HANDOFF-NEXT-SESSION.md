@@ -7678,3 +7678,17 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - **设置刷新 0 个模型**：`summarizeList` 对非托管 provider 传了 `[]`，total 恒 0；改为所有 provider 传 models，
   只有“隐藏不可用”按托管判定。真机 DeepSeek：`✓ 获取到 3 个模型（服务器 2 + 内置目录 1）`。
 - 全量 **785 文件 / 8787 用例（8770 通过 + 17 skipped + 0 失败）**；tsc 0；CSS 契约/UI 一致性/样式棘轮全绿；未发版。
+## 2026-10-29 17:35 — 第 264 波：DeepSeek Vision-Exp 退役清理 + 帮助页宽度
+
+- **官方公告（2026-09-10）**：V4-Flash / V4-Flash-Vision-Exp 已 retired；`deepseek-flash` 是
+  V4.1-Flash 的当前 id，原生多模态；旧 id 只是临时路由别名。
+  https://api-docs.deepseek.com/news/news260910
+- **目录**：删除 `deepseek-v4-flash-vision-exp` 条目；`deepseek-v4-flash` 作为旧别名保留并标注
+  `inputModalities:["text","image"]`；`normalizeModelId` 把旧 vision-exp / 显示名收敛到 `deepseek-flash`。
+- **内置方案**：3 个 vision 槽位从 `deepseek-v4-flash-vision-exp` 改为 `deepseek-flash`；
+  capability-detector 给 `deepseek-flash` / `deepseek-v4-flash` 标 supportsVision。
+- **测试**：model-catalog CAT-1/2/5/6/7/8/9、engine ENG-1/2、model-profile MPS-1、
+  slot-target、vision-proxy 全部改为“retired 不复活、槽位指向 flash”；全量通过。
+- **帮助页空白**：`.sp-card--narrow`（500px）只被帮助页使用，在 900px 内容区里留下大片空白；
+  移除该 class 与 CSS，帮助卡真机宽度 **876px**（内容区 900px）。
+- 全量 **785 文件 / 8787 用例（8770 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

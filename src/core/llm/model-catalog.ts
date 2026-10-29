@@ -59,21 +59,23 @@ export interface CatalogModel {
  * 内置模型目录。**只放"实测确认可用、但服务器可能不列"的模型** ——
  * 服务器列出的模型不需要在这里重复（并集会自动保留服务器条目）。
  *
- * deepseek：与 DSH `dsh-llm-deepseek` 的 DEFAULT_MODELS 对齐
- * （v4-flash / v4-pro / v4-flash-vision-exp），其中视觉实验模型是服务器不列的那个。
+ * deepseek（2026-10-29 按官方公告修正）：
+ * - 2026-09-10 起 V4-Flash / V4-Flash-Vision-Exp 已 **retired**，`deepseek-flash` 是
+ *   V4.1-Flash 的当前 id，原生多模态；
+ * - 旧 id `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 只是**临时路由别名**
+ *   （官方公告原文），不再是独立模型 ⇒ 目录里不再单独列视觉模型，避免下拉里出现
+ *   “实验视觉模型”幽灵条目；
+ * - 旧 `deepseek-v4-flash` 仍保留一条别名，用于老会话/老方案在服务器只给旧名时兜底。
  */
 export const BUILTIN_MODEL_CATALOG: Record<string, CatalogModel[]> = {
   deepseek: [
-    // 旧名 → 服务器已改名 deepseek-flash（两者都可调用，但只应显示服务器当前给的那条）
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, aliases: ["deepseek-flash"] },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000 },
+    // 旧名 → 服务器已改名 deepseek-flash（V4.1-Flash，原生多模态）
     {
-      id: "deepseek-v4-flash-vision-exp",
-      name: "DeepSeek V4 Flash Vision (实验)",
+      id: "deepseek-v4-flash",
+      name: "DeepSeek V4.1 Flash",
       contextWindow: 1000000,
       inputModalities: ["text", "image"],
-      // 服务器从不列它（实测 /models 只有两条），但它确实能调用 —— 这正是目录存在的理由
-      aliases: ["deepseek-v4-flash-vision"],
+      aliases: ["deepseek-flash"],
     },
   ],
 };
@@ -120,9 +122,19 @@ export function mergeModelsWithCatalog<T extends LightModel>(
  */
 export function normalizeModelId(providerId: string, modelId: string): string {
   if (!modelId) return modelId;
+  const lower = modelId.toLowerCase();
+  /**
+   * 2026-10-29：V4-Flash-Vision-Exp 已 retired（官方公告：临时路由到 V4.1-Flash）。
+   * 老会话/老方案里还存着这个 id / 显示名，统一收敛到当前模型，避免继续显示“实验视觉模型”。
+   */
+  if (
+    providerId === "deepseek" &&
+    (lower === "deepseek-v4-flash-vision-exp" || lower === "deepseek-v4-flash-vision")
+  ) {
+    return "deepseek-flash";
+  }
   const catalog = catalogFor(providerId);
   if (catalog.some((m) => m.id === modelId)) return modelId;
-  const lower = modelId.toLowerCase();
   const hit = catalog.find((m) => m.id.toLowerCase() === lower);
   return hit ? hit.id : modelId;
 }

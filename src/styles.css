@@ -19604,7 +19604,6 @@ color: var(--accent, #7c6cf0);
 .sp-title--lg { font-size: var(--fs-lg); }
 .sp-label-md { font-size: var(--fs-md); font-weight: 500; }
 .sp-shortcuts { line-height: 2; }
-.sp-card--narrow { max-width: 500px; }
 .sp-tab {
   padding: var(--space-2) var(--space-6);
   border: 1px solid var(--border-primary);

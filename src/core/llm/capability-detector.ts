@@ -107,7 +107,9 @@ const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
   'deepseek-coder': { supportsTools: true, supportsVision: false, supportsStreaming: true },
   'deepseek-reasoner': { supportsTools: true, supportsVision: false, supportsStreaming: true },
   'deepseek-v3': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  // 视觉实验模型：服务器 /models 不列它（只在内置目录里），但实测可调用并接受图片输入
+  // V4.1-Flash（当前 id）原生多模态；旧 vision-exp 只是临时路由别名，已 retired
+  'deepseek-flash': { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  'deepseek-v4-flash': { supportsTools: true, supportsVision: true, supportsStreaming: true },
   'deepseek-v4-flash-vision-exp': { supportsTools: true, supportsVision: true, supportsStreaming: true },
 
   // MiMo
