@@ -7527,3 +7527,23 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - **门禁**：`tsc` 0；全量 **774 文件 / 8722 用例（8705 通过 + 17 skipped + 0 失败）**；
   上报点 278=278；可达性、语法、控制字节、`audit:docs` 全过；`BASELINE.json` testFiles 771 → 774。
 - 未发布（版本仍 1.16.331）。仍未验：自动压缩真机、压缩 usage 计入成本、路由的**真实转化率**（需要带模型的评测）。
+## 2026-10-29 12:20 — 第 254 波：三项"没做"全部真机落地（压缩触发/成本/路由转化）
+
+- **自动压缩真机（打包 exe，不是判据替身）**：把真实数据根复制到临时目录（`CODEM_DATA_HOME` + 独立 WebView2 profile），
+  只改副本里 deepseek-flash 的窗口为 200k，用一条 **256 条消息的真实会话**触发。结果：
+  横幅「正在压缩上下文...」出现（截图 `real-compact-banner.png`）→ visible 23 / hidden 239 / 压缩标记 1 /
+  会话事件 `compaction` 1 条；**刷新页面后**标记仍在、可见集仍 23。日志 `Model-aware context window: deepseek-flash = 200000`。
+- **压缩成本（真机读数 + 单独记账）**：
+  - `[compact] usage prompt=59466 completion=585 cacheHit=0 ...`（第一块，**主会话前缀零命中**）；
+  - 多块合计 `inputTokens=132605 cacheReadTokens=59264`（后续块命中"上一块累积摘要"共享前缀，仍不命中主会话）；
+  - 新增 `LoopState.compactionUsage` + 引擎 `recordCompactionUsage`：真机 `cost_records` 里压缩是**独立一条**
+    （duration=0、toolCalls=0），主回合那条 `inputTokens=97086` 不含压缩。判据 `D6-D`（变异：跳过记录 ⇒ 红）。
+- **路由转化（真机）**：把 delegation/subagent 的提示改成"这一轮请先 list_sessions 再交接 / 真的用 subagent 并行"后，
+  真机三类场景都出现对应工具：团队→`squad_list`；并行→`subagent`×2；交接→`list_sessions`+`handoff_to_new_session`×3。
+  第一次交接尝试只走到 list_sessions 就因"LLM 调用连续失败"中止（服务端问题）；每类只跑 1–2 次，**不是统计量**。
+- **测试期间的 5 条弹窗（用户截图）**：全部来自**隔离副本**，不是真实数据 ——
+  `fts.upsert / messages.upsert_index / events.append 超过 60 秒` 是 319MB 库副本 + 陈旧 WAL 上的 FTS/索引写入超时；
+  `loop.preCallSnapshot: os error 3` 是测试工作区为空目录。核实：真实库 mtime 停在 08:44（测试 11:00 开始），
+  11:00 后**没有**新会话/新消息、真实 `sessions/*.jsonl` 一个都没被改。副本（1.46GB）与测试进程已清理。
+  教训：真机验证要**先确认副本的 FTS 已完成**再发消息，否则 60s IPC 超时会连带让回合失败/丢写。
+- 门禁：`tsc` 0；全量 **774 文件 / 8723 用例（8706 通过 + 17 skipped + 0 失败）**；未发版。

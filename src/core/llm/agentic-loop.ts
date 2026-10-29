@@ -232,6 +232,15 @@ export interface LoopState {
    */
   maxIterations: number;
   totalUsage: TokenUsage;
+  /**
+   * 压缩调用（`complete()`）自己的 token 用量 —— **与 `totalUsage` 分开记**。
+   *
+   * 为什么不并进 totalUsage：totalUsage 是"主循环这一轮"的口径，评测/面板/成本对比
+   * 都按它算；把压缩混进去会让"同一任务多压了一次"看起来像"模型多花了钱"。
+   * 但压缩**确实花钱**，所以它单独累计，由引擎按**压缩模型**记一条独立的 CostTracker 记录
+   * （见 `LLMEngine.runLoopAndRecordUsage`），这样成本可见、口径不混。
+   */
+  compactionUsage: TokenUsage;
   toolCallsInIteration: number;
   consecutiveErrors: number;
   lastError?: string;
@@ -1691,6 +1700,7 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       iteration: 0,
       maxIterations: this.config.maxIterations,
       totalUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheHitTokens: 0, uncachedInputTokens: 0 },
+      compactionUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheHitTokens: 0, uncachedInputTokens: 0 },
       toolCallsInIteration: 0,
       consecutiveErrors: 0,
       contextPressure: 0,
@@ -6635,6 +6645,18 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       const prompt = Number(usage.promptTokens ?? 0);
       const hit = usage.cacheHitTokens;
       const miss = hit === undefined ? "?" : (usage.uncachedInputTokens ?? Math.max(0, prompt - hit));
+      /*
+       * 单独累计（不并进 totalUsage）：引擎据此按**压缩模型**记一条独立的成本记录，
+       * 主循环的 token 口径不变（见 LoopState.compactionUsage 的注释）。
+       */
+      const acc = this.state.compactionUsage;
+      acc.promptTokens += prompt;
+      acc.completionTokens += Number(usage.completionTokens ?? 0);
+      acc.totalTokens += Number(usage.totalTokens ?? 0);
+      if (hit !== undefined) acc.cacheHitTokens = (acc.cacheHitTokens ?? 0) + Number(hit);
+      if (usage.uncachedInputTokens !== undefined) {
+        acc.uncachedInputTokens = (acc.uncachedInputTokens ?? 0) + Number(usage.uncachedInputTokens);
+      }
       console.log(
         `[compact] usage prompt=${prompt} completion=${Number(usage.completionTokens ?? 0)} ` +
           `cacheHit=${hit === undefined ? "?" : hit} miss=${miss} model=${compactionModel} ` +

@@ -1767,6 +1767,44 @@ Report earlier as well whenever a partial finding changes what that agent should
         failure: failedReason,
         logPrefix: params.successLogPrefix,
       });
+
+      /**
+       * 压缩调用是**另一笔钱**：单独记一条（按压缩模型计价），不并进主循环的 totalUsage。
+       * 压缩失败不改变本回合的成败 —— 它只是"没拿到摘要"（循环里已有兜底），
+       * 所以这里恒记 success，且 duration=0（压缩耗时不计入本回合时延统计）。
+       */
+      const compactionUsage =
+        typeof (loop as any).getState === "function"
+          ? (loop as any).getState()?.compactionUsage
+          : undefined;
+      this.recordCompactionUsage({ sessionId, usage: compactionUsage });
+    }
+  }
+
+  /**
+   * 把**压缩调用**的用量记进 CostTracker（独立条目，模型按 `resolveProvider("compaction")` 解析）。
+   */
+  private recordCompactionUsage(params: {
+    sessionId: string;
+    usage: import("./types").TokenUsage | undefined;
+  }): void {
+    const { sessionId, usage } = params;
+    if (!usage || !(usage.totalTokens > 0)) return;
+    try {
+      /* 与循环里 `resolveProvider("compaction")` 同一个解析（slot=compaction），口径不分叉 */
+      const resolved = this.resolveSlot("compaction");
+      const provider = this.providers.get(resolved.providerId);
+      this.costTracker.recordUsage({
+        sessionId,
+        model: resolved.modelId || this.config.defaultModel || "unknown",
+        provider: resolved.providerId || provider?.id || this.config.defaultProvider || "unknown",
+        usage,
+        duration: 0,
+        toolCalls: 0,
+        success: true,
+      });
+    } catch (recordErr) {
+      console.warn(`[LLMEngine] recordCompactionUsage failed:`, recordErr);
     }
   }
 

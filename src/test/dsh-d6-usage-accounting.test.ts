@@ -362,4 +362,62 @@ describe("D6：一轮对话的 token 消耗必须整轮累计记账", () => {
     expect(rec.usage.totalTokens).toBe(3030);
     expect(rec.toolCalls, "tool_complete 计数在抛错前也要统计到").toBe(1);
   });
+
+  /**
+   * D6-D：**压缩调用单独记账**（P0，2026-10-29）。
+   *
+   * 压缩走 `complete()`，不经过流式 `usage` 事件；此前它既不进 `totalUsage`、也没有任何记账
+   * ⇒「压缩花了多少」在成本面板里完全不可见。现在循环把压缩用量累计在
+   * `state.compactionUsage`，引擎在同一个 `finally` 里按**压缩模型**单独记一条。
+   *
+   * 这条用例用"会报 compactionUsage 的假循环"直接驱动私有记账路径 ——
+   * 真实压缩（60 条消息）由 `auto-compaction-trigger.test.ts` 覆盖累计那一半。
+   */
+  it("D6-D：压缩用量单独记一条（不并进主循环的 totalUsage）", async () => {
+    const loop = {
+      async *run() {
+        yield { type: "text_delta", text: "ok" };
+        return { type: "stop" as const, usage: { promptTokens: 1000, completionTokens: 10, totalTokens: 1010 } };
+      },
+      getState() {
+        return {
+          totalUsage: { promptTokens: 1000, completionTokens: 10, totalTokens: 1010 },
+          compactionUsage: {
+            promptTokens: 200,
+            completionTokens: 20,
+            totalTokens: 220,
+            cacheHitTokens: 150,
+          },
+          iteration: 1,
+        };
+      },
+    };
+
+    const spy = vi.spyOn(getCostTracker(), "recordUsage");
+    for await (const _e of (engine as any).runLoopAndRecordUsage({
+      loop,
+      sessionId: "sess-d6-compaction",
+      message: "x",
+      cwd: CWD,
+      systemPrompt: "sys",
+      startTime: Date.now(),
+      successLogPrefix: "test",
+    })) {
+      /* drain */
+    }
+
+    const records = spy.mock.calls.map((c) => c[0] as unknown as RecordedUsage);
+    expect(records.length, "一轮里发生过压缩 ⇒ 主调用 + 压缩调用各一条").toBe(2);
+    const main = records.find((r) => r.usage.totalTokens === 1010);
+    const compaction = records.find((r) => r.usage.totalTokens === 220);
+    expect(main?.usage.totalTokens, "主循环记录只含主循环用量").toBe(1010);
+    expect(compaction, "压缩必须有一条独立记录").toBeTruthy();
+    expect(compaction!.usage.promptTokens).toBe(200);
+    expect(compaction!.usage.completionTokens).toBe(20);
+    expect(compaction!.usage.totalTokens).toBe(220);
+    expect((compaction!.usage as any).cacheHitTokens, "缓存命中字段要原样带进成本记录").toBe(150);
+    expect(compaction!.duration, "压缩耗时不计入本回合时延统计").toBe(0);
+    expect(compaction!.success, "压缩失败不改本回合成败（循环有兜底），这里恒记成功").toBe(true);
+    expect(compaction!.sessionId).toBe("sess-d6-compaction");
+  });
 });

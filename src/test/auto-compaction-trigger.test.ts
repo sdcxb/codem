@@ -141,6 +141,12 @@ describe("AUTOCOMPACT：自动压缩的触发路径", () => {
     expect(compactLog, "压缩调用必须留一行 usage 读数（否则压缩成本不可观测）").toBeTruthy();
     expect(compactLog).toContain("prompt=100");
     expect(compactLog, "provider 没报缓存字段时不许编 0").toContain("cacheHit=?");
+    // 压缩用量单独累计，且**不并进**主循环的 totalUsage（否则评测口径会被污染）
+    const state = (loop as any).getState();
+    expect(state.compactionUsage.promptTokens).toBe(100);
+    expect(state.compactionUsage.completionTokens).toBe(20);
+    expect(state.compactionUsage.totalTokens).toBe(120);
+    expect(state.totalUsage.totalTokens, "压缩用量不并进主循环 totalUsage").toBe(0);
 
     // 历史里出现压缩标记（原文软删 + 标记是唯一副本，不是物理删除）
     const after = listMessages(SESSION);
