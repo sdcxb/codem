@@ -123,11 +123,11 @@
 
 ### 5.6 其他已知限制
 
-- **worktree 合并冲突**：只做到“选边/回滚”，没有逐文件 UI；
+- **worktree 合并冲突**：已有「冲突文件列表 + 逐个打开 + 选一边合并/回滚」，**逐文件选 ours/theirs/both 未做**；
 - **PR/CI**：只读同步；不创建/合并/修 CI；
 - **真实模型并发**：自动化重复触发已加并发上限，但“3 并发稳定产出报告”未证明；
-- **`needs_you_pending` / `agent_messages` 表**：有 schema、无读写；队列在内存；
-- **`session_events`**：只增不减、无 TTL；
+- **`needs_you_pending` / `agent_messages`**：schema 在，但**没有任何读写接线**（文件头注释写「Persistence」是假的）；队列仍在内存，重启即丢；
+- **`session_events`**：只增不减；`keepEventsPerSession` **明确是 no-op**（截断会删掉不可重建的压缩/工具事件）——要做只能「归档后再删」，不能直接 TTL；
 - **`execute_command` 的工作区校验：已决定不做**（不是缺口）。只读越界是必要能力（用户明确裁定）；
   历史上 5–6 次用 `cwd`/字符串判定收紧，都因误伤正常命令（git/npm/跨目录只读）而回退。
   要做只能是 OS 级沙箱（Job Object / 受限令牌），属独立产品决策；**不要再按“加一个工作区校验”重试**。
@@ -195,11 +195,11 @@
 
 8. ~~`execute_command` 的工作区/沙箱边界~~（**已决定不做**：只读越界必要，历史多次收紧回退；见 §5.6/§9）；
 9. Job Object `KILL_ON_JOB_CLOSE`；
-10. `needs_you_pending` / `agent_messages` 落库或删表；
-11. `session_events` 的保留/归档策略；
-12. worktree 合并冲突逐文件 UI；
-13. dream 皮肤语义令牌补齐；
-14. `ChatPanel.showWorkbench` / `SpaceSwitcher` 的处置（接回或删除）。
+10. `needs_you_pending` / `agent_messages` 落库（**未做**；表已有、队列在内存，注释谎称已持久化）；
+11. `session_events` 的保留/归档策略（**未做**；直接 TTL 会丢不可重建事件，需先归档）；
+12. worktree 合并冲突逐文件选边 UI（列表/打开/整体选边已有，逐文件未做）；
+13. dream 皮肤令牌：定义/注入/回退已有（`skin-dream.css` + `--dream-*`）；只剩「值优先编号 → 语义命名」可选；
+14. ~~`ChatPanel.showWorkbench` / `SpaceSwitcher`~~（**已删除**；Sidebar 只剩一行注释，2026-10-29 核实）。
 
 > 这些是建议，不是承诺。涉及产品取舍/发版的，先问用户。
 
