@@ -7615,3 +7615,13 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - **结构门禁**：时间口径改用 `localDateString` / `setDate`（不写裸 24h），设置键补写入方；
   `settings-keys-symmetry` / `settings-mock-parity` / `time-single-source` / `time-window-dst` 全绿。
 - 门禁：`tsc` 0；全量 **781 文件 / 8775 用例（8758 通过 + 17 skipped + 0 失败）**；Rust 引擎测试通过；未发版。
+## 2026-10-29 15:10 — 第 259 波：stack 真市场（索引 + 技能市场解析 + 工具）
+
+- **市场不是新服务**：`stacks/index.json` 由仓库 raw.githubusercontent 提供 HTTPS；
+  `stack-market.ts` 拉索引、按技能名从**既有真实技能市场**（GitHub / ClawHub / Skills.sh / SkillHub）解析并安装。
+- **工具入口**：`stack_market`（list / install），带 `outputSchema` 结果契约；注册进默认 registry。
+- **示例包**：`stacks/review-pack`（引用内置 `code-review` + WORKFLOW.md），已过 `audit:stacks`。
+- **判据**：`STACK-MARKET` SM-1..3（索引只收合法/不重名、missing/failed 分开、坏 JSON 抛错）；
+  `STACK-TOOL` ST-1..3（list/install/缺 name）；`output-schema` 基线 6/54（手工校正静态扫描 82 的偏差）。
+- **仍然没做**：stack 市场 UI 页签、索引签名/版本递增门禁（当前靠 git 提交 + HTTPS）。
+- 门禁：`tsc` 0；全量 **783 文件 / 8781 用例（8764 通过 + 17 skipped + 0 失败）**；knip/ audits 绿；未发版。

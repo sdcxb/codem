@@ -74,7 +74,7 @@
 
 | 项 | 读数 | 预算 |
 | --- | ---: | ---: |
-| 静态常驻工具（`createDefaultToolRegistry`） | **39 个 / 25,055 字符** | 31,000（棘轮） |
+| 静态常驻工具（`createDefaultToolRegistry`） | **40 个 / 25,547 字符** | 31,000（棘轮） |
 | 其中最大的三个 | `run_code` 2,370 ／ `glob` 1,262 ／ `read_attachment` 1,122 | — |
 | 运行时动态工具（委派/团队/Issue/computer-use） | **39 个 / 16,622 字符** | 19,000（棘轮） |
 | 　subagent | 4 ／ 1,889 | — |
@@ -83,17 +83,17 @@
 | 　agent-teams（运行时团队） | 10 ／ 3,386 | — |
 | 　Issue | 4 ／ 2,721 | — |
 | 　computer-use | 11 ／ 3,226 | — |
-| **静态 + 动态合计** | **78 个 / 41,677 字符** | 48,000（棘轮） |
+| **静态 + 动态合计** | **79 个 / 42,169 字符** | 48,000（棘轮） |
 | 延迟加载工具 | 8 个（完整 schema 不在常驻集；含 `project_report`） | ≥1 |
 | 注册技能 | **12 个 / description 合计 2,444 字符** | 3,000（棘轮） |
 | 最长技能描述 | 376 字符 | 1,024（硬上限） |
 
 > 口径修正（本轮发现）：上一版只量了静态 40 个，**漏掉运行时动态注册的 39 个**，把工具定义成本低估了约 38%。
-> MCP 服务器带来的工具无法静态计入（取决于用户装了什么），所以 41,677 是**下限**。
+> MCP 服务器带来的工具无法静态计入（取决于用户装了什么），所以 42,169 是**下限**。
 
 > **2026-10-29 已下放 `project_report`**（2,489 字符，原最大常驻工具）：进入 `DEFERRED_BIG_TOOLS`，
 > 普通会话每轮省约 600 token；项目 thread 通过 `tool_search`（deferred 提示含 name+hint）取回完整 schema。
-> 判据：`tool-search-recall` 的「项目报告 / project_report」两条 + `context-tax` 的静态读数（39 / 25,055）。
+> 判据：`tool-search-recall` 的「项目报告 / project_report」两条 + `context-tax` 的静态读数（39 / 25,547）。
 
 > 口径说明：数的是**字符**不是 token。仓库里没有稳定的分词器，编一个换算系数只会制造假精度；字符数的用途是**相对棘轮**（这次比上次长还是短）。真实 token 以 provider 的 `usage` 为准。
 >
@@ -114,7 +114,7 @@
 | **P1-5 交接模板补两段** | `HANDOVER_TEMPLATE` 增加「已排除的方案」「已知坑 / 易抖动用例」（**可选**，不参与机械校验） | [handover-protocol.test.ts](src/test/handover-protocol.test.ts) HANDOVER-6 扩展 | 删掉任一段 ⇒ 红 |
 | **P2-7 技能包校验器** | 新增 `tools/audit/check-skill-packs.mjs`：frontmatter / name==目录 / description ≤1024 / BOM / 软预算告警；接入 `npm run audit` | [skill-packs-validate.test.ts](src/test/skill-packs-validate.test.ts)（真实目录 + 5 类坏夹具） | 关掉长度检查 ⇒ 夹具红 |
 | **P2-8 复盘只读报告** | 新增 `tools/audit/retro-interventions.mjs`：从本地会话史识别六类人工介入（retry/judge/approve/carry/trigger/stand-in），只读、脱路径、不给结论 | [retro-interventions.test.ts](src/test/retro-interventions.test.ts)（7 条） | 去掉「非人消息」过滤 ⇒ RETRO-2 红 |
-| **P2-9 `project_report` 下放** | 最大常驻工具（2,489 字符）进入 `DEFERRED_BIG_TOOLS`；普通会话每轮省约 600 token，项目 thread 经 `tool_search` 取回 | [context-tax-budget.test.ts](src/test/context-tax-budget.test.ts) 静态 39 / 25,055；`tool-search-recall` 的「项目报告 / project_report」 | 从 set 里移除 ⇒ 两条召回红 |
+| **P2-9 `project_report` 下放** | 最大常驻工具（2,489 字符）进入 `DEFERRED_BIG_TOOLS`；普通会话每轮省约 600 token，项目 thread 经 `tool_search` 取回 | [context-tax-budget.test.ts](src/test/context-tax-budget.test.ts) 静态 39 / 25,547；`tool-search-recall` 的「项目报告 / project_report」 | 从 set 里移除 ⇒ 两条召回红 |
 | **§4-8 提示段落存活** | 系统提示纯函数、每轮重建；子代理只拿调用方传的核心段 | [prompt-section-survival.test.ts](src/test/prompt-section-survival.test.ts) PS-1..6 | `appendVolatileAppendix` 丢掉 base ⇒ PS-5 红 |
 | **压缩成本可见** | `UsageRecord.kind="compaction"` + 历史页标签「上下文压缩」 | [usage-label.test.ts](src/test/usage-label.test.ts) UL-1/2；`D6-D` 断言 kind | 标签恒 null ⇒ UL-1 红；不传 kind ⇒ D6-D 红 |
 
@@ -127,17 +127,22 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
 
 **P1-5 的诚实说明**：Codem 的交接早就比 mcode-stack 的 `handoff-doc` 强 —— 正文是**代码机械生成**的（[ui-handoff.ts](src/core/session/ui-handoff.ts)），带「产物路径经存在性核对」「完成判据必须可判定」「禁止重扫」。它唯一多出来的两段是「已排除的方案」和「已知坑」，这一轮补进了模板；**不需要**照它重写交接机制。
 
-**P2-7 的边界（做了「本地包描述」，没做市场）**：mcode-stack 的 stack 是「一个 `plugin.json` + 若干技能 + 一份 `WORKFLOW.md` + 版本号 + 市场条目」的分发单位。本轮落了两层：
+**P2-7：本地清单 + 真市场安装（索引 + 真实技能市场解析）**：mcode-stack 的 stack 是「一个 `plugin.json` + 若干技能 + 一份 `WORKFLOW.md` + 版本号 + 市场条目」的分发单位。本轮落了三层：
 
 - `check-skill-packs`：仓库自带技能的结构/预算校验（上一轮）；
 - `stacks/<name>/codem-stack.json` + [check-stack-manifests.mjs](tools/audit/check-stack-manifests.mjs)：
   **本地包描述**——引用的技能必须真实存在、版本必须是 semver、`workflow` 必须是包内相对路径且存在。
-  格式与规则见 [stacks/README.md](stacks/README.md)，已接进 `npm run audit`。
+  格式与规则见 [stacks/README.md](stacks/README.md)，已接进 `npm run audit`；
+- `stacks/index.json` + `stack_market` 工具 + [stack-market.ts](src/core/skill/stack-market.ts)：
+  **真市场安装**——索引由仓库 raw.githubusercontent 提供（HTTPS），技能逐个从既有真实技能市场
+  （GitHub / ClawHub / Skills.sh / SkillHub）解析并安装；`stack_market` 支持 list / install。
+  判据 `STACK-MARKET` SM-1..3、`STACK-TOOL` ST-1..3。
 
-**仍然没做**（明确是产品取舍，不是遗漏）：
+**仍然没做**（明确是产品取舍/发布流水线，不是遗漏）：
 
-- 远程市场、下载/安装、依赖解析；
-- 版本递增门禁（"改了文件必须升版本"）：只有在存在远程分发时才有意义；
+- 专门的 stack 市场 UI 页签（当前入口是 `stack_market` 工具；SkillManager 里还没有）；
+- 索引自动发布与签名（当前靠 git 提交 + HTTPS，完整性由仓库本身保证）；
+- 版本递增门禁（"改了文件必须升版本"）；
 - 与 DSH 插件市场的映射。
 
 ---

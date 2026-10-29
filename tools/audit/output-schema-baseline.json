@@ -5,7 +5,8 @@
     "glob",
     "grep",
     "read",
+    "stack_market",
     "web_fetch"
   ],
-  "toolCountAtBaseline": 53
+  "toolCountAtBaseline": 54
 }

@@ -211,6 +211,7 @@ import { createSessionSearchTool, createSessionEventSearchTool, createSessionTra
 // P2-12: Goal tools for automatic continuation
 import { createGoalTools } from "./tools/goal-tools";
 import { createProjectReportTool } from "./tools/project-report";
+import { createStackMarketTool } from "../skill/stack-tool";
 // P2-11: Workflow tool for JS-based task orchestration
 import { createWorkflowTool } from "./workflow-engine";
 // P2-19/20: Job and Terminal tools for background task & terminal management
@@ -2582,6 +2583,7 @@ registry.register(createSessionTraceTool());
 registry.register(createSessionEventReadTool());
   // 协调者 P0：thread 报告工具（写 .codem/project/reports）
   registry.register(deferIfBig(createProjectReportTool()));
+  registry.register(createStackMarketTool());
   // P2-12: Goal tools — create/get/update goals for automatic continuation
   for (const tool of createGoalTools()) {
     registry.register(tool);

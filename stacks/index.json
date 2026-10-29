@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-29",
+  "stacks": [
+    {
+      "name": "review-pack",
+      "version": "1.0.0",
+      "description": "评审用的技能包：从真实技能市场解析 code-review 并安装",
+      "skills": ["code-review"]
+    }
+  ]
+}
