@@ -7715,3 +7715,13 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   「真机线程 A/B/C」三条。
 - **托盘退出计时**：CDP 调 `quit_app`（托盘「退出」同一路径）→ 进程 **70ms** 内退出。
 - 全量 **785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 18:15 — v1.16.332 发布完成
+
+- GitHub Release `v1.16.332` = Latest；7 个资产：NSIS/EXE+sig、MSI+sig、latest.json、
+  `stacks-index.json`、`stacks-index.json.sig`。
+- 构建签名通过；`verify-update-manifest.mjs --remote` 7 项通过；远端 stack 索引 HTTP 200，
+  下载后用 `sign-index.mjs --verify` 验签通过。
+- 发现并修复：`gh release upload file#label` **不会改名**，market-sign 实际传成 `index.json`，
+  而 App 拉 `stacks-index.json` 会 404；已手动补正确资产并改 workflow 先复制成目标文件名
+  （提交 `6074e2ca`）。
+- 全量 785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）；tsc 0。
