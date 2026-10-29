@@ -199,3 +199,7 @@ src-tauri/codem-db/tests/wire-fixtures.verified.json
 /art/
 /prototype/
 /docs/ref-analysis/
+
+# CDP 评测用的浏览器配置目录（第 233 轮：本地跑真机取证时生成，纯本地垃圾，不进仓库）
+.edge-ref-profile*/
+.edge-shot/
