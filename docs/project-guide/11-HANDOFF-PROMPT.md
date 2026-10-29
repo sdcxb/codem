@@ -10,7 +10,7 @@
 ```text
 你在 Windows 仓库 C:\mimo-gui 工作。这是 Codem：一个 Windows 桌面 AI 编程助手，
 技术栈是 Tauri v2 + Rust + React 18 + TypeScript，本地优先，把「对话 → 计划 → 工具调用 → 验证」
-做成 GUI。当前版本 1.16.331。
+做成 GUI。当前版本 1.16.332。
 
 第一步不要改代码。先按顺序读这 5 份文档：
 1. docs/project-guide/README.md
@@ -33,8 +33,8 @@
 - 中文引号用「」；新文件 UTF-8 无 BOM。
 
 当前基线（以你实测为准）：
-- 版本 1.16.331，master；tsc 0 错误。
-- 全量测试 785 文件 / 8790 用例：8773 通过、17 跳过、0 失败。
+- 版本 1.16.332，master；tsc 0 错误。
+- 全量测试 788 文件 / 8795 用例：8778 通过、17 跳过、0 失败。
 - 两条失败来自未跟踪游戏文档（BOM + 缺历史横幅），不是产品回归；不要先修它们。
 
 开工前先跑：
@@ -60,10 +60,10 @@ npm run audit:docs
 ## 2. 极简版（平台上下文很小，或只想先聊方案）
 
 ```text
-你在 C:\mimo-gui 工作，这是 Codem（Tauri v2 + Rust + React/TS 的桌面 AI 编程助手，当前 1.16.331）。
+你在 C:\mimo-gui 工作，这是 Codem（Tauri v2 + Rust + React/TS 的桌面 AI 编程助手，当前 1.16.332）。
 先读 docs/project-guide/00-AGENT-HANDBOOK.md 和 09-CURRENT-STATE.md，再按任务查 02/03/05/06/07/08。
 硬规则：先写判据 + 变异；禁止 goal mode / 自动续跑；不要 git add -A；发布先问用户；
-当前测试 8773 通过 / 17 跳过 / 0 失败。
+当前测试 8778 通过 / 17 跳过 / 0 失败。
 读完先用 6 行复述项目、三条主动脉、当前基线、你准备改什么、你不做什么、要问我什么。
 ```
 

@@ -7725,3 +7725,16 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   而 App 拉 `stacks-index.json` 会 404；已手动补正确资产并改 workflow 先复制成目标文件名
   （提交 `6074e2ca`）。
 - 全量 785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）；tsc 0。
+## 2026-10-29 18:50 — 第 267 波：@codem/ste-zh 汇报规范插件 + 顶部开关
+
+- 独立插件 `@codem/ste-zh`：`config/codem.base.yml` 声明、`builtin-registry` 注册、
+  `ste-zh-provider` 提供 `steZh` 服务；`core: true` 保证顶部开关在关闭时也能重新开启。
+- 规则只影响汇报文字：结论先行、固定状态词、工作/验证分离、证据可定位、不确定写明；
+  子 agent 用 `status/scope/changed/verified/unverified/evidence/open` 紧凑字段。
+  不改变代码/注释/commit/项目文件；用户指定格式优先。
+- 顶部工具栏新增「STE 汇报规范」按钮：`aria-pressed` 反映状态，点击写
+  `codem-ste-zh-enabled`；真机验证按钮从关闭→开启，DB 键变 true，header 无溢出。
+- 判据：`ste-zh.test.ts`（规则/注入）、`ste-zh-provider.test.ts`（服务面）、
+  `ste-zh-toggle.test.tsx`（按钮）；fail-open 白名单登记 `isSteZhEnabled`（纯风格开关，失败⇒关闭）。
+- 文档：`docs/STE-ZH-PLUGIN.md`。
+- 全量 **788 文件 / 8795 用例（8778 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

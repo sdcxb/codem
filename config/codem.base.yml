@@ -522,6 +522,11 @@
 - id: persona
   name: '@codem/persona'
 
+# 汇报规范（STE-ZH）：始终提供 steZh 服务；是否注入规则由设置 codem-ste-zh-enabled 决定
+- id: ste-zh
+  name: '@codem/ste-zh'
+  core: true
+
 # ===== 工具插件 =====
 - id: tool-jobs
   name: '@codem/tool-jobs'

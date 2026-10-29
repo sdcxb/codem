@@ -101,6 +101,11 @@
       "site": "src/core/ui/sound-cues.ts::isSoundCuesEnabled",
       "direction": "conservative",
       "reason": "提示音开关读取：读设置失败⇒当作关闭（不发声）。这是纯装饰能力，不涉及安全/写入/放行；失败方向是「更安静」，与 C-18 沙箱开关那类「失败⇒放行」正好相反。"
+    },
+    {
+      "site": "src/core/ste-zh/index.ts::isSteZhEnabled",
+      "direction": "conservative",
+      "reason": "汇报风格开关读取：读设置失败⇒当作关闭（不注入 STE 规则）。纯提示词风格能力，不涉及工具放行、写入或安全；失败方向是恢复默认汇报，不会造成数据或权限影响。"
     }
   ]
 }

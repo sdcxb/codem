@@ -41,6 +41,7 @@ import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
 import { buildCoordinatorContext } from "../project/coordinator/context";
 import { buildPersonaPromptSection } from "../persona/persona";
+import { buildSteZhPromptSection } from "../ste-zh";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
@@ -1110,6 +1111,8 @@ function readContextCompactionThreshold(): number {
       personaSection: this.isPersonaAvailable()
         ? await buildPersonaPromptSection()
         : "",
+      // @codem/ste-zh：插件服务在场且用户开启时才注入；只影响汇报文字。
+      steZhSection: this.isSteZhAvailable() ? buildSteZhPromptSection() : "",
     };
 
     const basePrompt = buildSystemPrompt(config);
@@ -1145,6 +1148,16 @@ function readContextCompactionThreshold(): number {
     if (!this.ctx) return true; // 无 ctx（纯引擎环境）：不拦截（调用方各自可控）
     try {
       return !!this.ctx.get('persona');
+    } catch {
+      return false;
+    }
+  }
+
+  /** @codem/ste-zh：插件被禁时 ctx 里没有 steZh 服务，主 prompt 不注入规则。 */
+  private isSteZhAvailable(): boolean {
+    if (!this.ctx) return true;
+    try {
+      return !!this.ctx.get('steZh');
     } catch {
       return false;
     }

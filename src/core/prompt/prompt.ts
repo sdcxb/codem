@@ -181,6 +181,11 @@ maxContextSize?: number;
    * 由调用方经 buildPersonaPromptSection() 生成后传入；空 = 不注入）。
    */
   personaSection?: string;
+  /**
+   * @codem/ste-zh 汇报规范段（启用时由调用方生成；空 = 不注入）。
+   * 只约束汇报文字，不改变代码/文件。
+   */
+  steZhSection?: string;
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
@@ -196,6 +201,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
   // 1.5 (B2 persona, 对标 EAC soul-md) 激活人设卡紧随身份/语言/人格段之后
   if (config.personaSection) {
     sections.push(config.personaSection.trimEnd());
+  }
+
+  // 1.6 @codem/ste-zh 汇报规范（插件启用时才非空）
+  if (config.steZhSection) {
+    sections.push(config.steZhSection.trimEnd());
   }
 
   // 2. Agent-specific prompt (base behavior)
