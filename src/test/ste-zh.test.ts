@@ -42,6 +42,7 @@ describe("STE-ZH 汇报插件", () => {
     expect(buildSteZhPromptSection({ userMessage: "请向我汇报本次修复的验证结果" })).toContain("STE-ZH，启用中");
     expect(buildSteZhPromptSection({ isSubagent: true })).toContain("子智能体汇报字段");
     expect(buildSteZhPromptSection({ userMessage: "简短汇报一下" })).toContain("STE-ZH 精简");
+    expect(buildSteZhPromptSection({ userMessage: "只输出 JSON：{\"ok\":true}" })).toBe("");
   });
 
   it("STE-3: 全量模式始终完整规则，关闭则不注入", () => {

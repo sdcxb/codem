@@ -77,8 +77,12 @@ function resolveSteZhAppliedMode(ctx: SteZhTurnContext = {}): SteZhAppliedMode {
   const mode = getSteZhMode();
   if (mode === "off") return "off";
   if (ctx.isSubagent) return "subagent";
-  if (mode === "full") return "full";
   const msg = (ctx.userMessage || "").trim();
+  // 用户要求精确输出（JSON/代码/只输出一行）时，格式规则会污染结果：直接不注入。
+  if (/(只输出|仅输出|不要解释|只回复|只回答|输出格式|格式如下|json|JSON|代码块)/.test(msg)) {
+    return "off";
+  }
+  if (mode === "full") return "full";
   if (!msg) return "full";
   if (/(简短|简要|一句话|只回复|短一点|不要展开)/.test(msg)) return "minimal";
   const wantsReport = /(汇报|总结|报告|排查|结论|决定|验收|复盘)/.test(msg);
