@@ -84,5 +84,22 @@ describe("STE-ZH 汇报插件", () => {
       { tool: "bash", args: { command: "npm test" }, status: "error" },
     ]);
     expect(failed).toHaveLength(1);
+    const exitOne = validateSteZhReport("已完成，已验证。", [
+      { tool: "bash", args: { command: "npm test" }, status: "done", result: "[exit code: 1]" },
+    ]);
+    expect(exitOne).toHaveLength(1);
+    const failedCount = validateSteZhReport("已完成，已验证。", [
+      { tool: "bash", args: { command: "npm test" }, status: "done", result: "46 passed, 2 failed" },
+    ]);
+    expect(failedCount).toHaveLength(1);
+    const passed = validateSteZhReport("已完成，已验证。", [
+      { tool: "bash", args: { command: "npm test" }, status: "done", result: "48 passed, 0 failed" },
+    ]);
+    expect(passed).toHaveLength(0);
+
+    const bullets = validateSteZhReport("需要你决定：\n- 撤回（推荐）\n- 保留", []);
+    expect(bullets.map((f) => f.code)).toContain("options-not-numbered");
+    const numbered = validateSteZhReport("需要你决定：\n1. 撤回（推荐）\n2. 保留", []);
+    expect(numbered.map((f) => f.code)).not.toContain("options-not-numbered");
   });
 });

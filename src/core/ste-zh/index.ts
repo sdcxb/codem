@@ -28,7 +28,7 @@ export interface SteZhTurnContext {
 }
 
 interface SteZhFinding {
-  code: "verified-without-command";
+  code: "verified-without-command" | "options-not-numbered";
   message: string;
 }
 
@@ -146,25 +146,44 @@ const VERIFICATION_CMD =
  */
 export function validateSteZhReport(
   text: string,
-  toolCalls: Array<{ tool?: string; args?: unknown; status?: string }> | undefined,
+  toolCalls: Array<{ tool?: string; args?: unknown; status?: string; result?: string }> | undefined,
 ): SteZhFinding[] {
   if (getSteZhMode() === "off" || !text) return [];
+  const findings: SteZhFinding[] = [];
   const claimsVerified = /(已验证|verified\s*[:：]\s*(?:已验证|verified|true))/i.test(text);
-  if (!claimsVerified) return [];
-  const hasVerificationCommand = (toolCalls || []).some((tc) => {
-    if (tc.status === "error") return false;
-    const tool = String(tc.tool || "").toLowerCase();
-    if (!["bash", "pwsh", "shell", "terminal_send"].includes(tool)) return false;
-    const args = (tc.args || {}) as Record<string, unknown>;
-    const command = String(args.command ?? args.input ?? args.cmd ?? "");
-    return VERIFICATION_CMD.test(command);
-  });
-  if (hasVerificationCommand) return [];
-  return [
-    {
-      code: "verified-without-command",
-      message:
-        "这条回复声称“已验证”，但本轮没有执行测试/构建/类型检查类命令。请核对证据；如果结果来自调用方，应写“调用方提供”，否则改为“未验证/未确认”。",
-    },
-  ];
+  if (claimsVerified) {
+    const hasVerificationCommand = (toolCalls || []).some((tc) => {
+      if (tc.status === "error") return false;
+      const resultText = String(tc.result ?? "");
+      if (/\[exit code:\s*[1-9]\d*\]/i.test(resultText)) return false;
+      if (/\b[1-9]\d*\s+(?:failed|失败)\b/i.test(resultText)) return false;
+      const tool = String(tc.tool || "").toLowerCase();
+      if (!["bash", "pwsh", "shell", "terminal_send"].includes(tool)) return false;
+      const args = (tc.args || {}) as Record<string, unknown>;
+      const command = String(args.command ?? args.input ?? args.cmd ?? "");
+      return VERIFICATION_CMD.test(command);
+    });
+    if (!hasVerificationCommand) {
+      findings.push({
+        code: "verified-without-command",
+        message:
+          "这条回复声称“已验证”，但本轮没有执行测试/构建/类型检查类命令。请核对证据；如果结果来自调用方，应写“调用方提供”，否则改为“未验证/未确认”。",
+      });
+    }
+  }
+
+  const lines = text.split("\n");
+  const bulletOptions = lines.filter((line) => /^\s*[-*•]\s+/.test(line)).length;
+  const numberedOptions = lines.filter((line) => /^\s*[1-9][.、)]\s+/.test(line)).length;
+  if (
+    /(选项|决定|选择|方案|撤回|保留)/.test(text) &&
+    bulletOptions >= 2 &&
+    numberedOptions === 0
+  ) {
+    findings.push({
+      code: "options-not-numbered",
+      message: "这条回复给了多个选项，但没用 1. / 2. 编号；请改成编号列表，方便用户和父 agent 引用。",
+    });
+  }
+  return findings;
 }

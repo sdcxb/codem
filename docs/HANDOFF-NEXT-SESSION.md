@@ -7771,3 +7771,10 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 前台 subagent 工具在 stopReason 非 completed（含 refusal）时返回 `isError: true`，
   不再把“未提交结构化报告”当普通成功文本；metadata 保留 stopReason。
 - 新增 `subagent-tool-result.test.ts`；全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0。
+## 2026-10-29 21:40 — 第 272 波：验证结果门控 + 选项编号告警 + 留出集
+
+- 告警不再只看命令存在：工具结果出现 `[exit code: 1+]` 或 `2 failed` 时不算验证。
+- 新增 options-not-numbered 告警：多选项但全用项目符号时提示编号。
+- 留出集 4 例 × 关/智能：H1 短任务 128→82 字；H2/H3 暴露格式压力反例
+  （失败运行写成“已验证”、调用方版本被写成“不是 1.2.3”）。
+- 全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
