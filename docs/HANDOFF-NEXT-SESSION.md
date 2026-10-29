@@ -7625,3 +7625,13 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   `STACK-TOOL` ST-1..3（list/install/缺 name）；`output-schema` 基线 6/54（手工校正静态扫描 82 的偏差）。
 - **仍然没做**：stack 市场 UI 页签、索引签名/版本递增门禁（当前靠 git 提交 + HTTPS）。
 - 门禁：`tsc` 0；全量 **783 文件 / 8781 用例（8764 通过 + 17 skipped + 0 失败）**；knip/ audits 绿；未发版。
+## 2026-10-29 15:35 — 第 260 波：stack 市场 UI 页签
+
+- 技能市场页签顶部新增「技能包」区块（[StackMarketSection.tsx](src/components/StackMarketSection.tsx)）：
+  拉 `stacks/index.json`、列包（版本/技能 badge）、点安装走 `installStackFromMarket`，显示 installed/missing/failed。
+- 复用现有市场样式与 `IncrementalList` 分片渲染；关闭按钮用 `ActionIcons.close`（ICON-063），
+  不新增 CSS 类（CSS 契约/UI 扫描全绿）。
+- 判据 `STACK-UI` SU-1/2（加载/安装结果、索引失败不崩）；`stack_market` 工具仍保留（对话入口）。
+- 签名私钥问题写进 16 号文档：客户端只内置公钥；私钥走离线机/CI secret/KMS 三选一；
+  不复用仓库里的 updater 私钥；按 key id 轮换/吊销。
+- 全量 **784 文件 / 8783 用例（8766 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

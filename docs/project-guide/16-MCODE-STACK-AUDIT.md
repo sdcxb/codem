@@ -136,14 +136,21 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
 - `stacks/index.json` + `stack_market` 工具 + [stack-market.ts](src/core/skill/stack-market.ts)：
   **真市场安装**——索引由仓库 raw.githubusercontent 提供（HTTPS），技能逐个从既有真实技能市场
   （GitHub / ClawHub / Skills.sh / SkillHub）解析并安装；`stack_market` 支持 list / install。
-  判据 `STACK-MARKET` SM-1..3、`STACK-TOOL` ST-1..3。
+  判据 `STACK-MARKET` SM-1..3、`STACK-TOOL` ST-1..3；
+- **UI 入口**：技能市场页签顶部新增「技能包」区块（[StackMarketSection.tsx](src/components/StackMarketSection.tsx)），
+  列出索引里的包、点安装直接走上面的解析逻辑；判据 `STACK-UI` SU-1/2。
 
 **仍然没做**（明确是产品取舍/发布流水线，不是遗漏）：
 
-- 专门的 stack 市场 UI 页签（当前入口是 `stack_market` 工具；SkillManager 里还没有）；
-- 索引自动发布与签名（当前靠 git 提交 + HTTPS，完整性由仓库本身保证）；
+- 索引自动发布与签名（当前靠 git 提交 + HTTPS，完整性由仓库本身保证；签名方案见下）；
 - 版本递增门禁（"改了文件必须升版本"）；
 - 与 DSH 插件市场的映射。
+
+**签名私钥放哪（给公开分发）**：客户端**只内置公钥**，私钥永远不进安装包/仓库。三种可行托管：
+① 离线签名机（发布前签 `stacks/index.json`，只上传 `.sig`）；
+② CI Secret（打 tag 时由 CI 签，私钥只存在于 secret）；
+③ KMS/硬件（私钥不出硬件）。公钥按 key id 列表内置，支持轮换与吊销。
+**不要复用 updater 私钥**——它现在就在仓库里，本来就是风险；市场应独立密钥。
 
 ---
 

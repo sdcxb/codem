@@ -22,6 +22,7 @@ import { Switch } from "./ui/switch";
 /* 第 181 轮审计整改：长列表分片渲染（与插件管理同型） */
 import { IncrementalList } from "./ui/IncrementalList";
 import { Badge } from "./ui/badge";
+import { StackMarketSection } from "./StackMarketSection";
 import { Card } from "./ui/card";
 import { Progress } from "./ui/progress";
 import {
@@ -925,6 +926,7 @@ return true;
       {/* ===== Market Tab ===== */}
       {activeTab === "market" && (
         <>
+          <StackMarketSection />
           {/* Market Toolbar */}
           <div className="skill-manager-toolbar">
             <div className="skill-search-box">
