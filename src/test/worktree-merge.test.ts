@@ -116,6 +116,32 @@ describe("worktree 合并回主工作区", () => {
     expect(git(repo, "status --porcelain").trim()).toBe("");
   });
 
+  it("WT-MERGE-8：逐文件选边 → 只保留指定那一边，主工作区干净", { timeout: 30000 }, async () => {
+    fs.writeFileSync(path.join(wt, baseFile), "worktree");
+    fs.writeFileSync(path.join(repo, baseFile), "main");
+    git(repo, "add -A");
+    git(repo, "commit -qm main-change");
+    const res = await mergeWorktreeToProject(repo, wt, {
+      resolutions: { [baseFile]: "worktree" },
+    });
+    expect(res.conflictsResolved).toBe("worktree");
+    expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("worktree");
+    expect(git(repo, "status --porcelain").trim()).toBe("");
+    expect(fs.existsSync(path.join(repo, ".git", "MERGE_HEAD"))).toBe(false);
+  });
+
+  it("WT-MERGE-9：逐文件选边漏了文件 → 回滚并报未选边文件", { timeout: 30000 }, async () => {
+    fs.writeFileSync(path.join(wt, baseFile), "worktree");
+    fs.writeFileSync(path.join(repo, baseFile), "main");
+    git(repo, "add -A");
+    git(repo, "commit -qm main-change");
+    await expect(
+      mergeWorktreeToProject(repo, wt, { resolutions: { "other.txt": "main" } })
+    ).rejects.toThrow(/未选边/);
+    expect(git(repo, "status --porcelain").trim()).toBe("");
+    expect(fs.existsSync(path.join(repo, ".git", "MERGE_HEAD"))).toBe(false);
+  });
+
   it("WT-MERGE-7：首轮冲突回滚后，worktree 已提交但仍可重试选边", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "worktree");
     fs.writeFileSync(path.join(repo, baseFile), "main");

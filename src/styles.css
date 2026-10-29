@@ -15932,6 +15932,25 @@ html.pet-window-mode body,
   color: var(--text-primary);
   cursor: pointer;
 }
+.wt-conflict-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.wt-conflict-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.wt-conflict-open:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.wt-conflict-open[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* ========== P1: CorrectionModeToggle ========== */
 .correction-mode-toggle {

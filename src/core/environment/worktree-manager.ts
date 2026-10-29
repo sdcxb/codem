@@ -308,8 +308,8 @@ export type MergeConflictChoice = "abort" | "worktree" | "main";
 export interface MergeWorktreeResult {
   commitSha: string;
   mergedSha: string;
-  /** 冲突时用户选择保留哪一边；无冲突为 null */
-  conflictsResolved: "worktree" | "main" | null;
+  /** 冲突时用户选择保留哪一边；逐文件混合选择为 "mixed"；无冲突为 null */
+  conflictsResolved: "worktree" | "main" | "mixed" | null;
 }
 
 /**
@@ -327,7 +327,12 @@ export interface MergeWorktreeResult {
 export async function mergeWorktreeToProject(
   projectPath: string,
   worktreePath: string,
-  options: { commitMessage?: string; onConflict?: MergeConflictChoice } = {}
+  options: {
+    commitMessage?: string;
+    onConflict?: MergeConflictChoice;
+    /** 逐文件选边：path → 保留哪一边；提供后优先于 onConflict，且必须覆盖全部冲突文件 */
+    resolutions?: Record<string, "worktree" | "main">;
+  } = {}
 ): Promise<MergeWorktreeResult> {
   const commitMessage = options.commitMessage ?? "worktree: merge session changes";
   const onConflict = options.onConflict ?? "abort";
@@ -376,21 +381,65 @@ export async function mergeWorktreeToProject(
     `git -C '${source}' merge --no-ff --no-edit '${commitSha}'`,
     projectPath
   );
-  let conflictsResolved: "worktree" | "main" | null = null;
+  let conflictsResolved: "worktree" | "main" | "mixed" | null = null;
   if (merge.exitCode && merge.exitCode !== 0) {
     const conflicts = await executeCommand(
       `git -C '${source}' diff --name-only --diff-filter=U`,
       projectPath
     );
     const files = conflicts.stdout.trim();
+    const fileList = files
+      ? files.split(String.fromCharCode(10)).map((f) => f.trim()).filter(Boolean)
+      : [];
+    const conflictErr = (message: string) => {
+      const err = new Error(message) as Error & { conflictFiles?: string[] };
+      err.conflictFiles = fileList;
+      return err;
+    };
+
+    /*
+     * 2026-10-29：逐文件选边。必须在 `merge --abort` 之前处理 —— 一旦 abort，
+     * 冲突文件与 ours/theirs 两侧内容就没了，只能整仓重来。
+     */
+    const resolutions = options.resolutions;
+    if (resolutions && Object.keys(resolutions).length > 0) {
+      const missing = fileList.filter((f) => !resolutions[f]);
+      if (missing.length > 0) {
+        await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
+        throw conflictErr(`还有冲突文件未选边: ${missing.join(", ")}`);
+      }
+      const used = new Set<"worktree" | "main">();
+      for (const file of fileList) {
+        const choice = resolutions[file];
+        used.add(choice);
+        // theirs = 工作树，ours = 主工作区
+        const side = choice === "worktree" ? "--theirs" : "--ours";
+        await run(`git -C '${source}' checkout ${side} -- ${psQuote(file)}`, projectPath);
+        await run(`git -C '${source}' add -- ${psQuote(file)}`, projectPath);
+      }
+      const remaining = await executeCommand(
+        `git -C '${source}' diff --name-only --diff-filter=U`,
+        projectPath
+      );
+      if (remaining.stdout.trim()) {
+        await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
+        throw conflictErr(`仍有未解决的冲突: ${remaining.stdout.trim()}`);
+      }
+      await run(
+        `git -C '${source}' -c user.name='Codem' -c user.email='codem@local' commit --no-edit`,
+        projectPath
+      );
+      conflictsResolved = used.size === 1 ? [...used][0] : "mixed";
+      const mergedSha = (await run(`git -C '${source}' rev-parse HEAD`, projectPath)).stdout.trim();
+      return { commitSha, mergedSha, conflictsResolved };
+    }
+
     await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
 
     if (onConflict === "abort") {
-      const err = new Error(
+      throw conflictErr(
         files ? `合并冲突，已回滚主工作区；冲突文件: ${files}` : `合并失败，已回滚主工作区: ${merge.stderr}`
-      ) as Error & { conflictFiles?: string[] };
-      err.conflictFiles = files ? files.split(String.fromCharCode(10)).map((f) => f.trim()).filter(Boolean) : [];
-      throw err;
+      );
     }
 
     // 用户明确选边：-X theirs = 工作树，-X ours = 主工作区

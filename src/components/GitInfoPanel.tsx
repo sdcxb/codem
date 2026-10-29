@@ -49,6 +49,7 @@ export function GitInfoPanel() {
   const [actionResult, setActionResult] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [conflictFiles, setConflictFiles] = useState<string[]>([]);
+  const [fileChoices, setFileChoices] = useState<Record<string, "worktree" | "main">>({});
 
   // Monitor the worktree path if session is in worktree mode, otherwise project path
   const projectPath = currentSession?.worktreePath || currentProject?.path;
@@ -214,11 +215,14 @@ export function GitInfoPanel() {
    * 2026-10-22 真机缺口：worktree 只能进不能出；这里补最小入口。
    * 冲突/主工作区不干净时由 mergeWorktreeToProject 回滚并抛错，不在主工作区留冲突态。
    */
-  const handleMergeWorktree = async (onConflict?: "worktree" | "main") => {
+  const handleMergeWorktree = async (
+    onConflict?: "worktree" | "main",
+    resolutions?: Record<string, "worktree" | "main">
+  ) => {
     const worktreePath = currentSession?.worktreePath;
     const mainPath = currentProject?.path;
     if (!worktreePath || !mainPath) return;
-    if (!onConflict) {
+    if (!onConflict && !resolutions) {
       const ok = await confirmDialog(
         zh
           ? "把工作树改动提交并合并到主工作区，然后删除工作树并切回本地？主工作区必须干净；冲突会先回滚，再由你选择保留哪一边。"
@@ -228,8 +232,12 @@ export function GitInfoPanel() {
     }
     setActionResult(null);
     setConflictFiles([]);
+    setFileChoices({});
     try {
-      const res = await mergeWorktreeToProject(mainPath, worktreePath, { onConflict: onConflict ?? "abort" });
+      const res = await mergeWorktreeToProject(mainPath, worktreePath, {
+        onConflict: onConflict ?? "abort",
+        resolutions,
+      });
       try {
         await removeWorktree(mainPath, worktreePath);
       } catch (cleanupErr) {
@@ -373,36 +381,61 @@ export function GitInfoPanel() {
 
       {conflictFiles.length > 0 && (
         <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div>{zh ? "冲突文件（可先打开看，再选一边合并；工作树会清理）" : "Conflicted files (you can open them first, then pick a side; worktree will be removed)"}</div>
+          <div>{zh ? "冲突文件：逐文件选择保留哪一边，或整体选一边；工作树会清理" : "Conflicted files: pick a side per file, or use one side for all; worktree will be removed"}</div>
           <div className="wt-conflict-list">
             {conflictFiles.map((rel) => (
               <div key={rel} className="wt-conflict-file">
                 <span className="wt-conflict-path">{rel}</span>
-                <button
-                  className="wt-conflict-open"
-                  onClick={() => {
-                    const main = currentProject?.path;
-                    if (!main) return;
-                    void openFileDirectly(conflictAbsolutePath(main, rel));
-                  }}
-                >
-                  {zh ? "打开" : "Open"}
-                </button>
+                <div className="wt-conflict-actions">
+                  <button
+                    className="wt-conflict-open"
+                    aria-pressed={fileChoices[rel] === "main"}
+                    onClick={() => setFileChoices((prev) => ({ ...prev, [rel]: "main" }))}
+                  >
+                    {zh ? "主工作区" : "Main"}
+                  </button>
+                  <button
+                    className="wt-conflict-open"
+                    aria-pressed={fileChoices[rel] === "worktree"}
+                    onClick={() => setFileChoices((prev) => ({ ...prev, [rel]: "worktree" }))}
+                  >
+                    {zh ? "工作树" : "Worktree"}
+                  </button>
+                  <button
+                    className="wt-conflict-open"
+                    onClick={() => {
+                      const main = currentProject?.path;
+                      if (!main) return;
+                      void openFileDirectly(conflictAbsolutePath(main, rel));
+                    }}
+                  >
+                    {zh ? "打开" : "Open"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div className="wt-conflict-tools">
             <button
-              onClick={() => handleMergeWorktree("worktree")}
-              style={{ padding: "3px 8px", fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)", cursor: "pointer" }}
+              disabled={conflictFiles.some((f) => !fileChoices[f])}
+              className="wt-conflict-open"
+              onClick={() => handleMergeWorktree(undefined, fileChoices)}
             >
-              {zh ? "以工作树为准" : "Use worktree"}
+              {zh ? `按选择合并（${conflictFiles.filter((f) => fileChoices[f]).length}/${conflictFiles.length}）` : `Merge selected (${conflictFiles.filter((f) => fileChoices[f]).length}/${conflictFiles.length})`}
+            </button>
+          </div>
+          <div className="wt-conflict-tools">
+            <button
+              className="wt-conflict-open"
+              onClick={() => handleMergeWorktree("worktree")}
+            >
+              {zh ? "全部以工作树为准" : "Use worktree for all"}
             </button>
             <button
+              className="wt-conflict-open"
               onClick={() => handleMergeWorktree("main")}
-              style={{ padding: "3px 8px", fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)", cursor: "pointer" }}
             >
-              {zh ? "以主工作区为准" : "Use main"}
+              {zh ? "全部以主工作区为准" : "Use main for all"}
             </button>
           </div>
         </div>

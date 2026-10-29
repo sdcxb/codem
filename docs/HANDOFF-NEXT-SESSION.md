@@ -7699,3 +7699,19 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   `deepseek-v4-flash-vision-exp` / `deepseek-v4-flash-vision`；判据 CAT-10。
 - 帮助页 `.sp-card--narrow` 移除（上一提交）：真机卡片 876px / 内容区 900px。
 - 全量 **785 文件 / 8788 用例（8771 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。
+## 2026-10-29 17:58 — 第 266 波：worktree 逐文件选边 + 四项真机验证
+
+- **worktree 逐文件选边**：`mergeWorktreeToProject` 新增 `resolutions`（path → worktree/main），
+  在 `merge --abort` 之前对每个冲突文件 `checkout --ours/--theirs + add`，再 `commit --no-edit`；
+  漏选文件会回滚并报未选边；返回 `conflictsResolved` 支持 `"mixed"`。
+  UI 每个冲突文件给「主工作区 / 工作树」两个按钮 + 已选计数 + 按选择合并；仍保留整体选边。
+  判据 WT-MERGE-8/9（真实临时 git 仓库）。
+- **needs_you 真机重启回填**：向隔离库 `needs_you_pending` 插入一行 → 重启 → 打开对应会话，
+  `needs-you-overlay` 显示问题「重启回填验证：选 A 还是 B？」；点「跳过并继续」后该行删除（0）。
+- **session_events 真机归档**：向真实库插入 3 条 120 天前的 `assistant_text`，重置
+  `codem-event-archive-last-run` 与自动维护时间 → 重启等待维护 → 3 条从索引消失，
+  `archives/events/2026-10-29/<session>.jsonl` 写入 3 行，last-run 更新。
+- **3 个 project thread**：隔离库建项目 + 3 个 session，重启后侧栏项目展开可见
+  「真机线程 A/B/C」三条。
+- **托盘退出计时**：CDP 调 `quit_app`（托盘「退出」同一路径）→ 进程 **70ms** 内退出。
+- 全量 **785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）**；tsc 0；未发版。

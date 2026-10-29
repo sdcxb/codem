@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **39 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **785 个测试文件 / 8788 个用例**（2026-10-29 全量实测：8771 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **785 个测试文件 / 8790 个用例**（2026-10-29 全量实测：8773 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -95,7 +95,7 @@
 | HEAD | 以 `git log -1` 为准（1.16.331 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-29 实测 exit 0） |
-| 全量测试 | **785 文件 / 8788 用例：8771 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
+| 全量测试 | **785 文件 / 8790 用例：8773 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
 | 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败已随未跟踪内容清理而消失，不是产品代码修复） | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | `.gitignore`、`.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪 | `git status --porcelain` |

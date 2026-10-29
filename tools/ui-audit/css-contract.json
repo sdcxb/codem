@@ -20651,6 +20651,11 @@
   "workspace-backdrop-vignette": {
     "background": "var(--backdrop-vignette)"
   },
+  "wt-conflict-actions": {
+    "display": "flex",
+    "gap": "var(--space-1)",
+    "margin-left": "auto"
+  },
   "wt-conflict-file": {
     "align-items": "center",
     "display": "flex",
@@ -20672,6 +20677,12 @@
   },
   "wt-conflict-path": {
     "font-family": "var(--font-mono, monospace)"
+  },
+  "wt-conflict-tools": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-1)"
   },
   "wx-actions": {
     "align-items": "center",
