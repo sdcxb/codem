@@ -28,6 +28,8 @@ import { appendVolatileAppendix } from "../prompt/prompt";
 import { reportActionFailure } from "../storage/persist-failure";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
+/** P1-3：后台任务完成通知（会话之外的一张未读表；播报走尾部上下文，不碰前缀）。 */
+import { collectBackgroundJobNotices } from "./background-job-notices";
 import { formatAttachmentsInline } from "./attachment-formatter";
 import type { MessageAttachment } from "../../store";
 import { getNeedsYouQueue } from "./needs-you-queue";
@@ -731,6 +733,16 @@ export class AgenticLoop {
    * 每个会话只注入一次：清单本身是常量，重复注入只会白烧 token ✗。
    */
   private testFileNoticeSent = new Set<string>();
+
+  /**
+   * P1-3：本回合的稳定标识。
+   *
+   * 后台任务通知按「回合」播报一次（不是按迭代）：同一回合里循环会跑很多次迭代，
+   * 每条通知只该出现一次，否则每一轮迭代都在烧同一段 token。
+   * 每次 `run()` 进入时递增，`collectBackgroundJobNotices` 用它去重。
+   */
+  private currentTurnId = "";
+  private turnSeq = 0;
 
   /**
    * 第 109 波：本回合是否已经补发过「判据族提醒」。
@@ -1854,6 +1866,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.executor.clearAbort();
     this.state = this.createInitialState();
     this.currentSessionId = sessionId;
+    this.currentTurnId = `${sessionId}#${++this.turnSeq}`;
 
     // 第 62 波（审计修正）：守卫必须**按轮次**重置，不能只按实例。
     // AgenticLoop 是按会话缓存复用的，构造期重置等于"跨轮次累计"——
@@ -2519,6 +2532,23 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       });
       if (timeContextMessage) {
         trailingTurnContext += timeContextMessage;
+      }
+
+      /**
+       * P1-3：后台任务完成通知。
+       *
+       * 为什么必须有这一段：`terminal_send run_in_background` 的 job 完成之后，
+       * 原来**唯一的取法是模型自己记得再调 `job_output`**。长命令的完成时机不由模型
+       * 决定 ⇒ 它要么瞎猜、要么宣布"还在跑"；压缩把 job id 摘要掉之后就彻底没人读。
+       * 现在完成即登记（`background-job-notices`，会话之外的一张表），
+       * 在这里按回合播报一次，没被 `job_output` 读掉的下回合还会再出现。
+       *
+       * 落点必须是尾部（与时间上下文同一条纪律）：这段文本随任务完成而变化，
+       * 写进 system 前缀会让 `MEM-PLACE-25` / `dsh-d5-prefix-cache-stability` 直接红。
+       */
+      const jobNotices = collectBackgroundJobNotices(sessionId, this.currentTurnId);
+      if (jobNotices) {
+        trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + jobNotices;
       }
 
       // P2-12（第 118 轮修正 / 第？波改走尾部消息）：把活跃目标真正注入给模型。

@@ -36,6 +36,10 @@ import {
   listTerminalBackgroundJobs,
   killTerminalBackgroundJob,
 } from "./terminal-tools";
+import {
+  isBackgroundJobUnread,
+  markBackgroundJobRead,
+} from "../background-job-notices";
 
 function isPtyJobId(jobId: string): boolean {
   return jobId.startsWith("pty-job-");
@@ -60,7 +64,8 @@ Returns a list of jobs with their ID, session, status, and start time.`,
         }
         const lines = ptyJobs.map(
           (p) =>
-            `- ${p.id} [${p.status}] (terminal send, session: ${p.sessionId}, started: ${new Date(p.startedAt).toISOString()})`,
+            `- ${p.id} [${p.status}]${isBackgroundJobUnread(p.id) ? " (unread)" : ""} ` +
+            `(terminal send, session: ${p.sessionId}, started: ${new Date(p.startedAt).toISOString()})`,
         );
         return { title: `Background Jobs (${ptyJobs.length})`, output: lines.join("\n"), isError: false };
       },
@@ -105,9 +110,15 @@ Use this to check on long-running background sends.`,
         const stdout = pty.stdout ? `stdout:\n${pty.stdout}` : "(no stdout)";
         const stderr = pty.stderr ? `stderr:\n${pty.stderr}` : "(no stderr)";
         const wait = pty.waitReason ? `\n[wait: ${pty.waitReason}]` : "";
+        /**
+         * P1-3：读到了就**销账**。这是"未读"唯一的销账入口 —— 通知播报本身不销账，
+         * 否则压缩/新会话之后这条结果就再也没人提了。
+         */
+        const wasUnread = markBackgroundJobRead(jobId);
         return {
           title: `Job ${jobId} [${pty.status}]`,
-          output: `${stdout}\n\n${stderr}${wait}`, isError: false,
+          output: `${stdout}\n\n${stderr}${wait}${wasUnread ? "\n[notice cleared: this result had been reported to you as unread]" : ""}`,
+          isError: false,
         };
       },
     },

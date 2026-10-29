@@ -7436,3 +7436,39 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 内容：`write`/`edit`/`multi_edit` 旧调用只留 path、正文换「可用 read 重读」标记；最近 2 次不动、bash 不参与、原文不删。
 - 证据 `docs/evidence/release-1.16.329/`（版本、日志测算 247%→58% / 220%→85%、发布链路、局限）。
 - 审计：全量 **722 文件 / 8446 通过 + 17 skipped**；`tsc` 0；变异闸门 **65 波**；非 eval 链全过。
+
+## 2026-10-29 10:20 — 第 251 波：mcode-stack 外部审计 + 后台任务闭环（P0/P1/P2 一次落地）
+
+- 审计对象：`MiniMax-AI/mcode-stack`（MIT；85 个文件，全是 SKILL.md/笔记/校验器，**不含 harness 代码**）。
+  22 条清单逐条 pass/fail/unknown 落在 `docs/project-guide/16-MCODE-STACK-AUDIT.md`；结论：
+  机制我们几乎都有且更细，真正能拿的是「外部审计口径 + 后台任务闭环 + 两个产品形态点」。
+- **P1-3（唯一的结构缺口）**：后台任务原来只能靠模型轮询 `job_output`，完成没有任何通知，
+  压缩把 job id 摘要掉就再没人读。现在完成即登记一张**会话之外**的未读表
+  （`src/core/llm/background-job-notices.ts`），`AgenticLoop` 按回合把它追加到
+  `trailingTurnContext`（尾部，不碰 system 前缀），`job_output` 才销账；`job_list` 标 `(unread)`。
+  判据 `background-job-notices.test.ts` 9 条；变异 2 条（去掉注入 / markRead 空转）全红。
+- **P0-2 上下文税账本**：`context-tax-budget.test.ts` 把三类固定成本变成可复跑读数 + 棘轮。
+  实测：常驻工具 **40 个 / 27,545 字符**（预算 31,000；最大 `project_report` 2,489、
+  `run_code` 2,370、`glob` 1,262）；延迟工具 7 个；注册技能 **12 个 / description 合计 2,444 字符**
+  （预算 3,000）。数的是字符不是 token —— 口径写在文件头，别拿它当 token 用。
+- **P1-6**：技能 description 提示侧裁到 1024 字（`clampSkillDescription`，每技能只记一次日志）。
+  变异：把纯函数改成原样返回 ⇒ 红。
+- **P1-4**：新增内置技能 `independent-review`（只喂 diff/需求/真实测试结果，在 subagent 的干净上下文里
+  评审，findings 结构化、复核后再改）。不新增机制：`subagent` 本来就是 `inheritsParentContext = false`。
+- **P1-5**：`HANDOVER_TEMPLATE` 补两段可选（已排除的方案 / 已知坑）。交接本身早就比 mcode-stack 强
+  （正文由 `ui-handoff.ts` 机械生成 + 路径存在性核对 + 可判定判据），**没有**照它重写。
+- **P2-7**：`tools/audit/check-skill-packs.mjs`（frontmatter / name==目录 / description ≤1024 / BOM /
+  软预算告警）接进 `npm run audit`；判据 `skill-packs-validate.test.ts`（真实目录 + 5 类坏夹具），
+  变异：关掉长度检查 ⇒ 红。
+- **P2-8**：`tools/audit/retro-interventions.mjs`（只读复盘：六类人工介入 + 重复开场白，脱路径、不给结论）。
+  真机第一次跑出来的教训写进了代码注释：平台注入的 `[SYSTEM]` 提醒也以 user 角色落库，
+  不过滤会把一次系统提醒数成 11 次 carry —— 现在整类排除。判据 7 条；变异：去掉过滤 ⇒ 红。
+- 门禁：`tsc` 0；全量 **771 文件 / 8707 用例（8690 通过 + 17 skipped + 0 失败，157.55s）**；
+  `npm run audit:docs` 通过；上报点 **278 = 278**；可达性门禁通过；语法/正则/控制字节/静默写/假成功/
+  guard-bypass 全过。文档基线：`docs:sync`（BASELINE testFiles 767→771）+ README/00/01/08/09/11 与 AGENTS.md 的计数同步。
+- **已知红（不是本轮引入）**：`node tools/audit/knip-gate.mjs` 报 exports 49→53、types 21→31、
+  dependencies 1、duplicates 10→11；基线文件 recordedAt=**2026-10-09**，漂移项（`environment/index.ts`
+  的 `getCurrentBranch`/`ScriptRunResult`、`credential-shapes.ts`、`@fortawesome/fontawesome-free`）
+  均不在本轮改动里。**没有**为了变绿去 `--update` 放宽棘轮 —— 需要一次独立的死代码分诊。
+- 未发布：版本仍是 1.16.331（发版要先问用户）。仍然未知：自动压缩真机、压缩请求的缓存命中、
+  折叠是否保持调用/结果成对、记忆截断可见性、5 套多智能体该不该合并（见 16 号文档 §6）。

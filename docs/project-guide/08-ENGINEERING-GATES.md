@@ -44,7 +44,7 @@
 npm run dev                 # Vite 前端（浏览器调试；没有 Tauri IPC）
 npm run tauri:dev           # 完整桌面开发（Vite + Tauri）
 npx tsc --noEmit            # 类型检查（必须 0 错误）
-npx vitest run              # 全量（约 2.5 分钟；当前 767 文件 / 8682 用例）
+npx vitest run              # 全量（约 2.6 分钟；当前 771 文件 / 8707 用例）
 npx vitest run src/test/<某个>.test.ts   # 单跑
 npm run test:e2e            # vitest.e2e.config.ts
 npm run test:snapshot       # vitest.snapshot.config.ts
@@ -90,20 +90,20 @@ node tools\maintenance\clean-orphan-test-browsers.mjs   # 清测试遗留 Edge
 | Rust 存储契约 | `src-tauri/codem-db/tests/*.rs` | `wire-fixtures.json` 金样本；`WIRE-0` 检查最近是否真跑过 |
 | 快照 / E2E | `vitest.snapshot.config.ts` / `vitest.e2e.config.ts` | 少量 |
 
-### 2.2 当前基线（2026-10-26 实测）
+### 2.2 当前基线（2026-10-29 实测）
 
 ```text
-Test Files  2 failed | 731 passed (733)
-Tests       8665 passed | 17 skipped (8682)
-Duration    148.65s
+Test Files  771 passed (771)
+Tests       8690 passed | 17 skipped (8707)
+Duration    157.55s
 ```
 
-**两条失败不是产品代码回归**：
-
-1. `no-bom.test.ts`：18 个**未跟踪**游戏文档带 BOM（`art/wealth-island/README.md`、`docs/2.5D-SCENE.md`、`docs/REBUILD-SPEC.md`、`prototype/*/README.md` 等）。新文档必须 UTF-8 无 BOM。
-2. `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺“历史文档（不再维护）”横幅。修法是 `node .preview-shot/banner-historical-docs.mjs --apply`（该脚本在 gitignored 目录，干净 clone 上不可用）。
-
-> 如果你新增了文档，先确认它没有 BOM；如果新增了 `*PLAN*` / `*GAP*` / `*TODO*` 文件，要么加历史横幅，要么改名。
+> 2026-10-26 记录过两条失败（未跟踪游戏文档带 BOM / 两份 `MONOPOLY-*PLAN*` 缺历史横幅），
+> 2026-10-29 已随未跟踪内容清理而消失 —— **不是产品代码修复**。纪律不变：
+> 新文档 UTF-8 无 BOM；新增 `*PLAN*` / `*GAP*` / `*TODO*` 文件要么加历史横幅，要么改名。
+>
+> 本轮新增的判据（`background-job-notices` / `context-tax-budget` / `skill-packs-validate` /
+> `retro-interventions`）见 `16-MCODE-STACK-AUDIT.md`。
 
 ### 2.3 判据纪律
 
@@ -125,8 +125,8 @@ Duration    148.65s
 |---|---|---|
 | 类型 | `npx tsc --noEmit` | 0 错误 |
 | 文档新鲜度 | `npm run audit:docs` | 版本/必读文档/BOM/索引/章节；版本变了文档没跟上会红 |
-| 全量测试 | `npx vitest run` | 8665 通过 / 17 跳过 / 0 失败 |
-| 上报点分诊 | `node tools/audit/scan-report-sites.mjs --check` | 267 = 267（三数相等：扫描/登记/缓存） |
+| 全量测试 | `npx vitest run` | 8690 通过 / 17 跳过 / 0 失败 |
+| 上报点分诊 | `node tools/audit/scan-report-sites.mjs --check` | 278 = 278（三数相等：扫描/登记/缓存） |
 | 变异产物 | `node tools/mutate/check-artifacts.mjs` | 65+ 波、`restored=true`、未过期 |
 | 未使用导出 | `node tools/audit/knip-gate.mjs` | 不增长（历史基线 exports 49 / types 21 / entry 20，以脚本为准） |
 | 重复代码 | `npx jscpd` | 不高于基线（历史约 171 clones） |

@@ -128,6 +128,11 @@ describe("会话交接协议（第 63 波）", () => {
     for (const key of ["目标", "已完成产物", "关键决定与约束", "当前卡点", "下一步动作", "完成判据", "禁止事项"]) {
       expect(HANDOVER_TEMPLATE, `模板应包含「${key}」`).toContain(key);
     }
+    // P1-5：mcode-stack 的 handoff-doc 里有两个段是我们原来没有的 —— 已排除的方案、已知坑。
+    // 它们**不参与机械校验**（写不出也不该拒绝交接），但模板必须给出形状，否则模型不会写。
+    for (const optional of ["已排除的方案", "已知坑"]) {
+      expect(HANDOVER_TEMPLATE, `模板应给出「${optional}」的形状`).toContain(optional);
+    }
     expect(HANDOVER_TEMPLATE).toContain("不要重新扫描目录");
   });
 

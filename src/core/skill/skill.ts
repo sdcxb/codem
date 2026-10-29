@@ -753,6 +753,30 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
 }
 
 // ========== Skill Registry ==========
+
+/**
+ * 「可用技能」清单里单条描述的**提示预算**（字符）。
+ *
+ * 技能清单每一轮都跟着系统提示进请求（见 `buildSkillPrompt`），而描述的唯一职责是
+ * 「让模型判断该不该 load」—— 正文由 `load_skill` 按需加载。所以描述超长是纯粹的
+ * 每轮固定成本（P0-2 的上下文账本会量到它）。
+ *
+ * 1024 与 `SKILL.md` 的通用约定一致（mcode-stack 的校验器同样卡这个数）；
+ * 仓库自带的技能由 `tools/audit/check-skill-packs.mjs` 在提交前拒绝超限，
+ * 用户装的技能则在这里**截断**（不该让一个啰嗦的技能把应用弄崩）。
+ */
+export const SKILL_DESCRIPTION_PROMPT_LIMIT = 1024;
+
+/** 纯函数：把描述裁进预算（保留结尾省略号，让模型知道它被截断了）。 */
+export function clampSkillDescription(
+  description: string,
+  limit: number = SKILL_DESCRIPTION_PROMPT_LIMIT,
+): string {
+  const text = (description ?? "").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1))}…`;
+}
+
 export class SkillRegistry {
   private skills: Map<string, SkillDefinition> = new Map();
 
@@ -1076,6 +1100,33 @@ export class SkillRegistry {
       "",    ].join("\n");
   }
 
+  /**
+   * 「可用技能」清单里单条描述的上限（字符）。
+   *
+   * 为什么需要它：技能清单是**每一轮都注入**的上下文（P0-2 的实测项），
+   * 而描述的作用只是「够触发」——真正的技能正文由 `load_skill` 按需加载。
+   * 一条 5000 字的描述会让每一轮请求都白付一次它的钱，还挤掉真正重要的内容。
+   *
+   * 1024 这个数与 `SKILL.md` 的通用约定一致（mcode-stack 的校验器同样卡这个数）。
+   * 超限**不拒绝**（那是安装期的事，交给 `tools/audit/check-skill-packs.mjs`），
+   * 在提示侧截断并记一次日志 —— 用户装了个啰嗦的技能不该让整个应用报错。
+   */
+  private readonly clampedDescriptions = new Set<string>();
+
+  /** 把描述裁到提示预算内；超限时**每一条只记一次日志**（每轮都记会刷屏）。 */
+  private clampDescription(name: string, description: string): string {
+    const text = (description ?? "").trim();
+    if (text.length <= SKILL_DESCRIPTION_PROMPT_LIMIT) return text;
+    if (!this.clampedDescriptions.has(name)) {
+      this.clampedDescriptions.add(name);
+      console.warn(
+        `[skill] ${name} 的 description 有 ${text.length} 字，超过提示预算 ${SKILL_DESCRIPTION_PROMPT_LIMIT} 字 —— ` +
+          `已截断；请把细则移进 SKILL.md 正文（正文由 load_skill 按需加载）。`,
+      );
+    }
+    return clampSkillDescription(text);
+  }
+
   /** Build skill prompt for system prompt (only name + description, not full prompt) */
   buildSkillPrompt(userSelectedSkills?: string[]): string {
     // C3: Check disabled skills from settings
@@ -1102,7 +1153,7 @@ export class SkillRegistry {
       const tools = s.tools?.length ? ` [tools: ${s.tools.map((t) => t.name).join(", ")}]` : "";
       const version = s.version ? ` v${s.version}` : "";
       const selected = userSelectedSet.has(s.name) ? " 🎯 [USER SELECTED]" : "";
-      return `- **${s.name}**${version}${aliases}${tools}${selected}: ${s.description}`;
+      return `- **${s.name}**${version}${aliases}${tools}${selected}: ${this.clampDescription(s.name, s.description)}`;
     });
 
     // Build user-selected notice if any
@@ -1991,6 +2042,91 @@ When the skill is complete, package it as a .zip file:
       tags: ["skill", "creator", "eval", "optimization", "install"],
       version: "2.0.0",
       displayName: "技能创建器",
+    });
+
+    /**
+     * 独立评审（P1-4）—— 审者从**干净上下文**开始，只拿三样输入。
+     *
+     * 为什么它必须是一个独立技能、而不是 code-review 里再加一段：
+     * `code-review` 是在**作者的会话里**跑的，它继承了作者已经做过的每一个小决定
+     * （"这里已经校验过了""那个调用方保证非空"），因此容易跟着同一套推理走、
+     * 错过同一批问题。这里要的是**边界**：只给 diff + 需求 + 真实测试结果，
+     * 让评审回答"这个改动满足需求吗"，而不是"作者的推理站得住吗"。
+     *
+     * 机制上不新增东西：`subagent` 已经是干净上下文
+     * （`spawn-in-process-provider.ts` 的 `inheritsParentContext = false`），
+     * 所以这条技能只是把"怎么用那个边界"写成可执行的步骤，
+     * 并在最后要求**逐条复核再改**（findings 不是命令）。
+     */
+    this.register({
+      name: "independent-review",
+      description:
+        "Review a change from a clean context: the reviewer sees only the diff, the requirement and the real test results — never the author's conversation, plan or self-assessment. Use after an implementation is finished, before merging, or when a second opinion on a diff is wanted. Findings come back structured (problem, location, reason, severity) and are verified before any fix.",
+      aliases: ["clean-review", "second-opinion"],
+      allowedTools: ["read", "grep", "glob"],
+      prompt: `# Independent Review
+
+The agent that wrote the code made many small decisions and convinced itself of each one.
+A reviewer that inherits that conversation follows the same reasoning and misses the same
+things. This procedure keeps the reviewer outside the author's context.
+
+## 1. Assemble exactly three inputs
+
+1. **The diff** — for example \`git diff <base>...HEAD\`, or the staged changes.
+2. **The requirement** — the issue, spec, task description or acceptance criteria.
+3. **The test results** — the commands that ran and their real output, including failures
+   and skipped tests. Never summarize them into "tests pass".
+
+Do **not** include the author's plan, intermediate reasoning, review notes or self-assessment.
+If the requirement is missing, stop and ask for it: without it the only thing a review can
+check is style.
+
+## 2. Run the review in a fresh context
+
+Use the \`subagent\` tool (its context is clean by construction), or a new session. Give the
+subagent only the three inputs above, and ask it to answer "does this change meet the
+requirement?", not "does the author's reasoning hold up?".
+
+## 3. What to look for
+
+- **Assumptions the code relies on but never checks**: null/empty input, "the caller already
+  validates this", ordering, concurrency, error paths.
+- **Requirement items the diff does not cover.**
+- **Tests that pass without exercising the requirement.** Tests written by the same agent
+  share its blind spots: check what they cover, not that they are green.
+- **Behaviour changes outside the stated scope.**
+
+## 4. Require structured findings
+
+Every finding carries four fields; a finding without a location or a reason is an opinion,
+not a defect:
+
+| Field | Content |
+| --- | --- |
+| Problem | What is wrong, in one or two sentences |
+| Location | File and line, or function |
+| Reason | Why it is wrong, tied to the requirement or to concrete code |
+| Severity | blocking / should-fix / nit |
+
+## 5. Verify before fixing
+
+Back in the main loop, do not apply findings wholesale. For each one:
+
+1. Open the real code at the stated location.
+2. Confirm the problem exists — ideally with a failing test or a concrete input.
+3. Only then fix it, and rerun the relevant tests.
+4. Record the findings you rejected and why, so the next review does not raise them again.
+
+## Output
+
+End with: findings confirmed and fixed, findings rejected with the reason, and anything still
+open. Separate blockers from suggestions; do not restate what a green gate already enforces.`,
+      contextMode: "inline",
+      source: "builtin",
+      tags: ["review", "subagent", "quality", "diff"],
+      version: "1.0.0",
+      whenToUse:
+        "When an implementation is finished and needs a review that is independent of the author's reasoning, or when a second opinion on a diff is requested.",
     });
   }
 }

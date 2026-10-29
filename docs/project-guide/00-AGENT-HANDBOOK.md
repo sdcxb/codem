@@ -105,7 +105,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 ---
 
-## 4. 当前基线（2026-10-26 实测）
+## 4. 当前基线（2026-10-29 实测）
 
 | 项 | 值 |
 |---|---|
@@ -113,10 +113,10 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 | 发布 | GitHub `Codem v1.16.331` = `Latest`（2026-10-29） |
 | HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce` |
 | `tsc --noEmit` | **0 错误** |
-| 全量测试 | **767 文件 / 8682 用例：8665 通过、17 跳过、0 失败**（约 149 秒） |
-| 两条失败 | ① `no-bom.test.ts`：18 个**未跟踪**游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺“历史文档”横幅。**都不是产品代码回归** |
+| 全量测试 | **771 文件 / 8707 用例：8690 通过、17 跳过、0 失败**（约 158 秒） |
+| 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败随未跟踪内容清理而消失，不是产品代码修复） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
-| 上报点分诊 | 267 = 267（`node tools/audit/scan-report-sites.mjs --check`） |
+| 上报点分诊 | 278 = 278（`node tools/audit/scan-report-sites.mjs --check`） |
 | 工作区 | `master...origin/master` 同步；`.gitignore` / `.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 未跟踪 |
 
 > 如果你跑出来不是这个数：先确认是不是多了未跟踪文件（`git status`），再看 `09-CURRENT-STATE.md`。不要为了让“全绿”去改产品代码。
@@ -144,7 +144,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.16.331，tsc 0，767 测试文件 / 8682 用例（0 失败）。
+当前基线：1.16.331，tsc 0，771 测试文件 / 8707 用例（0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 
@@ -196,7 +196,7 @@ npx tsc --noEmit                          # 0
 npm run audit:docs                        # 版本/必读文档/BOM/索引/章节
 npx vitest run <相关判据>                  # 先单跑
 npx vitest run                            # 全量（知道基线，别被 2 条未跟踪失败骗）
-node tools/audit/scan-report-sites.mjs --check   # 267 = 267
+node tools/audit/scan-report-sites.mjs --check   # 278 = 278
 node tools/mutate/check-artifacts.mjs     # 变异产物未过期
 node tools/ui-audit/css-contract.mjs      # 改 CSS 后先 --write
 node tools/audit/knip-gate.mjs            # 未使用导出不许增长

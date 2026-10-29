@@ -14,6 +14,10 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
+import {
+  noteBackgroundJobCompletion,
+  PREVIEW_MAX_CHARS,
+} from "../background-job-notices";
 
 // ========== 常量 (对齐 dsh-terminal-bash 默认配置量级) ==========
 
@@ -337,8 +341,12 @@ class TerminalManager {
   /**
    * 后台发送：立即返回 jobId，在后台等待静默窗口并收集输出。
    * 结果可通过 getBackgroundJob / job_output 读取，可用 killBackgroundJob 终止。
+   *
+   * `ownerSessionId` 是**对话会话**（不是 PTY 会话）：任务完成时按它登记一条未读通知，
+   * 让 `AgenticLoop` 在下一轮把「有个后台任务跑完了」追加到尾部上下文里。
+   * 不传时登记到空会话桶（对所有会话可见）——宁可多报一次，也不静默丢结果。
    */
-  async sendBackground(id: string, input: string, submit = true): Promise<string> {
+  async sendBackground(id: string, input: string, submit = true, ownerSessionId = ""): Promise<string> {
     const session = this.sessions.get(id);
     if (!session || !session.active) {
       throw new Error(`terminal session not found or inactive: ${id}`);
@@ -367,6 +375,15 @@ class TerminalManager {
       job.status = "error";
       job.stderr = "terminal session has exited";
       job.completedAt = Date.now();
+      noteBackgroundJobCompletion({
+        jobId,
+        terminalId: id,
+        sessionId: ownerSessionId,
+        status: "error",
+        outputChars: job.stderr.length,
+        outputSample: job.stderr.slice(0, PREVIEW_MAX_CHARS + 1),
+        completedAt: job.completedAt,
+      });
       return jobId;
     }
 
@@ -393,6 +410,20 @@ class TerminalManager {
       job.waitReason = delta.length > 0 ? "inferred_idle" : "timeout";
       job.status = "completed";
       job.completedAt = Date.now();
+      /**
+       * P1-3：完成即登记「未读」。**登记发生在后台，与模型此刻在干什么无关** ——
+       * 这正是"不等它轮询"的关键：它可能正在等别的东西，也可能已经结束了这一轮。
+       */
+      noteBackgroundJobCompletion({
+        jobId,
+        terminalId: id,
+        sessionId: ownerSessionId,
+        status: "completed",
+        waitReason: job.waitReason,
+        outputChars: delta.length,
+        outputSample: delta.slice(0, PREVIEW_MAX_CHARS + 1),
+        completedAt: job.completedAt,
+      });
     })();
 
     return jobId;
@@ -518,13 +549,13 @@ export function createTerminalSendTool(): ToolDef {
       },
       required: ["sessionId", "text"],
     },
-    async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
+    async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecuteResult> {
       const id = args.sessionId as string;
       const text = args.text as string;
       const submit = args.submit !== false;
 
       if (args.run_in_background === true) {
-        const jobId = await getTerminalManager().sendBackground(id, text, submit);
+        const jobId = await getTerminalManager().sendBackground(id, text, submit, ctx?.sessionId ?? "");
         /**
          * 第 84 波（假成功）：`sendBackground` 在 write_pty 失败时也会返回 jobId
          * （job.status 已经是 error）—— 原来照样回 "started background job …"，

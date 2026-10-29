@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **39 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **767 个测试文件 / 8682 个用例**（2026-10-29 全量实测：8665 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **771 个测试文件 / 8707 个用例**（2026-10-29 全量实测：8690 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -79,12 +79,13 @@
 | `13-UI-BENCHMARK-OMP.md` | OMP Studio 全要素对标、P0/P1/P2 方案、截图/契约验收、执行防走样；含可打开的 HTML 预演 | 长 | 做 UI 优化时 |
 | `14-P26-AND-DENSITY.md` | P2-6 现有页面复用矩阵、聚合页施工设计、全局 spacing 密度分阶段方案 | 中 | 做 P2-6 / 密度时 |
 | `15-VISUAL-REBUILD-PLAN.md` | 左栏/对话/Composer/设置的视觉重做施工单，含双基线验收和底栏排除 | 中 | 做视觉重做时 |
+| `16-MCODE-STACK-AUDIT.md` | mcode-stack 外部审计的结论：22 条清单逐条 pass/fail/unknown、上下文税实测读数、本轮借鉴落地了什么、哪些还不借 | 中 | 评估外部工作流 / 复查这几块机制时 |
 
 > 说明：本目录在 `docs/` 的子目录下，不受仓库根 `.gitignore` 的 `docs/*.md` 规则影响（已用 `git check-ignore` 验证），可以直接入库。
 
 ---
 
-## 4. 当前事实基线（2026-10-26）
+## 4. 当前事实基线（2026-10-29）
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
@@ -92,14 +93,14 @@
 | 发布 | GitHub `Codem v1.16.331` = `Latest`（2026-10-29） | `gh release list --limit 1` |
 | HEAD | 以 `git log -1` 为准（1.16.331 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
-| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-26 实测 exit 0） |
-| 全量测试 | **767 文件 / 8682 用例：8665 通过、17 跳过、0 失败** | `npx vitest run`（约 149 秒） |
-| 两条失败 | ① `no-bom.test.ts`：18 个未跟踪游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺历史横幅 | 见 `09-CURRENT-STATE.md` §3 |
+| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-29 实测 exit 0） |
+| 全量测试 | **771 文件 / 8707 用例：8690 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
+| 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败已随未跟踪内容清理而消失，不是产品代码修复） | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | `.gitignore`、`.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪 | `git status --porcelain` |
 | 数据根 | `%APPDATA%\com.codem.app\`；库 `codem-db-rust.bin` | `src-tauri/src/storage.rs` |
 
-> ⚠️ 测试基线会随未跟踪内容变化。**两条失败不是产品代码回归**；先看 `09` 再决定要不要修。不要为了让全绿去改产品代码。
+> ⚠️ 测试基线会随未跟踪内容变化。跑出来不是这个数：先看 `git status` 与 `09` §3，不要为了让全绿去改产品代码。
 
 ---
 
