@@ -7766,3 +7766,8 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 真机：子 agent 未调用 report 时，工具结果出现 `refusal: 未提交结构化报告...`；
   但主 agent 仍会在散文里写“已完成”，说明父 agent 必须读 stopReason/status，不能只看散文。
 - 新增 `subagent-report-gate.test.ts`；全量 792 文件 / 8807 用例（8790 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
+## 2026-10-29 21:20 — 第 271 波：subagent 工具错误标记
+
+- 前台 subagent 工具在 stopReason 非 completed（含 refusal）时返回 `isError: true`，
+  不再把“未提交结构化报告”当普通成功文本；metadata 保留 stopReason。
+- 新增 `subagent-tool-result.test.ts`；全量 793 文件 / 8808 用例（8791 通过 + 17 skipped + 0 失败）；tsc 0。

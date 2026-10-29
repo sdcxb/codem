@@ -176,7 +176,8 @@ export function createSubagentTool(): ToolDef {
             title: `subagent: ${description}`,
             output: result.stopReason === 'completed'
               ? result.output
-              : `${result.stopReason}: ${result.summary}\n${result.output}`, isError: false,
+              : `${result.stopReason}: ${result.summary}\n${result.output}`,
+            isError: result.stopReason !== 'completed',
             metadata: { runId: run.id, stopReason: result.stopReason },
           };
         }
