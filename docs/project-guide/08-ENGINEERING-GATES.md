@@ -1,6 +1,6 @@
 # 08 · 工程质量、门禁、构建发布与改造配方
 
-> 基线：1.16.330 ｜ 2026-10-26
+> 基线：1.16.331 ｜ 2026-10-26
 > 这是“怎么证明改对了、怎么发出去”的文档。命令以 Windows PowerShell 为准；所有脚本相对仓库根 `C:\mimo-gui`。
 
 ---
@@ -44,7 +44,7 @@
 npm run dev                 # Vite 前端（浏览器调试；没有 Tauri IPC）
 npm run tauri:dev           # 完整桌面开发（Vite + Tauri）
 npx tsc --noEmit            # 类型检查（必须 0 错误）
-npx vitest run              # 全量（约 2.5 分钟；当前 764 文件 / 8674 用例）
+npx vitest run              # 全量（约 2.5 分钟；当前 767 文件 / 8682 用例）
 npx vitest run src/test/<某个>.test.ts   # 单跑
 npm run test:e2e            # vitest.e2e.config.ts
 npm run test:snapshot       # vitest.snapshot.config.ts
@@ -94,7 +94,7 @@ node tools\maintenance\clean-orphan-test-browsers.mjs   # 清测试遗留 Edge
 
 ```text
 Test Files  2 failed | 731 passed (733)
-Tests       2 failed | 8497 passed | 17 skipped (8516)
+Tests       8665 passed | 17 skipped (8682)
 Duration    148.65s
 ```
 
@@ -125,7 +125,7 @@ Duration    148.65s
 |---|---|---|
 | 类型 | `npx tsc --noEmit` | 0 错误 |
 | 文档新鲜度 | `npm run audit:docs` | 版本/必读文档/BOM/索引/章节；版本变了文档没跟上会红 |
-| 全量测试 | `npx vitest run` | 8497 通过 / 17 跳过 / 2 未跟踪失败 |
+| 全量测试 | `npx vitest run` | 8665 通过 / 17 跳过 / 0 失败 |
 | 上报点分诊 | `node tools/audit/scan-report-sites.mjs --check` | 267 = 267（三数相等：扫描/登记/缓存） |
 | 变异产物 | `node tools/mutate/check-artifacts.mjs` | 65+ 波、`restored=true`、未过期 |
 | 未使用导出 | `node tools/audit/knip-gate.mjs` | 不增长（历史基线 exports 49 / types 21 / entry 20，以脚本为准） |

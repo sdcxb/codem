@@ -1,7 +1,7 @@
 # 00 · AI 接手手册（任何模型 / Agent 平台先读这份）
 
 > **目标**：只读这份手册 + `02-CODE-MAP.md` + `08-ENGINEERING-GATES.md`，就能在 **30–40 分钟**内安全地改第一行代码，并且知道“什么不能做、做完怎么证明”。
-> **基线**：2026-10-26 ｜ `master` @ 代码提交 `bb5d4cce`（文档集提交见 `git log -1`）｜ **1.16.330** ｜ Node 24.19 / rustc 1.97.1。
+> **基线**：2026-10-26 ｜ `master` @ 代码提交 `bb5d4cce`（文档集提交见 `git log -1`）｜ **1.16.331** ｜ Node 24.19 / rustc 1.97.1。
 > **适用范围**：`C:\mimo-gui` 这个仓库（Codem 桌面 AI 编程助手）。大富翁 / Godot 实验线见 `10-GAME-AND-PROTOTYPE.md`。
 
 ---
@@ -109,11 +109,11 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.16.330**（`package.json` / `tauri.conf.json` / `Cargo.toml` / `latest.json` 一致） |
-| 发布 | GitHub `Codem v1.16.330` = `Latest`（2026-10-23） |
+| 版本 | **1.16.331**（`package.json` / `tauri.conf.json` / `Cargo.toml` / `latest.json` 一致） |
+| 发布 | GitHub `Codem v1.16.331` = `Latest`（2026-10-29） |
 | HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce` |
 | `tsc --noEmit` | **0 错误** |
-| 全量测试 | **764 文件 / 8674 用例：8657 通过、17 跳过、0 失败**（约 149 秒） |
+| 全量测试 | **767 文件 / 8682 用例：8665 通过、17 跳过、0 失败**（约 149 秒） |
 | 两条失败 | ① `no-bom.test.ts`：18 个**未跟踪**游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺“历史文档”横幅。**都不是产品代码回归** |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
 | 上报点分诊 | 267 = 267（`node tools/audit/scan-report-sites.mjs --check`） |
@@ -144,7 +144,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.16.330，tsc 0，764 测试文件 / 8674 用例（0 失败）。
+当前基线：1.16.331，tsc 0，767 测试文件 / 8682 用例（0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 

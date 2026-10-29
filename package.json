@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.16.330",
+  "version": "1.16.331",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -139,7 +139,6 @@
     "vitest": "^4.1.10"
   }
 }
-
 
 
 

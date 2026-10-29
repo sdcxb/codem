@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交 `bb5d4cce`（1.16.330）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.330**（2026-10-23 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（1.16.331 发布提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.331**（2026-10-29 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **39 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **764 个测试文件 / 8674 个用例**（2026-10-26 全量实测：8497 通过、17 跳过、2 失败，失败均来自未跟踪的游戏文档，见 `09-CURRENT-STATE.md`）。
+- **767 个测试文件 / 8682 个用例**（2026-10-29 全量实测：8665 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -88,12 +88,12 @@
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.16.330** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.16.330` = `Latest`（2026-10-23） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce`（1.16.330） | `git rev-parse --short HEAD` |
+| 版本 | **1.16.331** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.16.331` = `Latest`（2026-10-29） | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（1.16.331 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-26 实测 exit 0） |
-| 全量测试 | **764 文件 / 8674 用例：8657 通过、17 跳过、0 失败** | `npx vitest run`（约 149 秒） |
+| 全量测试 | **767 文件 / 8682 用例：8665 通过、17 跳过、0 失败** | `npx vitest run`（约 149 秒） |
 | 两条失败 | ① `no-bom.test.ts`：18 个未跟踪游戏文档带 BOM；② `docs-current-gap-list.test.ts`：`MONOPOLY-GODOT-PLAN.md` / `MONOPOLY-REBUILD-PLAN.md` 缺历史横幅 | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | `.gitignore`、`.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪 | `git status --porcelain` |
@@ -148,4 +148,4 @@
 - `docs/NEW-SESSION-START.md` / `AGENTS.md`：**旧开工说明**。`00` 是它们的替代入口；`AGENTS.md` 仍保留命令与发版规程。
 - `docs/GAP-LIST.md`：**已过期**（最后版本记录 1.16.305）。当前缺口见 `09-CURRENT-STATE.md`；在它被重写前，不要把它当“唯一清单”。
 
-**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.16.330 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。
+**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.16.331 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。
