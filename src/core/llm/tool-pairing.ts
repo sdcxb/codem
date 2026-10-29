@@ -29,7 +29,7 @@
  *   但目前没有找到那样的生产路径（`restore`/`repair` 侧另有配对修复）。
  */
 
-export interface ToolPairingResult {
+interface ToolPairingResult {
   /** 清理后的消息（**同一批对象引用**，未改动的原样返回） */
   messages: any[];
   /** 被剥掉 `tool_calls`（整块或部分）的 assistant 消息数 */

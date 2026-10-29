@@ -22,9 +22,9 @@
  */
 
 /** 四条被路由的路（side-session 是纯 UI 面板，不参与工具路由） */
-export type CollaborationRoute = "team" | "team-status" | "delegation" | "subagent";
+type CollaborationRoute = "team" | "team-status" | "delegation" | "subagent";
 
-export interface RouteMatch {
+interface RouteMatch {
   route: CollaborationRoute;
   /** 命中的用户原词（用于测试与解释，不注入） */
   matched: string;
