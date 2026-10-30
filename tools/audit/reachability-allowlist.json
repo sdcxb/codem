@@ -31,7 +31,6 @@
   "src/core/snapshot/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/storage/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/storage/sync-engine.ts": "**未接线（已定性）**：远程同步引擎（seq 增量 push/pull + LWW 冲突解决），功能与用例都在，但没有任何生产调用方、界面里也没有入口（O-22）",
-  "src/core/storage/context-rollback.ts": "**维护 API（已定性）**：一次性回滚迁移（检查点 → 旧版 hidden 视图），只在降级演练/维护时由人工调用；不在日常 UI 暴露，避免误触。用例在 src/test/context-rollback.test.ts",
   "src/core/theme/skin-tokens.ts": "皮肤令牌表：仅被用例 import（三套皮肤的对比度/令牌对账）",
   "src/plugins/library-ops/index.ts": "插件入口：由插件加载器按路径注册（不是被 import 的模块）",
   "src/plugins/monopoly-game/index.ts": "插件入口：由插件加载器按路径注册（不是被 import 的模块）",

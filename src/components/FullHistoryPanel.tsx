@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { readContextHistory } from "../core/storage/context-history";
 import { migrateSessionLegacyHistory } from "../core/storage/context-migration";
+import { rollbackSessionToClassicHidden } from "../core/storage/context-rollback";
+import { confirmDialog } from "../core/ui/native-dialog";
 import { isCompactionMarker } from "../core/llm/compaction-budget";
 import type { Message } from "../store";
 
@@ -40,6 +42,7 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
   const [repairText, setRepairText] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
@@ -101,6 +104,29 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
     }
   };
 
+  const rollback = async () => {
+    setRollingBack(true);
+    setRepairText(null);
+    try {
+      const preview = await rollbackSessionToClassicHidden(sessionId, { dryRun: true });
+      if (!preview.epochId || preview.candidates === 0) {
+        setRepairText("当前会话没有可回滚的检查点（或 cutoff 之前没有消息）。");
+        return;
+      }
+      const ok = await confirmDialog(
+        `回滚会把 cutoff 之前的 ${preview.candidates} 条消息写回 hidden（不删正文、不写墓碑），让旧版本按压缩后视图运行。继续？`,
+      );
+      if (!ok) return;
+      const report = await rollbackSessionToClassicHidden(sessionId);
+      setRepairText(`回滚完成：${report.hidden} 条已写回 hidden，${report.failed} 条失败。`);
+      reload();
+    } catch (e) {
+      setRepairText(`回滚失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" role="presentation" onClick={onClose}>
       <div
@@ -143,6 +169,14 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
               {repairing ? "回填中…" : "回填旧历史"}
             </button>
           )}
+          <button
+            className="context-history-close"
+            disabled={rollingBack}
+            onClick={rollback}
+            title="一次性回滚：把 cutoff 之前的消息写回 hidden，供旧版本按压缩后视图运行"
+          >
+            {rollingBack ? "回滚中…" : "回滚到旧版"}
+          </button>
           <span style={{ color: "var(--text-secondary)", fontSize: "var(--fs-xs)" }}>只读</span>
           <button ref={closeRef} className="context-history-close" onClick={onClose} aria-label="关闭完整历史">
             关闭

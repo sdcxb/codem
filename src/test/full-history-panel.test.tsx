@@ -5,6 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { createElement } from "react";
 
+const confirmMock = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("../core/ui/native-dialog", () => ({
+  confirmDialog: confirmMock,
+  alertDialog: vi.fn(async () => undefined),
+}));
+
 const timeline = [
   { id: "old", role: "user", content: "压缩前的提问", timestamp: 1, status: "done" },
   { id: "old-a", role: "assistant", content: "压缩前的回答", timestamp: 2, status: "done", reasoning: "旧思考" },
@@ -18,6 +25,14 @@ vi.mock("../core/storage/context-history", () => ({
 
 vi.mock("../core/storage/context-migration", () => ({
   migrateSessionLegacyHistory: vi.fn(async () => ({ hiddenRows: 0, alreadyDurable: 0, appended: 0, failed: 0, dryRun: false })),
+}));
+
+vi.mock("../core/storage/context-rollback", () => ({
+  rollbackSessionToClassicHidden: vi.fn(async (_sid: string, opts?: { dryRun?: boolean }) => (
+    opts?.dryRun
+      ? { epochId: "epoch-1", cutoffMessageId: "m3", candidates: 2, hidden: 0, failed: 0, sessionId: _sid, dryRun: true }
+      : { epochId: "epoch-1", cutoffMessageId: "m3", candidates: 2, hidden: 2, failed: 0, sessionId: _sid, dryRun: false }
+  )),
 }));
 
 import { FullHistoryPanel } from "../components/FullHistoryPanel";
@@ -47,5 +62,16 @@ describe("FullHistoryPanel", () => {
     expect(screen.getByText("模型视图")).toBeTruthy();
     expect(screen.queryByText("压缩前的提问")).toBeNull();
     expect(screen.getByText("最近消息")).toBeTruthy();
+  });
+
+  it("FH-4: 回滚按钮先 dry-run 预览，确认后执行并显示报告", async () => {
+    confirmMock.mockClear();
+    const { rollbackSessionToClassicHidden } = await import("../core/storage/context-rollback");
+    render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose: () => {} }));
+    fireEvent.click(screen.getByText("回滚到旧版"));
+    await screen.findByText(/回滚完成：2 条/);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(rollbackSessionToClassicHidden)).toHaveBeenNthCalledWith(1, "s1", { dryRun: true });
+    expect(vi.mocked(rollbackSessionToClassicHidden)).toHaveBeenNthCalledWith(2, "s1");
   });
 });
