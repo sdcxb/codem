@@ -34,8 +34,9 @@ function timeLabel(ts: number): string {
 }
 
 export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [modelCount, setModelCount] = useState(0);
+  const [timeline, setTimeline] = useState<Message[]>([]);
+  const [modelMessages, setModelMessages] = useState<Message[]>([]);
+  const [view, setView] = useState<"timeline" | "model">("timeline");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
@@ -44,8 +45,8 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
 
   const reload = () => {
     const snapshot = readContextHistory(sessionId);
-    setMessages(snapshot.timeline);
-    setModelCount(snapshot.modelCount);
+    setTimeline(snapshot.timeline);
+    setModelMessages(snapshot.model);
   };
 
   useEffect(() => {
@@ -54,12 +55,12 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
     setError(null);
     try {
       const snapshot = readContextHistory(sessionId);
-      setMessages(snapshot.timeline);
-      setModelCount(snapshot.modelCount);
+      setTimeline(snapshot.timeline);
+      setModelMessages(snapshot.model);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setMessages([]);
-      setModelCount(0);
+      setTimeline([]);
+      setModelMessages([]);
     } finally {
       setLoading(false);
     }
@@ -76,7 +77,8 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
 
   if (!open) return null;
 
-  const legacyHidden = messages.filter(
+  const messages = view === "model" ? modelMessages : timeline;
+  const legacyHidden = timeline.filter(
     (m) => Number((m as unknown as { hidden?: number }).hidden ?? 0) === 1
       && Number((m as unknown as { trimmed?: number }).trimmed ?? 0) !== 1,
   ).length;
@@ -110,11 +112,27 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
         style={{ width: "min(920px, 94vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--border-primary)" }}>
-          <strong>完整历史</strong>
+          <strong>{view === "model" ? "模型视图" : "完整历史"}</strong>
           <span style={{ color: "var(--text-secondary)", fontSize: "var(--fs-xs)" }}>
-            历史 {messages.length} 条 · 模型可见 {modelCount} 条（不计入水位）
+            历史 {timeline.length} 条 · 模型可见 {modelMessages.length} 条（不计入水位）
           </span>
           <span style={{ flex: 1 }} />
+          <button
+            className="context-history-close"
+            aria-pressed={view === "timeline"}
+            onClick={() => setView("timeline")}
+            title="包含被压缩的旧消息"
+          >
+            完整
+          </button>
+          <button
+            className="context-history-close"
+            aria-pressed={view === "model"}
+            onClick={() => setView("model")}
+            title="模型/Agent 实际看到的集合"
+          >
+            模型
+          </button>
           {legacyHidden > 0 && (
             <button
               className="context-history-close"

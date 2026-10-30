@@ -11,12 +11,14 @@ import type { Message } from "../../store";
 export interface ContextHistorySnapshot {
   /** 含旧压缩 hidden / 索引裁剪 trimmed 的完整时间线 */
   timeline: Message[];
+  /** 模型当前可见集合（检查点 cutoff 之后） */
+  model: Message[];
   /** 模型当前可见条数（用于「历史 N / 模型 M」） */
   modelCount: number;
 }
 
 export function readContextHistory(sessionId: string): ContextHistorySnapshot {
   const timeline = listTimelineMessages(sessionId);
-  const modelCount = listMessages(sessionId).length;
-  return { timeline, modelCount };
+  const model = listMessages(sessionId);
+  return { timeline, model, modelCount: model.length };
 }

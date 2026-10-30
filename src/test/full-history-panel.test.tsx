@@ -13,7 +13,7 @@ const timeline = [
 ];
 
 vi.mock("../core/storage/context-history", () => ({
-  readContextHistory: () => ({ timeline, modelCount: 2 }),
+  readContextHistory: () => ({ timeline, model: timeline.slice(2), modelCount: 2 }),
 }));
 
 vi.mock("../core/storage/context-migration", () => ({
@@ -39,5 +39,13 @@ describe("FullHistoryPanel", () => {
     render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("FH-3: 切到模型视图只显示 cutoff 之后的集合", () => {
+    render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose: () => {} }));
+    fireEvent.click(screen.getByText("模型"));
+    expect(screen.getByText("模型视图")).toBeTruthy();
+    expect(screen.queryByText("压缩前的提问")).toBeNull();
+    expect(screen.getByText("最近消息")).toBeTruthy();
   });
 });
