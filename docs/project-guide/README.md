@@ -88,19 +88,19 @@
 
 ---
 
-## 4. 当前事实基线（2026-10-29）
+## 4. 当前事实基线（2026-10-30）
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
 | 版本 | **1.16.333** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
 | 发布 | GitHub `Codem v1.16.333` = `Latest`（2026-10-30） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（1.16.333 发布提交） | `git rev-parse --short HEAD` |
+| HEAD | 以 `git log -1` 为准（当前上下文检查点提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
-| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-29 实测 exit 0） |
-| 全量测试 | **786 文件 / 8791 用例：8774 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |
-| 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败已随未跟踪内容清理而消失，不是产品代码修复） | 见 `09-CURRENT-STATE.md` §3 |
+| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-30 实测 exit 0） |
+| 全量测试 | **791 文件 / 8814 用例：8797 通过、17 跳过、0 失败** | `npx vitest run`（约 160 秒） |
+| 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
-| 工作区 | `.gitignore`、`.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪 | `git status --porcelain` |
+| 工作区 | 干净（上下文检查点改动已提交推送） | `git status --porcelain` |
 | 数据根 | `%APPDATA%\com.codem.app\`；库 `codem-db-rust.bin` | `src-tauri/src/storage.rs` |
 
 > ⚠️ 测试基线会随未跟踪内容变化。跑出来不是这个数：先看 `git status` 与 `09` §3，不要为了让全绿去改产品代码。
