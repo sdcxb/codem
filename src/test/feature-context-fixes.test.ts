@@ -959,9 +959,10 @@ describe("FC-D4：压缩摘要累积（P1-D4 / C13）", () => {
     ).toHaveLength(2);
     expect(new Set(markerRows.map((r) => String(r.id))).size, "标记主键不许重复").toBe(2);
     expect(
-      markerRows.filter((r) => Number(r.hidden ?? 0) === 0).map((r) => String(r.id)),
-      "两条标记行里恰好只有本次这条是可见的（另一条是上一次的旧标记，已软删）",
-    ).toEqual([markers[0].id]);
+      markerRows.map((r) => Number(r.hidden ?? 0)),
+      "检查点模式：两条标记行都保留在时间线里（不再软删旧标记）",
+    ).toEqual([0, 0]);
+    expect(markers[0].id, "模型视图只保留最新标记（旧标记由 cutoff 排除）").toBe(markerRows[1]?.id ?? markers[0].id);
     clock.mockRestore();
   });
 
@@ -1036,14 +1037,14 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     expect(payload.messagesAfter).toBe(21);
     expect(String(payload.summary)).toContain("[上下文已手动压缩]");
 
-    const hidden = rowsOf("messages").filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 1);
-    expect(hidden.map((r) => String(r.id)).sort(), "被移除的消息是软删（行仍在库里，反馈外键目标不丢）").toEqual([
-      "h0",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-    ]);
+    const rows = rowsOf("messages").filter((r) => r.session_id === S);
+    expect(
+      rows.filter((r) => Number(r.hidden ?? 0) === 1),
+      "检查点模式：压缩不再软删/隐藏任何消息（历史必须留在时间线里）",
+    ).toEqual([]);
+    const visibleIds = listVisibleMessages(S).map((m) => m.id);
+    expect(visibleIds, "被 cutoff 折叠的 h0..h4 不进模型视图").not.toContain("h0");
+    expect(visibleIds, "最近消息仍在模型视图里").toContain("h24");
   });
 
   it("FC-D5b: 手动压缩期间并发闸门是**真的**置位（UI 自动保存据此退让）", () => {
@@ -1057,15 +1058,14 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
      *
      * ## 第 45 轮（线协议 P2-4）：两个通道都要包
      *
-     * 手动压缩的删除走 `deleteMessagesByIds` → `message.ts::deleteMessageIndexRows`，
-     * 而它现在优先走 `data.command`（结构化回报）—— 只包 `execute` 会让这个观察点
+     * 手动压缩的标记写入走 `createMessage` → `message.ts::writeIndexViaRust`，
+     * 而它现在优先走 `data.command` / `execute`（结构化回报）—— 只包一个会让观察点
      * **永远不触发**（`gateDuringWrite` 恒为 `null`），用例从"验闸门"退化成"验空转"。
-     * 真端口里 `execute` 与 `command` 是同一条 dispatch，所以这里两个都包、判据一致。
      */
     const originalExecute = port.data.execute.bind(port.data);
     const originalCommand = port.data.command!.bind(port.data);
     const observe = (cmd: string) => {
-      if (cmd === "messages.delete" && gateDuringWrite === null) gateDuringWrite = isCompactionInProgress();
+      if (cmd === "messages.upsert_index" && gateDuringWrite === null) gateDuringWrite = isCompactionInProgress();
     };
     (port.data as any).execute = async (cmd: string, params?: Record<string, unknown>) => {
       observe(cmd);
@@ -1078,7 +1078,7 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
 
     manualCompact(S);
 
-    expect(gateDuringWrite, "删除动作发生时闸门必须是开的（改前手动压缩从不置位 → 自动保存会写回被删消息）").toBe(true);
+    expect(gateDuringWrite, "标记写入发生时闸门必须是开的（否则自动保存会与压缩交错）").toBe(true);
     expect(isCompactionInProgress(), "动作结束必须复位（否则自动保存永久停摆）").toBe(false);
     expect(hoisted.compactionGateCalls, "置位/复位成对").toEqual([true, false]);
   });
@@ -1091,14 +1091,16 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
 
     manualCompact(S);
 
-    const markers = rowsOf("messages")
-      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
-      .map((r) => String(r.content ?? ""))
+    const markers = listVisibleMessages(S)
+      .map((m) => String(m.content ?? ""))
       .filter((c) => isCompactionMarker({ role: "user", content: c }));
-    expect(markers, "可见标记只剩本次这一条").toHaveLength(1);
+    expect(markers, "模型视图里只剩本次这一条标记（旧标记由 cutoff 排除）").toHaveLength(1);
     expect(markers[0]).toContain("[上下文已手动压缩]");
     expect(markers[0], "旧摘要内容必须在（级联），否则第二次手动压缩就把前一次结论丢了").toContain("方案是 X");
-    expect(rowsOf("messages").filter((r) => r.session_id === S).find((r) => r.id === "marker-auto")?.hidden).toBe(1);
+    expect(
+      rowsOf("messages").filter((r) => r.session_id === S).find((r) => r.id === "marker-auto")?.hidden,
+      "旧标记行仍在时间线里（hidden=0），只是不进模型视图",
+    ).toBe(0);
   });
 
   it("FC-D5g: 最后一条是压缩标记时，折叠不许把手动压缩变成\"删光可见历史\"", () => {
@@ -1124,19 +1126,16 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
 
     const result = manualCompact(S);
 
-    const removedIds = rowsOf("messages")
-      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 1)
-      .map((r) => String(r.id));
-    /* 最近 3 轮 = r34..r39（真实消息），一条都不许被删 */
+    const visibleIds = listVisibleMessages(S).map((m) => m.id);
+    /* 最近 3 轮 = r34..r39（真实消息），一条都不许被 cutoff 排除 */
     expect(
-      removedIds.filter((id) => ["r34", "r35", "r36", "r37", "r38", "r39"].includes(id)),
-      "折叠之后必须按轮次保底重夹：最近 3 轮的真实消息一条都不许删（老实现会把 41 条全删光）",
+      ["r34", "r35", "r36", "r37", "r38", "r39"].filter((id) => !visibleIds.includes(id)),
+      "折叠之后必须按轮次保底重夹：最近 3 轮的真实消息一条都不许被排除",
     ).toEqual([]);
     expect(result.kept, "保留集绝不许为空").toBeGreaterThanOrEqual(6);
-    expect(removedIds, "旧标记该删（它的正文已级联进新标记）").toContain("marker-tail");
-    const marker = rowsOf("messages")
-      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
-      .map((r) => String(r.content ?? ""))
+    expect(visibleIds, "旧标记该被 cutoff 排除（它的正文已级联进新标记）").not.toContain("marker-tail");
+    const marker = listVisibleMessages(S)
+      .map((m) => String(m.content ?? ""))
       .find((c) => isCompactionMarker({ role: "user", content: c }));
     expect(String(marker), "级联的旧摘要必须在").toContain("方案是 Z");
   });
@@ -1157,9 +1156,8 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     const realChars = 3; /* 三条"短" */
     manualCompact(S);
 
-    const marker = rowsOf("messages")
-      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
-      .map((r) => String(r.content ?? ""))
+    const marker = listVisibleMessages(S)
+      .map((m) => String(m.content ?? ""))
       .find((c) => c.startsWith("[上下文已手动压缩]"));
     expect(String(marker), "前提：这次确实写了新标记").toBeTruthy();
     /*
@@ -1205,9 +1203,8 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     seedMessage({ id: "old-marker", role: "user", content: longOld, timestamp: 9999, status: "done" }, S);
     manualCompact(S);
 
-    const marker = rowsOf("messages")
-      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
-      .map((r) => String(r.content ?? ""))
+    const marker = listVisibleMessages(S)
+      .map((m) => String(m.content ?? ""))
       .find((c) => c.startsWith("[上下文已手动压缩]"));
     expect(String(marker), "前提：这次确实写了新标记").toBeTruthy();
     expect(String(marker), "级联的旧摘要要在").toContain("旧旧旧");
@@ -1383,12 +1380,11 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     expect(body, "手动压缩要取压缩锁").toContain("acquireCompactionLock(sessionId)");
     expect(body, "拿了锁必须释放（含抛错路径）").toContain("releaseCompactionLock(sessionId)");
     /**
-     * ★ 第 228 波审计新增：**先写标记、再删旧消息**（失败模式从"净丢摘要"变成"净多摘要"）。
-     * 源码级断言顺序：createMessage 必须出现在 deleteMessagesByIds 之前。
+     * ★ 检查点模式：只写标记 + cutoff，不再软删旧消息。
+     * 源码级断言保证后续维护者不会把删除路径悄悄加回来。
      */
-    const markerAt = body.indexOf("createMessage({");
-    const deleteAt = body.indexOf("deleteMessagesByIds(removedIds");
-    expect(markerAt, "标记写入必须在待删集删除之前（否则失败时旧消息已隐藏、摘要却没有）").toBeGreaterThan(-1);
-    expect(deleteAt).toBeGreaterThan(markerAt);
+    expect(body, "标记必须带 epoch metadata").toContain("buildContextEpochMetadata");
+    expect(body, "必须写 cutoff").toContain("cutoffMessageId");
+    expect(body, "压缩不再调用软删").not.toContain("deleteMessagesByIds(removedIds");
   });
 });

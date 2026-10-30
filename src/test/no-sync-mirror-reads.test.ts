@@ -65,6 +65,7 @@ const DATA_LAYER_FILES = new Set([
   "src/core/storage/port.ts",
   "src/core/storage/event-log.ts",
   "src/core/storage/message.ts",
+  "src/core/storage/context-history.ts",
   "src/core/storage/event-projection.ts",
 ]);
 

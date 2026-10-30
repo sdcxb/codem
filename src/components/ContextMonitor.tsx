@@ -4,9 +4,7 @@ import { getContextManager, summarizeDisplayPressure, type TokenBudget, type Com
 import { getCostTracker } from "../core/llm/cost-tracker";
 import {
   listVisibleMessages,
-  deleteMessagesByIds,
   createMessage,
-  getLastDeleteReport,
   isHiddenStateAuthoritative,
   updateMessage,
 } from "../core/storage/message";
@@ -37,6 +35,8 @@ import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 import { FALLBACK_CONTEXT_WINDOW, readContextWaterLevel } from "../core/context/water-level";
+import { buildContextEpochMetadata, contextCutoffExclusions } from "../core/context/context-view";
+import { FullHistoryPanel } from "./FullHistoryPanel";
 
 interface ContextMonitorProps {
   sessionId: string;
@@ -426,10 +426,30 @@ export function manualCompact(sessionId: string): {
       content: markerContent,
       timestamp: markerTs - 1,
       status: "done",
+      /* 上下文检查点：cutoff 按消息 id，读侧由 context-view 应用（G0 第 2 步） */
+      ...((() => {
+        const metadata = buildContextEpochMetadata({
+          epochId: markerId,
+          cutoffMessageId: messagesToKeep[0]?.id ?? "",
+          createdAt: markerTs,
+          removedCount: messagesToRemove.length,
+          keptCount: keepCount,
+          trigger: "manual",
+          excludedMessageIds: contextCutoffExclusions(
+            messages as never[],
+            messagesToKeep as never[],
+            messagesToRemove as never[],
+          ),
+        });
+        return metadata ? { metadata } : {};
+      })()),
     }, sessionId);
 
-    // Delete old messages —— 传 sessionId：镜像被逐出时也能判归属（否则墓碑不写、消息会复活）
-    deleteMessagesByIds(removedIds, sessionId);
+    /**
+     * 检查点模式：**不删除、不隐藏旧消息**。
+     * 模型视图由 marker 的 `metadata.contextEpoch.cutoffMessageId` 裁剪；
+     * 历史完整保留，用户删除仍走另一条路径。
+     */
 
     // 见函数头第 2 点：事件日志里必须留下"这次压缩发生过"
     try {
@@ -438,7 +458,10 @@ export function manualCompact(sessionId: string): {
         summary: markerContent,
         messagesBefore,
         messagesAfter,
+        epochId: markerId,
+        cutoffMessageId: messagesToKeep[0]?.id ?? "",
         trigger: "manual",
+        mode: "checkpoint",
       });
     } catch (eventErr) {
       // 与自动路径同一条约定：事件写失败不致命（消息侧已经落地），但必须留下痕迹
@@ -449,11 +472,6 @@ export function manualCompact(sessionId: string): {
   }
 
     /**
-     * ★ 全量审计（中）：回执要用**真实删除结果**，不是计划值 ——
-     * `deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）或
-     * 有若干 id 查不到归属（`unresolved`）⇒ 原来那句「移除 N 条」会高于真实值。
-     */
-    /**
      * ★ 全量审计（中）：**通知外壳重载聊天区** ——
      * 自动路径在 `compaction_end` 后调 `loadMessages`，手动路径原来只刷新自己面板的数字 ⇒
      * 用户看到「移除 N 条」而对话列表里一条没少（界面自相矛盾）。
@@ -463,8 +481,6 @@ export function manualCompact(sessionId: string): {
     } catch {
       /* 事件广播失败不影响压缩本身（消息已落地） */
     }
-    const report = getLastDeleteReport();
-    const reallyUnresolved = report.unresolved > 0 || !report.softDeleteResponded;
     /* ★ 用户现场：回执要说清「压到什么水平」（以及裁剪了什么） */
     const afterTokens = keepTokensNow() + estimateTokens(markerContent);
     const afterPercent = summarizeDisplayPressure(afterTokens, availableForTarget).percent;
@@ -475,12 +491,7 @@ export function manualCompact(sessionId: string): {
       trimmedToolResults: 0,
       percentAfter: afterPercent,
       overTarget,
-      receiptNote: !report.softDeleteResponded
-        ? "（注意：索引侧这次没有回应，旧消息可能仍然留在索引里，重启后请确认）"
-        : report.unresolved > 0
-          ? `（其中 ${report.unresolved} 条查不到归属，实际没有隐藏）`
-          : undefined,
-      ...(reallyUnresolved ? { softDeleteIncomplete: true } : {}),
+      receiptNote: "检查点模式：历史仍保留；模型只看到摘要 + 最近消息。",
     };
   } finally {
     /* ★ 第 228 波审计修复：锁必须在所有出口释放（含中途抛错） */
@@ -540,6 +551,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向开启新对话） */
     overTarget?: boolean;
   } | null>(null);
+  /** 完整历史（含被压缩的旧消息）只读面板 */
+  const [showHistory, setShowHistory] = useState(false);
   /**
    * ★ 第 227 波（用户实报）：
    *
@@ -885,6 +898,15 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       <div className="context-monitor-header">
         <span className="context-monitor-icon">📊</span>
         <span>上下文状态{!sessionId && "（未选择会话）"}</span>
+        <button
+          className="context-history-open context-history-close"
+          style={{ marginLeft: "auto" }}
+          disabled={!sessionId}
+          onClick={() => setShowHistory(true)}
+          title="查看包含压缩前旧消息的完整历史（只读）"
+        >
+          完整历史
+        </button>
       </div>
 
       <div className="context-monitor-body">
@@ -996,7 +1018,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 {compactResult.skipped
                   ? `没有压缩：${compactResult.skipped}`
                   : compactResult.removed > 0
-                  ? `压缩完成：移除 ${compactResult.removed} 条旧消息，保留最近 ${compactResult.kept} 条；` +
+                  ? `压缩完成：折叠 ${compactResult.removed} 条旧消息（历史仍保留），保留最近 ${compactResult.kept} 条；` +
                     `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。` +
                     /* ★ 全量审计（中）：真实删除结果的补充说明（索引没回应 / 有条目查不到归属） */
                     (compactResult.receiptNote ?? "")
@@ -1161,6 +1183,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           )}
         </div>
       </div>
+      <FullHistoryPanel open={showHistory} sessionId={sessionId} onClose={() => setShowHistory(false)} />
     </div>
   );
 }

@@ -81,6 +81,8 @@
 | `15-VISUAL-REBUILD-PLAN.md` | 左栏/对话/Composer/设置的视觉重做施工单，含双基线验收和底栏排除 | 中 | 做视觉重做时 |
 | `16-MCODE-STACK-AUDIT.md` | mcode-stack 外部审计的结论：22 条清单逐条 pass/fail/unknown、上下文税实测读数、本轮借鉴落地了什么、哪些还不借 | 中 | 评估外部工作流 / 复查这几块机制时 |
 | `17-MULTI-AGENT-INVENTORY.md` | 5 套多智能体机制各是什么、真实使用计数（693 会话）、工具定义成本、合并/不合并的三个选项与推荐 | 中 | 决定团队/子代理/委派怎么收口时 |
+| `18-CONTEXT-CHECKPOINT-DESIGN.md` | 上下文检查点终态设计：压缩不删历史、ContextView/DisplayView、水位同源、spill 永久、迁移/回滚 | 长 | 做「完整历史 + 模型压缩视图」时 |
+| `19-CONTEXT-CHECKPOINT-CRITERIA.md` | 18 的判据与施工清单：epoch/cutoff、失败矩阵、迁移/回滚、UI/性能/变异矩阵 | 长 | 实现/评审该设计时 |
 
 > 说明：本目录在 `docs/` 的子目录下，不受仓库根 `.gitignore` 的 `docs/*.md` 规则影响（已用 `git check-ignore` 验证），可以直接入库。
 

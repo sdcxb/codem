@@ -257,7 +257,7 @@ const ESTIMATE_TOOL_RESULT_TAIL_CHARS = 2048;
 
 /** 估算时一条消息的「有效字符数」（工具结果按上面的规则裁剪过） */
 export function messageCharSizeForEstimate(
-  m: { content?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> },
+  m: { content?: unknown; reasoning?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> },
   recentResultIds: Set<string>,
 ): number {
   let chars = 0;
@@ -270,6 +270,7 @@ export function messageCharSizeForEstimate(
       /* 不可序列化时按 0 计 */
     }
   }
+  if (typeof m?.reasoning === "string") chars += m.reasoning.length;
   if (Array.isArray(m?.toolCalls)) {
     for (const tc of m.toolCalls) {
       const id = typeof (tc as { id?: unknown })?.id === "string" ? (tc as { id: string }).id : "";
@@ -314,7 +315,7 @@ export function recentToolResultIds(
   return ids;
 }
 
-export function messageCharSize(m: { content?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> }): number {
+export function messageCharSize(m: { content?: unknown; reasoning?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> }): number {
   let chars = 0;
   const content = m?.content;
   if (typeof content === "string") chars += content.length;
@@ -325,6 +326,7 @@ export function messageCharSize(m: { content?: unknown; toolCalls?: Array<{ resu
       /* 不可序列化（循环引用等）时按 0 计：只影响预算，不影响正确性 */
     }
   }
+  if (typeof m?.reasoning === "string") chars += m.reasoning.length;
   if (Array.isArray(m?.toolCalls)) {
     for (const tc of m.toolCalls) {
       if (typeof tc?.result === "string") chars += tc.result.length;
@@ -759,6 +761,7 @@ export function estimateRawContextTokens(
   for (const m of messages) {
     const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
     total += estimate(content);
+    if (typeof m?.reasoning === "string") total += estimate(m.reasoning);
     const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
     if (Array.isArray(calls)) {
       for (const tc of calls) {
@@ -793,6 +796,7 @@ export function summarizeModelContext(
   const usedTokens = selected.reduce((sum, m) => {
     const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
     let total = estimate(content);
+    if (typeof m?.reasoning === "string") total += estimate(m.reasoning);
     const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
     if (Array.isArray(calls)) {
       for (const tc of calls) {

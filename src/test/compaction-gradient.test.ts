@@ -175,9 +175,15 @@ describe("CG：按距离分档的压缩（第 228 波）", () => {
     const removed = await loop.compactMessages("s-cg");
     expect(removed, "确实移除了旧消息").toBeGreaterThan(0);
 
-    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    const meta = createMessageMock.mock.calls[0][0].metadata?.contextEpoch;
+    const allIds = messages.map((m) => String(m.id));
+    const cutoffIndex = allIds.indexOf(String(meta?.cutoffMessageId ?? ""));
+    expect(cutoffIndex, "标记必须给出真实 cutoff").toBeGreaterThanOrEqual(0);
     const lastTurnIds = ["u38", "a38", "u39", "a39"];
-    expect(removedIds.filter((id) => lastTurnIds.includes(id)), "最近两轮（4 条）绝不许被删").toEqual([]);
+    expect(
+      allIds.slice(0, cutoffIndex).filter((id) => lastTurnIds.includes(id)),
+      "最近两轮（4 条）绝不许落在 cutoff 之前",
+    ).toEqual([]);
 
     const marker = String(createMessageMock.mock.calls[0][0].content);
     expect(marker, "标记里要有 LLM 检查点那一档").toContain("## 检查点摘要");
@@ -201,10 +207,13 @@ describe("CG：按距离分档的压缩（第 228 波）", () => {
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-cg8");
 
-    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    const meta = createMessageMock.mock.calls[0][0].metadata?.contextEpoch;
+    const allIds = messages.map((m) => String(m.id));
+    const cutoffIndex = allIds.indexOf(String(meta?.cutoffMessageId ?? ""));
+    expect(cutoffIndex, "标记必须给出真实 cutoff").toBeGreaterThanOrEqual(0);
     expect(
-      removedIds.filter((id) => ["u37", "a37", "u38", "a38", "u39", "a39"].includes(id)),
-      "最近 3 轮（6 条）一条都不许被删 —— token 预算再紧也只能切更老的部分",
+      allIds.slice(0, cutoffIndex).filter((id) => ["u37", "a37", "u38", "a38", "u39", "a39"].includes(id)),
+      "最近 3 轮（6 条）一条都不许落在 cutoff 之前 —— token 预算再紧也只能切更老的部分",
     ).toEqual([]);
   });
 

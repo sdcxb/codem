@@ -1,8 +1,8 @@
 {
   "wave": "audit-228",
   "description": "第 228 波·审计轮：四个独立审计（压缩核心 / 压缩生命周期 / 记忆提取 / 记忆注入）挖出的真缺陷的修复自证。压缩侧：保留集预算必须看得见工具结果、摘要兜底不许丢累积摘要、先写标记再删旧消息、跳过不许记成成功压缩、折叠后要重新夹回轮次保底、软删要带会话 id（镜像被逐出时判归属）、手动与自动共用压缩锁、手动续体要判会话、压缩标志按会话、consumed 含空分片、minKeep 是下限、标记有字符预算。记忆侧：explicit 必须有用户原话、压缩后强制提炼、每次提取有总写入上限、系统顶替不留伪造拒绝记录、查重双向。",
-  "runAt": "2026-10-14T12:40:18.328Z",
-  "specFingerprint": "b75de1c8e12e0125c82ebe97e0ba024c17c2d518",
+  "runAt": "2026-10-30T12:29:10.370Z",
+  "specFingerprint": "8017bb2c7cb9ffd8cc5184a1ca1228393980e00f",
   "files": [
     "src/core/llm/agentic-loop.ts",
     "src/core/storage/message.ts",
@@ -43,7 +43,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4077
+      "ms": 4686
     },
     {
       "id": "MUT-2 摘要失败时用兜底覆盖累积摘要（结论不可恢复地消失）",
@@ -63,16 +63,16 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4272
+      "ms": 4825
     },
     {
-      "id": "MUT-3 恢复「先删旧消息、再写标记」的旧顺序（失败时净丢摘要）",
-      "why": "CA-7：两步都不会抛（日志追加 best-effort、索引失败被吞）⇒ 「旧消息已隐藏、摘要却没落盘」可达且无补偿",
+      "id": "MUT-3 不写 cutoff（模型视图退回全量）",
+      "why": "检查点模式：marker 没有 cutoff 时 buildContextEpochMetadata 返回 null，ContextView 无法裁剪，模型会重新看到压缩前历史",
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);\n\n      // Step 2: Soft-delete old messages (mark hidden=1) —— 传 sessionId，镜像被逐出也能判归属\n      messageStorage.deleteMessagesByIds(removedIds, sessionId);",
-          "to": "      messageStorage.deleteMessagesByIds(removedIds, sessionId);\n      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);"
+          "from": "            cutoffMessageId: messagesToKeep[0]?.id ?? \"\",",
+          "to": "            cutoffMessageId: \"\","
         }
       ],
       "tests": [
@@ -84,7 +84,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4271
+      "ms": 4861
     },
     {
       "id": "MUT-4 跳过压缩又返回 0（被记成一次成功压缩 ⇒ 连跳 3 次误报窗口已满）",
@@ -104,7 +104,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4266
+      "ms": 4742
     },
     {
       "id": "MUT-5 折叠后不重新夹轮次保底（最近 3 轮被静默切掉）",
@@ -125,7 +125,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4314
+      "ms": 4778
     },
     {
       "id": "MUT-6 软删忽略调用方给的会话（镜像被逐出 ⇒ 消息复活、压缩假成功）",
@@ -145,7 +145,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4264
+      "ms": 4870
     },
     {
       "id": "MUT-7 手动压缩不取压缩锁（自动在等摘要时双写标记）",
@@ -165,7 +165,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4256
+      "ms": 4754
     },
     {
       "id": "MUT-8 手动压缩的续体不判会话归属（旧会话的回执与冷却落到新会话）",
@@ -186,7 +186,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4262
+      "ms": 4436
     },
     {
       "id": "MUT-9 压缩标志退回进程级单布尔（会话 A 的压缩丢掉会话 B 的自动保存）",
@@ -206,7 +206,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4434
+      "ms": 4731
     },
     {
       "id": "MUT-10 consumed 又只数非空分片（溢出档把已进摘要的消息再渲染一遍）",
@@ -227,7 +227,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4279
+      "ms": 4727
     },
     {
       "id": "MUT-11 minKeep 又只是循环停止条件（轮次保底静默失效）",
@@ -248,7 +248,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3993
+      "ms": 4456
     },
     {
       "id": "MUT-12 标记忽略字符预算（压缩可能让上下文变大）",
@@ -268,7 +268,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4211
+      "ms": 4849
     },
     {
       "id": "MUT-13 explicit 又只信模型自述（仓库文件里的一句话就能绕过审批）",
@@ -288,7 +288,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3977
+      "ms": 4554
     },
     {
       "id": "MUT-14 压缩钩子不再强制提炼（压缩后该会话再也不沉淀记忆）",
@@ -308,7 +308,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3949
+      "ms": 4620
     },
     {
       "id": "MUT-15 总写入上限失效（conversation 级与 explicit 无上限）",
@@ -328,7 +328,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3882
+      "ms": 4624
     },
     {
       "id": "MUT-16 系统顶替又留伪造的「用户拒绝记录」",
@@ -350,7 +350,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4100
+      "ms": 4714
     },
     {
       "id": "MUT-17 查重又单向（同一事实先对话级生效、下一轮又写项目级并再问一次）",
@@ -371,7 +371,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3992
+      "ms": 4600
     },
     {
       "id": "MUT-18 反向对照：只改一行说明注释",
@@ -392,7 +392,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3961
+      "ms": 4545
     }
   ]
 }

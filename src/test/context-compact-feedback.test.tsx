@@ -85,10 +85,11 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
 
     await letFramePass();
 
-    expect(deleteMessagesByIdsMock, "压缩要真的发生").toHaveBeenCalledTimes(1);
+    expect(createMessageMock, "压缩要真的发生（写检查点标记）").toHaveBeenCalledTimes(1);
     const text = receipt()?.textContent ?? "";
     expect(text, "回执必须出现（这就是用户说的『没出现压缩提示』）").toContain("压缩完成");
-    expect(text, "要说清移除了多少").toMatch(/移除 10 条/);
+    expect(text, "要说清折叠了多少").toMatch(/折叠 10 条/);
+    expect(text, "必须明确历史仍保留").toContain("历史仍保留");
     expect(text, "也要说清保留了多少").toMatch(/保留最近 20 条/);
     expect(text, "还要告诉用户对话里多了什么（否则他不知道下一步看哪儿）").toContain("[上下文已手动压缩]");
   });
@@ -129,33 +130,23 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
     await letFramePass();
     fireEvent.click(compactButton());
     await letFramePass();
-    expect(deleteMessagesByIdsMock).toHaveBeenCalledTimes(1);
+    expect(createMessageMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(compactButton()); // 用户以为"没压上"，又点了一次
     await act(async () => {
       vi.advanceTimersByTime(100);
     });
-    expect(deleteMessagesByIdsMock, "冷却期内的点击必须被挡住").toHaveBeenCalledTimes(1);
+    expect(createMessageMock, "冷却期内的点击必须被挡住").toHaveBeenCalledTimes(1);
   });
 
-  it("CB-9（全量审计）：回执要用真实删除结果 —— 索引没回应或有条目查不到归属时必须说明", async () => {
-    /*
-     * 被守的缺陷：`deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）
-     * 或有若干 id 查不到归属 ⇒ 回执那句「移除 N 条」会高于真实值，且没有任何提示。
-     */
-    const messageModule = await import("../core/storage/message");
-    (messageModule.getLastDeleteReport as unknown as { mockReturnValue: (v: unknown) => void }).mockReturnValue({
-      requested: 30,
-      unresolved: 3,
-      sessions: ["s1"],
-      softDeleteResponded: true,
-    });
+  it("CB-9（检查点模式）：回执必须明确历史仍保留，不再声称软删了多少", async () => {
     render(createElement(ContextMonitor, { sessionId: "s1", visible: true }));
     await letFramePass();
     fireEvent.click(compactButton());
     await letFramePass();
     const text = receipt()?.textContent ?? "";
-    expect(text, "要写明有几条查不到归属（实际没被隐藏）").toContain("3 条查不到归属");
+    expect(text, "用户必须知道旧消息没有丢").toContain("历史仍保留");
+    expect(text, "不能再用旧的「移除」语义").not.toContain("移除 10 条");
   });
 
   it("CB-10（全量审计）：手动压缩完成后必须广播「压缩已应用」事件（外壳要重载聊天区）", async () => {

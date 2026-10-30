@@ -20,6 +20,7 @@ import {
   domainReadOne,
   reportWriteNotAccepted,
 } from "./domain-store";
+import { applyContextCutoff, type ContextEpochMessageLike } from "../context/context-view";
 
 /** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
 const ATTACHMENT_TABLE = "attachments";
@@ -568,7 +569,34 @@ export function reloadSessionMessages(sessionId: string, onLoaded?: () => void):
   }
 }
 
-export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
+/**
+ * 读路径的**上下文检查点投影**（第 1 步）。
+ *
+ * 没有 epoch 时原样返回；有 epoch 时应用 `cutoffMessageId`。warning 只写日志，
+ * 不阻断读 —— 模型可能多看到，但不静默丢。真正的告警通道在压缩提交/水位对账里。
+ */
+function applyContextProjection<T extends Message>(sessionId: string, messages: T[]): T[] {
+  const projected = applyContextCutoff(messages as unknown as ContextEpochMessageLike[]);
+  if (projected.warnings.length > 0) {
+    console.warn(`[ContextView] 会话 ${sessionId} 的 epoch 投影有异常：${projected.warnings.join("；")}`);
+  }
+  return projected.messages as unknown as T[];
+}
+
+interface ListMessagesOptions {
+  /** 含旧压缩 hidden / 索引裁剪 trimmed 行（完整时间线） */
+  includeHidden?: boolean;
+  /** 是否应用上下文检查点 cutoff（模型视图） */
+  applyCheckpoint?: boolean;
+}
+
+function listMessagesMergedInternal(
+  sessionId: string,
+  limit?: number,
+  options: ListMessagesOptions = {},
+): Message[] {
+  const includeHidden = options.includeHidden === true;
+  const applyCheckpoint = options.applyCheckpoint !== false;
   /**
    * P5 第 10 段：工具调用**从缓存补上**（与 `getMessage` 同一来源）。
    *
@@ -585,7 +613,11 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
       const cached = toolCallCache.get(m.id);
       return cached?.length ? ({ ...m, toolCalls: cached } as Message) : m;
     });
-  const fromIndex = listMessagesFromIndex(sessionId, limit);
+  /**
+   * 不能在索引层先 `slice(-limit)`：epoch marker 可能早于最后 N 条，
+   * 先截断会让 cutoff 丢失（模型读到压缩前历史）。limit 统一在**投影之后**应用。
+   */
+  const fromIndex = listMessagesFromIndex(sessionId, undefined, includeHidden);
   const cached = cachedLogMessages.get(sessionId);
   /**
    * ★ 全量审计（2026-10，高）：**日志镜像为空时也必须过一遍"本进程隐藏过的 id"**。
@@ -600,10 +632,13 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
    * 而不是像排序分支那样落在保留集**之前**。两条路径统一按 `timestamp` 稳定排序。
    */
   if (!cached || cached.length === 0) {
-    const hiddenIds = hiddenMessageIds(sessionId);
+    const hiddenIds = includeHidden ? new Set<string>() : hiddenMessageIds(sessionId);
     const visible = hiddenIds.size === 0 ? fromIndex : fromIndex.filter((m) => !hiddenIds.has(m.id));
     const sorted = [...visible].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-    return withToolCalls(sorted);
+    const projected = withToolCalls(
+      applyCheckpoint ? applyContextProjection(sessionId, sorted) : sorted,
+    );
+    return limit ? projected.slice(-limit) : projected;
   }
 
   /**
@@ -616,7 +651,7 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
    *
    * 这些行是**软删除**、且 `trimIndexedMessages` 只裁 `hidden = 0` 的行，所以这个集合长期有效。
    */
-  const hiddenIds = hiddenMessageIds(sessionId);
+  const hiddenIds = includeHidden ? new Set<string>() : hiddenMessageIds(sessionId);
   const merged = new Map<string, Message>();
   for (const m of fromIndex) {
     /**
@@ -634,7 +669,7 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
      * 修法：`fromIndex` 也按同一个 `hiddenIds`（镜像 hidden 集合 ∪ 本进程刚隐藏的 id）过滤 ——
      * 与日志镜像那条路**同一把尺子**，于是「本进程做完软删立刻就读不到」。
      */
-    if (hiddenIds.has(m.id)) continue;
+    if (!includeHidden && hiddenIds.has(m.id)) continue;
     merged.set(m.id, m);
   }
   for (const rec of cached) {
@@ -663,7 +698,10 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
      * 用户会直接少看到那部分历史（SLOG-6/SLOG-8 实测：12 条变 3 条）。
      * 这条口径与镜像侧 `hiddenMessageIds()` **逐字一致**。
      */
-    if ((rec as any).deleted === true || isCompressedHidden(rec) || hiddenIds.has(rec.id)) {
+    if (
+      (rec as any).deleted === true ||
+      (!includeHidden && (isCompressedHidden(rec) || hiddenIds.has(rec.id)))
+    ) {
       merged.delete(rec.id);
       continue;
     }
@@ -699,11 +737,36 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
         : existing?.generatedFiles
           ? { generatedFiles: existing.generatedFiles }
           : {}),
+      /**
+       * 上下文检查点：marker 的 `metadata.contextEpoch` 是读侧 cutoff 的唯一来源。
+       * 索引投影不带 metadata（`MessageRow` 没有这一列），日志是权威；这里必须合并回来，
+       * 否则 `listMessages` 永远看不见 epoch，压缩后的模型视图会退回全量。
+       */
+      ...((rec as any).metadata
+        ? { metadata: (rec as any).metadata }
+        : existing?.metadata
+          ? { metadata: existing.metadata }
+          : {}),
     } as Message);
   }
   const all = [...merged.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-  const enriched = withToolCalls(all);
+  const enriched = withToolCalls(
+    applyCheckpoint ? applyContextProjection(sessionId, all) : all,
+  );
   return limit ? enriched.slice(-limit) : enriched;
+}
+
+/** 模型/Agent 可见集合：最新检查点 + cutoff 之后（兼容旧 hidden 过滤） */
+export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
+  return listMessagesMergedInternal(sessionId, limit);
+}
+
+/** 完整时间线：含旧压缩 hidden / 索引裁剪 trimmed 行，不应用 cutoff */
+export function listTimelineMessages(sessionId: string, limit?: number): Message[] {
+  return listMessagesMergedInternal(sessionId, limit, {
+    includeHidden: true,
+    applyCheckpoint: false,
+  });
 }
 
 /**
@@ -1207,7 +1270,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
 }
 
 /** 只读 SQLite 索引（内部/诊断用）；对外请用 `listMessages`（会合并权威日志） */
-export function listMessagesFromIndex(sessionId: string, limit?: number): Message[] {
+export function listMessagesFromIndex(sessionId: string, limit?: number, includeHidden = false): Message[] {
   /**
    * 迁移期分流（P3 第 7 段）：端口是 rust 且该会话索引**已加载** → 从镜像读。
    *
@@ -1217,10 +1280,8 @@ export function listMessagesFromIndex(sessionId: string, limit?: number): Messag
   const routed = rustMessageSource(sessionId);
   if (routed) {
     const all = routed.messages!.list(sessionId);
-    // 与旧实现的语义对齐：索引列表**只含可见行**（`WHERE hidden = 0`）。
-    // 镜像为了 hidden 判定必须加载全部行，所以这里是读的时候过滤
-    // （契约测试 MSG-8 抓到过漏过滤 —— 那会让已压缩的消息重新出现在对话里）。
-    const visible = all.filter((m) => !m.hidden);
+    // 与旧实现的语义对齐：默认只含可见行；完整时间线显式 includeHidden。
+    const visible = includeHidden ? all : all.filter((m) => !m.hidden);
     // limit 语义与旧实现一致：取**最后** limit 条（`listMessagesMerged` 也是 slice(-limit)）
     const rows = limit ? visible.slice(-limit) : visible;
     // 附件在另一张表：端口读路径要显式补上（否则「消息回来了、附件没了」）
@@ -2272,6 +2333,10 @@ function messageRowToMessage(r: {
    */
   retrieved_sources?: string | unknown[] | null;
   retrievedSources?: string | unknown[] | null;
+  /** 消息 metadata（库里是 JSON 文本；上下文检查点的 epoch 就住在这里） */
+  metadata?: string | Record<string, unknown> | null;
+  hidden?: number | null;
+  trimmed?: number | null;
 }): Message {
   /*
    * `generated_files` 的解析（第 14 轮修正）。
@@ -2303,6 +2368,18 @@ function messageRowToMessage(r: {
   } else if (Array.isArray(rawSources) && rawSources.length > 0) {
     retrievedSources = rawSources as RetrievedSource[];
   }
+  /**
+   * `metadata`：索引镜像里是 JSON 文本；日志镜像里已经是对象。
+   * 上下文检查点的 cutoff 依赖它，解析失败按"没有 metadata"处理（fail-open 由读侧负责），
+   * 不因一条坏 JSON 让整次消息列表读崩。
+   */
+  let metadata: Record<string, unknown> | undefined;
+  if (typeof r.metadata === "string" && r.metadata.trim().length > 0) {
+    const parsed = safeJsonParse<Record<string, unknown>>(r.metadata, {});
+    if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) metadata = parsed;
+  } else if (r.metadata && typeof r.metadata === "object") {
+    metadata = r.metadata;
+  }
   return {
     id: r.id,
     sessionId: r.session_id,
@@ -2314,6 +2391,9 @@ function messageRowToMessage(r: {
     status: (r.status ?? "done") as Message["status"],
     ...(generatedFiles ? { generatedFiles } : {}),
     ...(retrievedSources ? { retrievedSources } : {}),
+    ...(metadata ? { metadata } : {}),
+    ...(Number(r.hidden ?? 0) === 1 ? { hidden: 1 } : {}),
+    ...(Number(r.trimmed ?? 0) === 1 ? { trimmed: 1 } : {}),
   } as Message;
 }
 
@@ -2349,6 +2429,11 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     status: message.status ?? "done",
     generated_files: message.generatedFiles ?? null,
     retrieved_sources: message.retrievedSources ?? null,
+    /* 上下文检查点：marker 的 metadata 必须进索引，同步读才拿得到 cutoff */
+    metadata: message.metadata ?? null,
+    /* 未提供 = 不动（与 upsert_index 的 CASE WHEN 语义一致） */
+    hidden: (message as unknown as { hidden?: number }).hidden ?? undefined,
+    trimmed: (message as unknown as { trimmed?: number }).trimmed ?? undefined,
     tool_calls: toolCallsForWire(message),
   };
 
@@ -2375,6 +2460,9 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     timestamp: message.timestamp ?? Date.now(),
     model: message.model ?? null,
     status: message.status ?? "done",
+    metadata: message.metadata === undefined ? undefined : JSON.stringify(message.metadata),
+    hidden: (message as unknown as { hidden?: number }).hidden ?? undefined,
+    trimmed: (message as unknown as { trimmed?: number }).trimmed ?? undefined,
   });
   /**
    * ## GAP-LIST `O-42`：**会话计数也在这一段里同步可见**

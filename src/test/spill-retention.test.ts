@@ -29,16 +29,18 @@ vi.mock("../core/file-api", () => ({
   renameFile: vi.fn(async () => undefined),
   listDirectory: vi.fn(async () => []),
   deleteFile: vi.fn(async () => undefined),
+  deleteDirectoryPermanent: vi.fn(async () => undefined),
 }));
 
-import { headTailPreview, retainToolResult, spillNotice, utf8Length, DEFAULT_MAX_INLINE_BYTES, pruneSpillFiles } from "../core/storage/spill";
-import { getAppDataDir, writeFile, renameFile, listDirectory, deleteFile } from "../core/file-api";
+import { headTailPreview, retainToolResult, spillNotice, utf8Length, DEFAULT_MAX_INLINE_BYTES, pruneSpillFiles, deleteSessionSpillFiles } from "../core/storage/spill";
+import { getAppDataDir, writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent } from "../core/file-api";
 
 const getAppDataDirMock = vi.mocked(getAppDataDir);
 const writeFileMock = vi.mocked(writeFile);
 const renameFileMock = vi.mocked(renameFile);
 const listDirectoryMock = vi.mocked(listDirectory);
 const deleteFileMock = vi.mocked(deleteFile);
+const deleteDirectoryPermanentMock = vi.mocked(deleteDirectoryPermanent);
 
 beforeEach(() => {
   getAppDataDirMock.mockClear().mockResolvedValue("C:\\appdata\\");
@@ -46,6 +48,7 @@ beforeEach(() => {
   renameFileMock.mockClear().mockResolvedValue(undefined);
   listDirectoryMock.mockClear().mockResolvedValue([]);
   deleteFileMock.mockClear().mockResolvedValue(undefined);
+  deleteDirectoryPermanentMock.mockClear().mockResolvedValue(undefined);
 });
 
 describe("超大工具结果溢出（DSH spill-policy 对齐）", () => {
@@ -142,5 +145,32 @@ describe("超大工具结果溢出（DSH spill-policy 对齐）", () => {
     expect(deleted).not.toContain(freshFile); // 保留期内 → 留
     expect(deleted).not.toContain(foreignFile); // 非本机制生成 → 不碰
     expect(pruned.deletedFiles).toBe(2);
+  });
+
+  it("SPILL-7: 默认不按时间清理正文，只清 .tmp（检查点要求工具正文永久可读）", async () => {
+    const now = Date.now();
+    const oldFile = `${"C:\\appdata\\spill\\s2"}\\bash-c1-${now - 30 * 24 * 60 * 60 * 1000}.txt`;
+    const tempFile = `${"C:\\appdata\\spill\\s2"}\\bash-c2-${now}.txt.tmp`;
+    listDirectoryMock.mockImplementation(async (p: string) => {
+      if (p === "C:\\appdata\\spill") {
+        return [{ name: "s2", path: "C:\\appdata\\spill\\s2", isDirectory: true }];
+      }
+      return [
+        { name: oldFile.split("\\").pop()!, path: oldFile, isDirectory: false },
+        { name: tempFile.split("\\").pop()!, path: tempFile, isDirectory: false },
+      ];
+    });
+
+    const pruned = await pruneSpillFiles({ now });
+    const deleted = deleteFileMock.mock.calls.map((c) => c[0]);
+    expect(deleted, "30 天前的正文仍保留").not.toContain(oldFile);
+    expect(deleted, "只清崩溃残留的 .tmp").toContain(tempFile);
+    expect(pruned.deletedFiles).toBe(1);
+  });
+
+  it("SPILL-8: 删会话时删除该会话的 spill 目录（唯一破坏性入口）", async () => {
+    await deleteSessionSpillFiles("s1");
+    expect(deleteDirectoryPermanentMock).toHaveBeenCalledTimes(1);
+    expect(deleteDirectoryPermanentMock.mock.calls[0][0]).toContain("spill\\s1");
   });
 });

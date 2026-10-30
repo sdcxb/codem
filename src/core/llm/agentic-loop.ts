@@ -59,7 +59,7 @@ import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryD
   recentToolResultIds,
 } from "./compaction-budget";
 import { summarizeModelContext, estimateRawContextTokens } from "./compaction-budget";
-import {
+import { buildContextEpochMetadata, contextCutoffExclusions } from "../context/context-view";import {
   FOLD_TARGET_RATIO,
   foldToolOutputsUnderTarget,
   shouldFoldToolOutputs,
@@ -6506,39 +6506,33 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
         content: markerContent,
         timestamp: markerTs - 1,
         status: "done",
+        /* 上下文检查点：cutoff 按消息 id，读侧由 context-view 应用（G0 第 2 步） */
+        ...((() => {
+          const metadata = buildContextEpochMetadata({
+            epochId: markerId,
+            cutoffMessageId: messagesToKeep[0]?.id ?? "",
+            createdAt: markerTs,
+            removedCount: messagesToRemove.length,
+            keptCount: keepCount,
+            trigger: "auto",
+            excludedMessageIds: contextCutoffExclusions(
+              messages as never[],
+              messagesToKeep as never[],
+              messagesToRemove as never[],
+            ),
+          });
+          return metadata ? { metadata } : {};
+        })()),
       }, sessionId);
 
-      // Step 2: Soft-delete old messages (mark hidden=1) —— 传 sessionId，镜像被逐出也能判归属
-      messageStorage.deleteMessagesByIds(removedIds, sessionId);
       /**
-       * ★ 全量审计（中）：**回执要用真实删除结果**，不是计划值 ——
-       * `deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）
-       * 或有若干 id 查不到归属（`unresolved`）⇒ 原来事件/横幅/宠物/标记正文全都报计划值。
+       * Step 2: **检查点模式——不删除、不隐藏旧消息**。
+       *
+       * 旧消息保留在时间线里；模型视图由 marker 的
+       * `metadata.contextEpoch.cutoffMessageId` 裁剪（读侧 `applyContextCutoff`）。
+       * 这样失败方向永远是「多摘要/多可见」，不会出现「旧消息已隐藏、摘要却没落盘」。
+       * 用户主动删除仍走 `deleteMessagesByIds`（另一条路径），压缩不再调用它。
        */
-      const deleteReport = (() => {
-        try {
-          const storage = messageStorage as unknown as { getLastDeleteReport?: () => {
-            requested: number;
-            unresolved: number;
-            sessions: string[];
-            softDeleteResponded: boolean;
-          } };
-          return typeof storage.getLastDeleteReport === "function" ? storage.getLastDeleteReport() : null;
-        } catch {
-          return null;
-        }
-      })();
-      const deleteIncomplete =
-        deleteReport !== null && (!deleteReport.softDeleteResponded || deleteReport.unresolved > 0);
-      if (deleteIncomplete) {
-        reportPersistFailure(
-          "loop.compactionDeleteIncomplete",
-          new Error("压缩的软删没有完全落地"),
-          deleteReport && !deleteReport.softDeleteResponded
-            ? `压缩完成，但索引侧没有回应这次隐藏（${removedIds.length} 条旧消息可能仍在索引里）`
-            : `压缩完成，但其中 ${deleteReport?.unresolved ?? 0} 条查不到归属、实际没有被隐藏`,
-        );
-      }
 
       // Step 3: Append compaction event to the event log
       try {
@@ -6547,8 +6541,9 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
           summary: markerContent,
           messagesBefore,
           messagesAfter,
-          /* ★ 全量审计：真实删除结论（索引没回应 / 有 unresolved 时如实写） */
-          ...(deleteReport ? { deleteUnresolved: deleteReport.unresolved, softDeleteResponded: deleteReport.softDeleteResponded } : {}),
+          epochId: markerId,
+          cutoffMessageId: messagesToKeep[0]?.id ?? "",
+          mode: "checkpoint",
         });
       } catch (eventErr) {
         console.warn("[compactMessages] Event log compaction write failed (non-critical):", eventErr);

@@ -1,0 +1,43 @@
+/**
+ * 完整历史面板：用户能看到压缩前的旧消息，且面板只读。
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { createElement } from "react";
+
+const timeline = [
+  { id: "old", role: "user", content: "压缩前的提问", timestamp: 1, status: "done" },
+  { id: "old-a", role: "assistant", content: "压缩前的回答", timestamp: 2, status: "done", reasoning: "旧思考" },
+  { id: "compact-1-1", role: "user", content: "[上下文已自动压缩]\n摘要", timestamp: 3, status: "done" },
+  { id: "new", role: "user", content: "最近消息", timestamp: 4, status: "done" },
+];
+
+vi.mock("../core/storage/context-history", () => ({
+  readContextHistory: () => ({ timeline, modelCount: 2 }),
+}));
+
+vi.mock("../core/storage/context-migration", () => ({
+  migrateSessionLegacyHistory: vi.fn(async () => ({ hiddenRows: 0, alreadyDurable: 0, appended: 0, failed: 0, dryRun: false })),
+}));
+
+import { FullHistoryPanel } from "../components/FullHistoryPanel";
+
+afterEach(() => cleanup());
+
+describe("FullHistoryPanel", () => {
+  it("FH-1: 渲染完整历史、检查点与「模型可见」计数", () => {
+    render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose: () => {} }));
+    expect(screen.getByText("压缩前的提问")).toBeTruthy();
+    expect(screen.getByText("压缩前的回答")).toBeTruthy();
+    expect(screen.getByTestId("history-checkpoint")).toBeTruthy();
+    expect(screen.getByText(/历史 4 条 · 模型可见 2 条/)).toBeTruthy();
+    expect(screen.getByText("只读")).toBeTruthy();
+  });
+
+  it("FH-2: Esc 关闭", () => {
+    const onClose = vi.fn();
+    render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

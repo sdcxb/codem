@@ -148,6 +148,7 @@ const WIRE_SAMPLE: Record<keyof MirrorMessageRow, unknown> = {
   hidden: 1,
   generated_files: "[\"a.ts\"]",
   trimmed: 1,
+  metadata: "{\"contextEpoch\":{\"cutoffMessageId\":\"m-1\"}}",
 };
 
 describe("RustStoragePort —— 镜像字段清单必须被 normalize 全部搬过来（编译期 + 行为）", () => {

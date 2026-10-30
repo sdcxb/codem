@@ -119,6 +119,7 @@ function waterSignature(visible: any[], contextWindow: number): string {
   for (const m of visible) {
     const content = typeof m?.content === "string" ? m.content : "";
     size += content.length;
+    if (typeof m?.reasoning === "string") size += m.reasoning.length;
     const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
     if (Array.isArray(calls)) {
       for (const tc of calls) {

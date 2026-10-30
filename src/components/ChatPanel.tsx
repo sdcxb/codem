@@ -16,6 +16,7 @@ import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
+import { FullHistoryPanel } from "./FullHistoryPanel";
 import { WaterLevelBanner } from "./WaterLevelBanner";
 import { SandboxAllowPrompt } from "./SandboxAllowPrompt";
 import { SideSessionPanel } from "./SideSessionPanel";
@@ -140,6 +141,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
+  const [showFullHistory, setShowFullHistory] = useState(false);
   const [stepTooltipLocked, setStepTooltipLocked] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -749,6 +751,14 @@ setStepTooltipLocked(false);
             </>
           )}
         </div>
+        <button
+          className="context-history-close chat-history-btn"
+          onClick={() => setShowFullHistory(true)}
+          disabled={!activeSessionId}
+          title={lang === "zh" ? "查看包含压缩前旧消息的完整历史" : "View full history including compacted messages"}
+        >
+          {lang === "zh" ? "完整历史" : "Full history"}
+        </button>
         {/* SlotBridge 消费 app.jobs-badge — 会话头部任务指示器 */}
         <SlotBridge
           name="app.jobs-badge"
@@ -1777,6 +1787,11 @@ canEdit={!isSessionStreaming}
           setShowContextMonitor(false);
           setShowTrajectoryPanel(false);
         }}
+      />
+      <FullHistoryPanel
+        open={showFullHistory}
+        sessionId={activeSessionId}
+        onClose={() => setShowFullHistory(false)}
       />
     </div>
   );

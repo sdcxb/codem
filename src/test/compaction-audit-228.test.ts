@@ -206,11 +206,13 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-ca5");
 
-    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    const marker = createMessageMock.mock.calls[0][0];
+    const removedCount = Number(marker.metadata?.contextEpoch?.removedCount ?? -1);
     expect(
-      removedIds.length,
-      "工具结果把保留集顶爆 ⇒ 必须收缩到轮次保底（保留 6 条 ⇒ 移除 74 条）；老实现会移除 60 条",
+      removedCount,
+      "工具结果把保留集顶爆 ⇒ 必须收缩到轮次保底（保留 6 条 ⇒ 折叠 74 条）；老实现会折叠 60 条",
     ).toBe(74);
+    expect(deleteMessagesByIdsMock, "检查点模式：压缩不再软删/隐藏旧消息").not.toHaveBeenCalled();
   });
 
   it("CA-6（行为）：摘要调用失败时**不许丢掉累积摘要**（兜底路径）", async () => {
@@ -231,7 +233,7 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     expect(marker, "旧摘要必须活着（老实现用 100 字兜底覆盖它 ⇒ 累积结论不可恢复地消失）").toContain("方案是 X 且不可丢");
   });
 
-  it("CA-7（行为）：先写标记、再删旧消息（失败模式从「净丢摘要」变成「净多摘要」）", async () => {
+  it("CA-7（行为）：检查点模式只写标记、不删旧消息（失败方向永远是「多摘要/多可见」）", async () => {
     const messages = makeMessages(40);
     listMessagesMock.mockReturnValue(messages);
     const order: string[] = [];
@@ -245,7 +247,10 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-ca7");
 
-    expect(order, "标记必须先落（否则「旧消息已隐藏、摘要却没有」是可达且无补偿的）").toEqual(["create", "delete"]);
+    expect(order, "只允许写一次标记；删除路径在压缩里必须消失").toEqual(["create"]);
+    expect(deleteMessagesByIdsMock, "压缩不再调用软删（用户主动删除仍走另一条路径）").not.toHaveBeenCalled();
+    const metadata = createMessageMock.mock.calls[0][0].metadata?.contextEpoch;
+    expect(metadata?.cutoffMessageId, "标记必须带 cutoff，模型视图由它裁剪").toBeTruthy();
   });
 
   it("CA-8（行为）：同一会话已有压缩在跑 ⇒ 跳过返回 -1（不许被记成一次成功压缩）", async () => {
@@ -282,12 +287,18 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-ca9");
 
-    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    const meta = createMessageMock.mock.calls[0][0].metadata?.contextEpoch;
+    const allIds = messages.map((m) => String(m.id));
+    const cutoffIndex = allIds.indexOf(String(meta?.cutoffMessageId ?? ""));
+    expect(cutoffIndex, "标记必须给出真实 cutoff").toBeGreaterThanOrEqual(0);
     expect(
-      removedIds.filter((id) => ["u37", "a37", "u38", "a38", "u39", "a39"].includes(id)),
-      "最近 3 轮的真实消息一条都不许删（折叠后必须重新夹回轮次保底）",
+      allIds.slice(0, cutoffIndex).filter((id) => ["u37", "a37", "u38", "a38", "u39", "a39"].includes(id)),
+      "最近 3 轮的真实消息一条都不许落在 cutoff 之前（折叠后必须重新夹回轮次保底）",
     ).toEqual([]);
-    expect(removedIds, "该删的是那条旧标记（它的正文已经级联进新标记）").toContain("marker-tail");
+    expect(
+      meta?.excludedMessageIds ?? [],
+      "排在 cutoff 之后的陈旧标记必须进 excludedMessageIds（单点 cutoff 表达不了非连续排除）",
+    ).toContain("marker-tail");
     const ca9Marker = String(createMessageMock.mock.calls[0][0].content);
     expect(ca9Marker, "旧摘要必须作为级联输入进到 LLM（回声模式下能看到它）").toContain("关键约束是 W");
     expect(
@@ -308,11 +319,15 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     expect(src, "调用方没给会话时如实上报（老实现静默）").toContain("镜像里查不到会话归属（会话可能已被逐出）");
   });
 
-  it("CA-11（行为）：压缩的两条调用路径都把 sessionId 传给软删", () => {
+  it("CA-11（行为）：压缩的两条调用路径都写 cutoff，且不再调用软删", () => {
     const loopSrc = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
     const monitorSrc = readFileSync(path.resolve(__dirname, "../components/ContextMonitor.tsx"), "utf8");
-    expect(loopSrc, "自动路径").toContain("deleteMessagesByIds(removedIds, sessionId)");
-    expect(monitorSrc, "手动路径").toContain("deleteMessagesByIds(removedIds, sessionId)");
+    expect(loopSrc, "自动路径").toContain("buildContextEpochMetadata");
+    expect(monitorSrc, "手动路径").toContain("buildContextEpochMetadata");
+    expect(loopSrc, "自动路径不再软删").not.toContain("deleteMessagesByIds(removedIds, sessionId)");
+    expect(monitorSrc, "手动路径不再软删").not.toContain("deleteMessagesByIds(removedIds, sessionId)");
+    expect(loopSrc, "自动路径写 cutoff").toContain("cutoffMessageId:");
+    expect(monitorSrc, "手动路径写 cutoff").toContain("cutoffMessageId:");
   });
 
   it("CA-12（行为）：手动压缩取同一把压缩锁（自动在等摘要时不许双写标记）", () => {
@@ -450,11 +465,14 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-ca21");
 
-    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    const meta = createMessageMock.mock.calls[0][0].metadata?.contextEpoch;
+    const allIds = messages.map((m) => String(m.id));
+    const cutoffIndex = allIds.indexOf(String(meta?.cutoffMessageId ?? ""));
+    expect(cutoffIndex, "标记必须给出真实 cutoff").toBeGreaterThanOrEqual(0);
     expect(
-      removedIds.filter((id) => ["u17", "a17"].includes(id)),
-      "标记不许顶掉一个真实轮次：最近 3 轮（u17..a19 里剔除标记）里的真实消息一条都不许删",
-    ).toEqual([]);
+      cutoffIndex,
+      "标记不许顶掉一个真实轮次：cutoff 必须落在 u17 或更早，最近 3 轮的真实消息都在模型视图里",
+    ).toBeLessThanOrEqual(allIds.indexOf("u17"));
   });
 
   it("CA-28（第六批）：没压成时必须返回 -1（0 会被调用方当成一次「压缩成功」）", async () => {

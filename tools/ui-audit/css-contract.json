@@ -1406,6 +1406,9 @@
     "height": "48px",
     "padding": "0 var(--space-4)"
   },
+  "chat-history-btn": {
+    "margin-left": "var(--space-2)"
+  },
   "chat-relative-anchor": {
     "position": "relative"
   },
@@ -2602,6 +2605,38 @@
     "gap": "var(--space-4)",
     "margin-top": "var(--space-5)"
   },
+  "context-history-checkpoint": {
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-left": "3px solid var(--accent)",
+    "border-radius": "var(--radius-xs)",
+    "margin": "var(--space-2) 0",
+    "padding": "var(--space-3)"
+  },
+  "context-history-close": {
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-xs)",
+    "color": "var(--text-primary)",
+    "cursor": "pointer",
+    "flex": "0 0 auto",
+    "font-size": "var(--fs-xs)",
+    "padding": "0 var(--space-2)"
+  },
+  "context-history-item": {
+    "border-bottom": "1px solid var(--border-primary)",
+    "padding": "var(--space-3) 0"
+  },
+  "context-history-open": {
+    "flex": "0 0 auto"
+  },
+  "context-history-panel": {
+    "overflow": "hidden"
+  },
+  "context-history-state": {
+    "color": "var(--text-secondary)",
+    "padding": "var(--space-5) 0"
+  },
   "context-info": {
     "display": "flex",
     "flex-direction": "column",
@@ -2661,7 +2696,7 @@
     "font-size": "var(--fs-sm)",
     "font-weight": "600",
     "gap": "var(--space-3)",
-    "grid-template-columns": "max-content minmax(0, 1fr)",
+    "grid-template-columns": "max-content minmax(0, 1fr) max-content",
     "padding": "var(--space-4) var(--space-6)"
   },
   "context-monitor-icon": {

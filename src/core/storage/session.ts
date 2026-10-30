@@ -7,6 +7,7 @@ import { markSessionDeleted } from "./session-tombstones";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 import { getStoragePort, hasStoragePort } from "./port";
 import { reportPersistFailure } from "./persist-failure";
+import { deleteSessionSpillFiles } from "./spill";
 
 /**
  * `sessions` 域接入端口（P5 第 4 段）。
@@ -817,6 +818,8 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
      * 但必须**如实上报**（静默失败 = 用户永远不知道搜索里有幽灵结果）。
      */
     void purgeSessionIndexResidue(id);
+    /* 唯一的 spill 回收入口：用户删会话 ⇒ 该会话工具正文一起删 */
+    void deleteSessionSpillFiles(id);
     return;
   }
   // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。

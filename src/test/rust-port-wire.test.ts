@@ -53,6 +53,7 @@ const MIRROR_FIELDS: Record<keyof MirrorMessageRow, true> = {
   hidden: true,
   generated_files: true,
   trimmed: true,
+  metadata: true,
 };
 
 

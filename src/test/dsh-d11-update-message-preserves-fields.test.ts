@@ -233,7 +233,7 @@ describe("updateMessage 的读-改-写不许丢字段（权威日志是追加日
     expect(merged.attachments?.map((a) => a.id)).toEqual(["a1"]);
   });
 
-  it("D11-2: metadata 只有日志能承载 → 以索引为基准时**不许**顺手删掉它（裸 `??` 反转会踩到这里）", async () => {
+  it("D11-2: metadata 现在也进索引投影 → 以索引为基准更新时不许丢", async () => {
     const { createMessage, hydrateSessionLog, logMirrorMessage, updateMessage } = await import(
       "../core/storage/message"
     );
@@ -241,20 +241,21 @@ describe("updateMessage 的读-改-写不许丢字段（权威日志是追加日
     createMessage({ id: "m2", role: "user", content: "v1", timestamp: 2, metadata: METADATA } as Message, S);
     await hydrateSessionLog(S);
 
-    // 夹具前提：索引**给不出** metadata（消息行的列投影里没有这一列）
+    /*
+     * 上下文检查点需要**同步**读 epoch，因此 metadata 已经补进消息索引投影
+     * （`message.ts::messageRowToMessage` + `rust-port.ts::MirrorMessageRow`）。
+     * 索引和日志都应带它；更新时仍然不许丢。
+     */
     const msgMod = await import("../core/storage/message");
-    expect(msgMod.getMessage("m2")?.metadata, "索引侧没有 metadata 这一列").toBeUndefined();
-    expect(logMirrorMessage(S, "m2")?.metadata, "只有日志镜像有它").toEqual(METADATA);
+    expect(msgMod.getMessage("m2")?.metadata, "索引侧也必须能读到 metadata").toEqual(METADATA);
+    expect(logMirrorMessage(S, "m2")?.metadata, "日志镜像同样有它").toEqual(METADATA);
 
     updateMessage("m2", { content: "v2" });
     await new Promise((r) => setTimeout(r, 0));
 
     const record = await lastLogRecordFor("m2");
     expect(record.content).toBe("v2");
-    expect(
-      record.metadata,
-      "metadata 不能因为「基准换成了索引」而消失 —— 索引给不出的字段必须由日志镜像补上",
-    ).toEqual(METADATA);
+    expect(record.metadata, "metadata 不能因为「基准换成了索引」而消失").toEqual(METADATA);
 
     msgMod.clearSessionLogCache();
     await hydrateSessionLog(S);

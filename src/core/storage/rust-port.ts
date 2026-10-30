@@ -1785,6 +1785,14 @@ export interface MirrorMessageRow {
    * 后者要**排除**。所以这一列必须进镜像 —— 否则读路径又只能靠猜。
    */
   trimmed?: number;
+  /**
+   * 消息 metadata 的 JSON 文本。
+   *
+   * 上下文检查点的 `metadata.contextEpoch` 就住在这里：`listMessages` 是**同步**读，
+   * 不能为了取 epoch 去发异步 IPC。镜像必须把这一列带回来，否则在日志尚未 hydrate 的
+   * 窗口里读不到 cutoff，压缩后的模型视图会退回全量。
+   */
+  metadata?: string | null;
 }
 
 class RustMessageMirror {
@@ -2151,6 +2159,8 @@ class RustMessageMirror {
        * 所以修完这一行必须配一条**真端口**的转换契约用例（见 `rust-port.test.ts` 的 MIRROR-TRIM）。
        */
       trimmed: Number(o.trimmed ?? 0),
+      /* 上下文检查点：marker metadata 必须在镜像里，`listMessages` 才能同步取到 cutoff */
+      metadata: typeof o.metadata === "string" ? o.metadata : null,
     };
   }
 
@@ -2258,6 +2268,14 @@ class RustMessageMirror {
         row.generated_files === undefined
           ? (prev?.generated_files ?? null)
           : (row.generated_files as string | null),
+      /*
+       * `metadata` 与 hidden/generated_files 同一条规则：未提供 = 保留旧值。
+       * 流式 `updateMessage` 不该把 marker 的 `contextEpoch` 抹掉；只有显式传 null 才清空。
+       */
+      metadata:
+        row.metadata === undefined
+          ? (prev?.metadata ?? null)
+          : (row.metadata as string | null),
     };
     if (list) {
       const i = list.findIndex((m) => m.id === row.id);

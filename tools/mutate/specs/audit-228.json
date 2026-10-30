@@ -32,13 +32,13 @@
       "expectRed": true
     },
     {
-      "id": "MUT-3 恢复「先删旧消息、再写标记」的旧顺序（失败时净丢摘要）",
-      "why": "CA-7：两步都不会抛（日志追加 best-effort、索引失败被吞）⇒ 「旧消息已隐藏、摘要却没落盘」可达且无补偿",
+      "id": "MUT-3 不写 cutoff（模型视图退回全量）",
+      "why": "检查点模式：marker 没有 cutoff 时 buildContextEpochMetadata 返回 null，ContextView 无法裁剪，模型会重新看到压缩前历史",
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);\n\n      // Step 2: Soft-delete old messages (mark hidden=1) —— 传 sessionId，镜像被逐出也能判归属\n      messageStorage.deleteMessagesByIds(removedIds, sessionId);",
-          "to": "      messageStorage.deleteMessagesByIds(removedIds, sessionId);\n      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);"
+          "from": "            cutoffMessageId: messagesToKeep[0]?.id ?? \"\",",
+          "to": "            cutoffMessageId: \"\","
         }
       ],
       "tests": [

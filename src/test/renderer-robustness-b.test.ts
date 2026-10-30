@@ -640,12 +640,12 @@ describe("RB-5 ContextMonitor 手动压缩：守卫真的生效 + 失败可见�
 
     await settle();
 
-    expect(deleteMessagesByIdsMock).toHaveBeenCalledTimes(1);
-    expect((deleteMessagesByIdsMock.mock.calls[0][0] as string[]).length).toBe(10);
+    expect(createMessageMock).toHaveBeenCalledTimes(1);
+    expect(createMessageMock.mock.calls[0][0].metadata?.contextEpoch?.removedCount).toBe(10);
   });
 
   it("RB-5b: 压缩失败 → 走既有上报通道 + 面板可见提示，且守卫被复位（下一次仍可尝试）", async () => {
-    deleteMessagesByIdsMock.mockImplementation(() => {
+    createMessageMock.mockImplementation(() => {
       throw new Error("db is gone");
     });
     render(createElement(ContextMonitor, { sessionId: "s1", visible: true }));
@@ -664,7 +664,7 @@ describe("RB-5 ContextMonitor 手动压缩：守卫真的生效 + 失败可见�
 
     fireEvent.click(compactButton());
     await settle();
-    expect(deleteMessagesByIdsMock).toHaveBeenCalledTimes(2);
+    expect(createMessageMock).toHaveBeenCalledTimes(2);
   });
 
   it("RB-5c: 消息太少时不进入压缩（守卫不被占用）", async () => {
@@ -673,6 +673,6 @@ describe("RB-5 ContextMonitor 手动压缩：守卫真的生效 + 失败可见�
     await settle();
 
     // 消息数 <= 2 时按钮本身不渲染（既有行为），守卫也不该被占用
-    expect(deleteMessagesByIdsMock).not.toHaveBeenCalled();
+    expect(createMessageMock).not.toHaveBeenCalled();
   });
 });

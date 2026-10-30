@@ -31,7 +31,8 @@
  * 所以溢出写盘一律走 `../file-api`（Tauri IPC），与库、附件同属**一份数据集、同一套原语**。
  */
 
-import { writeFile, renameFile, listDirectory, deleteFile } from "../file-api";
+import { writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent } from "../file-api";
+import { reportPersistFailure } from "./persist-failure";
 
 /** 默认内联上限（字节）：超过就溢出到文件。只拦真正的大块。 */
 export const DEFAULT_MAX_INLINE_BYTES = 64 * 1024;
@@ -157,8 +158,14 @@ export async function retainToolResult(
   };
 }
 
-/** 默认保留天数。溢出文件是"可再读的副本"，过期即可清理。 */
-const DEFAULT_SPILL_KEEP_DAYS = 14;
+/**
+ * 默认**不按时间**清理（0 = 永久保留）。
+ *
+ * 上下文检查点要求工具正文永久可读：消息里只有 preview + locator，
+ * 按 14 天删掉 spill 等于把历史工具结果物理抹掉。只有 `.tmp` 残片会自动清；
+ * 真正的回收只发生在「用户删除会话」这一条显式路径。
+ */
+const DEFAULT_SPILL_KEEP_DAYS = 0;
 
 /**
  * 溢出目录里**本机制认得**的文件后缀。
@@ -220,6 +227,8 @@ export async function pruneSpillFiles(
         try { await deleteFile(file.path); result.deletedFiles++; } catch { /* 跳过 */ }
         continue;
       }
+      /* 默认永久保留：只清 .tmp，不按文件名时间戳删正文 */
+      if (keepDays <= 0) continue;
       const match = SPILL_FILE_RE.exec(file.name);
       const writtenAt = match ? Number(match[1]) : 0;
       if (writtenAt > 0 && writtenAt >= cutoff) continue; // 还在保留期内
@@ -232,8 +241,28 @@ export async function pruneSpillFiles(
       }
     }
   }
-  if (result.deletedFiles > 0) {
+  if (result.deletedFiles > 0 && keepDays > 0) {
     console.log(`[Spill] 清理过期溢出文件 ${result.deletedFiles} 个（保留最近 ${keepDays} 天）`);
   }
   return result;
+}
+
+/**
+ * 删除一个会话的**全部** spill 正文。
+ *
+ * 唯一的破坏性入口：用户主动删会话。压缩/维护/过期清理都不许调用它。
+ * 失败只告警，不把删除会话改成失败（用户意图已经完成）；但必须留痕。
+ */
+export async function deleteSessionSpillFiles(sessionId: string): Promise<void> {
+  if (!sessionId) return;
+  try {
+    const baseDir = (await (await import("./data-root")).resolveDataRoot()).root;
+    await deleteDirectoryPermanent(spillDir(baseDir, sessionId));
+  } catch (e) {
+    reportPersistFailure(
+      "spill.deleteSession",
+      e,
+      "删除会话的溢出目录失败（工具正文可能残留，需用户手动清理）",
+    );
+  }
 }

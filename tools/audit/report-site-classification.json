@@ -472,13 +472,6 @@
       "round": 100
     },
     {
-      "site": "src/core/llm/agentic-loop.ts::loop.compactionDeleteIncomplete::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "压缩的软删没有完全落地（索引侧没回应 / 有 id 查不到归属）⇒ 用户会以为旧消息已移除而其实还在，必须可见",
-      "round": 104
-    },
-    {
       "site": "src/core/llm/agentic-loop.ts::loop.foldToolOutputs::#1",
       "kind": "persist",
       "status": "triaged",
@@ -1936,6 +1929,13 @@
       "status": "triaged",
       "reason": "反馈写未被接受 ⇒ 未保存",
       "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/core/storage/spill.ts::spill.deleteSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "删除会话时清不掉它的 spill 目录 ⇒ 用户以为会话已彻底删除，工具正文仍残留在磁盘；必须可见",
+      "round": 260
     },
     {
       "site": "src/store.ts::store.setFeedback::#2",
