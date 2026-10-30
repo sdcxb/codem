@@ -1,6 +1,6 @@
 # 19 · 上下文检查点：判据与施工清单
 
-> **状态**：配套 [18-CONTEXT-CHECKPOINT-DESIGN.md](docs/project-guide/18-CONTEXT-CHECKPOINT-DESIGN.md) 的判据/施工清单，2026-10-30；G0 核心已落地（`context-view-cutoff` 10 条、时间线 3 条、迁移 3 条、回滚 2 条、完整历史面板 3 条；全量 8814 用例 8796 通过 / 17 skipped / 1 条计时敏感用例单跑通过）。基线 1.16.333。
+> **状态**：配套 [18-CONTEXT-CHECKPOINT-DESIGN.md](docs/project-guide/18-CONTEXT-CHECKPOINT-DESIGN.md) 的判据/施工清单，2026-10-30；G0 核心已落地（`context-view-cutoff` 10 条、时间线 3 条、迁移 3 条、回滚 2 条、完整历史面板 3 条；主对话默认完整时间线；全量 8814 用例 8797 通过 / 17 skipped / 0 失败）。基线 1.16.333。
 > **纪律**：先写判据 → 变异自证 → 真机验证；判据只许收紧，不许放宽。
 > **目标**：把「压缩不删历史 + 模型看检查点 + 水位同源 + 工具正文永久 + 旧数据迁移 + 回滚」拆成可执行、可判红的清单。
 

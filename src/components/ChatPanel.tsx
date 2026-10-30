@@ -16,7 +16,7 @@ import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
-import { FullHistoryPanel } from "./FullHistoryPanel";
+import { readContextHistory } from "../core/storage/context-history";
 import { WaterLevelBanner } from "./WaterLevelBanner";
 import { SandboxAllowPrompt } from "./SandboxAllowPrompt";
 import { SideSessionPanel } from "./SideSessionPanel";
@@ -141,7 +141,6 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
-  const [showFullHistory, setShowFullHistory] = useState(false);
   const [stepTooltipLocked, setStepTooltipLocked] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -149,6 +148,34 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
 
   // P0 (dsh-navbar 精选 pin): 会话变化时加载该会话精选列表
   const activeSessionId = sessionId || currentSession?.id || "";
+  /**
+   * 主对话默认展示**完整时间线**；没有完整历史数据时回退到模型消息。
+   *
+   * `readContextHistory` 是数据层投影（含旧 hidden 行）；只依赖消息数量/最后一条
+   * 的 id+长度，避免流式每个 token 都整读一次。
+   */
+  const [historyMode, setHistoryMode] = useState<"full" | "model">("full");
+  const lastMessage = messages[messages.length - 1];
+  const historySnapshot = useMemo(() => {
+    if (!activeSessionId) return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
+    try {
+      return readContextHistory(activeSessionId);
+    } catch {
+      return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
+    }
+  }, [activeSessionId, messages.length, lastMessage?.id, lastMessage?.status]);
+  const timelineBase = historySnapshot.timeline.length > 0 ? historySnapshot.timeline : messages;
+  const timelineMessages = useMemo(() => {
+    if (!lastMessage || timelineBase.length === 0) return timelineBase;
+    const idx = timelineBase.findIndex((m) => m.id === lastMessage.id);
+    if (idx < 0) return [...timelineBase, lastMessage];
+    const copy = timelineBase.slice();
+    copy[idx] = lastMessage;
+    return copy;
+  }, [timelineBase, lastMessage?.id, lastMessage?.content, lastMessage?.status]);
+  const modelMessages = historySnapshot.timeline.length > 0 ? historySnapshot.model : messages;
+  const sourceMessages = historyMode === "full" ? timelineMessages : modelMessages;
+  const modelIndexById = useMemo(() => new Map(modelMessages.map((m, i) => [m.id, i])), [modelMessages]);
   useEffect(() => {
     if (!activeSessionId) { setPinnedIds(new Set()); return; }
     setPinnedIds(new Set(listPinnedIds(activeSessionId)));
@@ -583,7 +610,7 @@ setStepTooltipLocked(false);
         scrollTimer = null;
         // Use larger threshold (200px) so user can keep scrolling up to trigger
         // consecutive loads without needing to scroll back down first
-        if (scrollContainer.scrollTop < 200 && hasMoreMessages && !isLoadingMore) {
+        if (scrollContainer.scrollTop < 200 && historyMode === "model" && hasMoreMessages && !isLoadingMore) {
           loadingHistoryRef.current = true;
           loadMoreMessages(currentSession?.id || "", 20);
         }
@@ -595,7 +622,7 @@ setStepTooltipLocked(false);
       scrollContainer.removeEventListener("scroll", handleScroll);
       if (scrollTimer) clearTimeout(scrollTimer);
     };
-  }, [hasMoreMessages, isLoadingMore, loadMoreMessages, currentSession?.id]);
+  }, [historyMode, hasMoreMessages, isLoadingMore, loadMoreMessages, currentSession?.id]);
 
   // Subscribe to SubagentRuntime updates — DSH-style 事件驱动
   // 对标 DSH ctx.subagents — 替代旧 SubagentManager
@@ -753,11 +780,18 @@ setStepTooltipLocked(false);
         </div>
         <button
           className="context-history-close chat-history-btn"
-          onClick={() => setShowFullHistory(true)}
+          onClick={() => setHistoryMode((m) => (m === "full" ? "model" : "full"))}
           disabled={!activeSessionId}
-          title={lang === "zh" ? "查看包含压缩前旧消息的完整历史" : "View full history including compacted messages"}
+          aria-pressed={historyMode === "model"}
+          title={
+            historyMode === "full"
+              ? (lang === "zh" ? "当前显示完整历史；点击切换到模型视图" : "Showing full history; click for model view")
+              : (lang === "zh" ? "当前显示模型视图；点击回到完整历史" : "Showing model view; click for full history")
+          }
         >
-          {lang === "zh" ? "完整历史" : "Full history"}
+          {historyMode === "full"
+            ? (lang === "zh" ? "完整历史" : "Full history")
+            : (lang === "zh" ? "模型视图" : "Model view")}
         </button>
         {/* SlotBridge 消费 app.jobs-badge — 会话头部任务指示器 */}
         <SlotBridge
@@ -1087,7 +1121,7 @@ setStepTooltipLocked(false);
               </button>
             </div>
           )}
-          {hasMoreMessages && !loadMoreReadUnavailable && (
+          {historyMode === "model" && hasMoreMessages && !loadMoreReadUnavailable && (
             <div className="load-more-indicator">
               {isLoadingMore ? (
                 <span className="load-more-loading">{S.chat.loading[lang]}</span>
@@ -1240,7 +1274,7 @@ setStepTooltipLocked(false);
             // 否则用户会看到第二次 Codem 思考，像同一问题跑了两轮。
             const displayMessages: Message[] = [];
             let skipAssistantAfterNudge = false;
-            for (const message of messages) {
+            for (const message of sourceMessages) {
               if (
                 message.role === "user" &&
                 isMachineInjectedMessage(message) &&
@@ -1373,6 +1407,8 @@ setStepTooltipLocked(false);
             // 全部跑 framer-motion 动画会在首屏同时创建大量动画帧导致卡顿。
             // 最新一条（新进入的回复）保留动画，其余静态渲染。
             const isLatestMsg = (groupLastIdx ?? origIndex) === displayMessages.length - 1;
+            const modelIdx = modelIndexById.get(msg.id) ?? -1;
+            const editable = !isSessionStreaming && modelIdx >= 0;
 
             return (
             <React.Fragment key={msg.id}>
@@ -1397,7 +1433,7 @@ pinned={pinnedIds.has(msg.id)}
 onTogglePin={handleTogglePin}
 onReEdit={handleReEditInternal}
 sessionId={sessionId || currentSession?.id}
-canEdit={!isSessionStreaming}
+canEdit={editable}
 />
             </motion.div>
             ) : (
@@ -1416,7 +1452,7 @@ pinned={pinnedIds.has(msg.id)}
 onTogglePin={handleTogglePin}
 onReEdit={handleReEditInternal}
 sessionId={sessionId || currentSession?.id}
-canEdit={!isSessionStreaming}
+canEdit={editable}
 />
             )}
 {/* 对标 HTML：turn foot 只放元信息，不放“任务完成”徽章。
@@ -1438,24 +1474,24 @@ canEdit={!isSessionStreaming}
                     ? (lang === "zh" ? "待验证" : "Needs verification")
                     : (lang === "zh" ? "任务完成" : "Done")}
                 </span>
-                {onFork && (
+                {onFork && modelIdx >= 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
           aria-label={S.bubble.fork[lang]}
-                        title={S.bubble.fork[lang]} className="qa-turn-btn" onClick={() => onFork(origIndex)}>
+                        title={S.bubble.fork[lang]} className="qa-turn-btn" onClick={() => onFork(modelIdx)}>
                         <GitFork size={14} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
                   </Tooltip>
                 )}
-                {onRegenerate && isTurnWithResponse && (
+                {onRegenerate && isTurnWithResponse && modelIdx >= 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
           aria-label={S.bubble.regenerate[lang]}
-                        title={S.bubble.regenerate[lang]} className="qa-turn-btn" onClick={() => onRegenerate(origIndex)}>
+                        title={S.bubble.regenerate[lang]} className="qa-turn-btn" onClick={() => onRegenerate(modelIdx)}>
                         <RotateCcw size={14} />
                       </button>
                     </TooltipTrigger>
@@ -1787,11 +1823,6 @@ canEdit={!isSessionStreaming}
           setShowContextMonitor(false);
           setShowTrajectoryPanel(false);
         }}
-      />
-      <FullHistoryPanel
-        open={showFullHistory}
-        sessionId={activeSessionId}
-        onClose={() => setShowFullHistory(false)}
       />
     </div>
   );

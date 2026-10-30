@@ -1,6 +1,6 @@
 # 18 · 上下文检查点与完整历史（设计稿）
 
-> **状态**：设计稿，2026-10-30；G0 核心已落地：读侧 cutoff 契约、marker metadata 写入、压缩检查点（不再软删/隐藏）、完整历史面板（含只读模型视图切换）、旧 hidden 回填 API/入口、回滚 API、spill 永久化。**未做**：主对话默认完整时间线（当前入口是头部「完整历史」/上下文面板按钮）、水位 system/tools 全量、`context_epochs` 独立表、真机取证。基线 1.16.333。
+> **状态**：设计稿，2026-10-30；G0 核心已落地：读侧 cutoff 契约、marker metadata 写入、压缩检查点（不再软删/隐藏）、**主对话默认完整时间线 + 模型视图切换**、完整历史面板（含只读模型视图）、旧 hidden 回填 API/入口、回滚 API、spill 永久化。**未做**：水位 system/tools 全量、`context_epochs` 独立表、真机取证。基线 1.16.333。
 > **目标**：一次性做到终态——压缩不再删除/隐藏历史；人看完整时间线；模型/Agent 看「最新检查点 + 其后消息」；水位与模型视图同源；工具正文永久保留；旧数据 best-effort 迁移；提供一次性回滚迁移。
 > **配套**：[19-CONTEXT-CHECKPOINT-CRITERIA.md](docs/project-guide/19-CONTEXT-CHECKPOINT-CRITERIA.md)（判据与施工清单）。
 > **相关**：[03-RUNTIME-FLOWS.md](docs/project-guide/03-RUNTIME-FLOWS.md)（压缩/读路径）、[06-DATA-STORAGE.md](docs/project-guide/06-DATA-STORAGE.md)（JSONL/索引）、[08-ENGINEERING-GATES.md](docs/project-guide/08-ENGINEERING-GATES.md)（门禁）、[09-CURRENT-STATE.md](docs/project-guide/09-CURRENT-STATE.md)（基线）。
