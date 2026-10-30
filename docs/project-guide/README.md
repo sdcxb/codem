@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（1.16.332 发布提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.332**（2026-10-29 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（1.16.332 发布后修复提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.332**（2026-10-29 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -92,7 +92,7 @@
 |---|---|---|
 | 版本 | **1.16.332** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
 | 发布 | GitHub `Codem v1.16.332` = `Latest`（2026-10-29） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（1.16.332 发布提交） | `git rev-parse --short HEAD` |
+| HEAD | 以 `git log -1` 为准（1.16.332 发布后修复提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-29 实测 exit 0） |
 | 全量测试 | **786 文件 / 8791 用例：8774 通过、17 跳过、0 失败** | `npx vitest run`（约 158 秒） |

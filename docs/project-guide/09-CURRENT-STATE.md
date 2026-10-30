@@ -1,6 +1,8 @@
 # 09 · 当前状态、未完成项与风险（2026-10-26 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.16.332 发布提交）｜ **1.16.332**（2026-10-29 发布）
+> 基线：`master` @ 代码提交见 `git log -1`（1.16.332 发布后修复提交）｜ **1.16.332**（2026-10-29 发布）
+>
+> 发布后 HEAD：`ffa44695` 修复 subagent refusal/aborted/error 的 `isError`，未发版。
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -12,7 +14,7 @@
 | 版本 | **1.16.332** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
 | 发布 | GitHub `Codem v1.16.332` = **Latest**（2026-10-29 发布） | `gh release list --limit 1` |
 | 更新清单 | `latest.json` version 1.16.332 | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（1.16.332 发布提交） | `git rev-parse --short HEAD` |
+| HEAD | 以 `git log -1` 为准（1.16.332 发布后修复提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
 | 本地 tag | 最新只到 **v1.16.321** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
@@ -61,7 +63,7 @@
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **774 / 8791**（2026-10-29）。
+- 当前实测 **786 / 8791**（2026-10-29；`AGENTS.md` 与正文已对齐）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---

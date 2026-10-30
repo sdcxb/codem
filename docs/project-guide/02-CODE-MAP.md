@@ -50,7 +50,7 @@ src\
 │  ├─ rich-content\         6 个：RichContent / CodeBlockView / MermaidCanvasView / ImagePreviewView…
 │  ├─ plugin-market\        2 个：PluginMarketTab / DshExternalPluginsCard
 │  └─ zvec\                 1 个：ZvecGrepMarketCard
-├─ core\                    60 个子域（785 文件 / 16.5 万行）
+├─ core\                    60 个子域（799 文件 / 16.5 万行）
 ├─ plugins\                 3 个内置插件：monopoly-game（194）、library-ops（42）、shell-ops（3）
 ├─ hooks\                   13 个：useDomainReady / useDismissableLayer / useRovingFocus / useWindowState…
 ├─ lib\                     1 个（轻量工具）
