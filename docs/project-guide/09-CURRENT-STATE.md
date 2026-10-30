@@ -1,8 +1,8 @@
 # 09 · 当前状态、未完成项与风险（2026-10-26 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.16.333 发布后修复提交）｜ **1.16.333**（2026-10-30 发布）
+> 基线：`master` @ 代码提交见 `git log -1`（1.16.333 发布提交）｜ **1.16.333**（2026-10-30 发布）
 >
-> 发布后 HEAD 的通用修复（subagent refusal/aborted/error → `isError`）已包含在 1.16.333。
+> 1.16.333 包含通用修复：subagent refusal/aborted/error → `isError`。
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -16,7 +16,7 @@
 | 更新清单 | `latest.json` version 1.16.333 | 根目录文件 |
 | HEAD | 以 `git log -1` 为准（1.16.333 发布后修复提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
-| 本地 tag | 最新只到 **v1.16.321** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 本地 tag | 最新为 **v1.16.333** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：v1.16.322–330 的 GitHub Release 存在，但本地 tag 列表没跟上（可能未拉取/未创建本地 tag）。以 `gh release list` 与 `latest.json` 为准。
 

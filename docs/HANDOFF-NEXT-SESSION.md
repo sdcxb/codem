@@ -7738,3 +7738,9 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 未恢复的插件期子 agent 改动：结构化 report 契约、解析默认 unknown、缺报告硬门、前台 report sink。
   这些与“强制子 agent 交 report”绑定，默认恢复会改变普通/创作用途子 agent 的行为，需独立设计。
 - 全量 786 文件 / 8791 用例（8774 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
+## 2026-10-30 08:35 — 1.16.333 已发布
+
+- GitHub Release：`Codem v1.16.333` = Latest；5 个资产（NSIS exe/sig、MSI/sig、latest.json）。
+- 修复：前台 subagent 在 refusal/aborted/error/max-tokens 时返回 isError，不再被父 agent 当成功文本。
+- 全量 786 文件 / 8791 用例（8774 通过 + 17 skipped + 0 失败）；tsc 0。
+- 远端清单校验 7 项全过；资产 sha256 与本地产物一致。
