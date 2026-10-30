@@ -155,6 +155,21 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
    * 的 id+长度，避免流式每个 token 都整读一次。
    */
   const [historyMode, setHistoryMode] = useState<"full" | "model">("full");
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  /**
+   * 首屏镜像未就绪时先回退到 store 消息；镜像加载完成后必须再读一拍，
+   * 否则完整时间线会永远停在首屏那 10 条（真机冒烟抓到的缺陷）。
+   * 300ms/1500ms 两拍覆盖"索引镜像加载"与"日志 hydrate"两条异步链。
+   */
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const t1 = setTimeout(() => setHistoryRefresh((v) => v + 1), 300);
+    const t2 = setTimeout(() => setHistoryRefresh((v) => v + 1), 1500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [activeSessionId, messagesLoading]);
   const lastMessage = messages[messages.length - 1];
   const historySnapshot = useMemo(() => {
     if (!activeSessionId) return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
@@ -163,7 +178,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     } catch {
       return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
     }
-  }, [activeSessionId, messages.length, lastMessage?.id, lastMessage?.status]);
+  }, [activeSessionId, messages.length, lastMessage?.id, lastMessage?.status, historyRefresh]);
   const timelineBase = historySnapshot.timeline.length > 0 ? historySnapshot.timeline : messages;
   const timelineMessages = useMemo(() => {
     if (!lastMessage || timelineBase.length === 0) return timelineBase;
@@ -783,6 +798,8 @@ setStepTooltipLocked(false);
           onClick={() => setHistoryMode((m) => (m === "full" ? "model" : "full"))}
           disabled={!activeSessionId}
           aria-pressed={historyMode === "model"}
+          data-history-count={timelineMessages.length}
+          data-model-count={modelMessages.length}
           title={
             historyMode === "full"
               ? (lang === "zh" ? "当前显示完整历史；点击切换到模型视图" : "Showing full history; click for model view")
