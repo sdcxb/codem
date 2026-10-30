@@ -3258,6 +3258,11 @@ export function getLLMEngine(ctx?: Context): LLMEngine {
   return engineInstance;
 }
 
+/** 只读探测：引擎是否已经初始化（水位计算工具定义开销时用，避免为了估算而构造引擎）。 */
+export function peekLLMEngine(): LLMEngine | null {
+  return engineInstance;
+}
+
 export function createLLMEngine(config?: LLMEngineConfig, ctx?: Context): LLMEngine {
   engineInstance = new LLMEngine(config, undefined, ctx);
   return engineInstance;

@@ -112,6 +112,7 @@ const { readContextWaterLevel, WATER_LEVEL, UNKNOWN_WATER_LEVEL } = await import
 const { summarizeModelContext } = await import("../core/llm/compaction-budget");
 const { pruneStaleToolResults } = await import("../core/llm/context-fold");
 const { summarizeDisplayPressure } = await import("../core/context/context");
+const { getContextManager } = await import("../core/context/context");
 const { getTokenTracker } = await import("../core/llm/token-tracker");
 
 /** 造一条消息：`cjk` 个中文字 ≈ cjk×0.6 token（`token-tracker.ts:62` 的 CJK 系数） */
@@ -155,9 +156,10 @@ describe("第 122 轮 · 水位计算层", () => {
     const visible = mockMessages.filter((m) => !m.hidden);
     const window0 = getTokenTracker().getContextWindow() || 128000;
     const { usedTokens, budgetTokens } = summarizeModelContext(pruneStaleToolResults(visible as never[]), window0);
-    const display = summarizeDisplayPressure(usedTokens, budgetTokens);
+    const systemTokens = getContextManager().getConfig().systemPromptTokens;
+    const display = summarizeDisplayPressure(usedTokens + systemTokens, budgetTokens);
 
-    expect(lv.used).toBe(usedTokens);
+    expect(lv.used).toBe(usedTokens + systemTokens);
     expect(lv.available).toBe(budgetTokens);
     expect(lv.ratio).toBeCloseTo(display.ratio, 10);
     expect(lv.percent).toBe(display.percent);

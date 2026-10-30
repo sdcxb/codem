@@ -32,7 +32,8 @@ import {
 import { foldForLevelIfNeeded } from "../llm/tool-output-fold";
 import { summarizeModelContext, estimateRawContextTokens } from "../llm/compaction-budget";
 import { pruneStaleToolResults } from "../llm/context-fold";
-import { getTokenTracker } from "../llm/token-tracker";
+import { getTokenTracker, estimateToolDefinitionTokens } from "../llm/token-tracker";
+import { peekLLMEngine } from "../llm";
 import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
 
 /**
@@ -114,7 +115,7 @@ const WATER_CACHE_MAX = 32;
 export function __resetWaterLevelCache(): void { waterCache.clear(); }
 const waterCache = new Map<string, { sig: string; result: ContextWaterLevel }>();
 
-function waterSignature(visible: any[], contextWindow: number): string {
+function waterSignature(visible: any[], contextWindow: number, overheadTokens: number): string {
   let size = 0;
   for (const m of visible) {
     const content = typeof m?.content === "string" ? m.content : "";
@@ -129,7 +130,36 @@ function waterSignature(visible: any[], contextWindow: number): string {
     }
   }
   const last = visible[visible.length - 1];
-  return `${visible.length}:${String(last?.id ?? "")}:${String(last?.timestamp ?? "")}:${size}:${contextWindow}`;
+  return `${visible.length}:${String(last?.id ?? "")}:${String(last?.timestamp ?? "")}:${size}:${contextWindow}:${overheadTokens}`;
+}
+
+/**
+ * 每次请求都带、但不属于消息列表的固定开销：系统提示 + 工具定义。
+ *
+ * 工具定义只从**已初始化的**引擎取（`peekLLMEngine`），避免为了算水位去构造引擎；
+ * 引擎尚未初始化时只计系统提示，等引擎起来后的下一拍会重新计算并刷新缓存。
+ */
+function requestOverheadTokens(): { system: number; tools: number; total: number } {
+  let system = 0;
+  try {
+    system = Math.max(0, Math.floor(Number(getContextManager().getConfig().systemPromptTokens) || 0));
+  } catch {
+    system = 0;
+  }
+  let tools = 0;
+  try {
+    const engine = peekLLMEngine();
+    if (engine) {
+      const defs = [
+        ...engine.tools.getCoreDefinitions(),
+        ...engine.tools.getDeferredDefinitions(),
+      ];
+      tools = Math.max(0, estimateToolDefinitionTokens(defs));
+    }
+  } catch {
+    tools = 0;
+  }
+  return { system, tools, total: system + tools };
 }
 
 export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
@@ -144,7 +174,8 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
   try {
     const visible = listVisibleMessages(sessionId);
     const contextWindow = getTokenTracker().getContextWindow() || FALLBACK_CONTEXT_WINDOW;
-    const sig = waterSignature(visible as never[], contextWindow);
+    const overhead = requestOverheadTokens();
+    const sig = waterSignature(visible as never[], contextWindow, overhead.total);
     const cached = waterCache.get(sessionId);
     if (cached?.sig === sig) return cached.result;
     /**
@@ -163,9 +194,10 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
     const pruned = pruneStaleToolResults(visible as never[]);
     const budgetTokens = summarizeModelContext(pruned as never[], contextWindow).budgetTokens;
     const fold = foldForLevelIfNeeded(pruned, { available: budgetTokens, estimate });
-    const display = summarizeDisplayPressure(fold.ratioAfter * budgetTokens, budgetTokens);
+    const used = Math.round(fold.ratioAfter * budgetTokens) + overhead.total;
+    const display = summarizeDisplayPressure(used, budgetTokens);
     const result: ContextWaterLevel = {
-      used: Math.round(fold.ratioAfter * budgetTokens),
+      used,
       available: budgetTokens,
       ratio: display.ratio,
       /* 超过预算时百分比显示 100%（原始值仍可从 used/available 看出超了多少） */
