@@ -9859,7 +9859,9 @@ color: var(--text-on-accent);
   overflow: hidden;
 }
 
-.context-history-item {
+.context-history-panel .context-history-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-primary);
 }

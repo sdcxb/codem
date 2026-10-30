@@ -2623,10 +2623,6 @@
     "font-size": "var(--fs-xs)",
     "padding": "0 var(--space-2)"
   },
-  "context-history-item": {
-    "border-bottom": "1px solid var(--border-primary)",
-    "padding": "var(--space-3) 0"
-  },
   "context-history-open": {
     "flex": "0 0 auto"
   },

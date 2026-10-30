@@ -92,8 +92,9 @@
 ### 5.0 上下文检查点（2026-10-30 代码完成 + 隔离真机冒烟）
 
 - 已完成：压缩只写 marker + `metadata.contextEpoch`，不再 hidden/墓碑；主对话默认完整时间线，可切模型视图；
-  完整历史面板、旧 hidden 回填入口、回滚维护入口（带确认）、spill 默认永久保留、水位计入 system/tools。
-- 自动化：`tsc` 0；全量 791 文件 / 8815 用例 / 8798 通过 / 17 skipped / 0 失败；`npm run build` 成功；
+  完整历史面板、打开会话自动 best-effort 回填 + 手动重试、回滚维护入口（带确认）、spill 默认永久保留、
+  水位计入 system/tools；完整时间线用 `content-visibility` 降低离屏渲染成本。
+- 自动化：`tsc` 0；全量 791 文件 / 8816 用例 / 8799 通过 / 17 skipped / 0 失败；`npm run build` 成功；
   knip/可达性/上报点/变异/CSS/UI 门禁全绿。
 - **隔离真机冒烟（2026-10-30，release exe + 用户库副本 + `CODEM_DB_PATH`）**：
   ① 含 217 条旧 hidden 的会话显示「完整历史 278 / 模型 61」，滚到顶部能看到旧 hidden 原文；
@@ -104,7 +105,9 @@
   ⑥ 写 `codem-index-rebuild-needed.json` 并重启，维护从权威日志重建：索引 278 行、hidden 217 保留、
      模型视图仍 61、旧 hidden 原文仍在，标记被清除；
   ⑦ 合成检查点会话「6 历史 / 4 模型」，点「回滚到旧版」：cutoff 前 2 条写回 hidden、0 失败，正文长度不变；
-  ⑧ spill 目录经安装后 app 的 Tauri `delete_directory_permanent` 真机删除成功；会话删除 wiring 由 `SPILL-8` 守。
+  ⑧ spill 目录经安装后 app 的 Tauri `delete_directory_permanent` 真机删除成功；会话删除 wiring 由 `SPILL-8` 守；
+  ⑨ **不点按钮**打开含旧 hidden 的会话：自动回填触发，日志 278 → 405 行后由日志压缩收敛为 278 个唯一 id，
+     其中 117 条为 `hidden=1`；完整历史 278 / 模型 61 不变。
 - **仍未验**：真实 UI 删除会话后 spill 目录清理的完整链路（文件 API 与会话 wiring 已分别验证）。
 - 设计取舍：`context_epochs` 独立表未建，同步读依赖 `messages.metadata` 进索引镜像（见 `18` §4.1）；
   回滚只放在完整历史面板的维护入口，必须二次确认。

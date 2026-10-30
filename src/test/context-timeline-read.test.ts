@@ -19,6 +19,7 @@ import {
   updateMessage,
 } from "../core/storage/message";
 import { buildContextEpochMetadata } from "../core/context/context-view";
+import { needsLegacyBackfill } from "../core/storage/context-history";
 
 const S = "sess-context-timeline";
 
@@ -84,5 +85,11 @@ describe("listTimelineMessages — 完整历史不被 cutoff/hidden 抹掉", () 
     const timeline = listTimelineMessages(S).map((m) => m.id);
     expect(timeline).toContain("keep");
     expect(timeline, "用户删除是唯一允许的破坏性路径").not.toContain("gone");
+  });
+
+  it("TL-4: 只有 hidden=1 且 trimmed≠1 才算需要自动回填", () => {
+    expect(needsLegacyBackfill([{ id: "a", hidden: 1 }] as never)).toBe(true);
+    expect(needsLegacyBackfill([{ id: "a", hidden: 1, trimmed: 1 }] as never)).toBe(false);
+    expect(needsLegacyBackfill([{ id: "a" }] as never)).toBe(false);
   });
 });

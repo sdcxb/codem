@@ -4,12 +4,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 const durable: Array<{ id: string }> = [];
-const appendCalls: Array<{ id: string }> = [];
+const appendCalls: Array<{ id: string; hidden?: number }> = [];
 
 vi.mock("../core/storage/session-jsonl", () => ({
   readSessionMessages: async () => ({ messages: durable, skippedLines: 0, tornTailLines: 0, salvagedLines: 0 }),
-  appendSessionMessage: async (_sessionId: string, message: { id: string }) => {
-    appendCalls.push({ id: message.id });
+  appendSessionMessage: async (_sessionId: string, message: { id: string; hidden?: number }) => {
+    appendCalls.push({ id: message.id, hidden: message.hidden });
     durable.push({ id: message.id });
   },
   flushSessionLogWrites: async () => {},
@@ -50,6 +50,7 @@ describe("migrateSessionLegacyHistory", () => {
     expect(report.appended).toBe(1);
     expect(report.failed).toBe(0);
     expect(appendCalls.map((x) => x.id)).toEqual(["old"]);
+    expect(appendCalls[0].hidden, "重建后仍必须是 hidden，不能把旧压缩放回模型").toBe(1);
   });
 
   it("MIG-2: 幂等 —— 日志已有同 id 时跳过", async () => {

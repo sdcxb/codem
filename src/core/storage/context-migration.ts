@@ -3,8 +3,9 @@
  *
  * 旧版本压缩把消息写成 `hidden=1, trimmed=0`，并且墓碑已经进了权威日志。
  * 完整时间线现在能从索引镜像读到它们，但**索引重建后这些行会消失**；
- * 这里把仍然存在的 hidden 行以 `hidden=0` 追加到日志（墓碑之后），
- * 让"用户能看到的历史"在重建后仍然存在。
+ * 这里把仍然存在的 hidden 行以 `hidden=1` 追加到日志（墓碑之后）：
+ * 完整时间线仍能读 hidden（人看得到），模型视图仍过滤 hidden（模型看不到），
+ * 索引重建后语义不变。
  *
  * 纪律：
  * - 只处理 `hidden=1 && trimmed≠1`（trimmed 是索引裁剪，不是压缩）；
@@ -77,8 +78,11 @@ export async function migrateSessionLegacyHistory(
 
   for (const m of pending) {
     try {
-      // 旧压缩行以正常记录写回；hidden=0 让它重建后仍可见。
-      await appendSessionMessage(sessionId, { ...m, hidden: 0 } as unknown as Message);
+      /**
+       * 保留 `hidden=1`：完整时间线读 hidden 行，模型视图过滤 hidden；
+       * 这样索引从日志重建后语义仍是「人看得到、模型看不到」，不会把旧 hidden 放回模型上下文。
+       */
+      await appendSessionMessage(sessionId, { ...m, hidden: 1 } as unknown as Message);
       report.appended += 1;
     } catch {
       report.failed += 1;
