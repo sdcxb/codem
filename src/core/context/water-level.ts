@@ -34,6 +34,7 @@ import { summarizeModelContext, estimateRawContextTokens } from "../llm/compacti
 import { pruneStaleToolResults } from "../llm/context-fold";
 import { getTokenTracker, estimateToolDefinitionTokens } from "../llm/token-tracker";
 import { peekLLMEngine } from "../llm";
+import { readRequestContext } from "../llm/request-context";
 import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
 
 /**
@@ -115,7 +116,7 @@ const WATER_CACHE_MAX = 32;
 export function __resetWaterLevelCache(): void { waterCache.clear(); }
 const waterCache = new Map<string, { sig: string; result: ContextWaterLevel }>();
 
-function waterSignature(visible: any[], contextWindow: number, overheadTokens: number): string {
+function waterSignature(visible: any[], contextWindow: number, overheadTokens: number, requestKey: string): string {
   let size = 0;
   for (const m of visible) {
     const content = typeof m?.content === "string" ? m.content : "";
@@ -130,7 +131,7 @@ function waterSignature(visible: any[], contextWindow: number, overheadTokens: n
     }
   }
   const last = visible[visible.length - 1];
-  return `${visible.length}:${String(last?.id ?? "")}:${String(last?.timestamp ?? "")}:${size}:${contextWindow}:${overheadTokens}`;
+  return `${visible.length}:${String(last?.id ?? "")}:${String(last?.timestamp ?? "")}:${size}:${contextWindow}:${overheadTokens}:${requestKey}`;
 }
 
 /**
@@ -175,9 +176,37 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
     const visible = listVisibleMessages(sessionId);
     const contextWindow = getTokenTracker().getContextWindow() || FALLBACK_CONTEXT_WINDOW;
     const overhead = requestOverheadTokens();
-    const sig = waterSignature(visible as never[], contextWindow, overhead.total);
+    const snapshot = readRequestContext(sessionId);
+    const requestKey = snapshot ? `${snapshot.at}:${snapshot.promptTokens}` : "";
+    const sig = waterSignature(visible as never[], contextWindow, overhead.total, requestKey);
     const cached = waterCache.get(sessionId);
     if (cached?.sig === sig) return cached.result;
+
+    /**
+     * 最近一次真实请求的 promptTokens 只在「可见消息 id 完全一致」时可用：
+     * 新消息、删除、压缩都会改变 id 集合，此时退回估算，避免拿上一轮的真实值冒充这一轮。
+     */
+    const sameVisibleSet = !!snapshot
+      && snapshot.promptTokens > 0
+      && snapshot.visibleIds.length === visible.length
+      && visible.every((m, i) => m.id === snapshot.visibleIds[i]);
+    if (sameVisibleSet && snapshot) {
+      const available = Math.max(1, contextWindow - getContextManager().getConfig().outputReserve);
+      const display = summarizeDisplayPressure(snapshot.promptTokens, available);
+      const exactResult: ContextWaterLevel = {
+        used: snapshot.promptTokens,
+        available,
+        ratio: display.ratio,
+        percent: Math.min(100, display.percent),
+        level: display.level,
+        messageCount: visible.length,
+        authoritative: true,
+        foldedToolOutputs: 0,
+      };
+      if (waterCache.size >= WATER_CACHE_MAX) waterCache.clear();
+      waterCache.set(sessionId, { sig, result: exactResult });
+      return exactResult;
+    }
     /**
      * ★ 工具输出折叠阶梯（用户提的机制）：水位必须按**折叠后的视图**算 ——
      * 引擎发出去的就是折叠后的消息（见 `agentic-loop.buildMessages`），

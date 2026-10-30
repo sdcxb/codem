@@ -20,6 +20,7 @@ import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./complet
 import { regressionRedFiles } from "./test-regression";
 import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
+import { recordRequestContext, recordRequestPromptTokens } from "./request-context";
 // 第 191 波（O-48）：服务端前缀缓存的读数必须**可复核**（一行日志 + 判据）
 import { formatPromptCacheLog } from "./cache-percent";
 // 第 191 波（O-49）：**附录的落点**是判据对象（必须跟在整份系统提示的最后），抽成唯一实现
@@ -4133,6 +4134,21 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
            */
           const llmReqT0 = Date.now();
           let llmFirstEventAt = 0;
+          /**
+           * 水位/最终请求对齐：记录本次请求的可见消息集合与 system/tools；
+           * 响应 usage 到达后再补真实 promptTokens（见 usage 分支）。
+           */
+          try {
+            recordRequestContext({
+              sessionId,
+              visibleIds: MessageStorage.listVisibleMessages(sessionId).map((m) => m.id),
+              systemPrompt: effectiveSystemPrompt,
+              tools: toolDefs,
+              model: this.config.model || this.provider.id,
+            });
+          } catch {
+            /* 快照失败不影响请求本身；水位会退回估算 */
+          }
           yield { type: "llm_status", status: "connecting" };
           let firstEventReceived = false;
 
@@ -4731,6 +4747,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       const tracker = getTokenTracker();
       const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
       tracker.recordActualUsage(usage, toolDefTokens, this.lastRequestHeader || "");
+      recordRequestPromptTokens(sessionId, usage.promptTokens);
       /*
        * O-48（第 191 波）：把**服务端前缀缓存**的真实读数留下来。
        *
