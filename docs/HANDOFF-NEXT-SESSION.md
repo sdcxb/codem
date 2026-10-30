@@ -7732,3 +7732,9 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   恢复到插件引入前的 785 文件 / 8790 用例（8773 通过 + 17 skipped + 0 失败）。
 - 真机：构建后顶部无 STE 按钮，页面无“STE 汇报”入口。
 - 未发版；保留 1.16.332 版本与既有发布。
+## 2026-10-30 08:20 — 第 275 波：恢复插件期发现的通用 subagent bug 修复
+
+- 审计插件期提交：除插件本身外，`subagent` 前台结果在 stopReason != completed 时仍返回 `isError:false`，属于通用 bug，已单独恢复并加判据。
+- 未恢复的插件期子 agent 改动：结构化 report 契约、解析默认 unknown、缺报告硬门、前台 report sink。
+  这些与“强制子 agent 交 report”绑定，默认恢复会改变普通/创作用途子 agent 的行为，需独立设计。
+- 全量 786 文件 / 8791 用例（8774 通过 + 17 skipped + 0 失败）；tsc 0；未发版。
