@@ -1,8 +1,8 @@
-# 09 · 当前状态、未完成项与风险（2026-10-30 快照）
+# 09 · 当前状态、未完成项与风险（2026-10-31 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.16.333 发布提交）｜ **1.16.333**（2026-10-30 发布）
+> 基线：`master` @ 代码提交见 `git log -1`（1.16.334 发布提交）｜ **1.16.334**（2026-10-31 发布）
 >
-> 1.16.333 包含通用修复：subagent refusal/aborted/error → `isError`。
+> 1.16.334 包含：上下文检查点/完整历史/虚拟列表/检查点索引/真实请求水位/溢出全文查看。
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -11,12 +11,12 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.16.333** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.16.333` = **Latest**（2026-10-30 发布） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` version 1.16.333 | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（1.16.333 发布后修复提交） | `git rev-parse --short HEAD` |
+| 版本 | **1.16.334** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.16.334` = **Latest**（2026-10-31 发布） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` version 1.16.334 | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（1.16.334 发布提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
-| 本地 tag | 最新为 **v1.16.333** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 本地 tag | 最新为 **v1.16.334** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：v1.16.322–330 的 GitHub Release 存在，但本地 tag 列表没跟上（可能未拉取/未创建本地 tag）。以 `gh release list` 与 `latest.json` 为准。
 
@@ -44,7 +44,7 @@
 
 ---
 
-## 3. 验证基线（2026-10-30 实测）
+## 3. 验证基线（2026-10-31 实测）
 
 | 检查 | 结果 |
 |---|---|
@@ -63,7 +63,7 @@
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **796 / 8842**（2026-10-30；`AGENTS.md` 与正文已对齐）。
+- 当前实测 **796 / 8842**（2026-10-31；`AGENTS.md` 与正文已对齐）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---

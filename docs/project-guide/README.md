@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（1.16.333 发布提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.333**（2026-10-30 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（1.16.334 发布提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.334**（2026-10-31 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -12,9 +12,9 @@
 
 - 前端 `src/` 约 **44 万行**（其中 `src/test/` 约 16 万行），`App.tsx` 单文件 6251 行；
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
-- SQLite **39 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
+- SQLite **40 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **796 个测试文件 / 8842 个用例**（2026-10-29 全量实测：8825 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **796 个测试文件 / 8842 个用例**（2026-10-31 全量实测：8825 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -88,15 +88,15 @@
 
 ---
 
-## 4. 当前事实基线（2026-10-30）
+## 4. 当前事实基线（2026-10-31）
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.16.333** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.16.333` = `Latest`（2026-10-30） | `gh release list --limit 1` |
+| 版本 | **1.16.334** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.16.334` = `Latest`（2026-10-31） | `gh release list --limit 1` |
 | HEAD | 以 `git log -1` 为准（当前上下文检查点提交） | `git rev-parse --short HEAD` |
 | 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
-| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-30 实测 exit 0） |
+| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-31 实测 exit 0） |
 | 全量测试 | **796 文件 / 8842 用例：8825 通过、17 跳过、0 失败** | `npx vitest run`（约 160 秒） |
 | 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |

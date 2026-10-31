@@ -24,7 +24,7 @@
  * 2. `validateReplay()` ← `maintenance.ts:1254`（会话级结构自检）。
  *
  * 其余能力（`projectAll` / `projectIncremental` / `getActiveGenerations` /
- * `replaceGeneration` / 导出函数 `deriveMessagesFromEvents`）**零生产调用者**，
+ * `replaceGeneration`）**零生产调用者**，
  * 只被测试驱动；逐条状态写在各方法自己的注释上。删/留的取舍登记在
  * `docs/AUDIT-ZERO-GAP.md` 第 3 节。
  */
@@ -854,6 +854,3 @@ export function getEventProjection(): EventProjection {
  * 不是模型上下文的来源。保留它是因为类头登记表里那些测试需要它；
  * 谁来用它拼消息，请先读 `agentic-loop.ts:2853-2862`。
  */
-export function deriveMessagesFromEvents(sessionId: string): LLMMessage[] {
-  return getEventProjection().projectAll(sessionId);
-}
