@@ -6,7 +6,8 @@
  * 丢掉组头，整组都不渲染。起点必须回退到该组第一个非 skip 条目。
  */
 export function safeRenderStart(entries: Array<{ skip: boolean }>, limit: number): number {
-  if (!Number.isFinite(limit) || limit <= 0) return Math.max(0, entries.length);
+  // 非法 limit 按 fail-open 处理（渲染全部），不能把整段历史直接藏掉。
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
   let start = Math.max(0, entries.length - Math.floor(limit));
   while (start > 0 && entries[start]?.skip) start--;
   return start;

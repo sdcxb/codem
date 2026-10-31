@@ -20,7 +20,7 @@ import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./complet
 import { regressionRedFiles } from "./test-regression";
 import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
-import { recordRequestContext, recordRequestPromptTokens } from "./request-context";
+import { recordRequestContext, recordRequestPromptTokens, messageSetFingerprint } from "./request-context";
 // 第 191 波（O-48）：服务端前缀缓存的读数必须**可复核**（一行日志 + 判据）
 import { formatPromptCacheLog } from "./cache-percent";
 // 第 191 波（O-49）：**附录的落点**是判据对象（必须跟在整份系统提示的最后），抽成唯一实现
@@ -4139,9 +4139,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
            * 响应 usage 到达后再补真实 promptTokens（见 usage 分支）。
            */
           try {
+            const visibleMessages = MessageStorage.listVisibleMessages(sessionId);
             recordRequestContext({
               sessionId,
-              visibleIds: MessageStorage.listVisibleMessages(sessionId).map((m) => m.id),
+              visibleIds: visibleMessages.map((m) => m.id),
+              visibleFingerprint: messageSetFingerprint(visibleMessages),
+              contextWindow: getTokenTracker().getContextWindow() || 0,
               systemPrompt: effectiveSystemPrompt,
               tools: toolDefs,
               model: this.config.model || this.provider.id,

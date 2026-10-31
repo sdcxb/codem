@@ -89,7 +89,8 @@ export function spillNotice(omittedBytes: number, locator: string): string {
 /** 从工具结果里识别 spill 通知中的定位符；不是溢出结果返回 null */
 export function findSpillLocator(text: string | undefined | null): string | null {
   if (!text) return null;
-  const m = /完整结果保存在：([^）\n]+)）/.exec(text);
+  // 路径本身可能含中文右括号；以 spill 文件后缀 + notice 末尾的 `）` 定界，避免截断。
+  const m = /完整结果保存在：([^\n]+\.(?:txt|bin))）/.exec(text);
   const locator = m?.[1]?.trim();
   return locator || null;
 }

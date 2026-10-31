@@ -9,10 +9,14 @@ import { readContextWaterLevel, __resetWaterLevelCache } from "../core/context/w
 import {
   recordRequestContext,
   recordRequestPromptTokens,
+  messageSetFingerprint,
   __resetRequestContextForTests,
 } from "../core/llm/request-context";
+import { getTokenTracker } from "../core/llm/token-tracker";
 
 const S = "sess-exact-water";
+const contextWindow = () => getTokenTracker().getContextWindow() || 128000;
+const fingerprint = (id: string, content: string) => messageSetFingerprint([{ id, content }]);
 
 describe("水位真实请求快照", () => {
   beforeEach(() => {
@@ -34,7 +38,10 @@ describe("水位真实请求快照", () => {
   });
 
   it("WX-1: 可见 id 完全一致时，used 用真实 promptTokens", () => {
-    recordRequestContext({ sessionId: S, visibleIds: ["m1"], systemPrompt: "system", tools: [] });
+    recordRequestContext({
+      sessionId: S, visibleIds: ["m1"], visibleFingerprint: fingerprint("m1", "真实请求消息"),
+      contextWindow: contextWindow(), systemPrompt: "system", tools: [],
+    });
     recordRequestPromptTokens(S, 1234);
     const level = readContextWaterLevel(S);
     expect(level.used).toBe(1234);
@@ -42,10 +49,35 @@ describe("水位真实请求快照", () => {
   });
 
   it("WX-2: 可见集合变了（新消息）时，不拿上一轮真实值冒充", () => {
-    recordRequestContext({ sessionId: S, visibleIds: ["m0"], systemPrompt: "system", tools: [] });
+    recordRequestContext({
+      sessionId: S, visibleIds: ["m0"], visibleFingerprint: fingerprint("m0", "旧"),
+      contextWindow: contextWindow(), systemPrompt: "system", tools: [],
+    });
     recordRequestPromptTokens(S, 1234);
     createMessage({ id: "m2", role: "assistant", content: "新回复", timestamp: 2, status: "done" }, S);
     // m2 加入后 id 集合 = m1,m2，与快照 m0 不一致
+    const level = readContextWaterLevel(S);
+    expect(level.used).not.toBe(1234);
+  });
+
+  it("WX-3: 同一 id 内容被编辑（含等长编辑），旧快照必须失效", async () => {
+    recordRequestContext({
+      sessionId: S, visibleIds: ["m1"], visibleFingerprint: fingerprint("m1", "真实请求消息"),
+      contextWindow: contextWindow(), systemPrompt: "system", tools: [],
+    });
+    recordRequestPromptTokens(S, 1234);
+    const { updateMessage } = await import("../core/storage/message");
+    updateMessage("m1", { content: "真实请求消X" });
+    const level = readContextWaterLevel(S);
+    expect(level.used).not.toBe(1234);
+  });
+
+  it("WX-4: 窗口变化后旧真实值不可复用", () => {
+    recordRequestContext({
+      sessionId: S, visibleIds: ["m1"], visibleFingerprint: fingerprint("m1", "真实请求消息"),
+      contextWindow: contextWindow() + 1000, systemPrompt: "system", tools: [],
+    });
+    recordRequestPromptTokens(S, 1234);
     const level = readContextWaterLevel(S);
     expect(level.used).not.toBe(1234);
   });

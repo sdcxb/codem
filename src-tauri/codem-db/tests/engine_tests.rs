@@ -4098,3 +4098,25 @@ fn context_epochs_upsert_is_idempotent_and_lists_latest_first() {
     assert_eq!(items[0]["id"], "compact-2-2");
     assert_eq!(items[1]["cutoff_message_id"], "m4");
 }
+
+#[test]
+fn context_epochs_allows_duplicate_seq_and_rejects_unknown_session() {
+    let (_d, engine) = temp_engine("epochs-dup");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+    for (id, seq) in [("a", 1), ("b", 1)] {
+        call(
+            &engine,
+            "context_epochs.upsert",
+            json!({ "id": id, "session_id": "s1", "seq": seq, "cutoff_message_id": "m3", "created_at": 1 }),
+        );
+    }
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    assert_eq!(listed["items"].as_array().expect("items").len(), 2, "seq same but ids differ must both survive");
+
+    let bad = dispatch(
+        &engine,
+        "context_epochs.upsert",
+        &json!({ "id": "c", "session_id": "missing", "seq": 2, "cutoff_message_id": "m3", "created_at": 1 }),
+    );
+    assert!(bad.is_err(), "unknown session must fail, not silently write");
+}

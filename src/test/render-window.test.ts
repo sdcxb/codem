@@ -18,8 +18,8 @@ describe("safeRenderStart", () => {
     expect(safeRenderStart(entries, 2)).toBe(1);
   });
 
-  it("RW-3: limit 非法 ⇒ 返回全部长度（不渲染任何早期项）", () => {
-    expect(safeRenderStart([{ skip: false }], 0)).toBe(1);
-    expect(safeRenderStart([{ skip: false }], Number.NaN)).toBe(1);
+  it("RW-3: limit 非法 ⇒ fail-open 渲染全部，不隐藏历史", () => {
+    expect(safeRenderStart([{ skip: false }], 0)).toBe(0);
+    expect(safeRenderStart([{ skip: false }], Number.NaN)).toBe(0);
   });
 });

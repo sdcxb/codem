@@ -34,7 +34,7 @@ import { summarizeModelContext, estimateRawContextTokens } from "../llm/compacti
 import { pruneStaleToolResults } from "../llm/context-fold";
 import { getTokenTracker, estimateToolDefinitionTokens } from "../llm/token-tracker";
 import { peekLLMEngine } from "../llm";
-import { readRequestContext } from "../llm/request-context";
+import { readRequestContext, messageSetFingerprint } from "../llm/request-context";
 import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
 
 /**
@@ -188,6 +188,8 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
      */
     const sameVisibleSet = !!snapshot
       && snapshot.promptTokens > 0
+      && snapshot.contextWindow === contextWindow
+      && snapshot.visibleFingerprint === messageSetFingerprint(visible as never[])
       && snapshot.visibleIds.length === visible.length
       && visible.every((m, i) => m.id === snapshot.visibleIds[i]);
     if (sameVisibleSet && snapshot) {

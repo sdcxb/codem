@@ -64,6 +64,19 @@ describe("context_epochs 投影", () => {
     expect(rows[0].seq).toBe(0);
   });
 
+  it("CE-4: 坏 metadata/缺 cutoff 不写半截；负数/NaN 归零", () => {
+    const rows = epochRowsFromTimeline("s1", [
+      { id: "bad-json", metadata: "{not json" },
+      { id: "no-cutoff", metadata: { contextEpoch: { epochId: "e1" } } },
+      {
+        id: "negative",
+        metadata: { contextEpoch: { epochId: "e2", cutoffMessageId: "m2", seq: -5, removedCount: Number.NaN } },
+      },
+    ] as never);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: "e2", seq: 0, removed_count: 0 });
+  });
+
   it("CE-3: sync 后能从表里按最新在前读回（命令 this 绑定）", async () => {
     const timeline = [{
       id: "compact-100-1",
@@ -83,5 +96,13 @@ describe("context_epochs 投影", () => {
     await syncContextEpochs(S, timeline);
     const rows = await listContextEpochs(S);
     expect(rows.map((r) => r.id)).toEqual(["compact-200-2", "compact-100-1"]);
+  });
+
+  it("CE-5: 派生表命令失败不抛给 UI（读回空，主链路不受影响）", async () => {
+    setStoragePort(createFakeStoragePort({
+      failCommands: ["context_epochs.list"],
+      seed: { sessions: [{ id: S, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 }] },
+    }));
+    await expect(listContextEpochs(S)).resolves.toEqual([]);
   });
 });

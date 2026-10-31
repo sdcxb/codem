@@ -177,6 +177,7 @@ describe("超大工具结果溢出（DSH spill-policy 对齐）", () => {
 
   it("SPILL-9: 能从通知里找到 locator，非溢出结果返回 null", () => {
     expect(findSpillLocator(spillNotice(10, "C:\\x\\a.txt"))).toBe("C:\\x\\a.txt");
+    expect(findSpillLocator(spillNotice(10, "C:\\x\\a）b.txt"))).toBe("C:\\x\\a）b.txt");
     expect(findSpillLocator("普通输出")).toBeNull();
   });
 
