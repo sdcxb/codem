@@ -2578,6 +2578,68 @@ pub fn projects_list(engine: &Engine, p: &Value) -> DbResult<Value> {    let lim
     })
 }
 
+/// 写入/更新一个上下文检查点的运行时索引（权威仍是 JSONL marker metadata）
+pub fn context_epochs_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let id = req_text(p, "id")?;
+    let session_id = req_text(p, "session_id")?;
+    let cutoff_message_id = req_text(p, "cutoff_message_id")?;
+    let seq = opt_i64(p, "seq")?.unwrap_or(0);
+    let removed_count = opt_i64(p, "removed_count")?.unwrap_or(0);
+    let kept_count = opt_i64(p, "kept_count")?.unwrap_or(0);
+    let trigger_kind = opt_text(p, "trigger_kind").unwrap_or_default();
+    let created_at = opt_i64(p, "created_at")?.unwrap_or(0);
+    engine.write_tx(|tx| {
+        tx.execute(
+            "INSERT INTO context_epochs \
+             (id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             ON CONFLICT(id) DO UPDATE SET \
+               session_id=excluded.session_id, seq=excluded.seq, \
+               cutoff_message_id=excluded.cutoff_message_id, \
+               removed_count=excluded.removed_count, kept_count=excluded.kept_count, \
+               trigger_kind=excluded.trigger_kind, created_at=excluded.created_at",
+            params![id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, created_at],
+        )
+        .map_err(DbError::from)?;
+        Ok(json!({ "written": 1, "id": id }))
+    })
+}
+
+/// 按会话列出检查点（最新在前）；供完整历史/诊断读取
+pub fn context_epochs_list(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let limit = limit_of(p).unwrap_or(100).clamp(1, 500);
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, session_id, seq, cutoff_message_id, removed_count, kept_count, \
+                        trigger_kind, created_at \
+                 FROM context_epochs WHERE session_id = ?1 \
+                 ORDER BY seq DESC, created_at DESC LIMIT ?2",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![session_id, limit], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "session_id": r.get::<_, String>(1)?,
+                    "seq": r.get::<_, i64>(2)?,
+                    "cutoff_message_id": r.get::<_, String>(3)?,
+                    "removed_count": r.get::<_, i64>(4)?,
+                    "kept_count": r.get::<_, i64>(5)?,
+                    "trigger_kind": r.get::<_, Option<String>>(6)?,
+                    "created_at": r.get::<_, i64>(7)?,
+                }))
+            })
+            .map_err(DbError::from)?;
+        let mut items = Vec::new();
+        for r in rows {
+            items.push(r.map_err(DbError::from)?);
+        }
+        Ok(json!({ "items": items }))
+    })
+}
+
 /// 一次性统计（迁移对账 / 诊断）
 pub fn counts(engine: &Engine, tables: &[String]) -> DbResult<Value> {
     let rows = engine.table_counts(tables)?;

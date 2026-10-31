@@ -30,10 +30,11 @@ vi.mock("../core/file-api", () => ({
   listDirectory: vi.fn(async () => []),
   deleteFile: vi.fn(async () => undefined),
   deleteDirectoryPermanent: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => "spill body"),
 }));
 
-import { headTailPreview, retainToolResult, spillNotice, utf8Length, DEFAULT_MAX_INLINE_BYTES, pruneSpillFiles, deleteSessionSpillFiles } from "../core/storage/spill";
-import { getAppDataDir, writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent } from "../core/file-api";
+import { headTailPreview, retainToolResult, spillNotice, utf8Length, DEFAULT_MAX_INLINE_BYTES, pruneSpillFiles, deleteSessionSpillFiles, findSpillLocator, readSpillText } from "../core/storage/spill";
+import { getAppDataDir, writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent, readFile } from "../core/file-api";
 
 const getAppDataDirMock = vi.mocked(getAppDataDir);
 const writeFileMock = vi.mocked(writeFile);
@@ -172,5 +173,17 @@ describe("超大工具结果溢出（DSH spill-policy 对齐）", () => {
     await deleteSessionSpillFiles("s1");
     expect(deleteDirectoryPermanentMock).toHaveBeenCalledTimes(1);
     expect(deleteDirectoryPermanentMock.mock.calls[0][0]).toContain("spill\\s1");
+  });
+
+  it("SPILL-9: 能从通知里找到 locator，非溢出结果返回 null", () => {
+    expect(findSpillLocator(spillNotice(10, "C:\\x\\a.txt"))).toBe("C:\\x\\a.txt");
+    expect(findSpillLocator("普通输出")).toBeNull();
+  });
+
+  it("SPILL-10: 查看全文走统一 readFile；读不到时如实抛错", async () => {
+    vi.mocked(readFile).mockResolvedValueOnce("full body");
+    await expect(readSpillText("C:\\x\\a.txt")).resolves.toBe("full body");
+    vi.mocked(readFile).mockRejectedValueOnce(new Error("E_FILE_NOT_FOUND"));
+    await expect(readSpillText("C:\\x\\a.txt")).rejects.toThrow("E_FILE_NOT_FOUND");
   });
 });

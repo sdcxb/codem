@@ -9855,6 +9855,18 @@ color: var(--text-on-accent);
   margin-left: var(--space-2);
 }
 
+.chat-load-earlier {
+  display: block;
+  margin: var(--space-2) auto;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
 .context-history-panel {
   overflow: hidden;
 }
@@ -9864,6 +9876,81 @@ color: var(--text-on-accent);
   contain-intrinsic-size: auto 160px;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-primary);
+}
+
+.context-history-load-earlier {
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.spill-viewer-open {
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.spill-viewer-dialog {
+  width: min(900px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.spill-viewer-overlay {
+  z-index: var(--z-modal);
+}
+
+.spill-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.spill-viewer-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.spill-viewer-close {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.spill-viewer-body {
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.spill-viewer-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
 }
 
 .context-history-checkpoint {

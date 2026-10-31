@@ -7,6 +7,7 @@ import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { MessageBubble } from "./MessageBubble";
 import { useStableMessageHandlers } from "./useStableMessageHandlers";
 import { computeHasAssistantAfter } from "../core/ui/message-suffix";
+import { safeRenderStart } from "../core/ui/render-window";
 import { isMachineInjectedMessage } from "../core/storage/session";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
@@ -155,6 +156,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
    * 的 id+长度，避免流式每个 token 都整读一次。
    */
   const [historyMode, setHistoryMode] = useState<"full" | "model">("full");
+  const [renderLimit, setRenderLimit] = useState(120);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   /**
    * 首屏镜像未就绪时先回退到 store 消息；镜像加载完成后必须再读一拍，
@@ -170,6 +172,9 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
       clearTimeout(t2);
     };
   }, [activeSessionId, messagesLoading]);
+  useEffect(() => {
+    setRenderLimit(120);
+  }, [activeSessionId, historyMode]);
   const lastMessage = messages[messages.length - 1];
   const historySnapshot = useMemo(() => {
     if (!activeSessionId) return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
@@ -1357,7 +1362,19 @@ setStepTooltipLocked(false);
               }
             }
 
-            return renderList.map(({ msg, skip, origIndex, groupLastIdx }) => {
+            const renderStart = safeRenderStart(renderList, renderLimit);
+            return (
+              <>
+                {renderStart > 0 && (
+                  <button
+                    type="button"
+                    className="chat-load-earlier"
+                    onClick={() => setRenderLimit((n) => n + 120)}
+                  >
+                    {lang === "zh" ? `载入更早的 ${renderStart} 条` : `Load ${renderStart} earlier`}
+                  </button>
+                )}
+                {renderList.slice(renderStart).map(({ msg, skip, origIndex, groupLastIdx }) => {
             if (skip) return null;
 
             // For unified mode merged groups, use groupLastIdx (the last index in
@@ -1519,7 +1536,9 @@ canEdit={editable}
             )}
             </React.Fragment>
             );
-          });
+          })}
+              </>
+            );
           })()}
           {isStreaming && (
             <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />

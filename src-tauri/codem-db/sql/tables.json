@@ -3,6 +3,7 @@
     "projects",
     "sessions",
     "messages",
+    "context_epochs",
     "tool_calls",
     "attachments",
     "accounts",

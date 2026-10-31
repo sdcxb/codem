@@ -83,9 +83,9 @@ UI / AgenticLoop
 
 ---
 
-## 3. SQLite：39 张实表
+## 3. SQLite：40 张实表
 
-> `schema.sql`：`CREATE TABLE` ×39、`CREATE INDEX` ×43、`CREATE TRIGGER` ×3；`tables.json` 同列 39 名；`migrations.json` 29 条 ALTER。
+> `schema.sql`：`CREATE TABLE` ×40、`CREATE INDEX` ×44、`CREATE TRIGGER` ×3；`tables.json` 同列 40 名；`migrations.json` 29 条 ALTER。
 > 另有 `session_fts`（FTS5 虚拟表）、`storage_audit`（审计表）、3 个会话级联触发器。
 
 ### A. 会话 / 消息 / 事件（11）
@@ -95,6 +95,7 @@ UI / AgenticLoop
 | `projects` | 项目 | `id/name/path/description/pinned/created_at/last_accessed_at`；`""` 行是“全局对话”种子 |
 | `sessions` | 会话目录 | `id/project_id/title/model/created_at/last_message_at/message_count/pinned/is_internal`；+迁移列 `parent_id/sort_order/execution_mode/worktree_path/worktree_branch/correction_mode/deep_thinking_mode/preserve_executor` |
 | `messages` | 消息索引 | `id/session_id/role/content/reasoning/timestamp/model/tokens/cost/status/generated_files`；+迁移列 `retrieved_sources/parent_message_id/metadata/hidden/trimmed` |
+| `context_epochs` | 检查点派生索引 | `id/session_id/seq/cutoff_message_id/removed_count/kept_count/trigger_kind/created_at`；权威仍是 marker metadata，表只供查询/审计 |
 | `tool_calls` | 工具调用 | `id/message_id/tool/args/result/status/metadata`（args/result/metadata 为 JSON 文本） |
 | `attachments` | 附件元数据 | `id/session_id/message_id/name/type/path/content/preview/sandbox_path/mime_type/size/added_at`；`content` 内联或 `file:` 外置 |
 | `message_feedback` | 赞/踩 + 备注 | `feedback CHECK('like'\|'dislike')`、`note/version/created_at/updated_at` |
@@ -278,7 +279,7 @@ open 判 Corrupt → 三件套改名备份 + 抢救项目归属 + 建新库
 
 ### 7.1 schema / 迁移
 
-- 无 `PRAGMA user_version`：39 条 `CREATE IF NOT EXISTS` + 29 条 `ALTER` 容忍重复列；
+- 无 `PRAGMA user_version`：40 条 `CREATE IF NOT EXISTS` + 29 条 `ALTER` 容忍重复列；
 - 种子：`projects` 的 `""` 行、`last_message_at` 只抬不降回填；
 - 列级一致由 `tools/audit/gen-schema-sql.mjs --check` 守；
 - 旧库迁移：目标库有消息则拒绝（除非 force）；旧库只读、不用 quick_check（FTS4 只读会失败）；逐表行数 + 列清单 + 多重集摘要对账；孤儿过滤；

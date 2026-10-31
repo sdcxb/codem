@@ -41,6 +41,24 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- 上下文检查点的**运行时索引/审计**（第 262 轮）。
+-- 权威仍是 JSONL 里 marker 的 metadata；这张表只做按会话的快速查询与审计，
+-- 不参与模型读路径（同步读仍走 messages.metadata 投影，避免异步 IPC）。
+CREATE TABLE IF NOT EXISTS context_epochs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  seq INTEGER NOT NULL DEFAULT 0,
+  cutoff_message_id TEXT NOT NULL,
+  removed_count INTEGER NOT NULL DEFAULT 0,
+  kept_count INTEGER NOT NULL DEFAULT 0,
+  trigger_kind TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_context_epochs_session_seq
+  ON context_epochs(session_id, seq);
+
 CREATE TABLE IF NOT EXISTS tool_calls (
   id TEXT PRIMARY KEY,
   message_id TEXT NOT NULL,

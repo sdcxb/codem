@@ -31,7 +31,7 @@
  * 所以溢出写盘一律走 `../file-api`（Tauri IPC），与库、附件同属**一份数据集、同一套原语**。
  */
 
-import { writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent } from "../file-api";
+import { writeFile, renameFile, listDirectory, deleteFile, deleteDirectoryPermanent, readFile } from "../file-api";
 import { reportPersistFailure } from "./persist-failure";
 
 /** 默认内联上限（字节）：超过就溢出到文件。只拦真正的大块。 */
@@ -84,6 +84,19 @@ export function headTailPreview(
 /** 溢出说明行（对齐 DSH `describeOmitted` + locator 的措辞） */
 export function spillNotice(omittedBytes: number, locator: string): string {
   return `（已省略 ${omittedBytes} 字节；完整结果保存在：${locator}）`;
+}
+
+/** 从工具结果里识别 spill 通知中的定位符；不是溢出结果返回 null */
+export function findSpillLocator(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const m = /完整结果保存在：([^）\n]+)）/.exec(text);
+  const locator = m?.[1]?.trim();
+  return locator || null;
+}
+
+/** 读取 spill 全文；文件不在了抛错，由调用方如实显示「已丢失」而不是空内容 */
+export async function readSpillText(locator: string): Promise<string> {
+  return readFile(locator);
 }
 
 /** 会话私有的溢出目录 */

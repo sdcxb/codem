@@ -1568,6 +1568,20 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           ? { ok: false, detail: opts.integrityFailure }
           : { ok: true, detail: "ok" }) as unknown as T;
       }
+      if (command === "context_epochs.upsert") {
+        const row = { ...(params as Record<string, unknown>) };
+        const rows = table("context_epochs");
+        const idx = rows.findIndex((r) => String(r.id) === String(row.id));
+        if (idx >= 0) rows[idx] = row; else rows.push(row);
+        return { written: 1, id: row.id } as unknown as T;
+      }
+      if (command === "context_epochs.list") {
+        const rows = table("context_epochs")
+          .filter((r) => String(r.session_id) === String((params as Record<string, unknown>).session_id))
+          .sort((a, b) => Number(b.seq ?? 0) - Number(a.seq ?? 0) || Number(b.created_at ?? 0) - Number(a.created_at ?? 0))
+          .slice(0, Number((params as Record<string, unknown>).limit ?? 100));
+        return { items: rows } as unknown as T;
+      }
       throw new Error(`fake-port: 未实现的命令 ${command}（测试双不得比实现更宽松）`);
     },
   };

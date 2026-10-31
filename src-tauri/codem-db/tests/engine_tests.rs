@@ -4059,3 +4059,42 @@ fn prune_all_keeps_per_session_tail() {
     let c = call(&engine, "events.list", json!({ "session_id": "c", "limit": 100 }));
     assert_eq!(c["items"].as_array().expect("items").len(), 6, "????????");
 }
+
+#[test]
+fn context_epochs_upsert_is_idempotent_and_lists_latest_first() {
+    let (_d, engine) = temp_engine("epochs");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-1-1", "session_id": "s1", "seq": 1,
+            "cutoff_message_id": "m3", "removed_count": 2, "kept_count": 3,
+            "trigger_kind": "auto", "created_at": 100
+        }),
+    );
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-2-2", "session_id": "s1", "seq": 2,
+            "cutoff_message_id": "m9", "removed_count": 5, "kept_count": 1,
+            "trigger_kind": "manual", "created_at": 200
+        }),
+    );
+    // same id must update, not duplicate
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-1-1", "session_id": "s1", "seq": 1,
+            "cutoff_message_id": "m4", "removed_count": 3, "kept_count": 2,
+            "trigger_kind": "auto", "created_at": 100
+        }),
+    );
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], "compact-2-2");
+    assert_eq!(items[1]["cutoff_message_id"], "m4");
+}

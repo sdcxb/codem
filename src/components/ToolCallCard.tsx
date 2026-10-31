@@ -12,6 +12,8 @@
  */
 
 import { memo, useState, useMemo, type ReactNode } from "react";
+import { findSpillLocator, readSpillText } from "../core/storage/spill";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import {
   Wrench, CheckCircle2, XCircle, LoaderCircle,
   ChevronDown, ChevronRight,
@@ -558,6 +560,27 @@ export const ToolCallCard = memo(function ToolCallCard({
   metadata,
 }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [spillOpen, setSpillOpen] = useState(false)
+  const [spillText, setSpillText] = useState<string | null>(null)
+  const [spillError, setSpillError] = useState<string | null>(null)
+  const [spillLoading, setSpillLoading] = useState(false)
+  const spillLocator = useMemo(() => findSpillLocator(toolResult), [toolResult])
+  useDismissableLayer({ open: spillOpen, onDismiss: () => setSpillOpen(false) })
+
+  const openSpill = async () => {
+    if (!spillLocator) return
+    setSpillOpen(true)
+    setSpillLoading(true)
+    setSpillError(null)
+    setSpillText(null)
+    try {
+      setSpillText(await readSpillText(spillLocator))
+    } catch (e) {
+      setSpillError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSpillLoading(false)
+    }
+  }
 
   const variant = useMemo(() => classifyTool(toolName), [toolName])
   const title = TOOL_TITLES[toolName.toLowerCase()] ?? VARIANT_TITLES[variant]
@@ -752,6 +775,42 @@ export const ToolCallCard = memo(function ToolCallCard({
               </div>
             </div>
           )}
+          {spillLocator && (
+            <button
+              type="button"
+              className="spill-viewer-open"
+              onClick={(e) => { e.stopPropagation(); void openSpill() }}
+            >
+              查看溢出全文
+            </button>
+          )}
+        </div>
+      )}
+
+      {spillOpen && (
+        <div className="modal-overlay spill-viewer-overlay" role="presentation" onClick={() => setSpillOpen(false)}>
+          <div
+            className="modal-editor spill-viewer-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="溢出全文"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="spill-viewer-head">
+              <strong>溢出全文</strong>
+              <span className="spill-viewer-path" title={spillLocator ?? ""}>{spillLocator}</span>
+              <button type="button" className="spill-viewer-close" onClick={() => setSpillOpen(false)}>关闭</button>
+            </div>
+            <div className="spill-viewer-body">
+              {spillLoading && <div className="context-history-state">正在读取全文…</div>}
+              {spillError && (
+                <div className="context-history-state" role="alert">
+                  全文文件已丢失或读不到：{spillError}（消息里的预览仍在）
+                </div>
+              )}
+              {spillText !== null && <pre className="spill-viewer-text">{spillText}</pre>}
+            </div>
+          </div>
         </div>
       )}
     </div>

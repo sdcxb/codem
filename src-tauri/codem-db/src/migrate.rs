@@ -82,6 +82,7 @@ pub const IMPORT_ORDER: &[&str] = &[
     "v2_sessions",
     // 消息层（依赖 sessions）
     "messages",
+    "context_epochs",
     "attachments",
     "tool_calls",
     "message_feedback",

@@ -19,6 +19,7 @@ export interface ContextHistorySnapshot {
 }
 
 const autoMigrated = new Set<string>();
+const syncedEpochSignature = new Map<string, string>();
 
 /** 时间线里是否还有旧版压缩留下的 hidden 行（`trimmed` 是索引裁剪，不算） */
 export function needsLegacyBackfill(timeline: Message[]): boolean {
@@ -67,5 +68,14 @@ export function readContextHistory(sessionId: string): ContextHistorySnapshot {
   const timeline = listTimelineMessages(sessionId);
   const model = listMessages(sessionId);
   scheduleLegacyBackfill(sessionId, timeline);
+  // 派生索引：marker 集合变化时才重新投影，避免每次读历史都写表
+  const epochSignature = timeline
+    .filter((m) => /^compact(?:-manual)?-/.test(m.id))
+    .map((m) => m.id)
+    .join("|");
+  if (epochSignature && import.meta.env?.MODE !== "test" && syncedEpochSignature.get(sessionId) !== epochSignature) {
+    syncedEpochSignature.set(sessionId, epochSignature);
+    void import("./context-epochs").then((m) => m.syncContextEpochs(sessionId, timeline)).catch(() => {});
+  }
   return { timeline, model, modelCount: model.length };
 }

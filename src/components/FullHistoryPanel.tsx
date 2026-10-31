@@ -11,6 +11,8 @@ import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { readContextHistory } from "../core/storage/context-history";
 import { migrateSessionLegacyHistory } from "../core/storage/context-migration";
 import { rollbackSessionToClassicHidden } from "../core/storage/context-rollback";
+import { syncContextEpochs, listContextEpochs, type ContextEpochRow } from "../core/storage/context-epochs";
+import { hasStoragePort } from "../core/storage/port";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { isCompactionMarker } from "../core/llm/compaction-budget";
 import type { Message } from "../store";
@@ -43,6 +45,8 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(80);
+  const [epochRows, setEpochRows] = useState<ContextEpochRow[]>([]);
   const [repairText, setRepairText] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
@@ -54,6 +58,7 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
 
   useEffect(() => {
     if (!open) return;
+    setVisibleCount(80);
     setLoading(true);
     setError(null);
     try {
@@ -71,6 +76,28 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
 
   useDismissableLayer({ open, onDismiss: onClose });
 
+  /**
+   * `context_epochs` 是派生索引：完整历史打开时从时间线投影一次，
+   * 再读回来显示；表写失败不影响时间线/模型视图。
+   */
+  useEffect(() => {
+    if (!open || timeline.length === 0 || !hasStoragePort()) return;
+    let cancelled = false;
+    void (async () => {
+      await syncContextEpochs(sessionId, timeline);
+      const rows = await listContextEpochs(sessionId);
+      if (!cancelled) {
+        setEpochRows((prev) => {
+          if (prev.length === 0 && rows.length === 0) return prev;
+          return prev.length === rows.length && prev.every((r, i) => r.id === rows[i]?.id && r.cutoff_message_id === rows[i]?.cutoff_message_id)
+            ? prev
+            : rows;
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, sessionId, timeline]);
+
   useEffect(() => {
     if (!open) return;
     // 焦点放到关闭按钮；Esc/遮罩关闭与焦点归还由 useDismissableLayer 统一处理。
@@ -81,6 +108,8 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
   if (!open) return null;
 
   const messages = view === "model" ? modelMessages : timeline;
+  const visibleStart = Math.max(0, messages.length - visibleCount);
+  const visibleMessages = messages.slice(visibleStart);
   const legacyHidden = timeline.filter(
     (m) => Number((m as unknown as { hidden?: number }).hidden ?? 0) === 1
       && Number((m as unknown as { trimmed?: number }).trimmed ?? 0) !== 1,
@@ -141,6 +170,7 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
           <strong>{view === "model" ? "模型视图" : "完整历史"}</strong>
           <span style={{ color: "var(--text-secondary)", fontSize: "var(--fs-xs)" }}>
             历史 {timeline.length} 条 · 模型可见 {modelMessages.length} 条（不计入水位）
+            {epochRows.length > 0 ? ` · 检查点索引 ${epochRows.length}` : ""}
           </span>
           <span style={{ flex: 1 }} />
           <button
@@ -194,7 +224,16 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
           {!loading && !error && messages.length === 0 && (
             <div className="context-history-state">这个会话还没有历史消息。</div>
           )}
-          {!loading && !error && messages.map((m) => {
+          {!loading && !error && visibleStart > 0 && (
+            <button
+              type="button"
+              className="context-history-load-earlier"
+              onClick={() => setVisibleCount((n) => n + 80)}
+            >
+              载入更早的 {visibleStart} 条
+            </button>
+          )}
+          {!loading && !error && visibleMessages.map((m) => {
             const marker = isCompactionMarker(m as never);
             return (
               <article

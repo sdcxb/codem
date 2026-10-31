@@ -1,6 +1,6 @@
 # 18 · 上下文检查点与完整历史（设计稿）
 
-> **状态**：设计稿，2026-10-30；G0 核心已落地：读侧 cutoff 契约、marker metadata 写入、压缩检查点（不再软删/隐藏）、**主对话默认完整时间线 + 模型视图切换**、完整历史面板（含只读模型视图）、打开会话自动 best-effort 回填 + 手动重试、回滚维护入口（带确认）、spill 永久化、水位优先真实请求 promptTokens（可见 id 集合一致时；否则 system/tools 估算兜底）。隔离真机已验证：release exe 与静默安装后均为 278/61、回填 117+100/0、reload 保留、索引重建 278 行/hidden 217/模型 61、合成检查点回滚 2 条/0 失败、spill 目录真机删除、打开会话自动回填 117 条 hidden=1；**未做**：真实 UI 删除会话后 spill 完整链路、`context_epochs` 独立表。基线 1.16.333。
+> **状态**：设计稿，2026-10-30；G0 核心已落地：读侧 cutoff 契约、marker metadata 写入、压缩检查点（不再软删/隐藏）、**主对话默认完整时间线 + 模型视图切换**、完整历史面板（含只读模型视图）、打开会话自动 best-effort 回填 + 手动重试、回滚维护入口（带确认）、spill 永久化 + 全文查看、水位优先真实请求 promptTokens（可见 id 集合一致时；否则 system/tools 估算兜底）、`context_epochs` 派生索引表、分块时间线（120/80 + 载入更早）。隔离真机已验证：release exe 与静默安装后均为 278/61、回填 117+100/0、reload 保留、索引重建 278 行/hidden 217/模型 61、合成检查点回滚 2 条/0 失败、spill 目录真机删除、打开会话自动回填 117 条 hidden=1；**未做**：真实 UI 删除会话后 spill 完整链路、可视区虚拟列表（当前是分块渲染）。基线 1.16.333。
 > **目标**：一次性做到终态——压缩不再删除/隐藏历史；人看完整时间线；模型/Agent 看「最新检查点 + 其后消息」；水位与模型视图同源；工具正文永久保留；旧数据 best-effort 迁移；提供一次性回滚迁移。
 > **配套**：[19-CONTEXT-CHECKPOINT-CRITERIA.md](docs/project-guide/19-CONTEXT-CHECKPOINT-CRITERIA.md)（判据与施工清单）。
 > **相关**：[03-RUNTIME-FLOWS.md](docs/project-guide/03-RUNTIME-FLOWS.md)（压缩/读路径）、[06-DATA-STORAGE.md](docs/project-guide/06-DATA-STORAGE.md)（JSONL/索引）、[08-ENGINEERING-GATES.md](docs/project-guide/08-ENGINEERING-GATES.md)（门禁）、[09-CURRENT-STATE.md](docs/project-guide/09-CURRENT-STATE.md)（基线）。
@@ -142,10 +142,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_context_epochs_session_seq
 - `cutoff_message_id` 必须是 Timeline 中真实存在的消息 id；缺失时 fail-open + 告警。
 - 表是**索引/查询缓存**；JSONL 里的 marker metadata 是权威。索引重建时从 marker 恢复；表丢了不丢语义。
 
-> **实现说明（2026-10-30）**：当前版本**没有建这张表**。`listMessages` 是同步读，
-> 不能为取 epoch 发异步 IPC；实际做法是把 `messages.metadata` 补进消息索引投影与镜像，
-> marker 的 `metadata.contextEpoch` 随索引同步返回。表仍可作为后续的审计/多 epoch 查询索引，
-> 但不是当前读路径的前置条件。相应地，`19` 里的 Rust `context_epochs` 判据属于“若建表”分支。
+> **实现说明（2026-10-30，第 262 轮）**：`context_epochs` 表已建，但它是**派生索引**：
+> 完整历史/聊天打开会话时从 marker metadata 投影，供完整历史面板显示「检查点索引 N」与审计；
+> `listMessages` 仍是同步读，读路径继续用 `messages.metadata` 投影，不依赖这张表。
+> 表丢了不影响模型视图，下一次打开会话会从时间线重新投影。
 
 ### 4.2 Marker metadata（JSONL 权威）
 
