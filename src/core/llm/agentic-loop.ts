@@ -21,6 +21,7 @@ import { regressionRedFiles } from "./test-regression";
 import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { recordRequestContext, recordRequestPromptTokens, messageSetFingerprint } from "./request-context";
+import { readContextWaterLevel } from "../context/water-level";
 // 第 191 波（O-48）：服务端前缀缓存的读数必须**可复核**（一行日志 + 判据）
 import { formatPromptCacheLog } from "./cache-percent";
 // 第 191 波（O-49）：**附录的落点**是判据对象（必须跟在整份系统提示的最后），抽成唯一实现
@@ -4751,6 +4752,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
       tracker.recordActualUsage(usage, toolDefTokens, this.lastRequestHeader || "");
       recordRequestPromptTokens(sessionId, usage.promptTokens);
+      /**
+       * 真机取证：usage 到达时消息集合仍是本次请求的那一份，主动读一次水位，
+       * 让 exact 分支把「真实 promptTokens + 可用预算」记进 lastExactWater。
+       * 这是诊断快照，失败不影响请求。
+       */
+      try { readContextWaterLevel(sessionId); } catch { /* 诊断快照失败不影响主链路 */ }
       /*
        * O-48（第 191 波）：把**服务端前缀缓存**的真实读数留下来。
        *

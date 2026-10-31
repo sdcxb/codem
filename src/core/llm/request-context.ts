@@ -57,6 +57,7 @@ function hashText(text: string): string {
 }
 
 const snapshots = new Map<string, RequestContextSnapshot>();
+const completedRequests = new Map<string, { promptTokens: number; at: number; visibleCount: number; contextWindow: number }>();
 const MAX_AGE_MS = 30 * 60 * 1000;
 
 export function recordRequestContext(input: {
@@ -89,7 +90,20 @@ export function recordRequestPromptTokens(sessionId: string, promptTokens: numbe
   if (!sessionId || !Number.isFinite(promptTokens) || promptTokens <= 0) return;
   const current = snapshots.get(sessionId);
   if (!current) return;
+  completedRequests.set(sessionId, {
+    promptTokens: Math.floor(promptTokens),
+    at: Date.now(),
+    visibleCount: current.visibleIds.length,
+    contextWindow: current.contextWindow,
+  });
   snapshots.set(sessionId, { ...current, promptTokens: Math.floor(promptTokens), at: Date.now() });
+}
+
+/** 最近一次真实请求完成后 provider 上报的 promptTokens（真机取证；不是当前水位） */
+export function readLastCompletedRequest(sessionId: string): { promptTokens: number; at: number } | null {
+  const v = completedRequests.get(sessionId);
+  if (!v) return null;
+  return { promptTokens: v.promptTokens, at: v.at };
 }
 
 export function readRequestContext(sessionId: string): RequestContextSnapshot | null {
@@ -105,4 +119,5 @@ export function readRequestContext(sessionId: string): RequestContextSnapshot | 
 /** 仅判据使用：清空快照，避免用例互相污染 */
 export function __resetRequestContextForTests(): void {
   snapshots.clear();
+  completedRequests.clear();
 }

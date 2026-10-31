@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { setStoragePort } from "../core/storage/port";
 import { createMessage } from "../core/storage/message";
-import { readContextWaterLevel, __resetWaterLevelCache } from "../core/context/water-level";
+import { readContextWaterLevel, __resetWaterLevelCache, readLastExactWater } from "../core/context/water-level";
 import {
   recordRequestContext,
   recordRequestPromptTokens,
   messageSetFingerprint,
+  readLastCompletedRequest,
   __resetRequestContextForTests,
 } from "../core/llm/request-context";
 import { getTokenTracker } from "../core/llm/token-tracker";
@@ -46,6 +47,8 @@ describe("水位真实请求快照", () => {
     const level = readContextWaterLevel(S);
     expect(level.used).toBe(1234);
     expect(level.available).toBeGreaterThan(0);
+    expect(readLastExactWater(S)?.promptTokens).toBe(1234);
+    expect(readLastCompletedRequest(S)?.promptTokens).toBe(1234);
   });
 
   it("WX-2: 可见集合变了（新消息）时，不拿上一轮真实值冒充", () => {

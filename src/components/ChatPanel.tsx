@@ -7,7 +7,7 @@ import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { MessageBubble } from "./MessageBubble";
 import { useStableMessageHandlers } from "./useStableMessageHandlers";
 import { computeHasAssistantAfter } from "../core/ui/message-suffix";
-import { safeRenderStart } from "../core/ui/render-window";
+import { computeVirtualWindow } from "../core/ui/virtual-window";
 import { isMachineInjectedMessage } from "../core/storage/session";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
@@ -156,7 +156,8 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
    * 的 id+长度，避免流式每个 token 都整读一次。
    */
   const [historyMode, setHistoryMode] = useState<"full" | "model">("full");
-  const [renderLimit, setRenderLimit] = useState(120);
+  const [chatScrollTop, setChatScrollTop] = useState(Number.MAX_SAFE_INTEGER);
+  const [chatViewportHeight, setChatViewportHeight] = useState(800);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   /**
    * 首屏镜像未就绪时先回退到 store 消息；镜像加载完成后必须再读一拍，
@@ -173,8 +174,18 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     };
   }, [activeSessionId, messagesLoading]);
   useEffect(() => {
-    setRenderLimit(120);
+    setChatScrollTop(Number.MAX_SAFE_INTEGER);
   }, [activeSessionId, historyMode]);
+  useEffect(() => {
+    const el = messagesContainerRef.current?.parentElement;
+    if (!el) return;
+    const update = () => setChatViewportHeight(el.clientHeight || 800);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeSessionId]);
   const lastMessage = messages[messages.length - 1];
   const historySnapshot = useMemo(() => {
     if (!activeSessionId) return { timeline: [] as Message[], model: [] as Message[], modelCount: 0 };
@@ -1103,7 +1114,7 @@ setStepTooltipLocked(false);
       {/* 交接正文里有工作区外绝对路径时出现（只提示，不自动放行） */}
       <SandboxAllowPrompt />
 
-      <div className="chat-body">
+      <div className="chat-body" onScroll={(e) => setChatScrollTop(e.currentTarget.scrollTop)}>
         <div className="messages-container" ref={messagesContainerRef}>
           <RunStatusBar
             phase={runPhase}
@@ -1362,21 +1373,24 @@ setStepTooltipLocked(false);
               }
             }
 
-            const renderStart = safeRenderStart(renderList, renderLimit);
+            const blocks = renderList.filter((e) => !e.skip);
+            const virtualize = blocks.length > 160;
+            const chatVirt = virtualize
+              ? computeVirtualWindow(
+                  blocks.map((b) => {
+                    const contentLen = typeof b.msg.content === "string" ? b.msg.content.length : 0;
+                    const tools = b.msg.toolCalls?.length ?? 0;
+                    return Math.max(96, Math.min(900, 120 + contentLen * 0.25 + tools * 40));
+                  }),
+                  chatScrollTop,
+                  chatViewportHeight,
+                  6,
+                )
+              : { start: 0, end: blocks.length, top: 0, bottom: 0, totalHeight: 0 };
             return (
               <>
-                {renderStart > 0 && (
-                  <button
-                    type="button"
-                    className="chat-load-earlier"
-                    onClick={() => setRenderLimit((n) => n + 120)}
-                  >
-                    {lang === "zh" ? `载入更早的 ${renderStart} 条` : `Load ${renderStart} earlier`}
-                  </button>
-                )}
-                {renderList.slice(renderStart).map(({ msg, skip, origIndex, groupLastIdx }) => {
-            if (skip) return null;
-
+                {virtualize && chatVirt.top > 0 && <div aria-hidden="true" style={{ height: chatVirt.top }} />}
+                {blocks.slice(chatVirt.start, chatVirt.end).map(({ msg, origIndex, groupLastIdx }) => {
             // For unified mode merged groups, use groupLastIdx (the last index in
             // the group) for turn boundary detection. Otherwise use origIndex.
             const effectiveIdx = groupLastIdx !== undefined ? groupLastIdx : origIndex;
@@ -1537,6 +1551,7 @@ canEdit={editable}
             </React.Fragment>
             );
           })}
+                {virtualize && chatVirt.bottom > 0 && <div aria-hidden="true" style={{ height: chatVirt.bottom }} />}
               </>
             );
           })()}

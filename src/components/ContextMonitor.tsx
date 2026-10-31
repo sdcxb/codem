@@ -34,7 +34,8 @@ import { getTokenTracker, estimateTokens } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
-import { FALLBACK_CONTEXT_WINDOW, readContextWaterLevel } from "../core/context/water-level";
+import { FALLBACK_CONTEXT_WINDOW, readContextWaterLevel, readLastExactWater } from "../core/context/water-level";
+import { readLastCompletedRequest } from "../core/llm/request-context";
 import { buildContextEpochMetadata, contextCutoffExclusions } from "../core/context/context-view";
 import { FullHistoryPanel } from "./FullHistoryPanel";
 
@@ -516,6 +517,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [todayCost, setTodayCost] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
   const [waterSource, setWaterSource] = useState<"exact" | "estimate" | "unknown">("unknown");
+  const [lastRequestPrompt, setLastRequestPrompt] = useState(0);
   /** ★ 折叠阶梯痕迹：本轮静默折叠了多少条较远的工具输出（0 = 没折，不显示这一行） */
   const [foldedToolOutputs, setFoldedToolOutputs] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
@@ -629,9 +631,15 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           const water = readContextWaterLevel(sessionId);
           setFoldedToolOutputs(water.foldedToolOutputs ?? 0);
           setWaterSource(water.source);
+          setLastRequestPrompt(
+            readLastExactWater(sessionId)?.promptTokens
+              ?? readLastCompletedRequest(sessionId)?.promptTokens
+              ?? 0,
+          );
         } catch {
           setFoldedToolOutputs(0);
           setWaterSource("unknown");
+          setLastRequestPrompt(0);
         }
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
@@ -921,10 +929,19 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               style={{ width: `${Math.min(usagePercent, 100)}%`, background: pressureColor }}
             />
           </div>
-          <div className="context-usage-info" data-water-source={waterSource}>
+          <div
+            className="context-usage-info"
+            data-water-source={waterSource}
+            data-last-request-prompt={lastRequestPrompt > 0 ? lastRequestPrompt : undefined}
+          >
             <span title={`水位来源：${waterSource === "exact" ? "真实请求" : waterSource === "estimate" ? "估算" : "未知"}`}>
               {budget.used.toLocaleString()} / {budget.available.toLocaleString()} tokens
             </span>
+            {lastRequestPrompt > 0 && (
+              <span style={{ color: "var(--text-secondary)", fontSize: "var(--fs-xs)" }}>
+                上次请求真实 {lastRequestPrompt.toLocaleString()}
+              </span>
+            )}
             <span style={{ color: pressureColor }}>{usagePercent}%</span>
           </div>
         </div>

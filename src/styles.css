@@ -9855,18 +9855,6 @@ color: var(--text-on-accent);
   margin-left: var(--space-2);
 }
 
-.chat-load-earlier {
-  display: block;
-  margin: var(--space-2) auto;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
 .context-history-panel {
   overflow: hidden;
 }

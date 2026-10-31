@@ -65,8 +65,7 @@ export const WATER_LEVEL = {
 
 export interface ContextWaterLevel {
   /** 模型侧口径下"这一次真的会收到"的估算 token */
-  used: number;
-  /** 模型侧可用预算（真实窗口 × 0.9） */
+  used: number;  /** 模型侧可用预算（真实窗口 × 0.9） */
   available: number;
   /** 占用率 0..1 */
   ratio: number;
@@ -104,6 +103,22 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
   authoritative: false,
 };
 
+/** 最近一次真正走 exact 分支的读数（真机取证/诊断；不参与计算） */
+export interface ExactWaterCapture {
+  promptTokens: number;
+  available: number;
+  at: number;
+}
+const lastExactWater = new Map<string, ExactWaterCapture>();
+
+export function readLastExactWater(sessionId: string): ExactWaterCapture | null {
+  return lastExactWater.get(sessionId) ?? null;
+}
+
+export function __resetExactWaterForTests(): void {
+  lastExactWater.clear();
+}
+
 /**
  * 计算某个会话当前的水位（模型侧口径）。
  *
@@ -116,7 +131,7 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
  */
 const WATER_CACHE_MAX = 32;
 /** 仅判据/诊断使用：清空水位缓存，验证冷/热两条路径。 */
-export function __resetWaterLevelCache(): void { waterCache.clear(); }
+export function __resetWaterLevelCache(): void { waterCache.clear(); lastExactWater.clear(); }
 const waterCache = new Map<string, { sig: string; result: ContextWaterLevel }>();
 
 function waterSignature(visible: any[], contextWindow: number, overheadTokens: number, requestKey: string): string {
@@ -210,6 +225,7 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
         foldedToolOutputs: 0,
       };
       if (waterCache.size >= WATER_CACHE_MAX) waterCache.clear();
+      lastExactWater.set(sessionId, { promptTokens: snapshot.promptTokens, available, at: Date.now() });
       waterCache.set(sessionId, { sig, result: exactResult });
       return exactResult;
     }

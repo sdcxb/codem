@@ -1409,17 +1409,6 @@
   "chat-history-btn": {
     "margin-left": "var(--space-2)"
   },
-  "chat-load-earlier": {
-    "background": "var(--bg-secondary)",
-    "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-xs)",
-    "color": "var(--text-secondary)",
-    "cursor": "pointer",
-    "display": "block",
-    "font-size": "var(--fs-xs)",
-    "margin": "var(--space-2) auto",
-    "padding": "var(--space-1) var(--space-3)"
-  },
   "chat-relative-anchor": {
     "position": "relative"
   },
