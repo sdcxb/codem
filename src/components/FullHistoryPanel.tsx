@@ -81,7 +81,11 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
    * 再读回来显示；表写失败不影响时间线/模型视图。
    */
   useEffect(() => {
-    if (!open || timeline.length === 0 || !hasStoragePort()) return;
+    if (!open || timeline.length === 0 || !hasStoragePort()) {
+      // 清掉上一个会话的派生索引计数，避免空会话显示别人的「检查点索引 N」
+      setEpochRows((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
     let cancelled = false;
     void (async () => {
       await syncContextEpochs(sessionId, timeline);
