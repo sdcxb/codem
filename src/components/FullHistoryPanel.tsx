@@ -6,7 +6,7 @@
  * 面板只读：编辑/重发/删除产出文件等动作仍只在模型视图里做，避免用时间线下标
  * 误操作主消息数组。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { readContextHistory } from "../core/storage/context-history";
 import { migrateSessionLegacyHistory } from "../core/storage/context-migration";
@@ -15,6 +15,7 @@ import { syncContextEpochs, listContextEpochs, type ContextEpochRow } from "../c
 import { hasStoragePort } from "../core/storage/port";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { isCompactionMarker } from "../core/llm/compaction-budget";
+import { computeVirtualWindow } from "../core/ui/virtual-window";
 import type { Message } from "../store";
 
 interface FullHistoryPanelProps {
@@ -45,9 +46,16 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(80);
   const [epochRows, setEpochRows] = useState<ContextEpochRow[]>([]);
   const [repairText, setRepairText] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [measureTick, setMeasureTick] = useState(0);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const heightsRef = useRef(new Map<string, number>());
+  const observedRef = useRef(new Set<string>());
+  const observersRef = useRef(new Map<string, ResizeObserver>());
+  const itemRefsRef = useRef(new Map<string, (el: HTMLElement | null) => void>());
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   const reload = () => {
@@ -58,7 +66,6 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
 
   useEffect(() => {
     if (!open) return;
-    setVisibleCount(80);
     setLoading(true);
     setError(null);
     try {
@@ -109,11 +116,86 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
     return () => clearTimeout(t);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setViewportHeight(el.clientHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      for (const ro of observersRef.current.values()) ro.disconnect();
+      observersRef.current.clear();
+      observedRef.current.clear();
+      itemRefsRef.current.clear();
+      heightsRef.current.clear();
+    };
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    // 打开/切换视图/新数据后贴到底部（最新消息），虚拟窗口随 scrollTop 更新。
+    const h = el.clientHeight;
+    if (h > 0 && h !== viewportHeight) setViewportHeight(h);
+    el.scrollTop = el.scrollHeight;
+    setScrollTop(el.scrollTop);
+  }, [open, sessionId, view, timeline.length, modelMessages.length]);
+
   if (!open) return null;
 
   const messages = view === "model" ? modelMessages : timeline;
-  const visibleStart = Math.max(0, messages.length - visibleCount);
-  const visibleMessages = messages.slice(visibleStart);
+  void measureTick;
+  const heights = messages.map((m) => {
+    const measured = heightsRef.current.get(m.id);
+    if (measured && measured > 0) return measured;
+    const contentLen = typeof m.content === "string" ? m.content.length : 0;
+    const reasoningLen = typeof m.reasoning === "string" ? m.reasoning.length : 0;
+    return Math.max(56, Math.min(260, 44 + contentLen * 0.35 + reasoningLen * 0.1));
+  });
+  const virt = computeVirtualWindow(heights, scrollTop, viewportHeight, 4);
+  const visibleMessages = messages.slice(virt.start, virt.end);
+  const measureItem = (id: string) => {
+    let cb = itemRefsRef.current.get(id);
+    if (cb) return cb;
+    cb = (el: HTMLElement | null) => {
+      if (!el) {
+        const ro = observersRef.current.get(id);
+        ro?.disconnect();
+        observersRef.current.delete(id);
+        observedRef.current.delete(id);
+        return;
+      }
+      const h = el.offsetHeight;
+      if (h > 0 && Math.abs((heightsRef.current.get(id) ?? 0) - h) > 1) {
+        heightsRef.current.set(id, h);
+        setMeasureTick((v) => v + 1);
+      }
+      if (!observedRef.current.has(id)) {
+        observedRef.current.add(id);
+        if (typeof ResizeObserver !== "undefined") {
+          const ro = new ResizeObserver(() => {
+            const next = el.offsetHeight;
+            if (next > 0 && Math.abs((heightsRef.current.get(id) ?? 0) - next) > 1) {
+              heightsRef.current.set(id, next);
+              setMeasureTick((v) => v + 1);
+            }
+          });
+          ro.observe(el);
+          observersRef.current.set(id, ro);
+        }
+      }
+    };
+    itemRefsRef.current.set(id, cb);
+    return cb;
+  };
   const legacyHidden = timeline.filter(
     (m) => Number((m as unknown as { hidden?: number }).hidden ?? 0) === 1
       && Number((m as unknown as { trimmed?: number }).trimmed ?? 0) !== 1,
@@ -217,7 +299,14 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
           </button>
         </div>
 
-        <div style={{ overflow: "auto", padding: "12px 16px" }}>
+        <div
+          ref={scrollRef}
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          style={{ overflow: "auto", padding: "12px 16px" }}
+          data-virtual-total={messages.length}
+          data-virtual-start={virt.start}
+          data-virtual-end={virt.end}
+        >
           {repairText && <div className="context-history-state">{repairText}</div>}
           {loading && <div className="context-history-state">正在读取完整历史…</div>}
           {!loading && error && (
@@ -228,20 +317,15 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
           {!loading && !error && messages.length === 0 && (
             <div className="context-history-state">这个会话还没有历史消息。</div>
           )}
-          {!loading && !error && visibleStart > 0 && (
-            <button
-              type="button"
-              className="context-history-load-earlier"
-              onClick={() => setVisibleCount((n) => n + 80)}
-            >
-              载入更早的 {visibleStart} 条
-            </button>
+          {!loading && !error && virt.top > 0 && (
+            <div aria-hidden="true" style={{ height: virt.top }} />
           )}
           {!loading && !error && visibleMessages.map((m) => {
             const marker = isCompactionMarker(m as never);
             return (
               <article
                 key={m.id}
+                ref={measureItem(m.id)}
                 className={marker ? "context-history-item context-history-checkpoint" : "context-history-item"}
                 data-testid={marker ? "history-checkpoint" : "history-message"}
               >
@@ -278,6 +362,9 @@ export function FullHistoryPanel({ open, sessionId, onClose }: FullHistoryPanelP
               </article>
             );
           })}
+          {!loading && !error && virt.bottom > 0 && (
+            <div aria-hidden="true" style={{ height: virt.bottom }} />
+          )}
         </div>
       </div>
     </div>

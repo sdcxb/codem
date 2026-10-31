@@ -9878,17 +9878,6 @@ color: var(--text-on-accent);
   border-bottom: 1px solid var(--border-primary);
 }
 
-.context-history-load-earlier {
-  width: 100%;
-  padding: var(--space-2);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
 .spill-viewer-open {
   margin-top: var(--space-2);
   padding: var(--space-1) var(--space-2);

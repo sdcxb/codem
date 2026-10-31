@@ -75,16 +75,14 @@ describe("FullHistoryPanel", () => {
     expect(vi.mocked(rollbackSessionToClassicHidden)).toHaveBeenNthCalledWith(2, "s1");
   });
 
-  it("FH-5: 大时间线只渲染最后 80 条，可载入更早", () => {
+  it("FH-5: jsdom 视口未知时 fail-open 全量渲染，不出现载入按钮", () => {
     const original = timeline.slice();
     try {
       for (let i = 0; i < 130; i++) {
         timeline.push({ id: `bulk-${i}`, role: "user", content: `批量消息 ${i}`, timestamp: 100 + i, status: "done" });
       }
       render(createElement(FullHistoryPanel, { open: true, sessionId: "s1", onClose: () => {} }));
-      expect(screen.getByText(/载入更早的 54 条/)).toBeTruthy();
-      expect(screen.queryByText("批量消息 0")).toBeNull();
-      fireEvent.click(screen.getByText(/载入更早的 54 条/));
+      expect(screen.queryByText(/载入更早/)).toBeNull();
       expect(screen.getByText("批量消息 0")).toBeTruthy();
     } finally {
       timeline.length = 0;

@@ -2634,16 +2634,6 @@
     "font-size": "var(--fs-xs)",
     "padding": "0 var(--space-2)"
   },
-  "context-history-load-earlier": {
-    "background": "var(--bg-secondary)",
-    "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-xs)",
-    "color": "var(--text-secondary)",
-    "cursor": "pointer",
-    "font-size": "var(--fs-xs)",
-    "padding": "var(--space-2)",
-    "width": "100%"
-  },
   "context-history-open": {
     "flex": "0 0 auto"
   },
