@@ -158,4 +158,28 @@ describe("applyContextCutoff — 读侧检查点契约", () => {
     expect(buildContextEpochMetadata({ epochId: "", cutoffMessageId: "m2", createdAt: 1 })).toBeNull();
     expect(buildContextEpochMetadata({ epochId: "compact-1-1", cutoffMessageId: "", createdAt: 1 })).toBeNull();
   });
+
+  it("CV-CUT-11: metadata 是坏 JSON ⇒ 不识别为 epoch，原样返回", () => {
+    const badJson = { id: "compact-10-1", role: "user", timestamp: 10, metadata: "{bad json" } as unknown as ContextEpochMessageLike;
+    const input = [msg("m1", 1), badJson];
+    const out = applyContextCutoff(input);
+    expect(out.applied).toBe(false);
+    expect(out.messages.map((m) => m.id)).toEqual(["m1", "compact-10-1"]);
+  });
+
+  it("CV-CUT-12: excludedMessageIds 去重且忽略非字符串；cutoff 后仍排除指定 id", () => {
+    const marker = epochMarker("compact-10-1", "m2", 1, 10, {
+      excludedMessageIds: ["m3", "m3", 42, "", null],
+    });
+    const input = [msg("m1", 1), marker, msg("m2", 2), msg("m3", 3), msg("m4", 4)];
+    const out = applyContextCutoff(input);
+    expect(out.messages.map((m) => m.id)).toEqual(["compact-10-1", "m2", "m4"]);
+  });
+
+  it("CV-CUT-13: cutoff 指向 marker 自身 / 空列表 ⇒ 不崩、不重复 marker", () => {
+    const self = epochMarker("compact-10-1", "compact-10-1", 1, 10);
+    const out = applyContextCutoff([msg("m1", 1), self, msg("m2", 2)]);
+    expect(out.messages.filter((m) => m.id === "compact-10-1")).toHaveLength(1);
+    expect(applyContextCutoff([]).applied).toBe(false);
+  });
 });

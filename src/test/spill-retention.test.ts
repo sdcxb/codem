@@ -181,10 +181,12 @@ describe("超大工具结果溢出（DSH spill-policy 对齐）", () => {
     expect(findSpillLocator("普通输出")).toBeNull();
   });
 
-  it("SPILL-10: 查看全文走统一 readFile；读不到时如实抛错", async () => {
+  it("SPILL-10: 查看全文走统一 readFile；越界路径拒绝，读不到如实抛错", async () => {
+    const inside = "C:\\appdata\\spill\\s1\\a.txt";
     vi.mocked(readFile).mockResolvedValueOnce("full body");
-    await expect(readSpillText("C:\\x\\a.txt")).resolves.toBe("full body");
+    await expect(readSpillText(inside)).resolves.toBe("full body");
     vi.mocked(readFile).mockRejectedValueOnce(new Error("E_FILE_NOT_FOUND"));
-    await expect(readSpillText("C:\\x\\a.txt")).rejects.toThrow("E_FILE_NOT_FOUND");
+    await expect(readSpillText(inside)).rejects.toThrow("E_FILE_NOT_FOUND");
+    await expect(readSpillText("C:\\Windows\\win.ini.txt")).rejects.toThrow("拒绝读取非 spill 目录文件");
   });
 });

@@ -95,8 +95,14 @@ export function findSpillLocator(text: string | undefined | null): string | null
   return locator || null;
 }
 
-/** 读取 spill 全文；文件不在了抛错，由调用方如实显示「已丢失」而不是空内容 */
+/** 读取 spill 全文；只允许 spill 根目录下的文件，防止伪造通知读任意本地文件 */
 export async function readSpillText(locator: string): Promise<string> {
+  const base = (await (await import("./data-root")).resolveDataRoot()).root;
+  const normalized = locator.replace(/\\/g, "/").toLowerCase();
+  const spillRoot = `${base.replace(/[\\/]+$/, "")}/spill/`.replace(/\\/g, "/").toLowerCase();
+  if (!normalized.startsWith(spillRoot)) {
+    throw new Error("拒绝读取非 spill 目录文件");
+  }
   return readFile(locator);
 }
 

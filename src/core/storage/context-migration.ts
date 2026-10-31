@@ -76,6 +76,7 @@ export async function migrateSessionLegacyHistory(
   report.alreadyDurable = hidden.length - pending.length;
   if (dryRun || pending.length === 0) return report;
 
+  const appendedIds = new Set<string>();
   for (const m of pending) {
     try {
       /**
@@ -83,6 +84,7 @@ export async function migrateSessionLegacyHistory(
        * 这样索引从日志重建后语义仍是「人看得到、模型看不到」，不会把旧 hidden 放回模型上下文。
        */
       await appendSessionMessage(sessionId, { ...m, hidden: 1 } as unknown as Message);
+      appendedIds.add(m.id);
       report.appended += 1;
     } catch {
       report.failed += 1;
@@ -95,7 +97,7 @@ export async function migrateSessionLegacyHistory(
     const { messages } = await readSessionMessages(sessionId);
     const after = new Set(messages.map((m) => String((m as { id?: unknown }).id ?? "")));
     for (const m of pending) {
-      if (!after.has(m.id)) {
+      if (appendedIds.has(m.id) && !after.has(m.id)) {
         report.appended = Math.max(0, report.appended - 1);
         report.failed += 1;
       }
