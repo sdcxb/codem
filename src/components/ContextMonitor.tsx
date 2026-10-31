@@ -515,6 +515,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
    */
   const [todayCost, setTodayCost] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
+  const [waterSource, setWaterSource] = useState<"exact" | "estimate" | "unknown">("unknown");
   /** ★ 折叠阶梯痕迹：本轮静默折叠了多少条较远的工具输出（0 = 没折，不显示这一行） */
   const [foldedToolOutputs, setFoldedToolOutputs] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
@@ -625,9 +626,12 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
          * 并写明"最近几轮未动、原文可重跑工具取回"，让人知道发生了什么、以及怎么拿回来。
          */
         try {
-          setFoldedToolOutputs(readContextWaterLevel(sessionId).foldedToolOutputs ?? 0);
+          const water = readContextWaterLevel(sessionId);
+          setFoldedToolOutputs(water.foldedToolOutputs ?? 0);
+          setWaterSource(water.source);
         } catch {
           setFoldedToolOutputs(0);
+          setWaterSource("unknown");
         }
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
@@ -917,8 +921,10 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               style={{ width: `${Math.min(usagePercent, 100)}%`, background: pressureColor }}
             />
           </div>
-          <div className="context-usage-info">
-            <span>{budget.used.toLocaleString()} / {budget.available.toLocaleString()} tokens</span>
+          <div className="context-usage-info" data-water-source={waterSource}>
+            <span title={`水位来源：${waterSource === "exact" ? "真实请求" : waterSource === "estimate" ? "估算" : "未知"}`}>
+              {budget.used.toLocaleString()} / {budget.available.toLocaleString()} tokens
+            </span>
             <span style={{ color: pressureColor }}>{usagePercent}%</span>
           </div>
         </div>

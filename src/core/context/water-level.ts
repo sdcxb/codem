@@ -76,6 +76,8 @@ export interface ContextWaterLevel {
   level: number;
   /** 可见消息条数（与模型侧同一个入口 `listVisibleMessages`） */
   messageCount: number;
+  /** 本次读数的来源：真实请求快照 / 估算 / 读不到 */
+  source: "exact" | "estimate" | "unknown";
   /**
    * ★ 全量审计（用户现场）：这次读数是否建立在**权威隐藏状态**之上。
    * false = 索引镜像还没就绪（此刻的条数/占用可能把已压缩隐藏的历史算进来）——
@@ -97,6 +99,7 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
   percent: 0,
   level: WATER_LEVEL.NORMAL,
   messageCount: 0,
+  source: "unknown",
   /* 未知不是「满」，也不是「权威」 */
   authoritative: false,
 };
@@ -202,6 +205,7 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
         percent: Math.min(100, display.percent),
         level: display.level,
         messageCount: visible.length,
+        source: "exact",
         authoritative: true,
         foldedToolOutputs: 0,
       };
@@ -235,6 +239,7 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
       percent: Math.min(100, display.percent),
       level: display.level,
       messageCount: visible.length,
+      source: "estimate",
       authoritative: true,
       /* ★ 阶梯痕迹：这一轮静默折了多少条（>0 时界面用一行说明，不弹窗） */
       foldedToolOutputs: fold.folded,
