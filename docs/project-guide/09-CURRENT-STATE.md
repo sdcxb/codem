@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-11-03 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.17.0 发版准备）｜ **1.17.0**（2026-11-03 待发布；上一稳定版 1.16.334，2026-10-31）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.17.0 已发布）｜ **1.17.0**（2026-11-03 发布，GitHub `Latest`；上一稳定版 1.16.334）
 >
 > 1.17.0 包含：桌面远程网关（PC 远程唯一入口）+ Android 本机模式（独立 Host/数据/项目）+ 共享 UI/能力表 +
 > 网关安全（一次性配对码 / HttpOnly cookie / 设备撤销 / 敏感文件读审批）；旧 LAN/TLS/二维码配对与桌面 Host sidecar 已删除。
@@ -12,54 +12,52 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.17.0**（待发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | 上一稳定版 GitHub `Codem v1.16.334` = **Latest**（2026-10-31）；1.17.0 未发布、未构建安装包 | `gh release list --limit 1` |
-| 更新清单 | `latest.json` 仍是 1.16.334（发版构建后再生成） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（1.17.0 发版准备） | `git rev-parse --short HEAD` |
-| 分支 | `master`；工作区有 1.17.0 未提交改动 | `git status -sb` |
-| 本地 tag | 最新为 **v1.16.334** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.17.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.17.0` = **Latest**（2026-11-03） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.17.0（已上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.17.0 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.17.0 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.17.0** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：v1.16.322–330 的 GitHub Release 存在，但本地 tag 列表没跟上（可能未拉取/未创建本地 tag）。以 `gh release list` 与 `latest.json` 为准。
 
 ---
 
-## 2. 工作区状态（不是干净树）
+## 2. 工作区状态（v1.17.0 已提交）
 
 ```text
 ## master...origin/master
- M package.json / package-lock.json / src-tauri/{Cargo.toml,Cargo.lock,tauri.conf.json}
- M src/App.tsx、src/components/*、src/core/{remote,storage,permission}/* 等 1.17.0 改动
- D src/core/phone-link/*、src-tauri/src/phone/{lan,tls,connector}.rs（旧 LAN 配对/中继）
- ?? src/core/remote/、src-tauri/src/phone/gateway/、packages/、android-shell/、docs/architecture/
- ?? art/、prototype/、docs/ref-analysis/（未跟踪的大块内容）
+# v1.17.0 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
-- 1.17.0 的网关 / Android 本机 Host 改动**尚未提交**；本次发版准备只改版本号与文档，不 stage、不 commit。
-- `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不要 `git add -A`；只加显式路径。
+- v1.17.0 的网关 / Android 本机 Host 改动已提交并推送。
+- `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不属于本次发布，未提交。
 - `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
 ---
 
-## 3. 验证基线（2026-11-02 实测）
+## 3. 验证基线（2026-11-03 实测）
 
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **839 文件 / 9147 用例：9130 通过、17 跳过、0 失败**（约 171s） |
+| `npx vitest run` | **865 文件 / 9449 用例：9432 通过、17 跳过、0 失败**（约 174s） |
+| `cargo check` | exit 0（7 个 warning，无 error；本轮只同步 `Cargo.lock` 到 1.17.0，未跑 `cargo test`） |
+| `npm run audit:docs` | 通过（version=1.17.0；`docs:sync` 基线 865 文件 / 40 表 / 116 命令注解） |
 | 已知失败 | **0** |
 
-### 3.1 2026-10-26 那两条失败已经消失
+### 3.1 本轮没有已知失败
 
-- 当时的形态：① `no-bom.test.ts` 报 18 个**未跟踪**游戏文档带 BOM；② `docs-current-gap-list.test.ts` 报两份 `MONOPOLY-*PLAN*.md` 缺历史横幅。
-- 2026-10-29 实测两条都绿：未跟踪内容本身变了（BOM 已去除、部分文件已删），**不是产品代码修复**。
+- 1.17.0 全量 865 文件 / 9449 用例：9432 通过、17 跳过、0 失败；`tsc` 0；
+  Android 设备用例与网关用例脚本见 `docs/architecture/` 与 `android-shell/`。
+- 历史：2026-10-26 曾有两条**未跟踪文档**导致的失败（BOM / 缺历史横幅），随未跟踪内容清理而消失，不是产品代码修复。
 - 纪律不变：新文档 UTF-8 **无 BOM**；新增 `*PLAN*` / `*GAP*` / `*TODO*` 文件要么加「历史文档（不再维护）」横幅，要么改名。
-- 本轮的判据增量见 `16-MCODE-STACK-AUDIT.md` §5（4 个新判据文件 + 25 条用例）。
 
 ### 3.2 测试规模为什么与文档不一致
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **839 / 9147**（2026-11-02；旧 LAN 配对删除后判据有增删）。
+- 1.16.334 时是 **839 / 9147**；1.17.0 当前实测 **865 / 9449**（网关/Android 本机判据新增）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---

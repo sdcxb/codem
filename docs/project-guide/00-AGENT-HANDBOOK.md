@@ -119,7 +119,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 | 发布 | 上一稳定版 GitHub `Codem v1.16.334` = `Latest`（2026-10-31）；1.17.0 未发布 |
 | HEAD | 以 `git log -1` 为准（1.17.0 发版准备） |
 | `tsc --noEmit` | **0 错误**（2026-11-03 实测） |
-| 全量测试 | 见 `09-CURRENT-STATE.md` §3（以 `npx vitest run` 实测为准） |
+| 全量测试 | **865 文件 / 9449 用例：9432 通过、17 跳过、0 失败**（约 174 秒，2026-11-03 实测） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
 | 上报点分诊 | 281 = 281（`node tools/audit/scan-report-sites.mjs --check`） |
 | 工作区 | **不是干净树**：1.17.0 网关/Android 本机 Host 改动未提交；`art/`、`prototype/`、`docs/ref-analysis/` 未跟踪 |
@@ -149,7 +149,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.17.0（待发布），tsc 0，865 个测试文件（用例数见 09 §3）。
+当前基线：1.17.0（待发布），tsc 0，865 测试文件 / 9449 用例（0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 

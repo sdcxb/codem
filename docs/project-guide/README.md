@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（1.17.0 发版准备）｜ 文档集提交见 `git log -1` ｜ 版本 **1.17.0**（2026-11-03 待发布；上一稳定版 1.16.334，2026-10-31）
+> **基线**：`master` @ 代码提交见 `git log -1`（v1.17.0 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.17.0**（2026-11-03 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **40 张实表** + FTS + 审计表；Tauri **114 个命令注解**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **839 个测试文件 / 9147 个用例**（2026-11-02 全量实测：9130 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **865 个测试文件 / 9449 个用例**（2026-11-03 全量实测：9432 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -92,15 +92,15 @@
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.17.0**（待发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | 上一稳定版 GitHub `Codem v1.16.334` = `Latest`（2026-10-31）；1.17.0 尚未发布 | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（1.17.0 发版准备） | `git rev-parse --short HEAD` |
-| 分支 | `master`；工作区有大量未提交的 1.17.0 改动 | `git status -sb` |
+| 版本 | **1.17.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.17.0` = `Latest`（2026-11-03） | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（v1.17.0 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.17.0 已提交并推送 | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-03 实测 exit 0） |
-| 全量测试 | 见 `09-CURRENT-STATE.md` §3（`npx vitest run` 实测） | `npx vitest run` |
-| 已知失败 | 见 `09-CURRENT-STATE.md` §3 | 同一处 |
+| 全量测试 | **865 文件 / 9449 用例：9432 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-03 实测，约 174 秒） |
+| 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
-| 工作区 | **不是干净树**：1.17.0 远程网关 / Android 本机 Host 的改动尚未提交 | `git status --porcelain` |
+| 工作区 | 干净（仅 `.codem/` 运行时文件未跟踪） | `git status --porcelain` |
 | 数据根 | `%APPDATA%\com.codem.app\`；库 `codem-db-rust.bin` | `src-tauri/src/storage.rs` |
 
 > **1.17.0 的主线**：PC 远程只走**桌面远程网关**（手机看桌面自己的项目/会话/历史，数据仍由桌面唯一拥有）；**Host 只服务 Android 本机模式**（手机自己的数据与项目）。桌面 Host sidecar 已退役，不要再把 Host 当 PC 远程入口。
