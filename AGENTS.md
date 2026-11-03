@@ -1,7 +1,7 @@
 # AGENTS.md —— 快速操作规程（**当前文档集：`docs/project-guide/README.md`**）
 
 > ★★ **2026-10-26 起，先读 `docs/project-guide/00-AGENT-HANDBOOK.md`** ✓ —— 这是给任何 AI / Agent 平台的接手手册（开工清单 / 硬规则 / 基线 / 坑 / 任务路由）。
-> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.16.334**。
+> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.0**。
 >
 > ★★ 旧入口（仍可参考）：**先读 `docs/PROJECT-GUIDE.md` 开头的「从这里开始」一节** ✓ —— 那是本项目的**历史核心文档**，
 
@@ -17,9 +17,9 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.16.334**（上下文检查点/完整历史/虚拟列表；外部 DSH 插件检查更新/一键升级；统一插件详情页；删除运行中会话立即杀命令进程树）
-- 1.16.334 包含：压缩不再删历史，完整历史/模型视图双轨；完整历史与主对话虚拟列表；检查点索引；溢出全文查看。
-- 测试规模：**796 个测试文件 / 8842 个用例**（8825 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
+- 当前版本：**1.18.0**（长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
+- 1.18.0 包含：目标模式多阶段契约/证据验收/重启与压缩恢复；原生手机端；零配对码（仅 Serve）；交互式命令 stdin 修复。
+- 测试规模：**874 个测试文件 / 9527 个用例**（9510 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -47,7 +47,7 @@ src/core/environment/ 工作区变更追踪（file-change-tracker.ts）
 src/core/prompt/      系统提示词与外置模板
 src/core/knowledge/   知识与动画类小工具（字体/嵌入/PPT 生成等）
 src/components/       React 界面组件（含技能管理、设置面板、任务中心等）
-src/test/             796 个测试文件（判据都写在这里）
+src/test/             874 个测试文件（判据都写在这里）
 tools/eval/           评测口径（配对报告、去重）
 tools/audit/          结构审计（上报点分诊、可达性门禁等）
 .preview-shot/        评测脚手架与运行产物（**已被 .gitignore 忽略**，不进仓库）
@@ -59,7 +59,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 2.6 分钟；796 文件 / 8842 用例）
+npx vitest run                          # 全量测试（约 3 分钟；874 文件 / 9527 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
