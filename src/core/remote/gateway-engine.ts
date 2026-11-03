@@ -55,6 +55,9 @@ export const GATEWAY_RPC_METHODS = [
   "host.diagnostics",
   "session.list",
   "session.get",
+  "session.create",
+  "project.list",
+  "project.create",
   "prompt.send",
   "run.cancel",
   "approval.list",
@@ -68,7 +71,6 @@ export const GATEWAY_RPC_METHODS = [
 
 /** 协议里有、但网关**还没实现**的方法（如实列给共享 UI，不画假按钮）。 */
 export const GATEWAY_UNSUPPORTED_METHODS = [
-  "session.create",
   "run.guidance",
   "plugins.list",
   "attachment.put",
@@ -108,7 +110,7 @@ export function gatewayReply(method: string, path: string): GatewayReply | null 
 
 // ========== 数据注入契约（由 desktop-engine 提供） ==========
 
-interface GatewaySessionSummary {
+export interface GatewaySessionSummary {
   id: string;
   title: string;
   projectId?: string;
@@ -118,6 +120,34 @@ interface GatewaySessionSummary {
   messageCount?: number;
   lastMessageAt?: number;
 }
+
+/**
+ * 项目投影（`project.list` / `project.create` 的唯一形状）。
+ *
+ * 不含沙箱/安全设置：手机只用来"选一个项目"，多带的字段既没用也会变成第二份状态。
+ */
+export interface GatewayProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+  pinned: boolean;
+  lastAccessedAt: number;
+}
+
+/**
+ * 远程**建**（项目/会话）的结果：失败是**具名失败**，不是异常上抛。
+ *
+ * 为什么不用 throw：网关的边界只做形状与错误码映射；`desktop-engine` 里的检查
+ * （路径不存在/重复/沙箱外）本来就是"可预期的拒绝"，用返回值把原因带全，
+ * 才不会在手机端退化成一句"操作失败"。
+ */
+export type GatewayCreateFailure = {
+  ok: false;
+  code: "INVALID_PARAMS" | "NOT_FOUND" | "CONFLICT" | "UNAVAILABLE";
+  message: string;
+  hint?: string;
+};
+export type GatewayCreateOutcome<T> = { ok: true; value: T } | GatewayCreateFailure;
 
 export interface GatewaySessionDetail {
   session: GatewaySessionSummary;
@@ -199,6 +229,16 @@ export interface GatewayDataDeps {
    * 按会话工作区取 git 对象；接线见 `desktop-engine.ts`。
    */
   changes: GatewayChangesApi;
+  /**
+   * 项目面（B1）。数据只有 `projects` 表这一份；**不**在网关侧再存一份项目。
+   *
+   * 做成可选是为了让既有测试 harness 只注入它们关心的依赖：缺哪个方法，
+   * `host.hello` 的能力清单就**不**报它（不出现点了必失败的按钮），
+   * 生产接线在 `desktop-engine.ts` 里永远三个都给。
+   */
+  listProjects?: () => GatewayProjectSummary[];
+  createProject?: (input: { name: string; path: string }) => Promise<GatewayCreateOutcome<GatewayProjectSummary>>;
+  createSession?: (input: { title?: string; projectId?: string }) => Promise<GatewayCreateOutcome<GatewaySessionSummary>>;
 }
 
 /** 变更面注入契约（生产接线见 `desktop-engine.ts`）。 */
@@ -363,6 +403,41 @@ function rpcError(
   };
 }
 
+/**
+ * 能力清单的**唯一**算法：缺注入方法 ⇒ 不报支持。
+ *
+ * 为什么不直接返回 `GATEWAY_RPC_METHODS`：方法白名单 ≠ 这台桌面真的接得上。
+ * 生产 `desktop-engine` 三个都给；测试 harness / 旧桌面缺哪个，`host.hello`
+ * 就把它列进 unsupported —— 手机据此**不画**那个按钮（"点了必失败"是禁止形态）。
+ */
+export function gatewaySupportedMethods(
+  deps: Pick<GatewayDataDeps, "listProjects" | "createProject" | "createSession">,
+): string[] {
+  return GATEWAY_RPC_METHODS.filter((method) => {
+    if (method === "project.list") return Boolean(deps.listProjects);
+    if (method === "project.create") return Boolean(deps.createProject);
+    if (method === "session.create") return Boolean(deps.createSession);
+    return true;
+  });
+}
+
+/** 远程建的失败 → JSON-RPC 错误码（**唯一**映射点） */
+function createFailureReply(id: JsonRpcId, failure: GatewayCreateFailure): Record<string, unknown> {
+  switch (failure.code) {
+    case "INVALID_PARAMS":
+      return rpcError(id, -32602, failure.message, "INVALID_PARAMS", failure.hint ? { hint: failure.hint } : {});
+    case "NOT_FOUND":
+      return rpcError(id, -32003, failure.message, "NOT_FOUND", failure.hint ? { hint: failure.hint } : {});
+    case "CONFLICT":
+      return rpcError(id, -32004, failure.message, "CONFLICT", failure.hint ? { hint: failure.hint } : {});
+    case "UNAVAILABLE":
+      return rpcError(id, -32000, failure.message, "UNAVAILABLE", failure.hint ? { hint: failure.hint } : {});
+  }
+}
+
+const PROJECT_NAME_MAX = 80;
+const SESSION_TITLE_MAX = 200;
+
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -473,12 +548,16 @@ export async function gatewayRpcReply(
             hint: "M1 共享 UI 只支持 protocolVersion=1",
           });
         }
+        const supported = gatewaySupportedMethods(deps);
         return rpcResult(id, {
           hostId: GATEWAY_HOST_ID,
           auth: { kind: "device", deviceId: "desktop-gateway", deviceName: "PC 桌面" },
           capabilities: {
-            supported: [...GATEWAY_RPC_METHODS],
-            unsupported: [...GATEWAY_UNSUPPORTED_METHODS],
+            supported,
+            unsupported: [
+              ...GATEWAY_UNSUPPORTED_METHODS,
+              ...GATEWAY_RPC_METHODS.filter((m) => !supported.includes(m)),
+            ],
           },
         });
       }
@@ -528,6 +607,44 @@ export async function gatewayRpcReply(
            */
           run: got.run ?? null,
         });
+      }
+      case "project.list": {
+        if (!deps.listProjects) {
+          return rpcError(id, -32006, "该桌面版本未开放项目列表", "UNSUPPORTED");
+        }
+        const limit = clampLimit(params.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+        const all = deps.listProjects();
+        return rpcResult(id, { items: all.slice(0, limit), hasMore: all.length > limit });
+      }
+      case "project.create": {
+        if (!deps.createProject) {
+          return rpcError(id, -32006, "该桌面版本未开放远程新建项目", "UNSUPPORTED");
+        }
+        const name = typeof params.name === "string" ? params.name.trim() : "";
+        if (!name || name.length > PROJECT_NAME_MAX) {
+          return rpcError(id, -32602, `name 必填且不超过 ${PROJECT_NAME_MAX} 字`, "INVALID_PARAMS");
+        }
+        const path = typeof params.path === "string" ? params.path.trim() : "";
+        if (!path) {
+          return rpcError(id, -32602, "path 必填（绝对路径）", "INVALID_PARAMS");
+        }
+        const outcome = await deps.createProject({ name, path });
+        return outcome.ok ? rpcResult(id, { project: outcome.value }) : createFailureReply(id, outcome);
+      }
+      case "session.create": {
+        if (!deps.createSession) {
+          return rpcError(id, -32006, "该桌面版本未开放远程新建会话", "UNSUPPORTED");
+        }
+        const rawTitle = typeof params.title === "string" ? params.title.trim() : "";
+        if (rawTitle.length > SESSION_TITLE_MAX) {
+          return rpcError(id, -32602, `title 不超过 ${SESSION_TITLE_MAX} 字`, "INVALID_PARAMS");
+        }
+        const rawProjectId = typeof params.projectId === "string" ? params.projectId.trim() : "";
+        const outcome = await deps.createSession({
+          ...(rawTitle ? { title: rawTitle } : {}),
+          ...(rawProjectId ? { projectId: rawProjectId } : {}),
+        });
+        return outcome.ok ? rpcResult(id, { session: outcome.value }) : createFailureReply(id, outcome);
       }
       case "prompt.send": {
         /**

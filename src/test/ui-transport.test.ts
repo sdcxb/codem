@@ -221,6 +221,7 @@ describe("TR-4 写模式由 capabilities 决定（不是宿主标记）", () => 
       attachments: false,
       cancelRun: true,
       createSession: false,
+      projects: false,
       multiDevice: true,
     });
 
@@ -243,6 +244,8 @@ describe("TR-4 写模式由 capabilities 决定（不是宿主标记）", () => 
     const host = capabilitiesFromMethods([
       ...GATEWAY_M2,
       "session.create",
+      "project.list",
+      "project.create",
       "workspace.read",
       "workspace.list",
       "workspace.diff",
@@ -258,7 +261,11 @@ describe("TR-4 写模式由 capabilities 决定（不是宿主标记）", () => 
       attachments: true,
       cancelRun: true,
       createSession: true,
+      projects: true,
     });
+    // 只有 project.list 没有 project.create ⇒ 「能选项目、不能建项目」：
+    // projects 是"两条都开"的派生位，避免手机画一个点了必失败的「新建项目」。
+    expect(capabilitiesFromMethods([...GATEWAY_M2, "project.list"]).projects).toBe(false);
 
     // 空能力表（服务器什么都没开）= 全关，不是"默认全开"
     expect(capabilitiesFromMethods([])).toMatchObject({

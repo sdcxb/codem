@@ -77,6 +77,13 @@ function harness(overrides: Partial<GatewayWorkspaceApi> = {}): Harness {
         supported: true,
       }),
     },
+    // B1：能力表完整所需（创建行为在 gateway-create.test.ts）
+    listProjects: () => [],
+    createProject: async () => ({
+      ok: true,
+      value: { id: "proj-test", name: "p", path: "C:\\p", pinned: false, lastAccessedAt: 1 },
+    }),
+    createSession: async () => ({ ok: true, value: { id: "sess-test", title: "t" } }),
   };
   return { deps, workspace };
 }
@@ -118,6 +125,9 @@ describe("GW-F1 能力表含只读文件面 + 变更面", () => {
       "host.diagnostics",
       "session.list",
       "session.get",
+      "session.create",
+      "project.list",
+      "project.create",
       "prompt.send",
       "run.cancel",
       "approval.list",

@@ -21505,3 +21505,224 @@ html[data-contrast="high"] {
 .ofm-compact-badge { color: var(--text-muted); font-size: var(--fs-xs); }
 .ofm-compact-more { margin-left: auto; color: var(--accent); font-size: var(--fs-xs); }
 
+/* ========== 长程目标模式状态条（ADR-0006） ==========
+   与「已排队」引导条同一形态：卡片 + 左侧图标 + 中间两行 + 右侧文字动作。
+   为什么照它做：那是输入区上方已有的一致形态（圆角卡片、1px 边框、`guidance-action-btn`
+   文字按钮），目标条再用浏览器默认按钮/整行贴边就会显得是另一套 UI。 */
+.goal-mode-bar {
+  margin: 0 auto var(--space-3);
+  /**
+   * 与输入卡片**等宽**（实测输入卡片 = `--reading-column` 再让出输入区左右留白）。
+   * 之前用 `100% - 24px`：窄窗下比输入卡片宽 `2 × --space-9`；宽窗下也不等于卡片宽度。
+   * 现在统一按同一个算式夹住，两种断点都与卡片对齐。
+   */
+  width: calc(min(100%, var(--reading-column)) - var(--space-10) - var(--space-10));
+  max-width: var(--reading-column);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-bubble);
+  overflow: hidden;
+}
+
+.goal-mode-bar__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  min-width: 0;
+}
+
+.goal-mode-bar__icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  color: var(--accent-strong);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+}
+
+.goal-mode-bar__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.goal-mode-bar__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.goal-mode-bar__status {
+  font-size: var(--fs-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.goal-mode-bar__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.goal-mode-bar__desc {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.goal-mode-bar__reason {
+  font-size: var(--fs-xs);
+  color: var(--error-content);
+  overflow-wrap: anywhere;
+}
+
+.goal-mode-bar__note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.goal-mode-bar__actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/**
+ * 三个动作按钮：与「已排队」条里的「编辑」同色系（品牌紫），但必须有实体感 ——
+ * 用户原话：「颜色不对，参照的按钮是紫色的，而且三个按钮要能区分出是按钮来」。
+ * 做法：淡紫底 + 品牌色描边 + 品牌色文字；hover 加深。不再用默认透明文字按钮。
+ */
+.goal-mode-bar__actions .guidance-action-btn {
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+.goal-mode-bar__actions .guidance-action-btn:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.goal-mode-bar__panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-5) var(--space-4);
+  font-size: var(--fs-xs);
+  max-height: 40vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.goal-mode-bar__form {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+/* 改目标表单：输入框/按钮与设置页同一口径（setting-group + panel-btn） */
+.goal-mode-bar__form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+}
+
+.goal-mode-bar__form-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* 目标设置：行式表单（label + 控件），控件复用平台输入框口径 */
+.goal-mode-bar__settings {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+}
+
+.goal-mode-bar__settings .setting-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.goal-mode-bar__settings .setting-group > label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.goal-mode-bar__settings select,
+.goal-mode-bar__settings input[type="text"] {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+}
+
+.goal-mode-bar__settings select {
+  max-width: 320px;
+}
+
+.goal-mode-bar__budget-inputs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.goal-mode-bar__budget-inputs input {
+  width: 110px;
+}
+
+.goal-mode-bar__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.goal-mode-bar__check input {
+  accent-color: var(--accent);
+}
+
+.goal-mode-bar__save {
+  justify-self: start;
+}

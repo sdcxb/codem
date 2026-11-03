@@ -1,9 +1,9 @@
 # 09 · 当前状态、未完成项与风险（2026-11-03 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（v1.17.0 已发布）｜ **1.17.0**（2026-11-03 发布，GitHub `Latest`；上一稳定版 1.16.334）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.18.0 已发布）｜ **1.18.0**（2026-11-03 发布，GitHub `Latest`；上一稳定版 1.17.0）
 >
-> 1.17.0 包含：桌面远程网关（PC 远程唯一入口）+ Android 本机模式（独立 Host/数据/项目）+ 共享 UI/能力表 +
-> 网关安全（一次性配对码 / HttpOnly cookie / 设备撤销 / 敏感文件读审批）；旧 LAN/TLS/二维码配对与桌面 Host sidecar 已删除。
+> 1.18.0 包含：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）+ Flutter 原生 Android 客户端预览 +
+> Tailscale Serve 零配对码 + 远程新建项目/会话 + 交互式命令 stdin 修复；Funnel/公网仍保留配对码。
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -12,25 +12,25 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.17.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.17.0` = **Latest**（2026-11-03） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` = 1.17.0（已上传并远端校验） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（v1.17.0 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.17.0 已提交并推送 | `git status -sb` |
-| 本地 tag | 最新为 **v1.17.0** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.18.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.18.0` = **Latest**（2026-11-03） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.18.0（发布时上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.18.0 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.0 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.18.0** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
-> **不要用本地 tag 判断发布状态**：v1.16.322–330 的 GitHub Release 存在，但本地 tag 列表没跟上（可能未拉取/未创建本地 tag）。以 `gh release list` 与 `latest.json` 为准。
+> **不要用本地 tag 判断发布状态**：以 `gh release list` 与 `latest.json` 为准。
 
 ---
 
-## 2. 工作区状态（v1.17.0 已提交）
+## 2. 工作区状态（v1.18.0 已提交）
 
 ```text
 ## master...origin/master
-# v1.17.0 已提交并推送；仅 .codem/ 运行时文件未跟踪
+# v1.18.0 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
-- v1.17.0 的网关 / Android 本机 Host 改动已提交并推送。
+- v1.18.0 的目标模式 / Flutter 客户端 / 零码网关改动已提交并推送。
 - `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不属于本次发布，未提交。
 - `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
@@ -41,15 +41,17 @@
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **865 文件 / 9449 用例：9432 通过、17 跳过、0 失败**（约 174s） |
-| `cargo check` | exit 0（7 个 warning，无 error；本轮只同步 `Cargo.lock` 到 1.17.0，未跑 `cargo test`） |
-| `npm run audit:docs` | 通过（version=1.17.0；`docs:sync` 基线 865 文件 / 40 表 / 116 命令注解） |
+| `npx vitest run` | **874 文件 / 9527 用例：9510 通过、17 跳过、0 失败**（约 186s；2026-11-03 工作区实测，含目标模式/远程/零码新增判据） |
+| `cargo test --lib` | **241 passed / 2 ignored / 0 failed**；其中网关 46 项 |
+| `cargo check` | exit 0（**0 error**） |
+| `flutter analyze` / `flutter test` | 0 issue / **10 passed** |
+| `npm run audit:docs` | 通过（version=1.18.0；`docs:sync` 基线 874 文件 / 45 表 / 118 命令注解） |
 | 已知失败 | **0** |
 
 ### 3.1 本轮没有已知失败
 
-- 1.17.0 全量 865 文件 / 9449 用例：9432 通过、17 跳过、0 失败；`tsc` 0；
-  Android 设备用例与网关用例脚本见 `docs/architecture/` 与 `android-shell/`。
+- 全量 874 文件 / 9527 用例：9510 通过、17 跳过、0 失败；`tsc` 0；
+  Rust 241 通过 / 2 ignored；Flutter 10 通过。
 - 历史：2026-10-26 曾有两条**未跟踪文档**导致的失败（BOM / 缺历史横幅），随未跟踪内容清理而消失，不是产品代码修复。
 - 纪律不变：新文档 UTF-8 **无 BOM**；新增 `*PLAN*` / `*GAP*` / `*TODO*` 文件要么加「历史文档（不再维护）」横幅，要么改名。
 
@@ -57,7 +59,7 @@
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 1.16.334 时是 **839 / 9147**；1.17.0 当前实测 **865 / 9449**（网关/Android 本机判据新增）。
+- 1.16.334 时是 **839 / 9147**；1.17.0 发布时 **865 / 9449**；1.18.0 发布时 **874 / 9527**（目标模式/远程/零码新增判据）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---
@@ -66,7 +68,9 @@
 
 | 能力 | 证据级别 | 备注 |
 |---|---|---|
-| 桌面远程网关（PC 远程唯一入口） | 判据 + Android 15 x86_64 模拟器设备用例 | 手动启动；loopback + adb reverse / 外部通道；发消息 / 流式 / 审批 / 取消 / 文件树 / 预览 / diff / 变更；手机暂不能新建会话或上传附件 |
+| 桌面远程网关（PC 远程唯一入口） | 判据 + Android 15 x86_64 模拟器设备用例 | 手动启动；loopback + adb reverse / 外部通道；发消息 / 流式 / 审批 / 取消 / 文件树 / 预览 / diff / 变更 / 新建项目与会话；附件按 Host 能力位开关，远程网关当前未开放 `attachment.put` |
+| 长任务目标模式 | 判据 + 真机注入 | 多阶段契约、阶段验收、自动续跑、重启/压缩恢复、证据化重规划；不自动批准 |
+| Flutter 原生 Android 客户端 | 判据 + x86_64 模拟器 | 会话/流式/工具/审批/项目/文件/改动/主题/主机切换；**arm64 未上真机** |
 | Android 本机模式 | 判据 + Android 15 x86_64 模拟器 | 独立 Host / 数据 / 项目；本机模型 Keystore；随机端口 + 本地鉴权；**arm64 真机未验** |
 | 共享 UI（手机 / 平板） | 判据 | 只读 / 可写由能力表决定；平板双列 / 三列；diff 渲染统一；手机端显示当前连的是 PC 还是本机 |
 | 主对话 / 流式 / 工具调用 | 判据 + 真机 | 日常主路径 |
@@ -195,11 +199,12 @@
 
 ## 8. 建议的下一步（按优先级，供接手者参考）
 
-### P0：1.17.0 发版收尾
+### P0：1.18.0 发布收尾
 
-1. 三处版本号已改 1.17.0、`package-lock` / `Cargo.lock` 已同步；`npm run docs:sync` + `audit:docs` 已过；
-2. 构建 + 签名 → 生成并校验 `latest.json` → `gh release create v1.17.0`（只发稳定版，建完抢回 `Latest`）；
-3. 1.17.0 工作区改动按显式路径提交（**不要 `git add -A`**，不要把 `art/`、`prototype/` 带进去）。
+1. 三处版本号已改 1.18.0、`package-lock` / `Cargo.lock` 已同步；`npm run docs:sync` + `audit:docs` 已过；
+2. 构建 + 签名 → 生成并校验 `latest.json` → `gh release create v1.18.0`（只发稳定版，建完抢回 `Latest`）；
+3. 1.18.0 工作区改动按显式路径提交（**不要 `git add -A`**，不要把 `art/`、`prototype/` 带进去）；
+4. 发布后复核 5 个资产、`Latest` 与 `verify-update-manifest.mjs --remote`。
 
 ### P1：远程与 Android 的关键“未验证”
 
@@ -231,12 +236,61 @@
 - **给 `execute_command` 加工作区校验**：已决定不做（§5.6）。只读越界必要；历史上 5–6 次收紧都因
   误伤 git/npm/跨目录只读而回退。要真做只能上 OS 级沙箱，别再写 cwd/字符串判定。
 - **用提示词治本**：真机验证过提醒不是分水岭；不要用“再加一段提示词”代替结构修复。
-- **目标模式 / 自动续跑**：用户明确禁止（2026-10-15）。
+- **短步目标模式 / 每轮改目标 / 用 DSH goal mode 开发本仓库**：仍然禁止（2026-10-15）。**长程里程碑目标模式**是产品能力，允许（ADR-0006）。
 - **按标题相似度挑会话交接**：已修；必须用 `handoff_to_new_session`。
 - **免费模型“超时=不可用”**：用户已裁定没问题；不要改探测口径。
 - **恢复桌面 Host sidecar / 旧 LAN·TLS·二维码配对 / 自建中继当 PC 远程入口**：已删除；PC 远程只走桌面网关，Host 只服务 Android 本机。
 - **让 Host 接管桌面数据 / 桌面与手机共用数据库**：ADR-0004 Phase 3 已取消（ADR-0005），不要再做迁移。
 - **给手机再写一套聊天 UI**：共享 UI 是唯一实现，行为漂移无法测。
+
+---
+
+## 9.5 长程目标模式 + 远程新建/隧道（v1.18.0 已交付）
+
+> 详细读数：`docs/architecture/GOAL-MODE-VERIFICATION.md`；设计：`ADR-0006`、`REMOTE-ACCESS-TUNNELS.md`。
+
+- **长程目标模式**（不再禁止；仍禁止「短步目标 / 每轮改目标 / 用 DSH goal mode 开发本仓库」）：
+  多阶段消息自动进入 → 只读深规划（3–12 阶段 DAG）→ 阶段执行复用 `executeSessionTurn` →
+  确定性验收（命令/测试/工件）→ 证据触发重规划（保留已完成阶段）→ 预算默认无限。
+  设置项：`codem-goal-mode` / `codem-goal-resume` / `codem-goal-budget`；状态条在输入区上方。
+- **真机 G5 已通过**：3 阶段全部 done、契约验收 A1–A4 全过、340s / 2039 tokens / 11 条证据 / 8 条决策。
+- **手机远程新建会话/项目**：`session.create` / `project.list` / `project.create` 写桌面同一份库；
+  手机面板有项目选择、新建项目、失败原因可见。
+- **网关 B2**：默认随桌面自启（`codem-gateway-autostart`）；设备表落盘（只存 token sha256）；
+  优先 `127.0.0.1:41873`；设置页可看设备并单台撤销；**重启桌面后旧 cookie 仍有效**（真机 7/7）。
+- **B4 跨网**：真实 Cloudflare quick tunnel、真实 Tailscale tailnet、TLS 反代两条 Host 分支全部通过；
+  Tailscale 控制台已开启 HTTPS + **Serve + Funnel**，`tailscale serve/funnel --bg 41873` 后
+  `https://win-6rsgb5ac85l.taile10bc6.ts.net/` 实测配对/建会话/撤销全过（`tailscale-live-report.json`）。
+  Funnel 是公网入口；不需要时 `tailscale funnel --https=443 off`。
+- **B3 Android**：x86_64 模拟器 **26/26** 设备用例通过（新建会话/真跑一轮/审批/继续/深链/附件/文件/响应式/无崩溃）；
+  Doze `force-idle` 后 Host 进程仍存活；**arm64 无法在本机验证**（QEMU2 在 x86_64 主机拒绝 arm64 镜像）。
+- **工具挂起已修**：`execute_command` 子进程 stdin = null（交互式 `npx` 不再等输入），
+  判据 `exec_stdin_closed_so_interactive_prompts_fail_fast` + `exec_spawn_config_must_null_stdin`。
+- **仍未验证/未做**：原生客户端第二台 Tailscale 手机闭环、相机/音频/富媒体、电池优化白名单引导、OEM 后台策略、arm64 真机。
+
+---
+
+## 9.6 Flutter 原生 Android 客户端（v1.18.0 预览）
+
+> 设计：`docs/design/MOBILE-DESIGN.md`；ADR：`docs/architecture/ADR-0007-NATIVE-ANDROID-CLIENT.md`。
+
+- 新增 `mobile/` Flutter 工程（包名 `io.codem.codem_mobile`），原生 UI 取代 WebView 作为主手机端；
+  `android-shell` 保留为历史/调试壳。
+- 已落地：设计 tokens/主题/组件、会话列表、聊天流式、工具卡、审批、停止、主机列表/切换、
+  项目、改动 Sheet + diff、文件树/文件预览、系统通知、前台服务、系统分享、
+  深/浅主题、演示数据；图片选择/上传在本地 Host/演示可用，远程网关未开放
+  `attachment.put` 时入口会按能力位禁用（不画一个点了必失败的按钮）。
+- 零配对码：Tailscale Serve 注入 `Tailscale-User-Login` 时，网关在
+  loopback + `*.ts.net` + 非 Funnel 三项都满足时自动登记设备并下发 cookie；
+  同一登录 + 同一设备名只保留一台，撤销后进 deny-list，需配对码重新认领。
+  Funnel/公网/自定义反代仍走 6 位配对码。
+- 协议复用：`host.hello`、`session.list/get/watch/changes/change.diff`、`project.list`、
+  `prompt.send`、`run.cancel`、`approval.respond`、`workspace.list/read`；附件方法
+  仅在 Host 能力位支持时使用。
+- 验证：`flutter analyze` 0 issue；`flutter test` 10/10；x86_64 release APK 安装到模拟器并截图；
+  `CodemForegroundService` 实测 `isForeground=true`（通知渠道 `codem.connection`）。
+- 已知限制：本机 Host 启动/发现未接；cookie 暂存 SharedPreferences
+  （正式发布前换 Keystore）；只验证 x86_64，arm64 APK 已尝试构建但未上真机。
 
 ---
 

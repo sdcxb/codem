@@ -76,6 +76,13 @@ function harness(overrides: Partial<GatewayChangesApi> = {}): Harness {
       root: async () => "C:\\desktop-project",
     },
     changes,
+    // B1：能力表完整所需（本文件不测创建行为，只测能力表不漂移）
+    listProjects: () => [],
+    createProject: async () => ({
+      ok: true,
+      value: { id: "proj-test", name: "p", path: "C:\\p", pinned: false, lastAccessedAt: 1 },
+    }),
+    createSession: async () => ({ ok: true, value: { id: "sess-test", title: "t" } }),
   };
   return { deps, changes };
 }
@@ -111,6 +118,9 @@ describe("GWC-1 能力表与两条方法", () => {
       "host.diagnostics",
       "session.list",
       "session.get",
+      "session.create",
+      "project.list",
+      "project.create",
       "prompt.send",
       "run.cancel",
       "approval.list",

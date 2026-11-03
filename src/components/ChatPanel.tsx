@@ -14,6 +14,8 @@ import { computeHasAssistantAfter } from "../core/ui/message-suffix";
 import { computeVirtualWindow } from "../core/ui/virtual-window";
 import { isMachineInjectedMessage } from "../core/storage/session";
 import { ContinueBar } from "./ContinueBar";
+import { GoalModeBar } from "./GoalModeBar";
+import { useGoalView } from "./useGoalView";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -353,11 +355,21 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
   /**
+   * 长程目标模式（ADR-0006）：该会话有目标时，**默认的每轮「继续」一律不出现**。
+   *
+   * 为什么：目标模式的推进是**系统动作**（阶段完成自动进入下一阶段；阶段内验收不过
+   * 自动继续）。若此时还摆一个「继续」按钮，用户会以为"必须点它任务才会往下走"，
+   * 甚至点出一轮新的普通回合（把目标模式搅成两个执行者）。
+   * 暂停/阻塞后的「继续目标」在 GoalModeBar 里（语义不同：它恢复的是目标，不是发一句话）。
+   */
+  const goalView = useGoalView(currentSessionId);
+  /**
    * 「继续」只在一轮**正常结束**且最后一条是助手正文时出现：
    * 失败/取消/空正文/流式中都不出现（避免把"重试"伪装成"继续"）。
    */
   const canContinue =
     Boolean(currentSessionId) &&
+    !goalView &&
     !isSessionStreaming &&
     lastMessage?.role === "assistant" &&
     (lastMessage.status ?? "done") === "done" &&
@@ -1866,6 +1878,8 @@ canEdit={editable}
           ))}
         </div>
       )}
+
+      <GoalModeBar sessionId={currentSessionId} />
 
       {canContinue ? (
         <ContinueBar

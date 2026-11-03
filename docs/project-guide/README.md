@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（v1.17.0 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.17.0**（2026-11-03 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（v1.18.0 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.18.0**（2026-11-03 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
 - SQLite **40 张实表** + FTS + 审计表；Tauri **114 个命令注解**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **865 个测试文件 / 9449 个用例**（2026-11-03 全量实测：9432 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **874 个测试文件 / 9527 个用例**（2026-11-03 全量实测：9510 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -92,18 +92,18 @@
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.17.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.17.0` = `Latest`（2026-11-03） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（v1.17.0 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.17.0 已提交并推送 | `git status -sb` |
+| 版本 | **1.18.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.18.0` = `Latest`（2026-11-03） | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（v1.18.0 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.0 已提交并推送 | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-03 实测 exit 0） |
-| 全量测试 | **865 文件 / 9449 用例：9432 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-03 实测，约 174 秒） |
+| 全量测试 | **874 文件 / 9527 用例：9510 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-03 实测，约 186 秒） |
 | 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | 干净（仅 `.codem/` 运行时文件未跟踪） | `git status --porcelain` |
 | 数据根 | `%APPDATA%\com.codem.app\`；库 `codem-db-rust.bin` | `src-tauri/src/storage.rs` |
 
-> **1.17.0 的主线**：PC 远程只走**桌面远程网关**（手机看桌面自己的项目/会话/历史，数据仍由桌面唯一拥有）；**Host 只服务 Android 本机模式**（手机自己的数据与项目）。桌面 Host sidecar 已退役，不要再把 Host 当 PC 远程入口。
+> **1.18.0 的主线**：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；Funnel/公网仍保留一次性配对码。PC 远程仍只走**桌面远程网关**，数据只由桌面唯一拥有。
 
 > ⚠️ 测试基线会随未跟踪内容变化。跑出来不是这个数：先看 `git status` 与 `09` §3，不要为了让全绿去改产品代码。
 
@@ -154,4 +154,4 @@
 - `docs/NEW-SESSION-START.md` / `AGENTS.md`：**旧开工说明**。`00` 是它们的替代入口；`AGENTS.md` 仍保留命令与发版规程。
 - `docs/GAP-LIST.md`：**已过期**（最后版本记录 1.16.305）。当前缺口见 `09-CURRENT-STATE.md`；在它被重写前，不要把它当“唯一清单”。
 
-**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.17.0 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。
+**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.18.0 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。

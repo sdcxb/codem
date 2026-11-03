@@ -77,6 +77,16 @@ function harness(overrides: Partial<GatewayDataDeps> = {}): Harness {
         supported: true,
       }),
     },
+    // B1：项目/会话创建（网关只做形状与错误码，真实写入在 desktop-engine）
+    listProjects: () => [],
+    createProject: async (input) => ({
+      ok: true,
+      value: { id: "proj-test", name: input.name, path: input.path, pinned: false, lastAccessedAt: 1 },
+    }),
+    createSession: async (input) => ({
+      ok: true,
+      value: { id: "sess-created", title: input.title ?? "新会话", projectId: input.projectId ?? "" },
+    }),
     ...overrides,
   };
   return { deps, sent, cancelled };
@@ -262,7 +272,7 @@ describe("网关写路径第一批（M2）", () => {
     expect(h.cancelled).toHaveLength(0);
   });
 
-  it("GW-W9: capabilities = 13 条（含审批/文件面/变更面）；事件不是 RPC 方法，不得混进两张表", async () => {
+  it("GW-W9: capabilities = 16 条（含审批/文件面/变更面/项目面）；事件不是 RPC 方法，不得混进两张表", async () => {
     const hello = await gatewayRpcReply(rpc("host.hello", { protocolVersion: 1 }), harness().deps);
     const caps = (hello.result as any).capabilities;
     // 结构固定：不允许偷偷加一个"看起来支持事件"的字段（半套 UI 的温床）。
@@ -282,8 +292,13 @@ describe("网关写路径第一批（M2）", () => {
       expect(caps.supported).toContain(method);
       expect(caps.unsupported).not.toContain(method);
     }
+    // B1 项目面已实现：如实进 supported（手机据此渲染"新建会话/项目"）。
+    for (const method of ["session.create", "project.list", "project.create"]) {
+      expect(caps.supported).toContain(method);
+      expect(caps.unsupported).not.toContain(method);
+    }
     // 仍没实现的写路径：如实列在 unsupported 里（不画假按钮）。
-    for (const method of ["run.guidance", "session.create", "attachment.put"]) {
+    for (const method of ["run.guidance", "attachment.put"]) {
       expect(caps.supported).not.toContain(method);
       expect(caps.unsupported).toContain(method);
     }

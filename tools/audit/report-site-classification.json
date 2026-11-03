@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 281,
-    "triaged": 281,
+    "total": 284,
+    "triaged": 284,
     "pending": 0
   },
   "sites": [
@@ -78,17 +78,17 @@
       "round": 104
     },
     {
-      "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "手动压缩没生效 ⇒ action（旧消息与摘要标记没有全部写完）。",
-      "round": 104
-    },
-    {
       "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact.write::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "压缩写盘失败 ⇒ persist（刻意与上面那条分开：这条是真写盘失败）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "手动压缩没生效 ⇒ action（旧消息与摘要标记没有全部写完）。",
       "round": 104
     },
     {
@@ -451,13 +451,6 @@
       "round": 255
     },
     {
-      "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "读侧失败：计数读不到 ⇒ 本次不刷新。走 action。刻意不是 persist —— 代码注释写明「**没有**写回 0（旧值保留）」，而 persist 的默认后果句是「本次改动只存在于内存」，与实际恰好相反。",
-      "round": 100
-    },
-    {
       "site": "src/core/knowledge/storage.ts::noteVersion.restore::#1",
       "kind": "persist",
       "status": "triaged",
@@ -469,6 +462,13 @@
       "kind": "persist",
       "status": "triaged",
       "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.save，第 1731 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读侧失败：计数读不到 ⇒ 本次不刷新。走 action。刻意不是 persist —— 代码注释写明「**没有**写回 0（旧值保留）」，而 persist 的默认后果句是「本次改动只存在于内存」，与实际恰好相反。",
       "round": 100
     },
     {
@@ -1309,6 +1309,27 @@
       "round": 269
     },
     {
+      "site": "src/core/storage/goal-domain.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "长程目标模式五张表的写穿失败（area 由表名映射，扫描器记 <动态>）：目标状态是重启后要继续的东西，写不进去必须 persist 而不是静默。",
+      "round": 300
+    },
+    {
+      "site": "src/core/storage/goal-domain.ts::goal.phase::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "阶段行不存在 ⇒ 这次状态更新没有落库；重启后阶段会回到旧状态，属真失败。",
+      "round": 300
+    },
+    {
+      "site": "src/core/storage/goal-domain.ts::goal.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "目标行不存在 ⇒ 状态更新没有落库（暂停/完成/阻塞都会丢），属真失败。",
+      "round": 300
+    },
+    {
       "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",
       "kind": "persist",
       "status": "triaged",
@@ -1357,16 +1378,16 @@
       "reason": "空间回收**没跑成** ⇒ 真失败，已补 title「维护：空间回收未跑成」"
     },
     {
-      "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "遥测裁剪**没跑成** ⇒ 真失败（维护动作未生效），已补真实 title「维护：遥测裁剪未跑成」"
-    },
-    {
       "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune.mirror::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "镜像未同步 ⇒ 真失败（界面那份数据落后），已补 title「维护：遥测镜像未同步」"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "遥测裁剪**没跑成** ⇒ 真失败（维护动作未生效），已补真实 title「维护：遥测裁剪未跑成」"
     },
     {
       "site": "src/core/storage/message.ts::<动态>::#1",
@@ -1548,17 +1569,17 @@
       "round": 104
     },
     {
-      "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore，第 298 行）",
-      "round": 104
-    },
-    {
       "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore.setting::#1",
       "kind": "persist",
       "status": "triaged",
       "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore.setting，第 156 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore，第 298 行）",
       "round": 104
     },
     {

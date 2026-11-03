@@ -314,6 +314,21 @@ export function isDelegatedTaskMessage(m: { id?: unknown } | null | undefined): 
 }
 
 /**
+ * 目标模式阶段消息的 id 前缀（A1：`GOAL-16`）。
+ *
+ * 格式：`goal-phase-<goalId>-<phaseKey>-<attempt>`。
+ *
+ * - **可辨认**：UI 按 `SYSTEM_INJECTED_MESSAGE_ID_PREFIXES` 认它 ⇒ 渲染成系统说明，
+ *   不会被当成用户自己说的话（重开会话时尤其明显）；
+ * - **可审计**：同一 goal/phase/attempt 的重复注入是**同 id 覆盖**，
+ *   不会在会话里叠出两条一模一样的阶段指令；
+ * - **自动继续可计数**：`attempt` 就在 id 里，界面/证据链可以直接说"第 N 次执行"。
+ */
+export function goalPhaseMessageId(goalId: string, phaseKey: string, attempt: number): string {
+  return `goal-phase-${goalId}-${phaseKey}-${attempt}`;
+}
+
+/**
  * **系统提醒（nudge）类消息的 id 前缀** —— 循环在对话中间插进去、用来推着模型做事的那几句
  * 「[SYSTEM] …」（第 198 波，用户真机直报）。
  *
@@ -344,6 +359,7 @@ export function isDelegatedTaskMessage(m: { id?: unknown } | null | undefined): 
  * | `del-reminder-` | `agentic-loop.ts` | 删除提醒 |
  * | `trunc-cont-` | `agentic-loop.ts` | 输出截断后的续跑 |
  * | `guidance-carryover-` | `agentic-loop.ts` | 上一轮遗留的指导结转 |
+ * | `goal-phase-` | `session/executor.ts`（由 Goal Runner 传入 messageId） | 目标模式的**阶段执行指令**（模型必须把它当操作方指令，但它不是用户打的话） |
  * | `compact-` / `compact-manual-` | `agentic-loop.ts` / `ContextMonitor.tsx`（`nextCompactionMarkerId`） | 上下文压缩摘要标记（**同样是机器写的**：原来它也是"普通可见 user 行"⇒ 一并按系统说明渲染；"哪几行是摘要"这件事仍由 `isCompactionMarker` 按内容前缀回答，两个问题各有一个来源） |
  *
  * 判据 `SYSINJ-4` 是一道**棘轮**：扫 `agentic-loop.ts` 里所有 `role: "user"` 的 `createMessage`，
@@ -361,6 +377,15 @@ export const SYSTEM_INJECTED_MESSAGE_ID_PREFIXES = [
   /* 压缩标记：`nextCompactionMarkerId()` 生成 `compact-<ts>-<seq>` / `compact-manual-<ts>-<seq>` */
   "compact-",
   "compact-manual-",
+  /**
+   * 目标模式的**阶段执行指令**（`goalPhaseMessageId` 生成
+   * `goal-phase-<goalId>-<phaseKey>-<attempt>`）。
+   *
+   * 为什么它必须是机器注入：阶段提示词是系统写的（契约/计划/验收），
+   * 不是用户打的话；若按用户气泡渲染，重开会话时会变成"用户自己发了一段奇怪的长指令"，
+   * 还带"编辑并重发"入口（点下去会把阶段提示词当成用户提问重发）。
+   */
+  "goal-phase-",
   /**
    * ★ 全量审计（高）：**子智能体运行时写进父会话的两类通知**（runtime.ts 里的
    * settlement-<childId>-<ts> 与 report-<childId>-<ts>，role=user，正文是子代理的结束语/汇报）。

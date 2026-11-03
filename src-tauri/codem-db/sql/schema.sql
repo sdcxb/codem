@@ -611,3 +611,93 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 );
 CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(event_name);
+
+-- ========== ADR-0006: Long-horizon Goal Mode（契约 / 计划 / 阶段 / 证据 / 决策）==========
+-- 与旧 goals 表**不是**同一套东西：旧表是 title/description 粒度的短步目标记录，
+-- 这里是不变契约 + 版本化里程碑计划 + 阶段证据。五张表都由渲染侧 goal/store.ts 读写。
+CREATE TABLE IF NOT EXISTS goal_contracts (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  statement TEXT NOT NULL,
+  principles TEXT NOT NULL DEFAULT '[]',
+  non_goals TEXT NOT NULL DEFAULT '[]',
+  acceptance TEXT NOT NULL DEFAULT '[]',
+  constraints TEXT NOT NULL DEFAULT '[]',
+  budget TEXT NOT NULL DEFAULT '{"mode":"unlimited"}',
+  status TEXT NOT NULL DEFAULT 'active',
+  max_replans INTEGER NOT NULL DEFAULT 5,
+  replan_count INTEGER NOT NULL DEFAULT 0,
+  usage TEXT NOT NULL DEFAULT '{}',
+  started_at INTEGER,
+  blocked_reason TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_contracts_session ON goal_contracts(session_id, status);
+
+CREATE TABLE IF NOT EXISTS goal_plans (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  contract_version INTEGER NOT NULL DEFAULT 1,
+  strategy TEXT NOT NULL,
+  invariants TEXT NOT NULL DEFAULT '[]',
+  revision TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (goal_id) REFERENCES goal_contracts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_plans_goal ON goal_plans(goal_id, version);
+
+CREATE TABLE IF NOT EXISTS goal_phases (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  plan_version INTEGER NOT NULL,
+  phase_key TEXT NOT NULL,
+  order_index INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  acceptance TEXT NOT NULL DEFAULT '[]',
+  covers TEXT NOT NULL DEFAULT '[]',
+  depends_on TEXT NOT NULL DEFAULT '[]',
+  risks TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  rework_of TEXT,
+  started_at INTEGER,
+  completed_at INTEGER,
+  FOREIGN KEY (goal_id) REFERENCES goal_contracts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_phases_goal ON goal_phases(goal_id, plan_version, order_index);
+
+CREATE TABLE IF NOT EXISTS goal_evidence (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  plan_version INTEGER NOT NULL,
+  phase_key TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL,
+  acceptance_id TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  detail TEXT,
+  passed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (goal_id) REFERENCES goal_contracts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_evidence_phase ON goal_evidence(goal_id, phase_key, created_at);
+
+CREATE TABLE IF NOT EXISTS goal_decisions (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  plan_version INTEGER,
+  phase_key TEXT,
+  payload TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (goal_id) REFERENCES goal_contracts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_decisions_goal ON goal_decisions(goal_id, created_at);
+

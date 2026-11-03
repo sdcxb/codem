@@ -112,6 +112,12 @@ pub const IMPORT_ORDER: &[&str] = &[
     "squads",
     "squad_members",
     "goals",
+    // 长程目标模式（ADR-0006）：契约 → 计划 → 阶段 → 证据/决策（父表在前，外键才插得进去）
+    "goal_contracts",
+    "goal_plans",
+    "goal_phases",
+    "goal_evidence",
+    "goal_decisions",
     "todo_lists",
     "inbox",
     "issues",
@@ -167,9 +173,7 @@ fn primary_key_columns(engine: &Engine, table: &str) -> DbResult<Vec<String>> {
             .map_err(DbError::from)?;
         // (pk 序号, 列名)；pk=0 表示不是主键列
         let rows = stmt
-            .query_map([], |r| {
-                Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?))
-            })
+            .query_map([], |r| Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?)))
             .map_err(DbError::from)?;
         let mut pk: Vec<(i64, String)> = Vec::new();
         for r in rows {
@@ -273,7 +277,10 @@ pub fn import_table(engine: &Engine, p: &Value) -> DbResult<Value> {
      * （`messages.get` 的 `trimmed` 早就用了 `unwrap_or(0)`，`hidden` 第 45 轮补上）。
      */
     if columns.iter().any(|c| c == "hidden") {
-        let idx = columns.iter().position(|c| c == "hidden").expect("刚判断过");
+        let idx = columns
+            .iter()
+            .position(|c| c == "hidden")
+            .expect("刚判断过");
         for (i, row) in parsed.iter().enumerate() {
             if matches!(row.get(idx), Some(SqlValue::Null)) {
                 return Err(DbError::invalid(
@@ -288,7 +295,11 @@ pub fn import_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         }
     }
 
-    let verb = if mode == "replace" { "INSERT OR REPLACE" } else { "INSERT" };
+    let verb = if mode == "replace" {
+        "INSERT OR REPLACE"
+    } else {
+        "INSERT"
+    };
     let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{i}")).collect();
     let sql = format!(
         "{verb} INTO \"{table}\" ({}) VALUES ({})",
@@ -315,7 +326,8 @@ pub fn import_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut stmt = tx.prepare_cached(&sql).map_err(DbError::from)?;
         let mut n = 0usize;
         for vals in &parsed {
-            stmt.execute(params_from_iter(vals.iter())).map_err(DbError::from)?;
+            stmt.execute(params_from_iter(vals.iter()))
+                .map_err(DbError::from)?;
             n += 1;
         }
         Ok(n)
@@ -369,7 +381,8 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
     } else {
         "insert"
     };
-    let mut jobs: Vec<(String, Vec<String>, Vec<Vec<SqlValue>>, String)> = Vec::with_capacity(items.len());
+    let mut jobs: Vec<(String, Vec<String>, Vec<Vec<SqlValue>>, String)> =
+        Vec::with_capacity(items.len());
     for (i, it) in items.iter().enumerate() {
         let table = it
             .get("table")
@@ -389,7 +402,10 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
             })
             .collect::<DbResult<Vec<_>>>()?;
         if columns.is_empty() {
-            return Err(DbError::invalid("columns", format!("表 {table} 的 columns 为空")));
+            return Err(DbError::invalid(
+                "columns",
+                format!("表 {table} 的 columns 为空"),
+            ));
         }
         // 每项可以覆盖顶层默认（顶层是 `migration.auto` 的"整批语义"，单项是自己的语义）
         let mode = it
@@ -527,7 +543,8 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
                             for i in &pk_idx {
                                 args.push(vals[*i].clone());
                             }
-                            stmt.execute(params_from_iter(args.iter())).map_err(DbError::from)?;
+                            stmt.execute(params_from_iter(args.iter()))
+                                .map_err(DbError::from)?;
                         }
                     }
                 }
@@ -895,7 +912,10 @@ pub fn fts_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = req_text(p, "session_id")?;
     engine.write_tx(|tx| {
         let n = tx
-            .execute("DELETE FROM session_fts WHERE session_id = ?1", params![session_id])
+            .execute(
+                "DELETE FROM session_fts WHERE session_id = ?1",
+                params![session_id],
+            )
             .map_err(DbError::from)?;
         Ok(json!({ "written": n }))
     })
@@ -970,7 +990,10 @@ pub fn fts_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
         })
         .collect::<DbResult<Vec<_>>>()?;
     if parsed.is_empty() {
-        return Err(DbError::invalid("ids", "不能为空数组（必须显式给出要移除的目标）"));
+        return Err(DbError::invalid(
+            "ids",
+            "不能为空数组（必须显式给出要移除的目标）",
+        ));
     }
     engine.write_tx(|tx| {
         let mut stmt = tx
@@ -978,7 +1001,9 @@ pub fn fts_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
             .map_err(DbError::from)?;
         let mut n = 0usize;
         for id in &parsed {
-            n += stmt.execute(params![session_id, id]).map_err(DbError::from)?;
+            n += stmt
+                .execute(params![session_id, id])
+                .map_err(DbError::from)?;
         }
         Ok(json!({ "written": n, "requested": parsed.len(), "session_id": session_id }))
     })
@@ -1141,7 +1166,10 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
                 .map_err(DbError::from)?;
             let rows = stmt
                 .query_map([], |r| {
-                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                    ))
                 })
                 .map_err(DbError::from)?;
             let mut m: std::collections::HashMap<String, (usize, String)> =
@@ -1207,11 +1235,8 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
                 unchanged += 1;
                 continue;
             }
-            tx.execute(
-                "DELETE FROM session_fts WHERE message_id = ?1",
-                params![id],
-            )
-            .map_err(DbError::from)?;
+            tx.execute("DELETE FROM session_fts WHERE message_id = ?1", params![id])
+                .map_err(DbError::from)?;
             tx.execute(
                 "INSERT INTO session_fts (message_id, session_id, content, role, timestamp) \
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1334,11 +1359,7 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         .and_then(|x| x.as_i64())
         .unwrap_or(2_000)
         .clamp(1, 20_000) as usize;
-    let offset = p
-        .get("offset")
-        .and_then(|x| x.as_i64())
-        .unwrap_or(0)
-        .max(0) as usize;
+    let offset = p.get("offset").and_then(|x| x.as_i64()).unwrap_or(0).max(0) as usize;
     // keyset 游标：调用方把上一页的 `next_key` 原样回传。与 `offset` 同时给时**以 keyset 为准**
     // （两者语义不同，混用只会得到静默错误的页；所以先到先用，且在返回里标明用了哪种）。
     let after_key = p.get("after_key").filter(|v| !v.is_null()).cloned();
@@ -1363,7 +1384,9 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
     }
     // 表名来自白名单、列名来自真实 schema，拼接安全
     let total: i64 = conn
-        .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| r.get(0))
+        .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| {
+            r.get(0)
+        })
         .map_err(DbError::from)?;
     /*
      * 分页**在 SQL 里做**，而不是"整表读出来再 truncate"。
@@ -1452,7 +1475,11 @@ pub fn migration_status(engine: &Engine, p: &Value) -> DbResult<Value> {
     )?;
     let marker = engine.with_conn(|conn| {
         let v: Option<String> = conn
-            .query_row("SELECT value FROM settings WHERE key = 'codem-storage-migrated-at'", [], |r| r.get(0))
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'codem-storage-migrated-at'",
+                [],
+                |r| r.get(0),
+            )
             .ok();
         Ok(v)
     })?;
@@ -1535,12 +1562,21 @@ mod batch_message_tests {
         );
         assert_eq!(
             reconcile_multisets(&da, &db),
-            ReconcileVerdict::Identical { order_differs: true },
+            ReconcileVerdict::Identical {
+                order_differs: true
+            },
             "结论必须是「一致，只是行序不同」，而不是失败"
         );
 
         // 内容真的不同（k2 的值变了）→ 必须判失败，且分类是「内容不一致」而不是「缺行」
-        let c = json!([["k1","v1"], ["k2","CHANGED"], ["k3","v3"], ["k4","v4"], ["k5","v5"], ["k6","v6"]]);
+        let c = json!([
+            ["k1", "v1"],
+            ["k2", "CHANGED"],
+            ["k3", "v3"],
+            ["k4", "v4"],
+            ["k5", "v5"],
+            ["k6", "v6"]
+        ]);
         let dc = digest_json_rows_multiset(c.as_array().unwrap());
         assert_ne!(da.digest, dc.digest);
         match reconcile_multisets(&da, &dc) {
@@ -1549,7 +1585,13 @@ mod batch_message_tests {
         }
 
         // 目标端**少一行** → 「缺行」分类（这才是"数据搬丢了"）
-        let d = json!([["k1","v1"], ["k2","v2"], ["k3","v3"], ["k4","v4"], ["k5","v5"]]);
+        let d = json!([
+            ["k1", "v1"],
+            ["k2", "v2"],
+            ["k3", "v3"],
+            ["k4", "v4"],
+            ["k5", "v5"]
+        ]);
         let dd = digest_json_rows_multiset(d.as_array().unwrap());
         assert_eq!(
             reconcile_multisets(&da, &dd),
@@ -1598,7 +1640,11 @@ mod event_tests {
     }
     fn seed_session(e: &Engine, id: &str) {
         call(e, "projects.upsert", json!({ "id": "p1", "name": "P" }));
-        call(e, "sessions.upsert", json!({ "id": id, "project_id": "p1" }));
+        call(
+            e,
+            "sessions.upsert",
+            json!({ "id": id, "project_id": "p1" }),
+        );
     }
 
     /// seq 是**全局** AUTOINCREMENT，不是每会话从 1 开始。
@@ -1610,11 +1656,30 @@ mod event_tests {
         let (_d, e) = eng("evglobal");
         seed_session(&e, "s1");
         seed_session(&e, "s2");
-        let a1 = call(&e, "events.append", json!({ "session_id": "s1", "event_type": "t" }));
-        let b1 = call(&e, "events.append", json!({ "session_id": "s2", "event_type": "t" }));
-        let a2 = call(&e, "events.append", json!({ "session_id": "s1", "event_type": "t" }));
-        let (sa1, sb1, sa2) = (a1["seq"].as_i64().unwrap(), b1["seq"].as_i64().unwrap(), a2["seq"].as_i64().unwrap());
-        assert!(sb1 > sa1, "第二个会话的 seq 必须大于第一个（全局单调），实际 {sb1} vs {sa1}");
+        let a1 = call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "t" }),
+        );
+        let b1 = call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s2", "event_type": "t" }),
+        );
+        let a2 = call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "t" }),
+        );
+        let (sa1, sb1, sa2) = (
+            a1["seq"].as_i64().unwrap(),
+            b1["seq"].as_i64().unwrap(),
+            a2["seq"].as_i64().unwrap(),
+        );
+        assert!(
+            sb1 > sa1,
+            "第二个会话的 seq 必须大于第一个（全局单调），实际 {sb1} vs {sa1}"
+        );
         assert!(sa2 > sb1, "回到 s1 继续追加时 seq 继续增大，实际 {sa2}");
         // s1 自己只有两条事件，但 seq 不连续（中间夹了 s2 的）——这正是"全局"的含义
         assert_ne!(sa2, sa1 + 1, "seq 不应在会话内连续递增");
@@ -1631,7 +1696,12 @@ mod event_tests {
                 { "type": "a" }, { "type": "b" }, { "type": "c" }
             ] }),
         );
-        let seqs: Vec<i64> = r["seqs"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+        let seqs: Vec<i64> = r["seqs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_i64().unwrap())
+            .collect();
         assert_eq!(seqs.len(), 3);
         assert_eq!(
             seqs[2] - seqs[0],
@@ -1645,7 +1715,12 @@ mod event_tests {
     fn batch_rejects_empty_and_bad_items_atomically() {
         let (_d, e) = eng("evbatchbad");
         seed_session(&e, "s1");
-        assert!(dispatch(&e, "events.append_batch", &json!({ "session_id": "s1", "events": [] })).is_err());
+        assert!(dispatch(
+            &e,
+            "events.append_batch",
+            &json!({ "session_id": "s1", "events": [] })
+        )
+        .is_err());
         // 第二条缺 type → 整批不落
         let err = dispatch(
             &e,
@@ -1663,9 +1738,17 @@ mod event_tests {
         let (_d, e) = eng("evlist");
         seed_session(&e, "s1");
         for i in 0..10 {
-            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}") }));
+            call(
+                &e,
+                "events.append",
+                json!({ "session_id": "s1", "event_type": format!("e{i}") }),
+            );
         }
-        let all = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let all = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "limit": 100 }),
+        );
         assert_eq!(all["items"].as_array().unwrap().len(), 10);
         assert_eq!(all["items"][0]["type"], json!("e0"), "默认按 seq 升序");
         assert_eq!(all["has_more"], json!(false));
@@ -1677,12 +1760,24 @@ mod event_tests {
 
         // from_seq：只读水位之后的事件（增量同步靠它）
         let third = all["items"][3]["seq"].as_i64().unwrap();
-        let from = call(&e, "events.list", json!({ "session_id": "s1", "from_seq": third, "limit": 100 }));
-        assert_eq!(from["items"].as_array().unwrap().len(), 7, "seq >= 第 4 条 → 剩 7 条");
+        let from = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "from_seq": third, "limit": 100 }),
+        );
+        assert_eq!(
+            from["items"].as_array().unwrap().len(),
+            7,
+            "seq >= 第 4 条 → 剩 7 条"
+        );
         assert_eq!(from["items"][0]["seq"], json!(third));
 
         // desc
-        let desc = call(&e, "events.list", json!({ "session_id": "s1", "limit": 3, "order": "desc" }));
+        let desc = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "limit": 3, "order": "desc" }),
+        );
         assert_eq!(desc["items"][0]["type"], json!("e9"));
     }
 
@@ -1691,8 +1786,16 @@ mod event_tests {
         let (_d, e) = eng("evwm");
         seed_session(&e, "s1");
         seed_session(&e, "s2");
-        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "a" }));
-        call(&e, "events.append", json!({ "session_id": "s2", "event_type": "b" }));
+        call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "a" }),
+        );
+        call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s2", "event_type": "b" }),
+        );
         let g = call(&e, "events.watermark", json!({}));
         assert_eq!(g["count"], json!(2));
         assert_eq!(g["scope"], json!("<all>"));
@@ -1706,11 +1809,23 @@ mod event_tests {
     fn compact_requires_real_anchor_and_removes_old_events() {
         let (_d, e) = eng("evcompact");
         seed_session(&e, "s1");
-        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }));
+        call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }),
+        );
         for i in 0..5 {
-            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}") }));
+            call(
+                &e,
+                "events.append",
+                json!({ "session_id": "s1", "event_type": format!("e{i}") }),
+            );
         }
-        let all = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let all = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "limit": 100 }),
+        );
         let items = all["items"].as_array().unwrap();
         let anchor_seq = items[3]["seq"].as_i64().unwrap(); // 第 4 条（seq 索引 3）
 
@@ -1719,9 +1834,22 @@ mod event_tests {
             "events.compact",
             json!({ "session_id": "s1", "snapshot_seq": anchor_seq, "cutoff_seq": anchor_seq, "payload": { "messages": [] } }),
         );
-        assert_eq!(r["snapshot_seq"], json!(anchor_seq), "快照必须占用锚点自己的 seq");
-        let after = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
-        let seqs: Vec<i64> = after["items"].as_array().unwrap().iter().map(|x| x["seq"].as_i64().unwrap()).collect();
+        assert_eq!(
+            r["snapshot_seq"],
+            json!(anchor_seq),
+            "快照必须占用锚点自己的 seq"
+        );
+        let after = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "limit": 100 }),
+        );
+        let seqs: Vec<i64> = after["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["seq"].as_i64().unwrap())
+            .collect();
         assert!(seqs.contains(&anchor_seq), "锚点 seq 上应是快照");
         let snap = after["items"]
             .as_array()
@@ -1732,7 +1860,11 @@ mod event_tests {
         assert_eq!(snap["type"], json!("session_snapshot"));
         // session_meta 必须保留（承载会话身份）
         assert!(
-            after["items"].as_array().unwrap().iter().any(|x| x["type"] == json!("session_meta")),
+            after["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|x| x["type"] == json!("session_meta")),
             "session_meta 不该被压缩删掉"
         );
 
@@ -1779,14 +1911,26 @@ mod event_tests {
             "干跑不得动库"
         );
 
-        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let r = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(r["applied"], json!(true));
         assert_eq!(r["removed"], json!(2));
         assert_eq!(r["after_rows"], json!(1));
-        let after = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let after = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s1", "limit": 100 }),
+        );
         let items = after["items"].as_array().unwrap();
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["seq"].as_i64().unwrap(), s1, "必须保留 seq 最小的那条");
+        assert_eq!(
+            items[0]["seq"].as_i64().unwrap(),
+            s1,
+            "必须保留 seq 最小的那条"
+        );
     }
 
     /// **内容不同就不许删**：同一个 `messageId` 但正文被改写过的行是合法历史。
@@ -1797,7 +1941,11 @@ mod event_tests {
         append_text(&e, "s1", "user_message", "u1", "第一版正文");
         append_text(&e, "s1", "user_message", "u1", "改写后的正文");
         append_text(&e, "s1", "user_message", "u1", "第一版正文");
-        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let r = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(r["before_rows"], json!(3));
         assert_eq!(r["distinct_groups"], json!(2), "两版正文是两个组");
         assert_eq!(r["removed"], json!(1), "只删『第一版正文』的重复那份");
@@ -1825,10 +1973,17 @@ mod event_tests {
                 json!({ "session_id": "s1", "event_type": "tool_result", "payload": { "toolCallId": "tc1", "content": "ok" } }),
             );
         }
-        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let r = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(r["before_rows"], json!(0), "工具事件不在统计范围内");
         assert_eq!(r["removed"], json!(0));
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(6));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(6)
+        );
     }
 
     /// **作用域陷阱**（`events_dedup_text` 的注释里点名的那个）：
@@ -1843,9 +1998,16 @@ mod event_tests {
             append_text(&e, "s1", "user_message", "u1", "会话一的正文");
             append_text(&e, "s2", "user_message", "u9", "会话二的正文");
         }
-        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let r = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(r["removed"], json!(2), "只该删会话一的那两份");
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(1)
+        );
         assert_eq!(
             call(&e, "events.count", json!({ "session_id": "s2" }))["count"],
             json!(3),
@@ -1866,8 +2028,14 @@ mod event_tests {
         let r = call(&e, "events.dedup_text", json!({ "apply": true }));
         assert_eq!(r["before_rows"], json!(4));
         assert_eq!(r["removed"], json!(2));
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s2" }))["count"], json!(1));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(1)
+        );
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s2" }))["count"],
+            json!(1)
+        );
     }
 
     /// 幂等：连着跑两次，第二次必须"无事可做"（`removable: 0`、`removed: 0`）。
@@ -1879,12 +2047,23 @@ mod event_tests {
         for _ in 0..4 {
             append_text(&e, "s1", "assistant_text", "a1", "同一条回复");
         }
-        let first = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let first = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(first["removed"], json!(3));
-        let second = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let second = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         assert_eq!(second["removable"], json!(0));
         assert_eq!(second["removed"], json!(0));
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(1)
+        );
     }
 
     /// 非文本事件（`session_meta` / `turn_start` …）不受影响，且有样例能看出"重的是什么"。
@@ -1892,17 +2071,33 @@ mod event_tests {
     fn dedup_text_reports_samples_and_spares_other_types() {
         let (_d, e) = eng("evdedup7");
         seed_session(&e, "s1");
-        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }));
-        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "turn_start", "payload": { "t": 1 } }));
+        call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }),
+        );
+        call(
+            &e,
+            "events.append",
+            json!({ "session_id": "s1", "event_type": "turn_start", "payload": { "t": 1 } }),
+        );
         for _ in 0..5 {
             append_text(&e, "s1", "assistant_text", "a1", "被写了五遍的回复");
         }
-        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let r = call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         let samples = r["samples"].as_array().unwrap();
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0]["copies"], json!(5));
         assert_eq!(samples[0]["event_type"], json!("assistant_text"));
-        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(3), "meta + turn_start + 1 条文本");
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(3),
+            "meta + turn_start + 1 条文本"
+        );
     }
 
     /// 删除必须**留痕**：`storage_audit` 里查得到这次删了哪张表、哪个会话、什么时候。
@@ -1913,9 +2108,15 @@ mod event_tests {
         for _ in 0..3 {
             append_text(&e, "s1", "user_message", "u1", "审计要看得见");
         }
-        call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        call(
+            &e,
+            "events.dedup_text",
+            json!({ "session_id": "s1", "apply": true }),
+        );
         let recent = call(&e, "audit.recent", json!({ "limit": 20 }));
-        let rows = recent["items"].as_array().expect("audit.recent 应返回 items");
+        let rows = recent["items"]
+            .as_array()
+            .expect("audit.recent 应返回 items");
         let hit = rows
             .iter()
             .filter(|r| r["table_name"] == json!("session_events") && r["op"] == json!("DELETE"))
@@ -1929,11 +2130,23 @@ mod event_tests {
         seed_session(&e, "s1");
         seed_session(&e, "s2");
         for i in 0..3 {
-            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}"), "payload": { "i": i } }));
+            call(
+                &e,
+                "events.append",
+                json!({ "session_id": "s1", "event_type": format!("e{i}"), "payload": { "i": i } }),
+            );
         }
-        let r = call(&e, "events.fork", json!({ "source_session_id": "s1", "target_session_id": "s2" }));
+        let r = call(
+            &e,
+            "events.fork",
+            json!({ "source_session_id": "s1", "target_session_id": "s2" }),
+        );
         assert_eq!(r["written"], json!(3));
-        let s2 = call(&e, "events.list", json!({ "session_id": "s2", "limit": 100 }));
+        let s2 = call(
+            &e,
+            "events.list",
+            json!({ "session_id": "s2", "limit": 100 }),
+        );
         assert_eq!(s2["items"].as_array().unwrap().len(), 3);
         // 内容按源会话 seq 升序复制
         assert_eq!(s2["items"][0]["payload"], json!("{\"i\":0}"));
@@ -1995,7 +2208,10 @@ mod tests {
     #[test]
     fn legacy_read_table_returns_columns_and_rows() {
         let dir = tempfile::tempdir().unwrap();
-        let legacy = write_legacy_settings(dir.path(), &[("codem-theme", "dark"), ("codem-language", "zh")]);
+        let legacy = write_legacy_settings(
+            dir.path(),
+            &[("codem-theme", "dark"), ("codem-language", "zh")],
+        );
         let (_d, engine) = eng("legacy-read");
         let out = legacy_read_table(
             &engine,
@@ -2004,24 +2220,28 @@ mod tests {
         .unwrap();
         assert_eq!(out["table"], "settings");
         let cols = out["columns"].as_array().unwrap();
-        assert!(cols.iter().any(|c| c == "key"), "要返回列名（渲染侧按列名取值）");
+        assert!(
+            cols.iter().any(|c| c == "key"),
+            "要返回列名（渲染侧按列名取值）"
+        );
         assert_eq!(out["rows"].as_array().unwrap().len(), 2, "两行都要读到");
     }
 
     #[test]
     fn legacy_read_table_respects_limit() {
         let dir = tempfile::tempdir().unwrap();
-        let legacy = write_legacy_settings(
-            dir.path(),
-            &[("a", "1"), ("b", "2"), ("c", "3")],
-        );
+        let legacy = write_legacy_settings(dir.path(), &[("a", "1"), ("b", "2"), ("c", "3")]);
         let (_d, engine) = eng("legacy-read-limit");
         let out = legacy_read_table(
             &engine,
             &json!({ "legacy_path": legacy.to_string_lossy(), "table": "settings", "limit": 2 }),
         )
         .unwrap();
-        assert_eq!(out["rows"].as_array().unwrap().len(), 2, "limit 必须生效（防大表把 IPC 打爆）");
+        assert_eq!(
+            out["rows"].as_array().unwrap().len(),
+            2,
+            "limit 必须生效（防大表把 IPC 打爆）"
+        );
     }
 
     #[test]
@@ -2046,7 +2266,11 @@ mod tests {
             &json!({ "legacy_path": "C:/definitely/not/here.bin", "table": "settings" }),
         )
         .unwrap_err();
-        assert_eq!(err.code, crate::error::ErrorCode::NotFound, "旧库不存在要如实报 NotFound");
+        assert_eq!(
+            err.code,
+            crate::error::ErrorCode::NotFound,
+            "旧库不存在要如实报 NotFound"
+        );
     }
 
     // ========== 单条消息的全文索引维护（P5 第 11 段）==========
@@ -2107,7 +2331,8 @@ mod tests {
         assert_eq!(fts_row_count(&engine, "s1"), 1, "应该恰好一行");
 
         // 中文必须能被搜到 —— 这正是不切分时永远命中不了的那条路径
-        let hits = fts_search(&engine, &json!({ "query": "存储迁移", "session_id": "s1" })).unwrap();
+        let hits =
+            fts_search(&engine, &json!({ "query": "存储迁移", "session_id": "s1" })).unwrap();
         let items = hits["items"].as_array().cloned().unwrap_or_default();
         assert!(
             // 注意键名是 `message_id`（搜索结果的线协议形状），不是 `id`
@@ -2120,25 +2345,53 @@ mod tests {
     fn fts_upsert_rewrites_instead_of_duplicating() {
         let (_d, engine) = eng("fts-upsert-rewrite");
         seed_message(&engine, "s1", "m1", "第一版内容");
-        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "第一版内容" })).unwrap();
+        fts_upsert(
+            &engine,
+            &json!({ "session_id": "s1", "message_id": "m1", "content": "第一版内容" }),
+        )
+        .unwrap();
         // 同一个 message_id 再写一次（消息更新）—— 必须是"重写"而不是"两行"
-        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "第二版内容" })).unwrap();
-        assert_eq!(fts_row_count(&engine, "s1"), 1, "同一 message_id 只该有一行（否则搜索会重复命中）");
+        fts_upsert(
+            &engine,
+            &json!({ "session_id": "s1", "message_id": "m1", "content": "第二版内容" }),
+        )
+        .unwrap();
+        assert_eq!(
+            fts_row_count(&engine, "s1"),
+            1,
+            "同一 message_id 只该有一行（否则搜索会重复命中）"
+        );
 
         let old = fts_search(&engine, &json!({ "query": "第一版", "session_id": "s1" })).unwrap();
-        assert_eq!(old["items"].as_array().unwrap().len(), 0, "旧内容不该还能搜到");
+        assert_eq!(
+            old["items"].as_array().unwrap().len(),
+            0,
+            "旧内容不该还能搜到"
+        );
         let new = fts_search(&engine, &json!({ "query": "第二版", "session_id": "s1" })).unwrap();
-        assert_eq!(new["items"].as_array().unwrap().len(), 1, "新内容必须能搜到");
+        assert_eq!(
+            new["items"].as_array().unwrap().len(),
+            1,
+            "新内容必须能搜到"
+        );
     }
 
     #[test]
     fn fts_upsert_with_empty_content_removes_the_row() {
         let (_d, engine) = eng("fts-upsert-empty");
         seed_message(&engine, "s1", "m1", "有内容");
-        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "有内容" })).unwrap();
+        fts_upsert(
+            &engine,
+            &json!({ "session_id": "s1", "message_id": "m1", "content": "有内容" }),
+        )
+        .unwrap();
         assert_eq!(fts_row_count(&engine, "s1"), 1);
         // 正文被清空 → 索引行也要消失（留着会造出"命中但正文为空"的假结果）
-        let out = fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "" })).unwrap();
+        let out = fts_upsert(
+            &engine,
+            &json!({ "session_id": "s1", "message_id": "m1", "content": "" }),
+        )
+        .unwrap();
         assert_eq!(out["written"], 0);
         assert_eq!(fts_row_count(&engine, "s1"), 0, "空正文不该留索引行");
     }
@@ -2148,7 +2401,11 @@ mod tests {
         let (_d, engine) = eng("fts-remove");
         for id in ["m1", "m2", "m3"] {
             seed_message(&engine, "s1", id, "内容");
-            fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": id, "content": "内容" })).unwrap();
+            fts_upsert(
+                &engine,
+                &json!({ "session_id": "s1", "message_id": id, "content": "内容" }),
+            )
+            .unwrap();
         }
         assert_eq!(fts_row_count(&engine, "s1"), 3);
         let out = fts_remove(&engine, &json!({ "session_id": "s1", "ids": ["m1", "m3"] })).unwrap();
@@ -2374,17 +2631,25 @@ mod tests {
         .unwrap();
         let value: String = engine
             .with_conn(|conn| {
-                conn.query_row("SELECT value FROM settings WHERE key = 'k'", [], |r| r.get(0))
-                    .map_err(DbError::from)
+                conn.query_row("SELECT value FROM settings WHERE key = 'k'", [], |r| {
+                    r.get(0)
+                })
+                .map_err(DbError::from)
             })
             .unwrap();
-        assert_eq!(value, "new", "同名行仍必须被更新（两段式的 UPDATE 段要生效）");
+        assert_eq!(
+            value, "new",
+            "同名行仍必须被更新（两段式的 UPDATE 段要生效）"
+        );
     }
 
     #[test]
     fn fts_shadow_tables_are_excluded() {
         for t in importable_tables() {
-            assert!(!t.starts_with("session_fts"), "{t} 是 FTS 影子表，不该出现在导入清单里");
+            assert!(
+                !t.starts_with("session_fts"),
+                "{t} 是 FTS 影子表，不该出现在导入清单里"
+            );
         }
     }
 
@@ -2393,15 +2658,28 @@ mod tests {
         // 直接验证过滤逻辑本身（而不是依赖"生成清单里恰好有 session_fts"）：
         // FTS 建表语句在 database.ts 里是独立的一条 db.run，不在 SCHEMA DDL 块内，
         // 所以 generated_tables() 里本来就没有它 —— 早先我按错误假设写了断言，被测试当场纠正。
-        let raw = ["session_fts", "session_fts_content", "messages", "session_fts_segdir"];
-        let kept: Vec<&str> = raw.iter().copied().filter(|t| !t.starts_with("session_fts")).collect();
+        let raw = [
+            "session_fts",
+            "session_fts_content",
+            "messages",
+            "session_fts_segdir",
+        ];
+        let kept: Vec<&str> = raw
+            .iter()
+            .copied()
+            .filter(|t| !t.starts_with("session_fts"))
+            .collect();
         assert_eq!(kept, vec!["messages"], "FTS 前缀过滤必须生效");
     }
 
     #[test]
     fn generated_table_list_is_not_empty_and_has_core_tables() {
         let t = importable_tables();
-        assert!(t.len() >= 35, "业务表数量异常少（生成脚本坏了？）：{}", t.len());
+        assert!(
+            t.len() >= 35,
+            "业务表数量异常少（生成脚本坏了？）：{}",
+            t.len()
+        );
         for core in ["projects", "sessions", "messages", "settings", "tool_calls"] {
             assert!(t.iter().any(|x| x == core), "清单缺少核心表 {core}");
         }
@@ -2466,7 +2744,10 @@ const FK_PARENTS: &[(&str, &str)] = &[
 ];
 
 fn fk_parent_of(table: &str) -> Option<&'static str> {
-    FK_PARENTS.iter().find(|(c, _)| *c == table).map(|(_, p)| *p)
+    FK_PARENTS
+        .iter()
+        .find(|(c, _)| *c == table)
+        .map(|(_, p)| *p)
 }
 
 /// 旧库某张表的**分页键**（第 45 轮 Z-8 的 keyset 分页）。
@@ -2536,7 +2817,11 @@ fn legacy_page_key(conn: &Connection, table: &str, columns: &[String]) -> Option
         .ok();
     let without_rowid = sql
         .as_deref()
-        .map(|s| s.to_uppercase().replace(['\n', '\r', '\t'], " ").contains("WITHOUT ROWID"))
+        .map(|s| {
+            s.to_uppercase()
+                .replace(['\n', '\r', '\t'], " ")
+                .contains("WITHOUT ROWID")
+        })
         .unwrap_or(false);
     if without_rowid {
         // 没有 rowid 又没有（可用的）单列主键 → 无法 keyset，交给调用方回退 offset
@@ -2684,7 +2969,9 @@ fn read_legacy_table_page(
                 .map_err(DbError::from)?;
             collect(&mut rows)?;
         } else {
-            let mut rows = stmt.query(params![limit as i64 + 1]).map_err(DbError::from)?;
+            let mut rows = stmt
+                .query(params![limit as i64 + 1])
+                .map_err(DbError::from)?;
             collect(&mut rows)?;
         }
     }
@@ -2987,9 +3274,7 @@ pub enum ReconcileVerdict {
         extra_rows: i64,
     },
     /// 目标端**缺行**：源端有些行没到目标端（这才是"数据搬丢了"）
-    MissingRows {
-        missing_rows: i64,
-    },
+    MissingRows { missing_rows: i64 },
     /// 同一张表的两端内容不同（行数可能相同，但某些行内容不一致）
     ContentDiffers {
         /// 内容不同但两边都有的行数（按多重集差估算）
@@ -3017,9 +3302,7 @@ pub fn reconcile_multisets(src: &MultisetStats, tgt: &MultisetStats) -> Reconcil
         };
     }
     // 行数相同、多重集不同 → 内容不一致（定位不到具体哪几行：行摘要已哈希，见函数头说明）
-    ReconcileVerdict::ContentDiffers {
-        differing_rows: 0,
-    }
+    ReconcileVerdict::ContentDiffers { differing_rows: 0 }
 }
 
 /// 旧库某张表的**扫描顺序**（第 45 轮 Z-1 配套）。
@@ -3094,7 +3377,10 @@ fn legacy_order_clause(conn: &Connection, table: &str) -> Option<String> {
 ///
 /// 排序用文件名里的时间戳（**数字比较**，不是字符串比较 —— 字符串比较在位数变化时
 /// 会给出错误顺序，而毫秒时间戳的位数确实会变），目录读取失败时直接放弃清理。
-fn prune_pre_migration_backups(current: &std::path::Path, keep: usize) -> (Vec<String>, Vec<String>) {
+fn prune_pre_migration_backups(
+    current: &std::path::Path,
+    keep: usize,
+) -> (Vec<String>, Vec<String>) {
     let mut removed: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let Some(file_name) = current.file_name().map(|s| s.to_string_lossy().to_string()) else {
@@ -3129,7 +3415,10 @@ fn prune_pre_migration_backups(current: &std::path::Path, keep: usize) -> (Vec<S
     // 新的在前
     found.sort_by(|a, b| b.0.cmp(&a.0));
     for (_, path) in found.into_iter().skip(keep) {
-        let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         match std::fs::remove_file(&path) {
             Ok(_) => removed.push(name),
             // 清理失败不该让迁移失败（它只是清理）—— 如实记账，由调用方报出来
@@ -3394,7 +3683,10 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
     let backup_path = {
         let src = engine.path().to_path_buf();
         let stamp = crate::schema::now_ms();
-        let mut name = src.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let mut name = src
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         name.push_str(&format!(".pre-migration-{stamp}"));
         let dst = src.with_file_name(name);
         if let Err(e) = std::fs::copy(&src, &dst) {
@@ -3472,7 +3764,12 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
                 )
                 .map_err(DbError::from)?;
             if exists == 0 {
-                return Ok((MultisetDigest::new().finish(), String::new(), Vec::<String>::new(), String::new()));
+                return Ok((
+                    MultisetDigest::new().finish(),
+                    String::new(),
+                    Vec::<String>::new(),
+                    String::new(),
+                ));
             }
             // 目标端真实列清单：既用于诊断"是哪一列不一致"，也用于判断投影能否执行
             let target_cols: Vec<String> = {

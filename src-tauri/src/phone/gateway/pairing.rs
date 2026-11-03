@@ -45,6 +45,67 @@ pub const DEVICE_COOKIE_MAX_AGE_SEC: u64 = 30 * 24 * 60 * 60;
 const MAX_DEVICE_NAME: usize = 64;
 const DEFAULT_DEVICE_NAME: &str = "我的手机";
 
+/// 设备表持久化文件格式版本（不认识就整体忽略，要求重新配对）。
+pub const PERSIST_VERSION: u32 = 1;
+
+/// 持久化的单台设备：**只有 token 的 sha256**，没有明文凭据。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PersistedDevice {
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    /// 64 位小写十六进制（sha256）
+    pub token_hash_hex: String,
+    pub created_at: i64,
+    pub last_seen_at: i64,
+    /// Tailscale Serve 身份（邮箱）。缺省 = 旧文件/非零配对码设备。
+    #[serde(default)]
+    pub tailscale_login: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PersistedPairing {
+    pub version: u32,
+    pub devices: Vec<PersistedDevice>,
+    /// 已被用户撤销的 Tailscale 登录；撤销后不再自动发设备 cookie。
+    #[serde(default)]
+    pub revoked_tailscale_logins: Vec<String>,
+}
+
+impl Default for PersistedPairing {
+    fn default() -> Self {
+        Self {
+            version: PERSIST_VERSION,
+            devices: Vec::new(),
+            revoked_tailscale_logins: Vec::new(),
+        }
+    }
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn parse_hex_32(raw: &str) -> Option<[u8; 32]> {
+    let bytes = raw.as_bytes();
+    if bytes.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        let hi = (bytes[i * 2] as char).to_digit(16)?;
+        let lo = (bytes[i * 2 + 1] as char).to_digit(16)?;
+        out[i] = ((hi << 4) | lo) as u8;
+    }
+    Some(out)
+}
+
 #[derive(Debug, Clone)]
 struct PendingCode {
     hash: [u8; 32],
@@ -60,6 +121,7 @@ struct DeviceRecord {
     token_hash: [u8; 32],
     created_at: i64,
     last_seen_at: i64,
+    tailscale_login: Option<String>,
 }
 
 /// 可以安全回给客户端的设备视图（不含任何 token/hash）。
@@ -91,8 +153,12 @@ pub enum PairError {
     Invalid,
     Expired,
     Locked,
-    RateLimited { retry_after_ms: i64 },
+    RateLimited {
+        retry_after_ms: i64,
+    },
     DeviceLimit,
+    /// 该 Tailscale 登录已被用户撤销；必须重新用配对码认领。
+    Revoked,
 }
 
 impl PairError {
@@ -103,6 +169,7 @@ impl PairError {
             PairError::Locked => "locked",
             PairError::RateLimited { .. } => "rate_limited",
             PairError::DeviceLimit => "device_limit",
+            PairError::Revoked => "tailscale_revoked",
         }
     }
 }
@@ -113,6 +180,8 @@ pub struct PairingState {
     code: Option<PendingCode>,
     devices: Vec<DeviceRecord>,
     failures: Vec<i64>,
+    /// 被撤销的 Tailscale 登录：不再自动签发 cookie；用户可重新用配对码认领。
+    revoked_tailscale_logins: Vec<String>,
 }
 
 impl PairingState {
@@ -188,13 +257,79 @@ impl PairingState {
             token_hash: sha256(token.as_bytes()),
             created_at: now_ms,
             last_seen_at: now_ms,
+            tailscale_login: None,
         };
         let view = view_of(&device);
         self.devices.push(device);
         // 单次使用：兑换成功后码立即作废。
         self.code = None;
         self.failures.clear();
-        Ok(PairClaim { token, device: view })
+        Ok(PairClaim {
+            token,
+            device: view,
+        })
+    }
+
+    /// Tailscale Serve 的零配对码路径：按登录身份签发/轮换设备 token。
+    ///
+    /// 安全边界由调用方保证：请求必须来自 loopback、Host 是 `*.ts.net`、且不是
+    /// Funnel（Funnel 不注入身份头，`Tailscale-Funnel-Request` 会被设置）。
+    /// 这里只负责“登录 → 设备”；不对 HTTP 头做信任判断。
+    ///
+    /// 同一登录 + 同一设备名只保留一台设备（同名重装会轮换 token，旧 cookie 立即失效）；
+    /// 不同设备名（手机/浏览器）可以并存，互不踢下线。
+    /// 用户撤销后进入 deny-list，必须重新用配对码认领。
+    pub fn claim_tailscale(
+        &mut self,
+        raw_login: &str,
+        device_name: Option<&str>,
+        platform: Option<&str>,
+        now_ms: i64,
+    ) -> Result<PairClaim, PairError> {
+        let login = normalize_tailscale_login(raw_login).ok_or(PairError::Invalid)?;
+        if self.revoked_tailscale_logins.iter().any(|v| v == &login) {
+            return Err(PairError::Revoked);
+        }
+        let platform = sanitize_platform(platform);
+        let name = match device_name.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(value) => sanitize_device_name(Some(value)),
+            None => sanitize_device_name(Some(&format!("Tailscale · {login}"))),
+        };
+
+        let token = random_hex(32);
+        if let Some(index) = self
+            .devices
+            .iter()
+            .position(|d| d.tailscale_login.as_deref() == Some(login.as_str()) && d.name == name)
+        {
+            let device = &mut self.devices[index];
+            device.token_hash = sha256(token.as_bytes());
+            device.platform = platform;
+            device.last_seen_at = now_ms;
+            return Ok(PairClaim {
+                token,
+                device: view_of(device),
+            });
+        }
+
+        if self.devices.len() >= MAX_DEVICES {
+            return Err(PairError::DeviceLimit);
+        }
+        let device = DeviceRecord {
+            id: format!("ts-{}", random_hex(4)),
+            name,
+            platform,
+            token_hash: sha256(token.as_bytes()),
+            created_at: now_ms,
+            last_seen_at: now_ms,
+            tailscale_login: Some(login),
+        };
+        let view = view_of(&device);
+        self.devices.push(device);
+        Ok(PairClaim {
+            token,
+            device: view,
+        })
     }
 
     /// 校验设备 token；命中会更新 lastSeenAt。
@@ -220,11 +355,104 @@ impl PairingState {
         self.devices.len()
     }
 
+    /// 设备列表（**不含 token/hash**）。桌面设置页用它显示"已配对设备"。
+    pub fn devices(&self) -> Vec<DeviceView> {
+        self.devices.iter().map(view_of).collect()
+    }
+
+    /// 撤销单台设备。未知 id 返回 `false`（幂等，不泄露"有没有这个 id"之外的任何东西）。
+    ///
+    /// Tailscale 设备同时把登录写入 deny-list：否则下一次自动登录会立刻重新建一台，
+    /// 撤销按钮就变成了摆设。
+    pub fn revoke(&mut self, device_id: &str) -> bool {
+        let revoked_login = self
+            .devices
+            .iter()
+            .find(|d| d.id == device_id)
+            .and_then(|d| d.tailscale_login.clone());
+        let before = self.devices.len();
+        self.devices.retain(|d| d.id != device_id);
+        let removed = self.devices.len() != before;
+        if removed {
+            if let Some(login) = revoked_login {
+                if !self.revoked_tailscale_logins.iter().any(|v| v == &login) {
+                    self.revoked_tailscale_logins.push(login);
+                }
+            }
+        }
+        removed
+    }
+
+    /// 导出可持久化的设备表（**只含 sha256 十六进制**，不落明文 token）。
+    pub fn export(&self) -> PersistedPairing {
+        PersistedPairing {
+            version: PERSIST_VERSION,
+            devices: self
+                .devices
+                .iter()
+                .map(|d| PersistedDevice {
+                    id: d.id.clone(),
+                    name: d.name.clone(),
+                    platform: d.platform.clone(),
+                    token_hash_hex: hex_lower(&d.token_hash),
+                    created_at: d.created_at,
+                    last_seen_at: d.last_seen_at,
+                    tailscale_login: d.tailscale_login.clone(),
+                })
+                .collect(),
+            revoked_tailscale_logins: self.revoked_tailscale_logins.clone(),
+        }
+    }
+
+    /// 从持久化设备表恢复（用于"重启桌面后手机直接进入"）。
+    ///
+    /// 失败策略是**逐条跳过**而不是整体失败：一个坏条目不该让 8 台设备全部掉线；
+    /// 版本不认识则整体忽略（宁可要求重新配对，也不猜格式）。
+    /// 返回恢复的条数。
+    pub fn import(&mut self, persisted: PersistedPairing) -> usize {
+        if persisted.version != PERSIST_VERSION {
+            return 0;
+        }
+        self.devices.clear();
+        self.revoked_tailscale_logins = persisted
+            .revoked_tailscale_logins
+            .into_iter()
+            .filter_map(|login| normalize_tailscale_login(&login))
+            .collect();
+        for item in persisted.devices {
+            if self.devices.len() >= MAX_DEVICES {
+                break;
+            }
+            let Some(hash) = parse_hex_32(&item.token_hash_hex) else {
+                continue;
+            };
+            if item.id.is_empty() || self.devices.iter().any(|d| d.id == item.id) {
+                continue;
+            }
+            self.devices.push(DeviceRecord {
+                id: item.id,
+                name: sanitize_device_name(Some(&item.name)),
+                platform: sanitize_platform(Some(&item.platform)),
+                token_hash: hash,
+                created_at: item.created_at,
+                last_seen_at: item.last_seen_at,
+                tailscale_login: item
+                    .tailscale_login
+                    .as_deref()
+                    .and_then(normalize_tailscale_login),
+            });
+        }
+        self.device_count()
+    }
+
     /// 停止网关：清空码与所有设备（旧 cookie 全部失效）。
+    /// `revoked` 也清空：停止是"关闭远程"，重新启动应重新允许零配对码；
+    /// 单台撤销（不停网关）仍会留在 deny-list 里。
     pub fn reset(&mut self) {
         self.code = None;
         self.devices.clear();
         self.failures.clear();
+        self.revoked_tailscale_logins.clear();
     }
 
     fn prune_failures(&mut self, now_ms: i64) {
@@ -242,6 +470,28 @@ impl PairingState {
             retry_after_ms: (oldest + RATE_WINDOW_MS - now_ms).max(0),
         }
     }
+}
+
+/// 归一化 Tailscale 登录：去空白、转小写；只接受 ASCII 邮箱形态。
+///
+/// Tailscale 对非 ASCII 值会做 RFC 2047 编码；这种值在这里直接拒绝（走配对码），
+/// 不去猜编码，避免把畸形字符串当成身份。
+pub fn normalize_tailscale_login(raw: &str) -> Option<String> {
+    let login = raw.trim().to_ascii_lowercase();
+    if login.is_empty() || login.len() > 254 {
+        return None;
+    }
+    if login.starts_with("=?") {
+        return None;
+    }
+    if !login.is_ascii() || login.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return None;
+    }
+    let (local, domain) = login.split_once('@')?;
+    if local.is_empty() || domain.is_empty() || domain.contains('@') {
+        return None;
+    }
+    Some(login)
 }
 
 /// 归一化配对码：去掉空格/连字符，只接受 6 位 ASCII 数字。
@@ -340,7 +590,9 @@ mod tests {
     fn claim_is_single_use_and_returns_only_a_token_hash_on_subsequent_auth() {
         let mut st = PairingState::new();
         let code = st.new_code(NOW);
-        let claimed = st.claim(&code.code, Some("Pixel"), Some("android"), NOW).unwrap();
+        let claimed = st
+            .claim(&code.code, Some("Pixel"), Some("android"), NOW)
+            .unwrap();
         assert_eq!(claimed.device.name, "Pixel");
         assert_eq!(claimed.device.platform, "android");
         assert_eq!(claimed.token.len(), 64, "32 字节随机数的 hex");
@@ -361,7 +613,8 @@ mod tests {
         let mut st = PairingState::new();
         let code = st.new_code(NOW);
         assert_eq!(
-            st.claim(&code.code, None, None, NOW + PAIR_CODE_TTL_MS).unwrap_err(),
+            st.claim(&code.code, None, None, NOW + PAIR_CODE_TTL_MS)
+                .unwrap_err(),
             PairError::Expired
         );
 
@@ -384,7 +637,8 @@ mod tests {
         let mut st = PairingState::new();
         for i in 0..MAX_DEVICES {
             let code = st.new_code(NOW + i as i64);
-            st.claim(&code.code, Some("phone"), None, NOW + i as i64).unwrap();
+            st.claim(&code.code, Some("phone"), None, NOW + i as i64)
+                .unwrap();
         }
         let code = st.new_code(NOW + 100);
         assert!(matches!(
@@ -407,5 +661,164 @@ mod tests {
         assert_eq!(sanitize_device_name(Some("   ")), DEFAULT_DEVICE_NAME);
         assert!(token_equals("abc", "abc"));
         assert!(!token_equals("abc", "abd"));
+    }
+
+    /// B2：设备表可持久化，且**明文 token 不落盘**。
+    #[test]
+    fn devices_export_import_round_trip_without_plaintext() {
+        let mut st = PairingState::new();
+        let code = st.new_code(NOW);
+        let claimed = st
+            .claim(&code.code, Some("Pixel 9"), Some("android"), NOW + 1)
+            .unwrap();
+        let token = claimed.token.clone();
+        assert_eq!(claimed.device.name, "Pixel 9");
+
+        let persisted = st.export();
+        let json = serde_json::to_string(&persisted).expect("serialize");
+        assert!(!json.contains(&token), "明文 token 不得出现在持久化内容里");
+        assert!(json.contains("token_hash_hex"));
+        assert_eq!(persisted.devices.len(), 1);
+        assert_eq!(persisted.devices[0].platform, "android");
+
+        // 重启：新状态从磁盘内容恢复 → 旧 cookie 仍然有效（不用重新配对）
+        let mut restarted = PairingState::new();
+        assert_eq!(restarted.import(serde_json::from_str(&json).unwrap()), 1);
+        assert_eq!(restarted.device_count(), 1);
+        let seen = restarted
+            .authenticate(&token, NOW + 10)
+            .expect("重启后 token 仍有效");
+        assert_eq!(seen.id, claimed.device.id);
+        assert_eq!(seen.last_seen_at, NOW + 10);
+
+        // 单设备撤销：只掉这一台
+        assert!(restarted.revoke(&claimed.device.id));
+        assert!(
+            !restarted.revoke(&claimed.device.id),
+            "未知 id 幂等返回 false"
+        );
+        assert!(restarted.authenticate(&token, NOW + 20).is_none());
+        assert_eq!(restarted.device_count(), 0);
+    }
+
+    #[test]
+    fn tailscale_claim_reuses_one_device_and_rotates_token() {
+        let mut st = PairingState::new();
+        let first = st
+            .claim_tailscale("User@Example.com", Some("Pixel"), Some("android"), NOW)
+            .expect("zero-code claim");
+        assert!(first.device.id.starts_with("ts-"));
+        assert_eq!(st.device_count(), 1);
+        assert!(st.authenticate(&first.token, NOW + 1).is_some());
+
+        let second = st
+            .claim_tailscale("user@example.com", Some("Pixel"), Some("android"), NOW + 2)
+            .expect("same login + device name must reuse");
+        assert_eq!(st.device_count(), 1, "同一登录 + 同一设备名只保留一台设备");
+        assert!(
+            st.authenticate(&first.token, NOW + 3).is_none(),
+            "轮换 token 后旧 cookie 必须失效"
+        );
+        assert!(st.authenticate(&second.token, NOW + 3).is_some());
+    }
+
+    #[test]
+    fn tailscale_devices_with_different_names_coexist() {
+        let mut st = PairingState::new();
+        let phone = st
+            .claim_tailscale(
+                "user@example.com",
+                Some("Codem Android"),
+                Some("android"),
+                NOW,
+            )
+            .unwrap();
+        let browser = st
+            .claim_tailscale("user@example.com", Some("Codem Web"), Some("web"), NOW + 1)
+            .unwrap();
+        assert_eq!(st.device_count(), 2, "手机与浏览器应各自保留设备");
+        assert!(st.authenticate(&phone.token, NOW + 2).is_some());
+        assert!(st.authenticate(&browser.token, NOW + 2).is_some());
+    }
+
+    #[test]
+    fn revoked_tailscale_login_cannot_silently_reconnect() {
+        let mut st = PairingState::new();
+        let claimed = st
+            .claim_tailscale("user@example.com", None, Some("web"), NOW)
+            .unwrap();
+        assert!(st.revoke(&claimed.device.id));
+        assert_eq!(st.device_count(), 0);
+        assert_eq!(
+            st.claim_tailscale("user@example.com", None, Some("web"), NOW + 1)
+                .unwrap_err(),
+            PairError::Revoked
+        );
+
+        // deny-list 必须跟着设备表一起持久化：重启桌面后不能又把撤销的身份放回来。
+        let persisted = st.export();
+        assert_eq!(persisted.revoked_tailscale_logins, vec!["user@example.com"]);
+        let mut restarted = PairingState::new();
+        restarted.import(persisted);
+        assert_eq!(
+            restarted
+                .claim_tailscale("user@example.com", None, Some("web"), NOW + 2)
+                .unwrap_err(),
+            PairError::Revoked
+        );
+    }
+
+    #[test]
+    fn tailscale_login_normalization_rejects_encoded_or_malformed_values() {
+        assert_eq!(
+            normalize_tailscale_login(" User@Example.com ").as_deref(),
+            Some("user@example.com")
+        );
+        assert!(normalize_tailscale_login("no-at-sign").is_none());
+        assert!(normalize_tailscale_login("=?utf-8?q?user?=").is_none());
+        assert!(normalize_tailscale_login("user name@example.com").is_none());
+        assert!(normalize_tailscale_login("user@example.com\n").is_some());
+    }
+
+    /// 坏条目逐条跳过；不认识的版本整体忽略（不猜格式）。
+    #[test]
+    fn import_skips_malformed_and_unknown_versions() {
+        let mut good = PersistedPairing::default();
+        good.devices.push(PersistedDevice {
+            id: "dev-bad".into(),
+            name: "x".into(),
+            platform: "web".into(),
+            token_hash_hex: "zz".into(), // 长度/字符都不合法
+            created_at: 1,
+            last_seen_at: 1,
+            tailscale_login: None,
+        });
+        good.devices.push(PersistedDevice {
+            id: "dev-ok".into(),
+            name: "Pixel".into(),
+            platform: "android".into(),
+            token_hash_hex: hex_lower(&sha256(b"token-ok")),
+            created_at: 1,
+            last_seen_at: 2,
+            tailscale_login: None,
+        });
+        let mut st = PairingState::new();
+        assert_eq!(st.import(good), 1);
+        assert_eq!(st.devices().len(), 1);
+        assert_eq!(st.devices()[0].id, "dev-ok");
+
+        let mut unknown = PersistedPairing::default();
+        unknown.version = 99;
+        unknown.devices.push(PersistedDevice {
+            id: "dev-x".into(),
+            name: "x".into(),
+            platform: "web".into(),
+            token_hash_hex: hex_lower(&sha256(b"t")),
+            created_at: 1,
+            last_seen_at: 1,
+            tailscale_login: None,
+        });
+        let mut st2 = PairingState::new();
+        assert_eq!(st2.import(unknown), 0, "未知版本必须整体忽略");
     }
 }

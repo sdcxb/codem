@@ -25,6 +25,17 @@ export interface TransportSessionSummary {
   lastMessageAt?: number;
 }
 
+/**
+ * 项目投影（B1：远程新建会话/项目）。
+ *
+ * 不含沙箱/安全字段：手机只用来"选一个项目"。
+ */
+export interface TransportProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface TransportSession {
   title: string;
   messages: MessageRow[];
@@ -283,7 +294,11 @@ export interface SessionTransport {
    */
   listApprovals?(): Promise<ApprovalItem[]>;
   /** 新建会话（远程由 Host 提供；只读/本地未接线的实现可以省略） */
-  createSession?(title?: string): Promise<TransportSessionSummary>;
+  createSession?(title?: string, projectId?: string): Promise<TransportSessionSummary>;
+  /** 项目列表（远程 B1；只读/本地未接线的实现可以省略） */
+  listProjects?(): Promise<TransportProjectSummary[]>;
+  /** 新建项目（远程 B1；路径由用户在手机端点选/输入，桌面侧校验） */
+  createProject?(input: { name: string; path: string }): Promise<TransportProjectSummary>;
   /** 列工作区目录（远程由 Host 提供；只读/本地实现可省略） */
   listWorkspace?(path?: string): Promise<{ path: string; entries: Array<{ name: string; type: "file" | "dir"; size?: number }> }>;
   /**
@@ -350,9 +365,20 @@ export function remoteTransport(client: HostClient): SessionTransport {
       const page = await client.rpc<{ items: TransportSessionSummary[] }>("session.list", { limit: 50 });
       return page.items ?? [];
     },
-    async createSession(title) {
-      const got = await client.rpc<{ session: { id: string; title: string; lastMessageAt?: number } }>("session.create", { title });
+    async createSession(title, projectId) {
+      const got = await client.rpc<{ session: { id: string; title: string; lastMessageAt?: number } }>("session.create", {
+        ...(title ? { title } : {}),
+        ...(projectId ? { projectId } : {}),
+      });
       return { id: got.session.id, title: got.session.title, messageCount: 0, lastMessageAt: got.session.lastMessageAt ?? Date.now() };
+    },
+    async listProjects() {
+      const page = await client.rpc<{ items: TransportProjectSummary[] }>("project.list", { limit: 100 });
+      return page.items ?? [];
+    },
+    async createProject(input) {
+      const got = await client.rpc<{ project: TransportProjectSummary }>("project.create", input);
+      return got.project;
     },
     async getSession(sessionId) {
       const got = await client.rpc<{
@@ -497,6 +523,13 @@ export interface Capabilities {
   cancelRun: boolean;
   /** 能否新建会话 */
   createSession: boolean;
+  /**
+   * 能否列/建项目（B1）。
+   *
+   * 两条方法都开才置位：只有 `project.list` 而没有 `project.create` 时，
+   * 手机端应当"能选项目、不能建项目"，而不是画一个点了必失败的「新建项目」。
+   */
+  projects: boolean;
   /** 是否多设备（远程 true：需要租约提示） */
   multiDevice: boolean;
 }
@@ -509,6 +542,7 @@ const ALL: Capabilities = {
   attachments: true,
   cancelRun: true,
   createSession: true,
+  projects: true,
   multiDevice: false,
 };
 
@@ -554,6 +588,7 @@ export function capabilitiesFromMethods(supported: readonly string[] | null): Ca
     attachments: has("attachment.put"),
     cancelRun: has("run.cancel"),
     createSession: has("session.create"),
+    projects: has("project.list") && has("project.create"),
     multiDevice: true,
   };
 }

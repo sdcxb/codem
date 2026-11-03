@@ -39,7 +39,12 @@
     "inbox",
     "session_events",
     "goals",
-    "telemetry_events"
+    "telemetry_events",
+    "goal_contracts",
+    "goal_plans",
+    "goal_phases",
+    "goal_evidence",
+    "goal_decisions"
   ],
   "source": "schema.sql（Rust 侧真源，L1 后 renderer 不再持有 schema）"
 }

@@ -107,6 +107,13 @@ function deps(overrides: Partial<GatewayDataDeps> = {}): GatewayDataDeps {
         supported: true,
       }),
     },
+    // B1：项目/会话创建（能力表完整所需；创建行为在 gateway-create.test.ts）
+    listProjects: () => [],
+    createProject: async () => ({
+      ok: true,
+      value: { id: "proj-test", name: "p", path: "C:\\p", pinned: false, lastAccessedAt: 1 },
+    }),
+    createSession: async () => ({ ok: true, value: { id: "sess-test", title: "t" } }),
     ...overrides,
   };
 }
@@ -191,9 +198,13 @@ describe("PC 桌面远程网关 M1（ADR-0005）", () => {
     for (const method of GATEWAY_RPC_METHODS) {
       expect(whitelist, `Rust 白名单必须包含 ${method}`).toContain(`"${method}"`);
     }
-    // M3 仍未实现的方法不得混进白名单（与 TS 侧 GATEWAY_UNSUPPORTED_METHODS 互为镜像）
-    for (const banned of ["run.guidance", "session.create", "attachment.put", "events"]) {
+    // 仍未实现的方法不得混进白名单（与 TS 侧 GATEWAY_UNSUPPORTED_METHODS 互为镜像）
+    for (const banned of ["run.guidance", "attachment.put", "events"]) {
       expect(whitelist, `未实现的方法不得进 Rust 白名单：${banned}`).not.toContain(`"${banned}"`);
+    }
+    // B1：项目面三条已实现 ⇒ 必须同时在 Rust 白名单里（两侧允许集合一致）
+    for (const implemented of ["session.create", "project.list", "project.create"]) {
+      expect(whitelist, `已实现的方法必须进 Rust 白名单：${implemented}`).toContain(`"${implemented}"`);
     }
 
     const files = gatewayRust();
@@ -300,12 +311,15 @@ describe("PC 桌面远程网关 M1（ADR-0005）", () => {
     expect(desktop).not.toContain('listen("gateway-request"');
   });
 
-  it("GW-6: /rpc 白名单 = 只读 4 条 + 写 2 条 + 审批 2 条 + 文件面 3 条 + 变更面 2 条；其余方法被拒绝", async () => {
+  it("GW-6: /rpc 白名单 = 只读 4 条 + 写 2 条 + 审批 2 条 + 文件面 3 条 + 变更面 2 条 + 项目面 3 条；其余方法被拒绝", async () => {
     expect([...GATEWAY_RPC_METHODS]).toEqual([
       "host.hello",
       "host.diagnostics",
       "session.list",
       "session.get",
+      "session.create",
+      "project.list",
+      "project.create",
       "prompt.send",
       "run.cancel",
       "approval.list",
@@ -350,11 +364,13 @@ describe("PC 桌面远程网关 M1（ADR-0005）", () => {
         return [];
       },
     });
-    for (const method of ["run.guidance", "session.create", "attachment.put"]) {
+    for (const method of ["run.guidance", "attachment.put"]) {
       const reply = await gatewayRpcReply(rpc(method), guarded);
       expect((reply.error as any).data.kind, method).toBe("UNSUPPORTED");
     }
     expect(depsTouched).toBe(0);
+    // B1：session.create 现在**已实现**，不再走 UNSUPPORTED 分支（它必须落到注入的数据层）
+    expect((hello.result as any).capabilities.supported).toContain("session.create");
 
     // 审批两条**必须**落在注入的数据层上（不是网关自己编一个空列表）。
     const approvalList = await gatewayRpcReply(rpc("approval.list", {}), guarded);

@@ -428,6 +428,19 @@ export const HOT_DOMAIN_TABLES: readonly string[] = [
   "notebooks",
   "notebook_groups",
   "goals",
+  /**
+   * ADR-0006：长程目标模式的五张表**必须预取**。
+   *
+   * 真机教训（G5 第一次跑）：不预取 ⇒ 建目标时 `domainWrite` 落在"加载中"⇒
+   * 写进延迟队列、`savePlan` 的**读回验证**立刻读到空 ⇒ 目标被判"计划未能保存"并取消，
+   * 而几十毫秒后延迟写又落库了（界面/库两边看起来互相矛盾）。
+   * 这五张表很小（一个会话最多一个 active goal），预取代价可以忽略。
+   */
+  "goal_contracts",
+  "goal_plans",
+  "goal_phases",
+  "goal_evidence",
+  "goal_decisions",
   "inbox",
   // ⚠️ 第 72 轮补：**委派任务漏了这张表**，而漏它的后果正是清单注释里说的那件事 ——
   // 「委派」页签读的是编排器内存，内存只在构造时从这张表补一次；镜像没预取 ⇒

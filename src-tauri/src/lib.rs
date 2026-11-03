@@ -2,18 +2,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::menu::{
+    CheckMenuItemBuilder, ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
+    SubmenuBuilder,
+};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::WindowEvent as WinEvent;
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
-use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, CheckMenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 
 // ========== Runtime Log ==========
 // 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
-mod js_sandbox;
 mod child_job;
+mod js_sandbox;
 mod js_sandbox_session;
 mod runtime_log;
 // 渲染进程崩溃取证（第 71 轮）：WebView2 `ProcessFailed` → 运行时日志 +
@@ -32,9 +35,9 @@ mod phone;
 // 引擎本体在 src-tauri/codem-db（独立 crate，可被 CLI 与 vitest 契约测试直接驱动）。
 mod secret;
 use crate::secret::{secret_backend_available, secret_seal, secret_unseal};
-mod storage;
 /// 「免费模型插件」（dsh-our-free-model 的 standalone 本地服务）的独立进程生命周期。
 mod ofm;
+mod storage;
 
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
@@ -68,13 +71,15 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
     #[cfg(windows)]
     let mut cmd = CommandBuilder::new("cmd.exe");
     #[cfg(not(windows))]
-    let mut cmd = CommandBuilder::new(
-        std::env::var("SHELL").unwrap_or_else(|_| {
-            if std::path::Path::new("/bin/zsh").exists() { "/bin/zsh".to_string() }
-            else if std::path::Path::new("/bin/bash").exists() { "/bin/bash".to_string() }
-            else { "/bin/sh".to_string() }
-        })
-    );
+    let mut cmd = CommandBuilder::new(std::env::var("SHELL").unwrap_or_else(|_| {
+        if std::path::Path::new("/bin/zsh").exists() {
+            "/bin/zsh".to_string()
+        } else if std::path::Path::new("/bin/bash").exists() {
+            "/bin/bash".to_string()
+        } else {
+            "/bin/sh".to_string()
+        }
+    }));
     cmd.cwd(cwd.clone());
 
     let pair = pty_system
@@ -97,7 +102,9 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
     let master = pair.master;
 
     // Take writer from master — MasterPty doesn't impl Write directly
-    let writer = master.take_writer().map_err(|e| format!("Failed to take writer: {}", e))?;
+    let writer = master
+        .take_writer()
+        .map_err(|e| format!("Failed to take writer: {}", e))?;
 
     // Clone the reader and spawn output thread
     let reader = master
@@ -203,12 +210,18 @@ fn close_pty(id: String, state: State<'_, PtyMap>) -> Result<(), String> {
 // Opens a URL in an embedded WebView window for frontend preview.
 
 #[tauri::command]
-async fn create_browser_window(app: AppHandle, url: String, title: Option<String>) -> Result<(), String> {
+async fn create_browser_window(
+    app: AppHandle,
+    url: String,
+    title: Option<String>,
+) -> Result<(), String> {
     let window_title = title.unwrap_or_else(|| "Browser".to_string());
 
     // If browser window already exists, navigate it
     if let Some(existing) = app.get_webview_window("browser") {
-        existing.set_title(&window_title).map_err(|e| e.to_string())?;
+        existing
+            .set_title(&window_title)
+            .map_err(|e| e.to_string())?;
         // Reuse existing window — just focus it
         existing.show().map_err(|e| e.to_string())?;
         existing.set_focus().map_err(|e| e.to_string())?;
@@ -216,17 +229,14 @@ async fn create_browser_window(app: AppHandle, url: String, title: Option<String
     }
 
     let parsed_url = url::Url::parse(&url).map_err(|e| e.to_string())?;
-    let _window = tauri::WebviewWindowBuilder::new(
-        &app,
-        "browser",
-        tauri::WebviewUrl::External(parsed_url),
-    )
-    .title(&window_title)
-    .inner_size(1024.0, 768.0)
-    .min_inner_size(400.0, 300.0)
-    .resizable(true)
-    .build()
-    .map_err(|e| e.to_string())?;
+    let _window =
+        tauri::WebviewWindowBuilder::new(&app, "browser", tauri::WebviewUrl::External(parsed_url))
+            .title(&window_title)
+            .inner_size(1024.0, 768.0)
+            .min_inner_size(400.0, 300.0)
+            .resizable(true)
+            .build()
+            .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -335,10 +345,15 @@ async fn send_message(
     state: State<'_, AppState>,
     request: ChatRequest,
 ) -> Result<(), String> {
-    let _model = request.model.clone().unwrap_or_else(|| state.default_model.lock().unwrap().clone());
-    let _cwd = request.cwd.clone().unwrap_or_else(|| std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default());
+    let _model = request
+        .model
+        .clone()
+        .unwrap_or_else(|| state.default_model.lock().unwrap().clone());
+    let _cwd = request.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    });
 
     // Emit event that frontend will handle
     app.emit("chat-message", &request)
@@ -354,20 +369,14 @@ async fn get_providers(state: State<'_, AppState>) -> Result<Vec<ProviderConfig>
 }
 
 #[tauri::command]
-async fn add_provider(
-    state: State<'_, AppState>,
-    provider: ProviderConfig,
-) -> Result<(), String> {
+async fn add_provider(state: State<'_, AppState>, provider: ProviderConfig) -> Result<(), String> {
     let mut providers = state.providers.lock().unwrap();
     providers.push(provider);
     Ok(())
 }
 
 #[tauri::command]
-async fn remove_provider(
-    state: State<'_, AppState>,
-    provider_id: String,
-) -> Result<(), String> {
+async fn remove_provider(state: State<'_, AppState>, provider_id: String) -> Result<(), String> {
     let mut providers = state.providers.lock().unwrap();
     providers.retain(|p| p.id != provider_id);
     Ok(())
@@ -379,10 +388,7 @@ async fn get_default_model(state: State<'_, AppState>) -> Result<String, String>
 }
 
 #[tauri::command]
-async fn set_default_model(
-    state: State<'_, AppState>,
-    model: String,
-) -> Result<(), String> {
+async fn set_default_model(state: State<'_, AppState>, model: String) -> Result<(), String> {
     *state.default_model.lock().unwrap() = model;
     Ok(())
 }
@@ -393,10 +399,7 @@ async fn get_default_agent(state: State<'_, AppState>) -> Result<String, String>
 }
 
 #[tauri::command]
-async fn set_default_agent(
-    state: State<'_, AppState>,
-    agent: String,
-) -> Result<(), String> {
+async fn set_default_agent(state: State<'_, AppState>, agent: String) -> Result<(), String> {
     *state.default_agent.lock().unwrap() = agent;
     Ok(())
 }
@@ -454,11 +457,7 @@ struct TextWindow {
 /// 直接在任意字节处切开会切出**半行 JSON**；更糟的是切在多字节 UTF-8 字符中间会让整个
 /// 窗口解码失败。所以每次读完 `max_bytes` 之后继续读到**下一个换行符**为止，
 /// 并且把 `next_offset` 落在换行之后 —— 不变量：**任何一次调用的 offset 都是行首**。
-fn read_text_window_impl(
-    path: &str,
-    offset: u64,
-    max_bytes: u64,
-) -> Result<TextWindow, String> {
+fn read_text_window_impl(path: &str, offset: u64, max_bytes: u64) -> Result<TextWindow, String> {
     use std::io::{Read, Seek, SeekFrom};
 
     let want = max_bytes.clamp(TEXT_WINDOW_MIN_BYTES, TEXT_WINDOW_MAX_BYTES);
@@ -474,7 +473,8 @@ fn read_text_window_impl(
         });
     }
 
-    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|e| e.to_string())?;
     let mut buf: Vec<u8> = Vec::with_capacity(want as usize);
     {
         let mut limited = (&mut file).take(want);
@@ -593,7 +593,8 @@ async fn read_file_base64(path: String) -> Result<String, String> {
     let path_for_blocking = path.clone();
     tokio::task::spawn_blocking(move || -> Result<String, String> {
         use base64::Engine;
-        let bytes = std::fs::read(&path_for_blocking).map_err(|e| format!("read {}: {e}", path_for_blocking))?;
+        let bytes = std::fs::read(&path_for_blocking)
+            .map_err(|e| format!("read {}: {e}", path_for_blocking))?;
         Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
     })
     .await
@@ -772,7 +773,13 @@ fn read_file_lines_impl(
 
 /// 这一行会不会进返回窗口（只用来决定"要不要把字节存进 line_buf"）。
 #[inline]
-fn in_window(line_no: usize, offset: usize, collected: usize, limit: usize, exhausted: bool) -> bool {
+fn in_window(
+    line_no: usize,
+    offset: usize,
+    collected: usize,
+    limit: usize,
+    exhausted: bool,
+) -> bool {
     line_no >= offset && collected < limit && !exhausted
 }
 
@@ -828,7 +835,6 @@ fn settle_line(
     Ok(())
 }
 
-
 #[tauri::command]
 async fn read_file(path: String, encoding: Option<String>) -> Result<String, String> {
     match encoding.as_deref() {
@@ -869,12 +875,11 @@ Use the paginated reader (`read_file_lines`) or the windowed reader (`read_text_
             // Use spawn_blocking so the synchronous read_to_string does not
             // stall the Tauri async runtime's worker thread.
             let path_for_blocking = path.clone();
-            let content = tokio::task::spawn_blocking(move || {
-                std::fs::read_to_string(&path_for_blocking)
-            })
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
+            let content =
+                tokio::task::spawn_blocking(move || std::fs::read_to_string(&path_for_blocking))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
 
             // Strip UTF-8 BOM (EF BB BF) — some Windows tools (Notepad, VS Code) add it
             let content = if content.starts_with('\u{FEFF}') {
@@ -973,7 +978,7 @@ async fn write_file(
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    
+
     // Decode content to bytes first (base64 binary or UTF-8 text)
     let bytes: Vec<u8> = match encoding.as_deref() {
         Some("base64") => {
@@ -1212,7 +1217,10 @@ async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<s
         match (a_dir, b_dir) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            _ => a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")),
+            _ => a["name"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["name"].as_str().unwrap_or("")),
         }
     });
 
@@ -1453,7 +1461,7 @@ async fn get_installer_default_lang() -> Result<String, String> {
             .args(["query", "HKCU\\Software\\Codem"])
             .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
             .output();
-        
+
         if let Ok(output) = nsis_check {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1466,10 +1474,13 @@ async fn get_installer_default_lang() -> Result<String, String> {
         // MSI creates: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{...}
         // Check for MSI uninstall entries containing "Codem" or "com.codem.app"
         for hive in &["HKLM", "HKCU"] {
-            let path = format!("{}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
+            let path = format!(
+                "{}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                hive
+            );
             if let Ok(output) = std::process::Command::new("reg")
                 .args(["query", &path, "/s", "/f", "Codem"])
-            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
+                .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
                 .output()
             {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1481,10 +1492,13 @@ async fn get_installer_default_lang() -> Result<String, String> {
                 }
             }
             // Also check WOW6432Node for 32-bit MSI entries
-            let path_wow64 = format!("{}\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
+            let path_wow64 = format!(
+                "{}\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                hive
+            );
             if let Ok(output) = std::process::Command::new("reg")
                 .args(["query", &path_wow64, "/s", "/f", "Codem"])
-            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
+                .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
                 .output()
             {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1873,7 +1887,10 @@ fn name_matches_glob(name: &str, pattern: &str) -> bool {
             let prefix = &pattern[..start];
             let suffix = &pattern[start + end + 1..];
             let alternatives = &pattern[start + 1..start + end];
-            eprintln!("[name_matches_glob] expanding braces: prefix={}, suffix={}, alternatives={}", prefix, suffix, alternatives);
+            eprintln!(
+                "[name_matches_glob] expanding braces: prefix={}, suffix={}, alternatives={}",
+                prefix, suffix, alternatives
+            );
             for alt in alternatives.split(',') {
                 let expanded = format!("{}{}{}", prefix, alt.trim(), suffix);
                 eprintln!("[name_matches_glob] trying expanded: {}", expanded);
@@ -1886,26 +1903,29 @@ fn name_matches_glob(name: &str, pattern: &str) -> bool {
     }
     // Handle **/filename patterns - extract the filename part
     let effective_pattern = if let Some(idx) = pattern.rfind("**") {
-        let after = &pattern[idx+2..];
+        let after = &pattern[idx + 2..];
         if after.starts_with('/') || after.starts_with('\\') {
             &after[1..]
         } else {
             pattern
         }
     } else if let Some(idx) = pattern.rfind('/') {
-        &pattern[idx+1..]
+        &pattern[idx + 1..]
     } else if let Some(idx) = pattern.rfind('\\') {
-        &pattern[idx+1..]
+        &pattern[idx + 1..]
     } else {
         pattern
     };
-    
+
     if effective_pattern == "*" {
         return true;
     }
     // Simple glob matching with multiple wildcards
     let result = glob_match(effective_pattern, name);
-    eprintln!("[name_matches_glob] matching '{}' against '{}': {}", name, effective_pattern, result);
+    eprintln!(
+        "[name_matches_glob] matching '{}' against '{}': {}",
+        name, effective_pattern, result
+    );
     result
 }
 
@@ -1914,18 +1934,18 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     let name_chars: Vec<char> = name.chars().collect();
     let pat_len = pat_chars.len();
     let name_len = name_chars.len();
-    
+
     // Dynamic programming approach for wildcard matching
     let mut dp = vec![vec![false; name_len + 1]; pat_len + 1];
     dp[0][0] = true;
-    
+
     // Handle leading wildcards
     for i in 0..pat_len {
         if pat_chars[i] == '*' {
             dp[i + 1][0] = dp[i][0];
         }
     }
-    
+
     for i in 0..pat_len {
         for j in 0..name_len {
             if pat_chars[i] == '*' {
@@ -1935,7 +1955,7 @@ fn glob_match(pattern: &str, name: &str) -> bool {
             }
         }
     }
-    
+
     dp[pat_len][name_len]
 }
 
@@ -1966,7 +1986,9 @@ fn kill_process_tree_no_wait(pid: Option<u32>) {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = std::process::Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .status();
     }
 }
 
@@ -2091,16 +2113,19 @@ fn mcp_shutdown_log_line(outcome: &McpShutdownOutcome) -> Option<(&'static str, 
 }
 
 fn kill_all_mcp_processes(state: &AppState) -> McpShutdownOutcome {
-    let handles = drain_mcp_handles_with(MCP_SHUTDOWN_LOCK_ATTEMPTS, MCP_SHUTDOWN_LOCK_GAP, || {
-        match state.mcp_processes.try_lock() {
-            Ok(mut map) => Some(
-                map.drain()
-                    .map(|(name, handle)| (name, handle._child.id()))
-                    .collect(),
-            ),
-            Err(_) => None,
-        }
-    });
+    let handles =
+        drain_mcp_handles_with(
+            MCP_SHUTDOWN_LOCK_ATTEMPTS,
+            MCP_SHUTDOWN_LOCK_GAP,
+            || match state.mcp_processes.try_lock() {
+                Ok(mut map) => Some(
+                    map.drain()
+                        .map(|(name, handle)| (name, handle._child.id()))
+                        .collect(),
+                ),
+                Err(_) => None,
+            },
+        );
 
     let Some(handles) = handles else {
         let outcome = McpShutdownOutcome::LockBusy;
@@ -2238,7 +2263,9 @@ fn resolve_bash_path(explicit: Option<&str>) -> Option<String> {
         .iter()
         .map(|s| s.to_string()),
     );
-    candidates.into_iter().find(|p| std::path::Path::new(p).is_file())
+    candidates
+        .into_iter()
+        .find(|p| std::path::Path::new(p).is_file())
 }
 
 #[tauri::command]
@@ -2256,14 +2283,19 @@ async fn execute_command(
     // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。
     session_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default());
+    let work_dir = cwd.unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    });
 
     // 运行时日志：记录命令执行（脱敏 + 截断，对标 dsh log-files 的掩码落盘）。
     let log_cmd = runtime_log::mask_secrets(&command);
     let log_cmd = runtime_log::truncate_utf8(&log_cmd, 400);
-    runtime_log::append_line("INFO", &format!("exec start cwd={:?} cmd={}", work_dir, log_cmd));
+    runtime_log::append_line(
+        "INFO",
+        &format!("exec start cwd={:?} cmd={}", work_dir, log_cmd),
+    );
     let exec_started = std::time::Instant::now();
 
     /**
@@ -2289,50 +2321,50 @@ async fn execute_command(
         runtime_log::append_line("INFO", &format!("exec shell=bash exe={:?}", bash));
         c
     } else {
-    // Always use PowerShell for consistent UTF-8 handling
-    let mut cmd = std::process::Command::new("powershell");
-    // Strip powershell prefix if present
-    let ps_body = if command.starts_with("powershell ") {
-        command.strip_prefix("powershell ").unwrap_or(&command)
-    } else {
-        &command
-    };
-    // Strip -Command prefix if present
-    let ps_body = ps_body.strip_prefix("-Command ").unwrap_or(ps_body);
-    // Defensive: if the remaining body is wrapped in a pair of double quotes
-    // (e.g. `powershell -Command "Get-ChildItem ... | ForEach-Object { $_.Path ... }"`),
-    // strip the quotes. Otherwise PowerShell treats the body as a string literal and
-    // expands $_ to $null (no pipeline context), silently producing empty output.
-    let ps_body = {
-        let trimmed = ps_body.trim();
-        if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
-            &trimmed[1..trimmed.len() - 1]
+        // Always use PowerShell for consistent UTF-8 handling
+        let mut cmd = std::process::Command::new("powershell");
+        // Strip powershell prefix if present
+        let ps_body = if command.starts_with("powershell ") {
+            command.strip_prefix("powershell ").unwrap_or(&command)
         } else {
-            trimmed
-        }
-    };
-    // Prepend comprehensive UTF-8 encoding setup
-    // chcp 65001: Set console code page to UTF-8 (affects native commands like ipconfig, dir, etc.)
-    // [Console]::OutputEncoding: .NET stdout encoding for PowerShell
-    // [Console]::InputEncoding: .NET stdin encoding (for commands that read from stdin)
-    // $OutputEncoding: PowerShell pipeline encoding between cmdlets
-    // $PSDefaultParameterValues: Default encoding for Out-File, redirections
-    let utf8_prefix = "chcp 65001 | Out-Null; [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::InputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; ";
-    let full_command = format!("{}{}", utf8_prefix, ps_body);
-    /**
-     * ★ 第 46 波：**`-NoProfile -NonInteractive`** ✓（判据 `SH-1..3` ✓）。
-     *
-     * 原来这一行只有 `-Command` ✗ ⇒ 每个工具命令都会**加载用户 profile** ✓，两条真风险：
-     * 1. ★ **污染工具输出**：profile 里只要有一句 `Write-Host`（欢迎语 / 代理 / conda 初始化… ✓），
-     *    每个工具结果都会多出那段文字 ✗ ⇒ 模型读到的是"命令输出 + 噪声"✗；
-     * 2. ★ **可能挂住**：profile 或命令本身有交互提示时，没有 `-NonInteractive` 会卡到超时 ✗。
-     *
-     * ⚠️ 速度只是**顺带**的 ✓：本机实测 271 ms/次 ⇒ 224 ms/次（差 **48 ms/次** ✓，
-     * ≈12 s/批 ⇒ **不是**主要收益 ✓，别把它当性能修复 ✗）。
-     */
-    cmd.arg("-NoProfile").arg("-NonInteractive").arg("-Command").arg(&full_command).current_dir(&work_dir);
-    // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
-    cmd
+            &command
+        };
+        // Strip -Command prefix if present
+        let ps_body = ps_body.strip_prefix("-Command ").unwrap_or(ps_body);
+        // Defensive: if the remaining body is wrapped in a pair of double quotes
+        // (e.g. `powershell -Command "Get-ChildItem ... | ForEach-Object { $_.Path ... }"`),
+        // strip the quotes. Otherwise PowerShell treats the body as a string literal and
+        // expands $_ to $null (no pipeline context), silently producing empty output.
+        let ps_body = {
+            let trimmed = ps_body.trim();
+            if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+                &trimmed[1..trimmed.len() - 1]
+            } else {
+                trimmed
+            }
+        };
+        // Prepend comprehensive UTF-8 encoding setup
+        // chcp 65001: Set console code page to UTF-8 (affects native commands like ipconfig, dir, etc.)
+        // [Console]::OutputEncoding: .NET stdout encoding for PowerShell
+        // [Console]::InputEncoding: .NET stdin encoding (for commands that read from stdin)
+        // $OutputEncoding: PowerShell pipeline encoding between cmdlets
+        // $PSDefaultParameterValues: Default encoding for Out-File, redirections
+        let utf8_prefix = "chcp 65001 | Out-Null; [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::InputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; ";
+        let full_command = format!("{}{}", utf8_prefix, ps_body);
+        /**
+         * ★ 第 46 波：**`-NoProfile -NonInteractive`** ✓（判据 `SH-1..3` ✓）。
+         *
+         * 原来这一行只有 `-Command` ✗ ⇒ 每个工具命令都会**加载用户 profile** ✓，两条真风险：
+         * 1. ★ **污染工具输出**：profile 里只要有一句 `Write-Host`（欢迎语 / 代理 / conda 初始化… ✓），
+         *    每个工具结果都会多出那段文字 ✗ ⇒ 模型读到的是"命令输出 + 噪声"✗；
+         * 2. ★ **可能挂住**：profile 或命令本身有交互提示时，没有 `-NonInteractive` 会卡到超时 ✗。
+         *
+         * ⚠️ 速度只是**顺带**的 ✓：本机实测 271 ms/次 ⇒ 224 ms/次（差 **48 ms/次** ✓，
+         * ≈12 s/批 ⇒ **不是**主要收益 ✓，别把它当性能修复 ✗）。
+         */
+        cmd.arg("-NoProfile").arg("-NonInteractive").arg("-Command").arg(&full_command).current_dir(&work_dir);
+        // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
+        cmd
     }; // ← 结束 bash/PowerShell 分支
 
     // 两个 shell 共用：Python 编码三件套（bash 下同样有效）
@@ -2354,7 +2386,17 @@ async fn execute_command(
     // 默认 600s（与前端 bash 工具上限一致）；显式传参时按调用方要求。
     let effective_timeout = timeout_ms.unwrap_or(600_000).clamp(1_000, 3_600_000); // 1s ~ 1h
 
+    // ★ stdin 必须是 **null**（不是继承、也不是 piped 后不管）。
+    //
+    // 真机事故（G5 阶段 3）：模型执行 `npx eslint bin/cli.js`，工作区没有 eslint，
+    // npx 打印「Need to install … Ok to proceed? (y)」并**等 stdin**。继承来的 stdin
+    // 永远不关 ⇒ 工具调用挂到命令超时（实测 7 分钟无事件；用户看到的是"目标卡住"）。
+    //
+    // 结构上的解法不是加提示词让模型别用 npx，而是让**交互式命令拿不到输入**：
+    // null ⇒ 立即 EOF ⇒ npx 当"取消"退出并返回非零，模型马上拿到可读的失败。
+    // 同时保留 `-NonInteractive`/`-NoProfile` 那两条 PowerShell 纪律。
     let mut child = cmd
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -2368,7 +2410,10 @@ async fn execute_command(
     let child_pid = child.id();
     let exec_session = session_id.filter(|s| !s.is_empty());
     if let Some(ref sid) = exec_session {
-        exec_processes().lock().unwrap().insert(sid.clone(), child_pid);
+        exec_processes()
+            .lock()
+            .unwrap()
+            .insert(sid.clone(), child_pid);
     }
 
     // ===== 输出读取（★ 第 185 波：**读取阶段就有上限**）=====
@@ -2457,7 +2502,9 @@ async fn execute_command(
             );
             if let Some(ref sid) = exec_session {
                 let mut map = exec_processes().lock().unwrap();
-                if map.get(sid) == Some(&child_pid) { map.remove(sid); }
+                if map.get(sid) == Some(&child_pid) {
+                    map.remove(sid);
+                }
             }
             return Err(format!(
                 "Command timed out after {}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.",
@@ -2486,7 +2533,9 @@ async fn execute_command(
 
     if let Some(ref sid) = exec_session {
         let mut map = exec_processes().lock().unwrap();
-        if map.get(sid) == Some(&child_pid) { map.remove(sid); }
+        if map.get(sid) == Some(&child_pid) {
+            map.remove(sid);
+        }
     }
     Ok(serde_json::json!({
         "stdout": stdout,
@@ -2505,7 +2554,10 @@ async fn kill_session_processes(session_id: String) -> Result<bool, String> {
             kill_process_tree(Some(pid))?;
             runtime_log::append_line(
                 "INFO",
-                &format!("session abort: killed exec tree session={} pid={}", session_id, pid),
+                &format!(
+                    "session abort: killed exec tree session={} pid={}",
+                    session_id, pid
+                ),
             );
             Ok(true)
         }
@@ -2593,7 +2645,11 @@ async fn mimo_read_auth() -> Result<serde_json::Value, String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Cannot determine home directory")?;
-    let auth_path = std::path::Path::new(&home).join(".local").join("share").join("mimocode").join("auth.json");
+    let auth_path = std::path::Path::new(&home)
+        .join(".local")
+        .join("share")
+        .join("mimocode")
+        .join("auth.json");
     let content = match std::fs::read_to_string(&auth_path) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -2602,8 +2658,8 @@ async fn mimo_read_auth() -> Result<serde_json::Value, String> {
         }
         Err(e) => return Err(format!("Cannot read {}: {}", auth_path.display(), e)),
     };
-    let parsed: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Invalid JSON in auth.json: {}", e))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in auth.json: {}", e))?;
     // 把"读到了"这件事显式标出来，前端不必靠"结构里有没有字段"猜
     match parsed {
         serde_json::Value::Object(mut map) => {
@@ -2621,9 +2677,14 @@ async fn mimo_delete_auth() -> Result<(), String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Cannot determine home directory")?;
-    let auth_path = std::path::Path::new(&home).join(".local").join("share").join("mimocode").join("auth.json");
+    let auth_path = std::path::Path::new(&home)
+        .join(".local")
+        .join("share")
+        .join("mimocode")
+        .join("auth.json");
     if auth_path.exists() {
-        std::fs::remove_file(&auth_path).map_err(|e| format!("Failed to delete auth.json: {}", e))?;
+        std::fs::remove_file(&auth_path)
+            .map_err(|e| format!("Failed to delete auth.json: {}", e))?;
     }
     Ok(())
 }
@@ -2712,7 +2773,7 @@ async fn get_process_token_info() -> Result<String, String> {
     // This is a simple check — full ACL manipulation requires the windows-sys crate
     match std::process::Command::new("whoami")
         .arg("/groups")
-            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
+        .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
         .output()
     {
         Ok(output) => {
@@ -2748,7 +2809,11 @@ fn file_size_or_unknown(metadata: std::io::Result<std::fs::Metadata>) -> Option<
 /// List files in a directory with sandbox enforcement.
 /// If sandbox is enabled, only files within the workspace are returned.
 #[tauri::command]
-async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabled: bool) -> Result<Vec<FileInfo>, String> {
+async fn list_directory_sandboxed(
+    path: String,
+    workspace: String,
+    sandbox_enabled: bool,
+) -> Result<Vec<FileInfo>, String> {
     if sandbox_enabled {
         // ★ 第 185 波：第三份实现也并入同一份判定（见 `path_within_workspace`）。
         let abs_path = resolve_sandbox_path(std::path::Path::new(&path))
@@ -2756,16 +2821,22 @@ async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabl
         let abs_workspace = resolve_sandbox_path(std::path::Path::new(&workspace))
             .map_err(|e| format!("Cannot resolve workspace: {}", e))?;
         if !path_within_workspace(&abs_path, &abs_workspace) {
-            return Err(format!("Sandbox: Path {} is outside workspace {}", path, workspace));
+            return Err(format!(
+                "Sandbox: Path {} is outside workspace {}",
+                path, workspace
+            ));
         }
     }
 
     let mut files = Vec::new();
-    let entries = std::fs::read_dir(&path).map_err(|e| format!("Failed to read directory {}: {}", path, e))?;
+    let entries = std::fs::read_dir(&path)
+        .map_err(|e| format!("Failed to read directory {}: {}", path, e))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {}", e))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to get file type: {}", e))?;
         files.push(FileInfo {
             name: entry.file_name().to_string_lossy().to_string(),
             is_dir: file_type.is_dir(),
@@ -2783,9 +2854,13 @@ async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabl
     }
 
     files.sort_by(|a, b| {
-        if a.is_dir && !b.is_dir { std::cmp::Ordering::Less }
-        else if !a.is_dir && b.is_dir { std::cmp::Ordering::Greater }
-        else { a.name.cmp(&b.name) }
+        if a.is_dir && !b.is_dir {
+            std::cmp::Ordering::Less
+        } else if !a.is_dir && b.is_dir {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.cmp(&b.name)
+        }
     });
 
     Ok(files)
@@ -2799,7 +2874,6 @@ struct FileInfo {
     /// `None` = **大小未知**（stat 失败）。改前这里把"读不到"写成 `0`（假事实）。
     size: Option<u64>,
 }
-
 
 /// codegraph_install — 应用内一键安装 CodeGraph CLI（方案 B：不要求用户敲命令/PATH）。
 ///
@@ -2861,8 +2935,8 @@ async fn codegraph_install() -> Result<CodegraphInstallResult, String> {
     std::fs::create_dir_all(&root).map_err(|e| format!("mkdir install dir: {e}"))?;
 
     // 4. 解压（zip crate；拒绝目录穿越）
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
-        .map_err(|e| format!("open archive: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("open archive: {e}"))?;
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -2882,10 +2956,8 @@ async fn codegraph_install() -> Result<CodegraphInstallResult, String> {
         if let Some(parent) = out.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let mut file = std::fs::File::create(&out)
-            .map_err(|e| format!("create {raw}: {e}"))?;
-        std::io::copy(&mut entry, &mut file)
-            .map_err(|e| format!("write {raw}: {e}"))?;
+        let mut file = std::fs::File::create(&out).map_err(|e| format!("create {raw}: {e}"))?;
+        std::io::copy(&mut entry, &mut file).map_err(|e| format!("write {raw}: {e}"))?;
         drop(file);
     }
 
@@ -3233,7 +3305,9 @@ fn reap_stale_cmd_wrappers() {
                 continue;
             }
             let Ok(meta) = e.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
             let age = now
                 .duration_since(modified)
                 .unwrap_or(std::time::Duration::ZERO);
@@ -3320,8 +3394,8 @@ async fn mcp_stdio_connect(
     env: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
     let lower = command.to_ascii_lowercase();
-    let needs_cmd_wrapper = cfg!(target_os = "windows")
-        && (lower.ends_with(".cmd") || lower.ends_with(".bat"));
+    let needs_cmd_wrapper =
+        cfg!(target_os = "windows") && (lower.ends_with(".cmd") || lower.ends_with(".bat"));
 
     /*
      * ★ 第 186 波：`.cmd/.bat` 那条路不再"拼整行"，改成**生成 wrapper 批处理**。
@@ -3408,7 +3482,8 @@ async fn mcp_stdio_connect(
     // 直接 CreateProcess 的路子上，目标不存在时 `spawn` 自己就返回 Err（已经如实报了），
     // 所以不加这 400 ms 的无谓延迟。
     if needs_cmd_wrapper {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(MCP_START_PROBE_MS);
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(MCP_START_PROBE_MS);
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
@@ -3497,7 +3572,10 @@ async fn mcp_stdio_connect(
                 } else if lines == 201 {
                     runtime_log::append_line(
                         "WARN",
-                        &format!("mcp stderr name={} 超过 200 行，后续只丢弃（防止日志刷爆）", name_for_log),
+                        &format!(
+                            "mcp stderr name={} 超过 200 行，后续只丢弃（防止日志刷爆）",
+                            name_for_log
+                        ),
                     );
                 }
             }
@@ -3505,11 +3583,14 @@ async fn mcp_stdio_connect(
     }
 
     let mut processes = state.mcp_processes.lock().await;
-    processes.insert(name, McpProcessHandle {
-        stdin: Arc::new(TokioMutex::new(stdin)),
-        pending,
-        _child: child,
-    });
+    processes.insert(
+        name,
+        McpProcessHandle {
+            stdin: Arc::new(TokioMutex::new(stdin)),
+            pending,
+            _child: child,
+        },
+    );
 
     Ok(())
 }
@@ -3522,9 +3603,11 @@ async fn mcp_stdio_request(
     message: String,
 ) -> Result<String, String> {
     // Parse the message to extract the request id
-    let parsed: serde_json::Value = serde_json::from_str(&message)
-        .map_err(|e| format!("Invalid JSON message: {}", e))?;
-    let id = parsed.get("id").and_then(|v| v.as_i64())
+    let parsed: serde_json::Value =
+        serde_json::from_str(&message).map_err(|e| format!("Invalid JSON message: {}", e))?;
+    let id = parsed
+        .get("id")
+        .and_then(|v| v.as_i64())
         .ok_or("Message missing 'id' field")?;
 
     /*
@@ -3569,10 +3652,7 @@ async fn mcp_stdio_request(
     }
 
     // Wait for response with timeout (30 seconds) —— **不持任何锁**
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        rx,
-    ).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
 
     match result {
         Ok(Ok(json)) => Ok(serde_json::to_string(&json).unwrap_or_default()),
@@ -3594,10 +3674,7 @@ async fn mcp_stdio_request(
 /// （`npx …` / `cmd.exe /c codegraph.cmd`），真正干活的是它的子进程；只杀直接子进程
 /// 会让服务本体留下来（与退出时的同一条缺口，判据共用 `kill_process_tree`）。
 #[tauri::command]
-async fn mcp_stdio_disconnect(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), String> {
+async fn mcp_stdio_disconnect(state: State<'_, AppState>, name: String) -> Result<(), String> {
     // ★ 第 185 波：**取句柄时持锁，杀进程时不持锁**。
     // 改前这把整表锁一直被拿到 `wait().await` 结束 ⇒ 断开一个服务器期间，
     // 别的服务器的请求/连接全被挡住（用户侧就是"点断开没反应"）。
@@ -3624,7 +3701,11 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
-    let auth_path = std::path::Path::new(&home).join(".local").join("share").join("mimocode").join("auth.json");
+    let auth_path = std::path::Path::new(&home)
+        .join(".local")
+        .join("share")
+        .join("mimocode")
+        .join("auth.json");
 
     // If auth.json already exists with a key, just return it
     if auth_path.exists() {
@@ -3639,13 +3720,13 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     }
 
     // --- Native OAuth: X25519 ECDH + AES-256-GCM ---
-    use x25519_dalek::{EphemeralSecret, PublicKey};
+    use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
-    use sha2::{Sha256, Digest};
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-    use aes_gcm::aead::Aead;
     use rand::rngs::OsRng;
+    use sha2::{Digest, Sha256};
+    use x25519_dalek::{EphemeralSecret, PublicKey};
 
     let platform_url = std::env::var("MIMO_PLATFORM_URL")
         .unwrap_or_else(|_| "https://platform.xiaomimimo.com".to_string());
@@ -3659,7 +3740,8 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     // 2. Start local TCP listener on a random port
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Failed to start local server: {}", e))?;
-    let port = listener.local_addr()
+    let port = listener
+        .local_addr()
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     eprintln!("[mimo_login] Local callback server on port {}", port);
@@ -3681,11 +3763,11 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     eprintln!("[mimo_login] Authorize URL: {}", auth_url);
 
     // 4. Open browser
-    open::that(&auth_url)
-        .map_err(|e| format!("Failed to open browser: {}", e))?;
+    open::that(&auth_url).map_err(|e| format!("Failed to open browser: {}", e))?;
 
     // 5. Wait for callback (timeout 5 minutes)
-    listener.set_nonblocking(false)
+    listener
+        .set_nonblocking(false)
         .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
     let start = std::time::Instant::now();
@@ -3705,7 +3787,8 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     // 6. Read HTTP request
     use std::io::Read;
     let mut buf = [0u8; 8192];
-    let n = stream.read(&mut buf)
+    let n = stream
+        .read(&mut buf)
         .map_err(|e| format!("Read failed: {}", e))?;
     let request = String::from_utf8_lossy(&buf[..n]);
     eprintln!("[mimo_login] Callback request: {} bytes", n);
@@ -3725,14 +3808,18 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
 
     // 7. Extract and decrypt the `u` parameter
     let query = path.split('?').nth(1).unwrap_or("");
-    let u_param: Option<&str> = query.split('&')
-        .find_map(|p| {
-            let mut parts = p.splitn(2, '=');
-            if parts.next()? == "u" { parts.next() } else { None }
-        });
+    let u_param: Option<&str> = query.split('&').find_map(|p| {
+        let mut parts = p.splitn(2, '=');
+        if parts.next()? == "u" {
+            parts.next()
+        } else {
+            None
+        }
+    });
 
     let encrypted_b64 = u_param.ok_or("Missing 'u' parameter in callback")?;
-    let encrypted_data = URL_SAFE_NO_PAD.decode(encrypted_b64)
+    let encrypted_data = URL_SAFE_NO_PAD
+        .decode(encrypted_b64)
         .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(encrypted_b64))
         .map_err(|e| format!("Failed to decode encrypted data: {}", e))?;
 
@@ -3753,10 +3840,11 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     let aes_key = Sha256::digest(shared_secret.as_bytes());
 
     // AES-256-GCM decrypt
-    let cipher = Aes256Gcm::new_from_slice(&aes_key)
-        .map_err(|e| format!("AES key init failed: {}", e))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&aes_key).map_err(|e| format!("AES key init failed: {}", e))?;
     let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher.decrypt(nonce, ciphertext_with_tag)
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext_with_tag)
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
     let json_str = String::from_utf8(plaintext)
@@ -3766,10 +3854,16 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     let cred: serde_json::Value = serde_json::from_str(&json_str)
         .map_err(|e| format!("Failed to parse credential JSON: {}", e))?;
 
-    let sk = cred["sk"].as_str()
+    let sk = cred["sk"]
+        .as_str()
         .ok_or("Missing 'sk' in credential data")?;
-    let uid = cred["uid"].as_str().or(cred["uid"].as_i64().map(|_| "")).unwrap_or("");
-    let url = cred["url"].as_str().unwrap_or("https://api.xiaomimimo.com/v1");
+    let uid = cred["uid"]
+        .as_str()
+        .or(cred["uid"].as_i64().map(|_| ""))
+        .unwrap_or("");
+    let url = cred["url"]
+        .as_str()
+        .unwrap_or("https://api.xiaomimimo.com/v1");
 
     // 8. Write auth.json
     let auth_json = serde_json::json!({
@@ -3784,11 +3878,13 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     });
 
     if let Some(parent) = auth_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create auth dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create auth dir: {}", e))?;
     }
-    std::fs::write(&auth_path, serde_json::to_string_pretty(&auth_json).unwrap_or_default())
-        .map_err(|e| format!("Failed to write auth.json: {}", e))?;
+    std::fs::write(
+        &auth_path,
+        serde_json::to_string_pretty(&auth_json).unwrap_or_default(),
+    )
+    .map_err(|e| format!("Failed to write auth.json: {}", e))?;
 
     eprintln!("[mimo_login] auth.json written successfully");
     Ok(serde_json::json!({ "success": true, "auth": auth_json }))
@@ -3808,30 +3904,33 @@ async fn create_pet_window(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
-        &app,
-        "pet",
-        tauri::WebviewUrl::App("pet.html".into()),
-    )
-    .title("Pet")
-    .inner_size(200.0, 250.0)
-    .transparent(true)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(true) // Must be true for setSize to work programmatically
-    .shadow(false) // Disable DWM shadow — eliminates the black border on transparent borderless windows
-    .visible(true) // Show immediately; frontend will resize after content loads
-    .build()
-    .map_err(|e| format!("Failed to create pet window: {}", e))?;
+    let window =
+        tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("pet.html".into()))
+            .title("Pet")
+            .inner_size(200.0, 250.0)
+            .transparent(true)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(true) // Must be true for setSize to work programmatically
+            .shadow(false) // Disable DWM shadow — eliminates the black border on transparent borderless windows
+            .visible(true) // Show immediately; frontend will resize after content loads
+            .build()
+            .map_err(|e| format!("Failed to create pet window: {}", e))?;
 
     // Position at bottom-right of the primary monitor
     if let Some(monitor) = window.primary_monitor().ok().flatten() {
         let monitor_size = monitor.size();
         let scale_factor = monitor.scale_factor();
-        let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(200, 250));
-        let x = (monitor_size.width as f64 / scale_factor) - (win_size.width as f64 / scale_factor) - 24.0;
-        let y = (monitor_size.height as f64 / scale_factor) - (win_size.height as f64 / scale_factor) - 8.0;
+        let win_size = window
+            .outer_size()
+            .unwrap_or(tauri::PhysicalSize::new(200, 250));
+        let x = (monitor_size.width as f64 / scale_factor)
+            - (win_size.width as f64 / scale_factor)
+            - 24.0;
+        let y = (monitor_size.height as f64 / scale_factor)
+            - (win_size.height as f64 / scale_factor)
+            - 8.0;
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
     }
 
@@ -3857,11 +3956,11 @@ async fn show_pet_menu(
         .map_err(|e| e.to_string())?;
 
     // Separator
-    let sep1 = PredefinedMenuItem::separator(&app)
-        .map_err(|e| e.to_string())?;
+    let sep1 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
 
     // Always-on-top toggle (check item)
-    let is_on_top = app.get_webview_window("pet")
+    let is_on_top = app
+        .get_webview_window("pet")
         .map(|w| w.is_always_on_top().unwrap_or(true))
         .unwrap_or(true);
     let top_item = CheckMenuItemBuilder::with_id("pet-toggle-top", "窗口置顶")
@@ -3880,8 +3979,7 @@ async fn show_pet_menu(
         .map_err(|e| e.to_string())?;
 
     // Separator before pet switch
-    let sep2 = PredefinedMenuItem::separator(&app)
-        .map_err(|e| e.to_string())?;
+    let sep2 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
 
     // ─── 切换宠物样式子菜单 ───
     let switch_submenu = {
@@ -3897,18 +3995,23 @@ async fn show_pet_menu(
                     None => continue,
                 };
                 let is_active = active_slug.as_ref().map(|s| s == &slug).unwrap_or(false);
-                let label = if is_active { format!("● {}", name) } else { format!("○ {}", name) };
-                submenu = submenu.item(&MenuItemBuilder::with_id(format!("pet-switch:{}", slug), label)
-                    .build(&app)
-                    .map_err(|e| e.to_string())?);
+                let label = if is_active {
+                    format!("● {}", name)
+                } else {
+                    format!("○ {}", name)
+                };
+                submenu = submenu.item(
+                    &MenuItemBuilder::with_id(format!("pet-switch:{}", slug), label)
+                        .build(&app)
+                        .map_err(|e| e.to_string())?,
+                );
             }
         }
         submenu.build().map_err(|e| e.to_string())?
     };
 
     // Separator
-    let sep3 = PredefinedMenuItem::separator(&app)
-        .map_err(|e| e.to_string())?;
+    let sep3 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
 
     // Close pet
     let close_item = MenuItemBuilder::with_id("close-pet", "关闭宠物")
@@ -3960,12 +4063,22 @@ async fn resize_pet_window(app: AppHandle, width: f64, height: f64) -> Result<()
 /// Atomically sets the pet window's position and size in a single IPC call.
 /// Eliminates the visual flicker caused by separate set_position + set_size calls.
 #[tauri::command]
-async fn set_pet_window_geometry(app: AppHandle, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+async fn set_pet_window_geometry(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("pet") {
         // set_position first (move window), then set_size (grow from new top-left).
         // Both are synchronous Win32 SetWindowPos calls — no async gap between them.
-        window.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
-        window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+        window
+            .set_position(tauri::LogicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -3980,7 +4093,9 @@ async fn set_pet_window_geometry(app: AppHandle, x: f64, y: f64, width: f64, hei
 /// called as two separate Win32 calls.
 #[tauri::command]
 async fn resize_pet_window_anchored(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
-    let window = app.get_webview_window("pet").ok_or("Pet window not found")?;
+    let window = app
+        .get_webview_window("pet")
+        .ok_or("Pet window not found")?;
 
     // Read current physical position and size (synchronous Win32 GetWindowRect)
     let pos = window.outer_position().map_err(|e| e.to_string())?;
@@ -4005,8 +4120,8 @@ async fn resize_pet_window_anchored(app: AppHandle, width: f64, height: f64) -> 
     // SWP_NOCOPYBITS — don't copy old window content (prevents visual artifacts)
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::*;
         use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::*;
 
         let hwnd_raw = window.hwnd().map_err(|e| e.to_string())?;
         let hwnd = HWND(hwnd_raw.0 as *mut _);
@@ -4079,8 +4194,8 @@ async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), Stri
             // 杀整树：退出时若终端里正跑长命令（npm test 等），单 kill 会留下孤儿进程。
             if let Some(pid) = session._child.process_id() {
                 /* 第 217 波（用户实报「点退出卡了一下、要按两次才退出」）：
-                   退出路径上**不许同步等**收树 —— 每个终端会话串行 `taskkill`（几百毫秒到几秒），
-                   会话一多就把退出流程堵住。改成发出去不等；孤儿进程由各自的清理兜底。 */
+                退出路径上**不许同步等**收树 —— 每个终端会话串行 `taskkill`（几百毫秒到几秒），
+                会话一多就把退出流程堵住。改成发出去不等；孤儿进程由各自的清理兜底。 */
                 kill_process_tree_no_wait(Some(pid));
             }
             let _ = session._child.kill();
@@ -4140,7 +4255,10 @@ fn write_active_run_marker(app: &AppHandle) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    match std::fs::write(&path, serde_json::to_string_pretty(&marker).unwrap_or_default()) {
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&marker).unwrap_or_default(),
+    ) {
         Ok(_) => {}
         Err(e) => eprintln!("[crash-marker] write failed: {}", e),
     }
@@ -4284,7 +4402,8 @@ const HTTP_GET_MAX_IN_FLIGHT: usize = 12;
 ///
 /// 类型是 `Result<Client, String>` 而不是 `Client`，正是为了让失败**可表示**：
 /// `OnceLock` 只负责"只建一次"，成不成功由里面的 `Result` 说。
-static HTTP_GET_CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> = std::sync::OnceLock::new();
+static HTTP_GET_CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> =
+    std::sync::OnceLock::new();
 static HTTP_GET_GATE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
 
 /// 第 158 轮：**系统窗口材质（Windows Mica/Acrylic、macOS vibrancy）到底应用成功没有**。
@@ -4295,7 +4414,10 @@ static NATIVE_MATERIAL: std::sync::OnceLock<String> = std::sync::OnceLock::new()
 
 fn set_native_material(name: &str) {
     let _ = NATIVE_MATERIAL.set(name.to_string());
-    eprintln!("[vibrancy] native material = {}", if name.is_empty() { "(none)" } else { name });
+    eprintln!(
+        "[vibrancy] native material = {}",
+        if name.is_empty() { "(none)" } else { name }
+    );
 }
 
 /// 前端启动时问一次：有没有系统材质可用（空串 = 没有）。
@@ -4425,11 +4547,17 @@ async fn http_get(
         }
     }
 
-    let body = resp.bytes().await
+    let body = resp
+        .bytes()
+        .await
         .map(|b| String::from_utf8_lossy(&b).to_string())
         .map_err(|e| e.to_string())?;
 
-    Ok(HttpResponse { status, body, headers: resp_headers })
+    Ok(HttpResponse {
+        status,
+        body,
+        headers: resp_headers,
+    })
 }
 
 /// Performs an HTTP POST request through the Rust side (bypasses CSP restrictions).
@@ -4463,11 +4591,17 @@ async fn http_post(
         }
     }
 
-    let body = resp.bytes().await
+    let body = resp
+        .bytes()
+        .await
         .map(|b| String::from_utf8_lossy(&b).to_string())
         .map_err(|e| e.to_string())?;
 
-    Ok(HttpResponse { status, body, headers: resp_headers })
+    Ok(HttpResponse {
+        status,
+        body,
+        headers: resp_headers,
+    })
 }
 
 /// Downloads a file from a URL and saves it to the specified local path.
@@ -4564,7 +4698,9 @@ async fn extract_zip(zip_path: String, dest_dir: String) -> Result<u32, String> 
     let mut written = 0u32;
 
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| format!("entry {}: {}", i, e))?;
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("entry {}: {}", i, e))?;
         // enclosed_name 拒绝绝对路径与 ..（zip-slip 防护）
         let rel = match entry.enclosed_name() {
             Some(p) => p.to_path_buf(),
@@ -4619,14 +4755,18 @@ fn install_panic_hook() {
         let path = dir.join("codem-crash.log");
         // 追加写入（用 OpenOptions append）
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
             let _ = f.write_all(msg.as_bytes());
         }
     }));
 }
 
 pub fn run() {
-install_panic_hook();
+    install_panic_hook();
     /**
      * ★ 第 233 轮（297 波遗留 ②）：**WebView2 去节流**。
      *
@@ -4661,19 +4801,19 @@ install_panic_hook();
         }
         runtime_log::append_line("INFO", "webview2: background throttling disabled");
     }
-// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
-let ilink_state = ilink::IlinkState::new();
-// ===== 桌面引擎桥（AA 远程用；只绑 127.0.0.1，无旧 LAN 配对）=====
-let phone_state = phone::PhoneState::new();
-// ===== PC 远程网关（ADR-0005；独立回环监听 + 随机端口，命令启停，不自动启动）=====
-let gateway_state = phone::gateway::GatewayState::new();
-        // 阶段 R6：AA connector 的运行时状态（与桌面引擎桥并列，互不干扰）
-        let aa_connector_state = phone::aa_connector::AaConnectorState::new();
-// ===== 存储引擎（Rust 原生 SQLite）管理态 =====
-// 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
-// 引擎本体在首次调用时惰性打开。
-let storage_state = storage::init_state();
-let app = tauri::Builder::default()
+    // ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
+    let ilink_state = ilink::IlinkState::new();
+    // ===== 桌面引擎桥（AA 远程用；只绑 127.0.0.1，无旧 LAN 配对）=====
+    let phone_state = phone::PhoneState::new();
+    // ===== PC 远程网关（ADR-0005；独立回环监听 + 随机端口，命令启停，不自动启动）=====
+    let gateway_state = phone::gateway::GatewayState::new();
+    // 阶段 R6：AA connector 的运行时状态（与桌面引擎桥并列，互不干扰）
+    let aa_connector_state = phone::aa_connector::AaConnectorState::new();
+    // ===== 存储引擎（Rust 原生 SQLite）管理态 =====
+    // 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
+    // 引擎本体在首次调用时惰性打开。
+    let storage_state = storage::init_state();
+    let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
 .plugin(tauri_plugin_notification::init())
@@ -4822,11 +4962,13 @@ path_exists,
         phone::aa_connector_status,
         // 桌面引擎桥：TS 应答 bridge 请求（只绑 127.0.0.1）
         phone::remote_respond,
-        // PC 远程网关（ADR-0005）：启停/状态/一次性配对码，没有自动启动
+        // PC 远程网关（ADR-0005）：启停/状态/一次性配对码/设备列表与单设备撤销
         phone::gateway::gateway_start,
         phone::gateway::gateway_stop,
         phone::gateway::gateway_status,
         phone::gateway::gateway_pair_start,
+        phone::gateway::gateway_devices,
+        phone::gateway::gateway_device_revoke,
         // 事件流：渲染层把桌面循环事件发进网关（唯一入口，不是 HTTP 路由）
         phone::gateway::gateway_publish_event,
         // M3 文件面：只读工作区（无条件边界；敏感审批在渲染层按 Host 同一规则判定）
@@ -5217,7 +5359,10 @@ mod http_gate_tests {
             serde_json::from_str(&busy_error()).expect("BUSY 错误体必须是合法 JSON");
 
         assert_eq!(payload["code"], "BUSY");
-        assert_eq!(payload["retryable"], true, "BUSY 必须可重试，否则前端只能白等超时");
+        assert_eq!(
+            payload["retryable"], true,
+            "BUSY 必须可重试，否则前端只能白等超时"
+        );
         assert!(
             payload["hint"].as_str().is_some_and(|h| !h.is_empty()),
             "兜底档必须带处置建议（见 storage.rs 的 StorageErrorPayload 口径）"
@@ -5250,7 +5395,10 @@ mod http_gate_tests {
     #[test]
     fn client_build_is_a_result_not_a_panic() {
         let built: Result<reqwest::Client, String> = build_shared_http_client();
-        assert!(built.is_ok(), "本配置下应当构建成功；失败时也必须以 Err 返回而不是 panic");
+        assert!(
+            built.is_ok(),
+            "本配置下应当构建成功；失败时也必须以 Err 返回而不是 panic"
+        );
     }
 
     /// 契约形状：`http_get` 的返回 JSON 键名**逐字未变**（web 抓取 / figma 抓取共用）。
@@ -5279,11 +5427,8 @@ mod text_window_tests {
     use super::*;
 
     fn temp_file(name: &str, content: &[u8]) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "codem-textwindow-{}-{}",
-            name,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("codem-textwindow-{}-{}", name, std::process::id()));
         std::fs::create_dir_all(&dir).expect("建临时目录");
         let path = dir.join("log.jsonl");
         std::fs::write(&path, content).expect("写临时文件");
@@ -5347,7 +5492,9 @@ mod text_window_tests {
     fn multibyte_utf8_never_splits_mid_character() {
         let mut src = String::new();
         for i in 0..200 {
-            src.push_str(&format!("{{\"c\":\"中文内容，带表情 🚀 和省略号… {i}\"}}\n"));
+            src.push_str(&format!(
+                "{{\"c\":\"中文内容，带表情 🚀 和省略号… {i}\"}}\n"
+            ));
         }
         let path = temp_file("utf8", src.as_bytes());
         let got = read_all(path.to_str().unwrap(), 64 * 1024);
@@ -5377,7 +5524,11 @@ mod text_window_tests {
             let w = read_text_window_impl(p, offset, 64 * 1024).expect("越界 offset 不该报错");
             assert!(w.text.is_empty(), "越界 offset 应当返回空文本");
             assert!(w.eof);
-            assert_eq!(w.next_offset, src.len() as u64, "next_offset 必须收敛到文件末尾");
+            assert_eq!(
+                w.next_offset,
+                src.len() as u64,
+                "next_offset 必须收敛到文件末尾"
+            );
         }
     }
 
@@ -5440,7 +5591,8 @@ mod delete_tests {
     use super::*;
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("codem-delete-test-{}-{}", name, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("codem-delete-test-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir
@@ -5455,7 +5607,9 @@ mod delete_tests {
         std::fs::write(nested.join("SKILL.md"), "# sub skill").expect("write sub skill");
         let readonly = root.join("locked.md");
         std::fs::write(&readonly, "locked").expect("write readonly file");
-        let mut permissions = std::fs::metadata(&readonly).expect("metadata").permissions();
+        let mut permissions = std::fs::metadata(&readonly)
+            .expect("metadata")
+            .permissions();
         permissions.set_readonly(true);
         std::fs::set_permissions(&readonly, permissions).expect("set readonly");
 
@@ -5491,14 +5645,25 @@ mod delete_tests {
         let started = std::time::Instant::now();
         let result = move_directory_to_recycle_bin(&root.to_string_lossy());
         let elapsed = started.elapsed();
-        eprintln!("[delete_tests] recycle outcome={:?} elapsed={:?}", result, elapsed);
+        eprintln!(
+            "[delete_tests] recycle outcome={:?} elapsed={:?}",
+            result, elapsed
+        );
 
-        assert!(elapsed.as_secs() < 20, "移入回收站必须返回，实际耗时 {:?}", elapsed);
+        assert!(
+            elapsed.as_secs() < 20,
+            "移入回收站必须返回，实际耗时 {:?}",
+            elapsed
+        );
         match result {
             Ok(()) => assert!(!root.exists(), "返回成功后目录应已不在原位"),
             Err(message) => {
                 assert!(root.exists(), "失败时目录应保持原样: {}", message);
-                assert!(message.contains("回收站"), "失败信息应说明回收站路径: {}", message);
+                assert!(
+                    message.contains("回收站"),
+                    "失败信息应说明回收站路径: {}",
+                    message
+                );
             }
         }
     }
@@ -5529,12 +5694,7 @@ mod wire_naming_tests {
      * 线上契约要求的是**名字**一致（消费方按名字取），不是顺序。
      */
     fn key_set(v: &Value) -> Vec<String> {
-        let mut k: Vec<String> = v
-            .as_object()
-            .expect("必须是对象")
-            .keys()
-            .cloned()
-            .collect();
+        let mut k: Vec<String> = v.as_object().expect("必须是对象").keys().cloned().collect();
         k.sort();
         k
     }
@@ -5568,7 +5728,13 @@ mod wire_naming_tests {
         .expect("序列化");
         assert_eq!(
             key_set(&v),
-            vec!["droppedChars", "droppedLines", "hasMore", "text", "totalLines"],
+            vec![
+                "droppedChars",
+                "droppedLines",
+                "hasMore",
+                "text",
+                "totalLines"
+            ],
             "前端读的是 totalLines / hasMore / droppedLines / droppedChars —— 不一致会让\
              「还有更多行 / 还差多少」的提示永不出现（静默截断）"
         );
@@ -5601,7 +5767,9 @@ mod file_version_tests {
     fn existing_file_yields_a_token_with_size() {
         let path = temp_path("exists");
         std::fs::write(&path, b"hello").expect("写文件");
-        let v = file_version_impl(&path).expect("版本查询").expect("应当有令牌");
+        let v = file_version_impl(&path)
+            .expect("版本查询")
+            .expect("应当有令牌");
         let (size, mtime) = v.split_once(':').expect("格式 <size>:<mtime>");
         assert_eq!(size, "5");
         assert!(mtime.parse::<u128>().unwrap() > 0, "mtime 必须被带上：{v}");
@@ -5619,7 +5787,11 @@ mod file_version_tests {
         std::fs::write(&path, b"bbbbb").expect("改写（同长度）");
         let after = file_version_impl(&path).unwrap().unwrap();
 
-        assert_eq!(before.split(':').next(), after.split(':').next(), "前置：两次长度相同");
+        assert_eq!(
+            before.split(':').next(),
+            after.split(':').next(),
+            "前置：两次长度相同"
+        );
         assert_ne!(before, after, "同长度改写必须换令牌（否则 CAS 形同虚设）");
     }
 
@@ -5647,7 +5819,8 @@ mod append_file_tests {
     use super::*;
 
     fn temp_file(name: &str, content: &[u8]) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("codem-append-{}-{}", name, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("codem-append-{}-{}", name, std::process::id()));
         std::fs::create_dir_all(&dir).expect("建临时目录");
         let path = dir.join("session.jsonl");
         std::fs::write(&path, content).expect("写临时文件");
@@ -5680,7 +5853,10 @@ mod append_file_tests {
         assert_eq!(bad, 0, "干净文件上追加不该产生坏行");
         assert_eq!(ids, vec!["m1", "m2", "m3"]);
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(raw, "{\"id\":\"m1\"}\n{\"id\":\"m2\"}\n{\"id\":\"m3\"}\n", "逐字节形状");
+        assert_eq!(
+            raw, "{\"id\":\"m1\"}\n{\"id\":\"m2\"}\n{\"id\":\"m3\"}\n",
+            "逐字节形状"
+        );
     }
 
     /// **主判据**：文件尾是半截行（没有换行）时，新追加的记录必须**自成一行且可读**。
@@ -5696,13 +5872,24 @@ mod append_file_tests {
         let raw = std::fs::read_to_string(&path).unwrap();
         // 残尾自己仍然是坏行（该丢），但它**不能**把 m4 拖下水
         let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
-        assert_eq!(lines.len(), 4, "补了换行之后新记录应当独占一行；实际：{raw:?}");
-        assert_eq!(lines[2], "{\"id\":\"m3\",\"conte", "残尾保持原样（不伪造它完整）");
+        assert_eq!(
+            lines.len(),
+            4,
+            "补了换行之后新记录应当独占一行；实际：{raw:?}"
+        );
+        assert_eq!(
+            lines[2], "{\"id\":\"m3\",\"conte",
+            "残尾保持原样（不伪造它完整）"
+        );
         assert_eq!(lines[3], "{\"id\":\"m4\"}", "新记录必须自成一行");
 
         let (ids, bad) = parsed_ids(&path);
         assert_eq!(bad, 1, "只有那一条残尾是坏行");
-        assert_eq!(ids, vec!["m1", "m2", "m4"], "**m4 必须仍然可读**（旧实现里它会和残尾粘成一条坏行，被永久丢掉）");
+        assert_eq!(
+            ids,
+            vec!["m1", "m2", "m4"],
+            "**m4 必须仍然可读**（旧实现里它会和残尾粘成一条坏行，被永久丢掉）"
+        );
     }
 
     /// 空文件 / 只有一条记录：不该多补换行（否则每行前面多一个空行）。
@@ -5714,15 +5901,25 @@ mod append_file_tests {
 
         let single = temp_file("single", b"{\"id\":\"a\"}");
         append_file_impl(&single, "{\"id\":\"b\"}").expect("无换行尾追加");
-        assert_eq!(std::fs::read_to_string(&single).unwrap(), "{\"id\":\"a\"}\n{\"id\":\"b\"}\n");
+        assert_eq!(
+            std::fs::read_to_string(&single).unwrap(),
+            "{\"id\":\"a\"}\n{\"id\":\"b\"}\n"
+        );
     }
 
     /// **连追加**：多字节 UTF-8 内容也不许被切开（残尾可能正好停在一个多字节字符中间）。
     #[test]
     fn repeated_appends_survive_multibyte_content() {
-        let path = temp_file("utf8", "{\"id\":\"m1\",\"content\":\"中文内容\"}".as_bytes());
+        let path = temp_file(
+            "utf8",
+            "{\"id\":\"m1\",\"content\":\"中文内容\"}".as_bytes(),
+        );
         for i in 2..5 {
-            append_file_impl(&path, &format!("{{\"id\":\"m{i}\",\"content\":\"中文 {i}\"}}")).expect("追加");
+            append_file_impl(
+                &path,
+                &format!("{{\"id\":\"m{i}\",\"content\":\"中文 {i}\"}}"),
+            )
+            .expect("追加");
         }
         let (ids, bad) = parsed_ids(&path);
         assert_eq!(bad, 0, "整条写入的记录不该产生坏行");
@@ -5770,7 +5967,10 @@ mod append_file_tests {
             assert_eq!(got.total_lines, total, "{name}: 总行数");
             assert_eq!(got.dropped_lines, dropped_lines, "{name}: 丢弃行数");
             assert_eq!(got.dropped_chars, dropped_chars, "{name}: 丢弃字符数");
-            assert_eq!(got.has_more, has_more, "{name}: has_more = 返回范围之后还有行");
+            assert_eq!(
+                got.has_more, has_more,
+                "{name}: has_more = 返回范围之后还有行"
+            );
         }
     }
 
@@ -5779,7 +5979,10 @@ mod append_file_tests {
     fn returned_text_carries_line_numbers_from_offset() {
         let path = lines_file("textshape", "a\nbb\nccc\n");
         let got = read_file_lines_impl(&path, 2, 2, 100_000).expect("读失败");
-        assert_eq!(got.text, "2: bb\n3: ccc", "行号必须从 offset 开始且 1-indexed");
+        assert_eq!(
+            got.text, "2: bb\n3: ccc",
+            "行号必须从 offset 开始且 1-indexed"
+        );
     }
 
     /// 判据 2：**恰好读满**（limit == 总行数）时不许报"还有更多"、丢弃数必须为 0。
@@ -5802,11 +6005,17 @@ mod append_file_tests {
     /// 而文件其实有几百行）。这条判据同时钉住那个老缺口。
     #[test]
     fn max_chars_truncation_still_counts_everything() {
-        let content = (1..=50).map(|i| format!("line-{i}")).collect::<Vec<_>>().join("\n");
+        let content = (1..=50)
+            .map(|i| format!("line-{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let path = lines_file("maxchars", &content);
         // 给一个只装得下前几行的字符预算
         let got = read_file_lines_impl(&path, 1, 1000, 60).expect("读失败");
-        assert_eq!(got.total_lines, 50, "总行数必须是**整个文件**的，不是截断处的");
+        assert_eq!(
+            got.total_lines, 50,
+            "总行数必须是**整个文件**的，不是截断处的"
+        );
         assert!(got.has_more, "被 max_chars 截断也算还有更多");
         assert_eq!(
             got.dropped_lines,
@@ -5899,7 +6108,8 @@ mod append_file_tests {
                 for limit in limits {
                     // 生产实现要求 offset >= 1（命令层会 `.max(1)`）
                     let eff_offset = offset.max(1);
-                    let got = read_file_lines_impl(&path, eff_offset, limit, 1_000_000).expect("读失败");
+                    let got =
+                        read_file_lines_impl(&path, eff_offset, limit, 1_000_000).expect("读失败");
                     let (text, total, dropped_lines, dropped_chars) =
                         reference_read(content, eff_offset, limit);
                     let what = format!("内容#{ci}({content:?}) offset={offset} limit={limit}");
@@ -5911,7 +6121,10 @@ mod append_file_tests {
                 }
             }
         }
-        assert!(checked >= 100, "差分规模太小（{checked} 组）—— 判据会变成摆设");
+        assert!(
+            checked >= 100,
+            "差分规模太小（{checked} 组）—— 判据会变成摆设"
+        );
     }
 }
 
@@ -5967,6 +6180,9 @@ mod bounded_read_utf8_tests {
 #[cfg(test)]
 mod harden_185_tests {
     use super::*;
+    // 显式引入：`execute_command` 在 crate 根，`use super::*` 在部分编译配置下没把它带进来
+    // （E0425 实测），这里钉死来源，避免测试因为作用域而不是行为变红。
+    use crate::execute_command;
 
     /// 独立的临时目录（每个判据一个，避免互相干扰）。
     fn scratch(name: &str) -> std::path::PathBuf {
@@ -6030,7 +6246,11 @@ mod harden_185_tests {
         {
             use std::os::windows::process::CommandExt as _;
             // 接合点（/J）不需要管理员权限；`raw_arg` 免得 std 再替我们加一层引号
-            let cmdline = format!("/c mklink /J \"{}\" \"{}\"", link.display(), target.display());
+            let cmdline = format!(
+                "/c mklink /J \"{}\" \"{}\"",
+                link.display(),
+                target.display()
+            );
             let ok = std::process::Command::new("cmd")
                 .raw_arg(&cmdline)
                 .stdout(std::process::Stdio::null())
@@ -6155,7 +6375,13 @@ mod harden_185_tests {
     fn basenames(files: &[String]) -> Vec<String> {
         let mut v: Vec<String> = files
             .iter()
-            .map(|f| f.replace('\\', "/").rsplit('/').next().unwrap_or("").to_string())
+            .map(|f| {
+                f.replace('\\', "/")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
             .collect();
         v.sort();
         v
@@ -6177,8 +6403,14 @@ mod harden_185_tests {
         assert_eq!(basenames(&res.files).len(), 3, "名单不许带重复");
         assert!(all.len() > res.returned, "前提：确实有超过 limit 条匹配");
 
-        let hint = res.hint.clone().expect("截断必须给 hint（否则调用方不知道怎么办）");
-        assert!(hint.contains("offset=3"), "hint 必须写明下一页的 offset：{hint}");
+        let hint = res
+            .hint
+            .clone()
+            .expect("截断必须给 hint（否则调用方不知道怎么办）");
+        assert!(
+            hint.contains("offset=3"),
+            "hint 必须写明下一页的 offset：{hint}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -6223,7 +6455,10 @@ mod harden_185_tests {
             .hint
             .clone()
             .expect("★ 夹过 limit 就必须给 hint —— 静默夹会让调用方以为真拿到了那么多");
-        assert!(hint.contains(&requested.to_string()), "要说明请求了多少：{hint}");
+        assert!(
+            hint.contains(&requested.to_string()),
+            "要说明请求了多少：{hint}"
+        );
         assert!(
             hint.contains(&GLOB_LIMIT_MAX.to_string()),
             "要说明实际按多少跑：{hint}"
@@ -6300,27 +6535,26 @@ mod harden_185_tests {
         std::fs::create_dir_all(&inner).unwrap();
         std::fs::write(inner.join("marker.txt"), b"x").unwrap();
         if try_make_dir_link(&loop_root, &loop_root.join("loop")) {
-            let out = run_glob_search(
-                "*.txt",
-                loop_root.to_str().unwrap(),
-                &loop_root,
-                None,
-                None,
-            )
-            .unwrap();
+            let out = run_glob_search("*.txt", loop_root.to_str().unwrap(), &loop_root, None, None)
+                .unwrap();
             assert!(
                 !out.depth_limited,
                 "环必须被「跳过重解析点」切断（撞深度上限说明接合点被进入了）：{:?}",
                 out.files
             );
             assert_eq!(
-                out.files.iter().filter(|f| f.ends_with("marker.txt")).count(),
+                out.files
+                    .iter()
+                    .filter(|f| f.ends_with("marker.txt"))
+                    .count(),
                 1,
                 "接合点没被进入 ⇒ 同一个文件只应出现一次：{:?}",
                 out.files
             );
         } else {
-            eprintln!("[GLOB-LIMIT-4] 本环境无法创建目录链接/接合点 ⇒ 环这一半跳过（walk 层判据仍覆盖）");
+            eprintln!(
+                "[GLOB-LIMIT-4] 本环境无法创建目录链接/接合点 ⇒ 环这一半跳过（walk 层判据仍覆盖）"
+            );
         }
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&loop_root);
@@ -6345,16 +6579,8 @@ mod harden_185_tests {
         let busy = mcp_shutdown_log_line(&McpShutdownOutcome::LockBusy)
             .expect("抢不到锁必须留下日志（改前是静默 return）");
         assert_eq!(busy.0, "WARN", "必须是 WARN 级");
-        assert!(
-            busy.1.contains("没能回收"),
-            "必须如实说没收到：{}",
-            busy.1
-        );
-        assert!(
-            !busy.1.contains("已回收"),
-            "不许谎报收干净：{}",
-            busy.1
-        );
+        assert!(busy.1.contains("没能回收"), "必须如实说没收到：{}", busy.1);
+        assert!(!busy.1.contains("已回收"), "不许谎报收干净：{}", busy.1);
 
         // ③ 真的收到时要如实说收到几棵
         let reaped = mcp_shutdown_log_line(&McpShutdownOutcome::Reaped(2)).expect("收到也要记");
@@ -6376,7 +6602,10 @@ mod harden_185_tests {
         assert_eq!(tries2, 3);
 
         // ⑤ "表是空的"与"抢不到锁"是两件不同的事，不能混成一个结局
-        assert_ne!(McpShutdownOutcome::NothingToDo, McpShutdownOutcome::LockBusy);
+        assert_ne!(
+            McpShutdownOutcome::NothingToDo,
+            McpShutdownOutcome::LockBusy
+        );
         assert!(mcp_shutdown_log_line(&McpShutdownOutcome::NothingToDo).is_none());
     }
 
@@ -6470,6 +6699,53 @@ mod harden_185_tests {
         );
     }
 
+    /// **交互式命令不许挂住**（G5 真机事故的结构判据）。
+    ///
+    /// 模型跑 `npx eslint` 时 npx 等 stdin 确认，继承的 stdin 不关 ⇒ 工具调用挂 7 分钟。
+    /// 现在子进程 stdin 是 null ⇒ 立即 EOF ⇒ 读 stdin 的命令**立刻**走 end 分支退出。
+    /// 反向自证：把 `.stdin(Stdio::null())` 删掉，这一条会等到超时（返回 Err）而变红。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn exec_stdin_closed_so_interactive_prompts_fail_fast() {
+        let started = std::time::Instant::now();
+        let result = execute_command(
+            "$x = [Console]::In.ReadLine(); if ($null -eq $x) { exit 7 } else { exit 8 }"
+                .to_string(),
+            None,
+            Some(20_000),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("stdin 为 null 时读 stdin 的命令必须立刻结束，而不是被超时杀掉");
+        assert_eq!(
+            result["exitCode"].as_i64(),
+            Some(7),
+            "必须走到 stdin end 分支（exit 7），实际：{}",
+            result
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(15),
+            "耗时 {:?} —— 说明还在等 stdin（交互式挂起）",
+            started.elapsed()
+        );
+    }
+
+    /// **结构判据**：`execute_command` 的 spawn 配置里 stdin 必须显式为 null。
+    ///
+    /// 行为判据（上面那条）在 `cargo test` 里拿到的 stdin 本来就是关闭的，**删掉这行也照样绿**
+    /// ⇒ 它证明不了配置没被改回去。这里直接钉源码：去掉 `.stdin(Stdio::null())` 就会红。
+    #[test]
+    fn exec_spawn_config_must_null_stdin() {
+        let src = include_str!("lib.rs").replace("\r\n", "\n");
+        assert!(
+            src.contains(".stdin(std::process::Stdio::null())\n        .stdout(std::process::Stdio::piped())"),
+            "execute_command 的 spawn 必须把子进程 stdin 设为 null —— 否则 npx/交互式命令会等输入，\
+             工具调用直接挂到超时（G5 真机 7 分钟无事件）"
+        );
+    }
+
     /// **超时路径端到端**：必须及时返回明确错误（而不是等命令自己跑完）。
     #[cfg(target_os = "windows")]
     #[tokio::test]
@@ -6523,14 +6799,23 @@ mod harden_185_tests {
     fn r4_cmd_args_are_quoted_in_the_wrapper() {
         let text = cmd_wrapper_text(
             r"C:\Program Files\x.cmd",
-            &[r"C:\Program Files\node.exe".to_string(), "plain".to_string()],
+            &[
+                r"C:\Program Files\node.exe".to_string(),
+                "plain".to_string(),
+            ],
         );
         assert!(
             text.contains(r#""C:\Program Files\x.cmd" "C:\Program Files\node.exe" "plain""#),
             "每个 token 都必须整体被引用（含空格路径不许被空格截断）：{text:?}"
         );
-        assert!(text.starts_with("@echo off\r\n"), "必须 @echo off（否则回显污染 MCP stdout）：{text:?}");
-        assert!(text.ends_with("\r\n"), "必须是 CRLF 行尾（批处理口径）：{text:?}");
+        assert!(
+            text.starts_with("@echo off\r\n"),
+            "必须 @echo off（否则回显污染 MCP stdout）：{text:?}"
+        );
+        assert!(
+            text.ends_with("\r\n"),
+            "必须是 CRLF 行尾（批处理口径）：{text:?}"
+        );
     }
 
     /// wrapper 里**不许有落在引号外的元字符**（`&`/`|`/`^`/`<`/`>`），
@@ -6548,7 +6833,10 @@ mod harden_185_tests {
                     _ => {}
                 }
             }
-            assert!(!in_quotes, "引号必须成对（否则边界会漂到参数之外）：{text:?}");
+            assert!(
+                !in_quotes,
+                "引号必须成对（否则边界会漂到参数之外）：{text:?}"
+            );
             out
         }
 
@@ -6595,7 +6883,11 @@ mod harden_185_tests {
         ];
         let spec = build_cmd_wrapper("x.cmd", &args).expect("这些都该可证");
         for a in &args {
-            assert!(spec.text.contains(a), "合法实参被改形了（{a}）：{:?}", spec.text);
+            assert!(
+                spec.text.contains(a),
+                "合法实参被改形了（{a}）：{:?}",
+                spec.text
+            );
         }
         // 结尾反斜杠：必须翻倍（否则会把收尾引号转义掉）
         assert_eq!(quote_cmd_arg_for_wrapper(r"C:\dir\"), r#""C:\dir\\""#);
@@ -6608,7 +6900,10 @@ mod harden_185_tests {
     fn r4_command_path_is_preflighted_too() {
         let err = build_cmd_wrapper(r#"C:\a"b\x.cmd"#, &[]).unwrap_err();
         // `C:\a"b\x.cmd` 里 `"` 是第 5 个字符（1-based）
-        assert!(err.contains("命令路径第 5 个字符"), "必须点名第几号字符：{err}");
+        assert!(
+            err.contains("命令路径第 5 个字符"),
+            "必须点名第几号字符：{err}"
+        );
         let err = build_cmd_wrapper("", &[]).unwrap_err();
         assert!(err.contains("命令为空"), "{err}");
     }
@@ -6627,7 +6922,10 @@ mod harden_185_tests {
             msg.contains("不是内部或外部命令"),
             "cmd 自己的错误必须带给调用方（否则用户无从修）：{msg}"
         );
-        assert!(msg.contains("command=「C:\\Program Files\\x.cmd」"), "{msg}");
+        assert!(
+            msg.contains("command=「C:\\Program Files\\x.cmd」"),
+            "{msg}"
+        );
     }
 
     // （第 185 波那条"含空格路径的 `.cmd` 端到端"已搬进 `harden_186_tests`：
@@ -6736,7 +7034,11 @@ mod harden_185_tests {
         }
 
         /// 造一个 `.cmd` 启动器：把 `%*` 原样转发给目标 `.exe`（真实 npm cmd-shim 的形态）。
-        pub(super) fn make_shim(dir: &std::path::Path, name: &str, exe: &std::path::Path) -> std::path::PathBuf {
+        pub(super) fn make_shim(
+            dir: &std::path::Path,
+            name: &str,
+            exe: &std::path::Path,
+        ) -> std::path::PathBuf {
             let shim = dir.join(format!("{name}.cmd"));
             std::fs::write(
                 &shim,
@@ -6831,7 +7133,10 @@ mod harden_185_tests {
                     err.contains("第 2 个参数"),
                     "错误信息必须点名是第几个参数（{arg:?}）：{err}"
                 );
-                assert!(err.contains(needle), "错误信息必须说清原因（{arg:?}）：{err}");
+                assert!(
+                    err.contains(needle),
+                    "错误信息必须说清原因（{arg:?}）：{err}"
+                );
                 // 反向对照：**不许**留下"改写后放行"的中间态
                 assert_eq!(
                     build_cmd_wrapper(&shim_str, &[arg.to_string()]).is_err(),
@@ -7032,7 +7337,9 @@ mod harden_185_tests {
             let text = std::fs::read_to_string(&src)
                 .unwrap_or_else(|e| panic!("读不到探针源码 {}：{e}", src.display()));
             assert!(
-                text.contains(&format!("const ARGV_DUMP_MAGIC: &str = \"{ARGV_DUMP_MAGIC}\";")),
+                text.contains(&format!(
+                    "const ARGV_DUMP_MAGIC: &str = \"{ARGV_DUMP_MAGIC}\";"
+                )),
                 "探针源码里的魔法串与 lib 侧不一致（判据约定会错位）：{}",
                 src.display()
             );
@@ -7095,7 +7402,8 @@ mod harden_185_tests {
     // 而不是把断言删掉（删掉等于把"为什么不放行"的唯一证据丢掉）。
     mod harden_192_tests {
         use super::harden_186_tests::{
-            build_probe, escape_argv_bytes_for_test, make_shim, read_argv_dump, run_wrapper, want_argv,
+            build_probe, escape_argv_bytes_for_test, make_shim, read_argv_dump, run_wrapper,
+            want_argv,
         };
         use super::scratch;
         use super::*;
@@ -7116,7 +7424,11 @@ mod harden_185_tests {
             Delayed,
         }
 
-        fn write_shim(dir: &std::path::Path, shim: Shim, exe: &std::path::Path) -> std::path::PathBuf {
+        fn write_shim(
+            dir: &std::path::Path,
+            shim: Shim,
+            exe: &std::path::Path,
+        ) -> std::path::PathBuf {
             let exe_s = exe.display().to_string();
             let (name, text) = match shim {
                 // 与第 186 波判据表**同一份**实现（不另写一份，否则两边会各自漂）
@@ -7187,9 +7499,16 @@ mod harden_185_tests {
 
         /// 一个形态的"先跑通"对照：普通实参必须逐字节转过去，否则后面的 ❌ 是实验台坏了。
         async fn assert_shim_works(dir: &std::path::Path, shim: &std::path::Path, tag: &str) {
-            let got = lenient_arg0(dir, shim, &quote_cmd_arg_for_wrapper("plain arg"), &format!("ctl-{tag}")).await;
+            let got = lenient_arg0(
+                dir,
+                shim,
+                &quote_cmd_arg_for_wrapper("plain arg"),
+                &format!("ctl-{tag}"),
+            )
+            .await;
             assert_eq!(
-                got, want_arg0("plain arg"),
+                got,
+                want_arg0("plain arg"),
                 "对照失败：{tag} 这个 shim 连普通实参都没原样转过去 ⇒ 它的其它结论都不成立"
             );
         }
@@ -7274,7 +7593,11 @@ mod harden_185_tests {
                 .expect("放行面的实参必须全部可证（拒绝名单之外的字符一个都不许被拒）");
             let (o, wrapper) = run_wrapper(&spec.text).await;
             let dump = read_argv_dump(&out);
-            let want: Vec<String> = corpus.iter().enumerate().map(|(i, a)| want_argv(i, a)).collect();
+            let want: Vec<String> = corpus
+                .iter()
+                .enumerate()
+                .map(|(i, a)| want_argv(i, a))
+                .collect();
             assert_eq!(
                 dump,
                 want,
@@ -7299,7 +7622,9 @@ mod harden_185_tests {
             for c in CMD_ARG_FORBIDDEN {
                 for arg in [format!("{c}"), format!("a{c}b")] {
                     match build_cmd_wrapper(&shim.display().to_string(), &[arg.clone()]) {
-                        Ok(_) => panic!("{arg:?} 含拒绝名单里的 {c:?}，必须被拒（不许静默改写后放行）"),
+                        Ok(_) => {
+                            panic!("{arg:?} 含拒绝名单里的 {c:?}，必须被拒（不许静默改写后放行）")
+                        }
                         Err(err) => assert!(
                             err.contains("第 1 个参数"),
                             "错误信息必须点名是第几个参数（{arg:?}）：{err}"
@@ -7346,7 +7671,8 @@ mod harden_185_tests {
             let spelled = quote_cmd_arg_for_wrapper("%PATH%".replace('%', "%%").as_str());
             let got = lenient_arg0(&dir, &called, &spelled, "call-pct").await;
             assert_ne!(
-                got, want_arg0("%PATH%"),
+                got,
+                want_arg0("%PATH%"),
                 "`call` 型 shim 会再解析一轮 ⇒ `%%` 双写不再保真（这正是不能放行的实测理由）"
             );
             assert!(
@@ -7434,8 +7760,10 @@ mod harden_185_tests {
             let inject = "x\" & echo PWNED> @CANARY@ & rem \"y";
 
             // ① 会注入的两种拼法（安全级依据）
-            let injectable: Vec<(&str, fn(&str) -> String)> =
-                vec![("照原样", spell_asis as fn(&str) -> String), ("CRT \\\"", spell_crt)];
+            let injectable: Vec<(&str, fn(&str) -> String)> = vec![
+                ("照原样", spell_asis as fn(&str) -> String),
+                ("CRT \\\"", spell_crt),
+            ];
             for (i, (name, spell)) in injectable.iter().enumerate() {
                 let canary = dir.join(format!("pwned-inject-{i}.txt"));
                 let _ = std::fs::remove_file(&canary);
@@ -7452,7 +7780,10 @@ mod harden_185_tests {
             let _ = std::fs::remove_file(&canary);
             let payload = inject.replace("@CANARY@", &canary.display().to_string());
             let _ = lenient_arg0(&dir, &shim, &spell_batch(&payload), "batch-inj").await;
-            assert!(!canary.exists(), "批处理 `\"\"` 双写是**不注入**的那一种（这条是上面两条的对照）");
+            assert!(
+                !canary.exists(),
+                "批处理 `\"\"` 双写是**不注入**的那一种（这条是上面两条的对照）"
+            );
             assert_ne!(
                 lenient_arg0(&dir, &shim, &spell_batch(backslash_quote), "batch-bs").await,
                 want_arg0(backslash_quote),
@@ -7464,7 +7795,13 @@ mod harden_185_tests {
                 let canary = dir.join(format!("pwned-hybrid-{i}.txt"));
                 let _ = std::fs::remove_file(&canary);
                 let payload = inject.replace("@CANARY@", &canary.display().to_string());
-                let _ = lenient_arg0(&dir, &shim, &spell_hybrid(&payload), &format!("hyb-inj-{i}")).await;
+                let _ = lenient_arg0(
+                    &dir,
+                    &shim,
+                    &spell_hybrid(&payload),
+                    &format!("hyb-inj-{i}"),
+                )
+                .await;
                 assert!(
                     !canary.exists(),
                     "候选拼法（混合B）必须**不注入** —— 若这条红了，候选方案本身没了（拒绝 `\"` 就更没有退路）"
@@ -7514,8 +7851,18 @@ mod harden_185_tests {
                     text
                 );
                 // ② 实参被截断 ⇒ 不可能逐字节
-                let got = lenient_arg0(&dir, &shim, &spell_asis(payload), &format!("crlf-{}", text.len())).await;
-                assert_ne!(got, want_arg0(payload), "换行不可能逐字节传过去（单行批处理承载不了）：{got:?}");
+                let got = lenient_arg0(
+                    &dir,
+                    &shim,
+                    &spell_asis(payload),
+                    &format!("crlf-{}", text.len()),
+                )
+                .await;
+                assert_ne!(
+                    got,
+                    want_arg0(payload),
+                    "换行不可能逐字节传过去（单行批处理承载不了）：{got:?}"
+                );
             }
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -7562,7 +7909,10 @@ mod harden_185_tests {
                     escaped.is_empty(),
                     "候选拼法把元字符落到了引号外（{arg:?}）⇒ 会被 cmd 当命令执行：{line:?}"
                 );
-                assert!(!in_quotes, "候选拼法生成的引号必须成对（{arg:?}）：{line:?}");
+                assert!(
+                    !in_quotes,
+                    "候选拼法生成的引号必须成对（{arg:?}）：{line:?}"
+                );
             }
             // 反向对照：生产的「照原样」拼法**没有**这个性质 —— 这正是 `"` 必须被拒的原因
             assert!(
@@ -7595,9 +7945,15 @@ mod harden_185_tests {
             ];
             let mut hints: Vec<(char, &'static str)> = Vec::new();
             for (c, needles) in table {
-                assert!(CMD_ARG_FORBIDDEN.contains(&c), "判据表里的字符必须在拒绝名单里：{c:?}");
+                assert!(
+                    CMD_ARG_FORBIDDEN.contains(&c),
+                    "判据表里的字符必须在拒绝名单里：{c:?}"
+                );
                 let hint = cmd_arg_probe_hint(c);
-                assert!(!hint.is_empty(), "{c:?} 必须有提示（只报「不能用」等于把用户留在原地）");
+                assert!(
+                    !hint.is_empty(),
+                    "{c:?} 必须有提示（只报「不能用」等于把用户留在原地）"
+                );
                 assert!(
                     needles.iter().any(|n| hint.contains(n)),
                     "{c:?} 的提示必须给出具体动作之一 {needles:?}，实际是：{hint}"
@@ -7606,7 +7962,10 @@ mod harden_185_tests {
             }
             // 反向对照①：放行字符没有"改成什么"可言 ⇒ 空串
             for c in ['a', '&', ' ', '中', '\\'] {
-                assert!(!CMD_ARG_FORBIDDEN.contains(&c), "{c:?} 是放行字符（判据表的前提）");
+                assert!(
+                    !CMD_ARG_FORBIDDEN.contains(&c),
+                    "{c:?} 是放行字符（判据表的前提）"
+                );
                 assert_eq!(
                     cmd_arg_probe_hint(c),
                     "",
@@ -7625,7 +7984,8 @@ mod harden_185_tests {
             }
             // 端到端串联：真正抛给用户的那段文案必须**同时**有点名 + 动作
             for c in CMD_ARG_FORBIDDEN {
-                let err = cmd_arg_rejection(0, &format!("a{c}b")).expect("拒绝名单里的字符必须被拒");
+                let err =
+                    cmd_arg_rejection(0, &format!("a{c}b")).expect("拒绝名单里的字符必须被拒");
                 assert!(err.contains("第 1 个参数"), "必须点名第几个参数：{err}");
                 let hint = cmd_arg_probe_hint(*c);
                 assert!(
@@ -7666,7 +8026,8 @@ mod harden_185_tests {
         );
 
         // 越界：`..` 词法逃逸
-        let escape = resolve_sandbox_path(&ws.join("..").join("mimo-gui-backup").join("y.txt")).unwrap();
+        let escape =
+            resolve_sandbox_path(&ws.join("..").join("mimo-gui-backup").join("y.txt")).unwrap();
         assert!(
             !path_within_workspace(&escape, &ws_res),
             "`..` 逃逸必须判越界：{}",
@@ -7675,11 +8036,8 @@ mod harden_185_tests {
 
         // 工作区自身（带结尾分隔符也算界内）
         assert!(path_within_workspace(&ws_res, &ws_res));
-        let with_sep = std::path::PathBuf::from(format!(
-            "{}{}",
-            ws.display(),
-            std::path::MAIN_SEPARATOR
-        ));
+        let with_sep =
+            std::path::PathBuf::from(format!("{}{}", ws.display(), std::path::MAIN_SEPARATOR));
         assert!(path_within_workspace(
             &resolve_sandbox_path(&with_sep).unwrap(),
             &ws_res
@@ -7720,7 +8078,8 @@ mod harden_185_tests {
 
         // ② 端到端：不存在的盘（两侧都走词法规范化，大小写**原样保留**）
         //    ⇒ 这一条在没有大小写折叠时会红
-        let target = resolve_sandbox_path(std::path::Path::new(r"Q:\NONEXISTENT-ws\f.txt")).unwrap();
+        let target =
+            resolve_sandbox_path(std::path::Path::new(r"Q:\NONEXISTENT-ws\f.txt")).unwrap();
         let ws_lexical = resolve_sandbox_path(std::path::Path::new(r"q:\nonexistent-WS")).unwrap();
         assert!(
             path_within_workspace(&target, &ws_lexical),
@@ -7816,9 +8175,11 @@ mod harden_185_tests {
             "沙箱关闭时工作区外的写必须放行（改前这里会拦 = 关了沙箱沙箱还生效）"
         );
         // 沙箱关 + 界内：同样放行
-        assert!(write_sandbox_violation(&inside_str, Some(&ws_str), Some(false), None)
-            .unwrap()
-            .is_none());
+        assert!(
+            write_sandbox_violation(&inside_str, Some(&ws_str), Some(false), None)
+                .unwrap()
+                .is_none()
+        );
 
         // ② 沙箱**开** ⇒ 工作区外必须拦，且文案说清是沙箱
         let denied = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true), None)
@@ -7880,4 +8241,3 @@ mod harden_185_tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
-

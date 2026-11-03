@@ -97,3 +97,25 @@
 **设计的主干（单一 Host、协议、审批、租约、持久化、常驻）是照做的，且部分指标超出设计；
 但 ADR-0003 的功能矩阵只完成了“聊天 + 审批 + 继续”这一竖条，diff/文件/附件/搜索/配对仍是空白。
 这些是负向偏差，不是“正向简化”——按上表 P0→P2 补齐。**
+
+## 8. 2026-11-03 追加（长程目标模式 + 远程 B1–B4；与上文冲突时以本节为准）
+
+- **长程目标模式已实现并真机通过**（`ADR-0006`）：不是"每轮短步目标"，而是"稳定契约 + 一次只读深规划 +
+  阶段证据验收 + 受控版本化重规划"。G5 真机：3 阶段全部 `done`、契约验收 A1–A4 全过、340s
+  （读数见 `docs/architecture/GOAL-MODE-VERIFICATION.md`；桌面全量判据见 `src/test/goal-runner.test.ts`）。
+- **手机可新建会话/项目**（G-1 已补齐）：`session.create` / `project.list` / `project.create` 写桌面同一份库，
+  手机面板含项目选择与新建项目；经**真实 Cloudflare 隧道**端到端验证（配对 → 建会话 → 撤销后 401）。
+- **B4 跨网**：隧道 + `Secure` cookie + Host/Origin 白名单 + 单设备撤销实测通过
+  （`.preview-shot/b4-tunnel-report.json`；说明见 `docs/architecture/REMOTE-ACCESS-TUNNELS.md`）。
+- 因此 §7 的「diff/文件/附件/搜索/配对仍是空白」**已过期**：这些在 1.17.0 已落地（见 §4/§5）。
+  仍然空白的是：**原生桥（相机/通知/分享/剪贴板）、电池优化白名单引导、arm64 真机/OEM 后台策略**。
+- arm64 说明更新：本机 x86_64 Windows 上 QEMU2 **拒绝** arm64 系统镜像
+  （`Avd's CPU Architecture 'arm64' is not supported by the QEMU2 emulator on x86_64 host`），
+  所以「arm64 真机」仍是缺口；**不能**把 x86_64 设备用例通过当成 arm64 通过。
+- 跨网补充：真实 Cloudflare 隧道、本地 TLS 反代两条 Host 分支（`*.ts.net` /
+  `CODEM_GATEWAY_ALLOWED_HOSTS` 自有域名）、**真实 Tailscale tailnet** 路径，以及
+  **Tailscale 官方 Serve + Funnel** 均通过（控制台已开启；`tailscale serve/funnel --bg 41873`，
+  `https://win-6rsgb5ac85l.taile10bc6.ts.net/` 实测配对/建会话/撤销）。
+  工具侧另修：`execute_command` 子进程 stdin=null，交互式 `npx` 不再挂住
+  （判据 `exec_stdin_closed_so_interactive_prompts_fail_fast` /
+  `exec_spawn_config_must_null_stdin`，含变异自证）。

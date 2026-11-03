@@ -2494,6 +2494,67 @@ flushStreamBuffer(); // flush all on unmount
     };
   }, [dbReady, wechatBridgeEnabled]);
 
+  // ========== 长程目标模式运行宿主（ADR-0006）==========
+  // 目标状态条/面板不能反向依赖 App 的 ref 与 state；这里把三件事注册成一个窄接口：
+  // 取引擎、解析会话工作目录、把审批交给既有权限对话框（仍然由用户决定，不自动批准）。
+  useEffect(() => {
+    if (!dbReady) return;
+    let disposed = false;
+    void import("./core/goal/runtime")
+      .then(({ registerGoalRuntimeHost }) => {
+        if (disposed) return;
+        registerGoalRuntimeHost({
+          getEngine: () => engineRef.current,
+          getCwd: (sid: string) => {
+            const store = useProjectStore.getState();
+            const target = store.sessions.find((s) => s.id === sid);
+            return target?.worktreePath || store.currentProject?.path || "";
+          },
+          onPermissionRequest: (sid, request) =>
+            new Promise((resolve) => {
+              setPendingPermissions((prev) => {
+                const next = new Map(prev);
+                next.set(sid, { request, resolve });
+                return next;
+              });
+            }),
+        });
+      })
+      .catch((e) => console.warn("[App] 目标模式运行宿主注册失败（目标模式不可用，普通对话不受影响）:", e));
+    return () => {
+      disposed = true;
+      void import("./core/goal/runtime")
+        .then(({ registerGoalRuntimeHost }) => registerGoalRuntimeHost(null))
+        .catch(() => undefined);
+    };
+  }, [dbReady]);
+
+  // ========== 远程网关自动启动（B2，默认开；设置可关）==========
+  // 为什么在渲染层：网关的启停命令本来就由渲染层调用；设置存在渲染层的 settings 域里，
+  // 放到 Rust 启动阶段会变成"读另一份设置"（两份事实必然漂移）。
+  useEffect(() => {
+    if (!dbReady) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getSetting } = await import("./core/storage/settings");
+        const raw = getSetting("codem-gateway-autostart");
+        if (raw === "false" || raw === "0") return;
+        const invoke = (window as any).__TAURI__?.core?.invoke;
+        if (typeof invoke !== "function") return;
+        const st = await invoke("gateway_status");
+        if (cancelled || st?.running) return;
+        await invoke("gateway_start");
+      } catch (e) {
+        // 自动启动失败不应影响本地使用；也不重复弹窗（设置页会显示错误）
+        console.warn("[App] 远程网关自动启动失败（可在设置里手动启动）:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dbReady]);
+
   // ========== 桌面引擎桥（AA 远程用）==========
   // Rust 侧在应用启动时拉起只绑 127.0.0.1 的 bridge；这里启动渲染侧的事件桥：
   // 监听 remote-request → 真实数据/引擎回合 → remote_respond。
@@ -2961,6 +3022,35 @@ flushStreamBuffer(); // flush all on unmount
       const projId = currentProject?.id || "";
       const saved = loadCliSessionId(projId, currentSession.id);
       mimoSessionRef.current = saved;
+
+      /**
+       * 长程目标模式（GOAL-10 / B2）：打开会话时恢复未完成目标（`resumeOnOpen` 默认开）。
+       *
+       * 只恢复 `status === "active"`（= 上次被关闭/崩溃打断的那一个）：
+       * 用户主动暂停的 `paused` **不**自动续跑（那会变成"用户以为停了、它又自己跑起来"）。
+       * 已完成阶段不重跑由 Runner 的阶段状态保证（只挑 pending/active）。
+       *
+       * 存储目标表可能还没就绪 ⇒ **立即试一次 + 镜像就绪后再试一次**（一次性回调，不轮询）。
+       */
+      const resumeGoalIfAny = () => {
+        const engineNow = engineRef.current;
+        const store = useProjectStore.getState();
+        const sessionNow = store.currentSession;
+        if (!engineNow || !sessionNow || sessionNow.id !== currentSession.id) return;
+        const goalCwd = sessionNow.worktreePath || store.currentProject?.path || "";
+        if (!goalCwd) return;
+        void import("./core/goal/runtime")
+          .then(({ resumeGoalOnOpen }) => {
+            resumeGoalOnOpen({ sessionId: sessionNow.id, cwd: goalCwd, engine: engineNow });
+          })
+          .catch((e) => console.warn("[App] 目标恢复失败（不影响普通对话）:", e));
+      };
+      resumeGoalIfAny();
+      void import("./core/storage/domain-store")
+        .then(({ domainEnsureLoaded }) => {
+          domainEnsureLoaded("goal_contracts", resumeGoalIfAny);
+        })
+        .catch(() => undefined);
     }
   }, [currentProject?.id, currentSession?.id]);
 
@@ -3618,7 +3708,75 @@ if (!session) {
      */
     if (isSessionOnScreen(session.id)) saveMessages(session.id);
 
-      await runAgenticLoop(message, session, selectedSkills);
+    /*
+     * ===== 长程目标模式（ADR-0006）：多阶段任务在建目标后由 Goal Runner 推进 =====
+     *
+     * 拦截点刻意放在**用户消息已落库之后**：目标的首阶段回合由 `executeSessionTurn`
+     * 另写一条系统说明式的阶段指令（id 前缀 `goal-phase-`），而用户自己那句话必须先在
+     * 会话里（否则重开会话看不到"我要求了什么"）。
+     *
+     * 判定顺序（全部在 `maybeStartGoalMode` 里）：
+     *   设置关闭 → 直接回落；这类消息没命中多阶段信号 → 回落（省一次模型调用）；
+     *   规划器判 single-phase/question → 回落 run 自主；
+     *   规划失败/存储写不进去 → **回落 + 如实说明**（不把用户挡在门外）。
+     * 只有"多阶段且目标真的落库"才返回 handled=true，此时**不再**进入 runAgenticLoop。
+     */
+    /*
+     * ===== 用户干预：目标正在跑时，新消息先暂停目标（避免两个执行者写同一个会话） =====
+     *
+     * 目标模式的阶段回合走 `executeSessionTurn`（后台执行）；用户又发一条消息会走
+     * 前台 `runAgenticLoop` —— 两条都会往同一个会话写消息与工具结果。`AgenticLoop`
+     * 按会话池化复用，并发进入同一会话会互相清缓存（既有 `isSessionExecuting` 守卫
+     * 只挡后台↔后台、后台↔前台登记，挡不住这里的"目标 Runner 已在跑"）。
+     *
+     * 语义选择：**用户说话 = 干预** ⇒ 暂停目标（可再点「继续目标」），然后正常处理这条消息。
+     * 不静默忽略消息，也不让两条循环并行。
+     */
+    await import("./core/goal/runtime")
+      .then(({ getActiveGoalRun, stopGoalRun }) => {
+        const active = getActiveGoalRun();
+        if (active && active.sessionId === session.id) {
+          stopGoalRun("用户发来新消息，已暂停目标");
+        }
+      })
+      .catch((e) => console.warn("[App] 目标干预检查失败（不影响本次发送）:", e));
+
+    try {
+      const engineForGoal = engineRef.current;
+      if (engineForGoal) {
+        const projectForGoal = session.projectId
+          ? useProjectStore.getState().projects.find((p) => p.id === session.projectId)
+          : undefined;
+        const goalCwd =
+          session.worktreePath ||
+          projectForGoal?.path ||
+          currentProject?.path ||
+          "";
+        if (goalCwd) {
+          const { maybeStartGoalMode } = await import("./core/goal/runtime");
+          const started = await maybeStartGoalMode({
+            sessionId: session.id,
+            message: userContent,
+            cwd: goalCwd,
+            engine: engineForGoal as never,
+            onPermissionRequest: (request) =>
+              new Promise((resolve) => {
+                setPendingPermissions((prev) => {
+                  const next = new Map(prev);
+                  next.set(session.id, { request, resolve });
+                  return next;
+                });
+              }),
+          });
+          if (started.handled) return;
+        }
+      }
+    } catch (e) {
+      // 目标模式是增强路径：任何意外都回落到普通执行（但必须留痕，不静默）
+      console.warn("[App] 长程目标模式判定失败，按普通执行继续:", e);
+    }
+
+    await runAgenticLoop(message, session, selectedSkills);
   };
 
   // P1-5: Save last AI response as a note in the active notebook

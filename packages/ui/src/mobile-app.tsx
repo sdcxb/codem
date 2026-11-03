@@ -15,6 +15,7 @@ import { FileBrowser, WorkspaceDiffPane } from "./file-browser";
 import { SessionChangesPane } from "./changes-pane";
 import { InfoPanel } from "./info-panel";
 import { PairingGate } from "./pairing-gate";
+import { CreateSessionSheet } from "./create-session-sheet";
 import { SplitLayout } from "./shell";
 import { WorkspaceDetail, type DetailTab } from "./detail-pane";
 import { clearHostToken, resolveHostToken } from "./transport";
@@ -211,6 +212,11 @@ export function MobileApp(props: MobileAppProps): React.ReactElement {
   const [banner, setBanner] = useState("正在连接 Host…");
   const [sessions, setSessions] = useState<SessionSummaryView[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  /**
+   * 「新建会话」面板（B1）。面板自己管项目列表/表单状态（见 `create-session-sheet.tsx`），
+   * 这里只记住"开着没开"。
+   */
+  const [createOpen, setCreateOpen] = useState(false);
   const [title, setTitle] = useState("Codem Remote");
   const [runState, setRunState] = useState<string | null>(null);
   /**
@@ -315,7 +321,8 @@ export function MobileApp(props: MobileAppProps): React.ReactElement {
          * 只读形态（能力表缺写/审批）⇒ 发送框不渲染，且服务端仍会拒绝写方法。
          */
         const supported = hello.capabilities ? hello.capabilities.supported : null;
-        setCaps(capabilitiesFromMethods(supported));
+        const nextCaps = capabilitiesFromMethods(supported);
+        setCaps(nextCaps);
         setWriteAllowed(canWriteSessions(supported));
         /**
          * 只信任**服务器确认过**的静态令牌。
@@ -433,23 +440,23 @@ export function MobileApp(props: MobileAppProps): React.ReactElement {
               }}
             />
             {caps.createSession && transport?.createSession ? (
-              <button
-                className="session"
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const created = await transport.createSession!("新会话");
-                      setSessions((prev) => [created, ...prev]);
-                      setSessionId(created.id);
-                      setBanner("");
-                    } catch (e) {
-                      fail(e);
-                    }
-                  })();
-                }}
-              >
+              <button className="session" data-testid="new-session" onClick={() => setCreateOpen(true)}>
                 ＋ 新建会话
               </button>
+            ) : null}
+            {createOpen && transport ? (
+              <CreateSessionSheet
+                transport={transport}
+                caps={caps}
+                onCreated={(created) => {
+                  setSessions((prev) => [created, ...prev]);
+                  setSessionId(created.id);
+                  setCreateOpen(false);
+                  setBanner("");
+                }}
+                onClose={() => setCreateOpen(false)}
+                onError={fail}
+              />
             ) : null}
           </>
         }

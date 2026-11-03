@@ -55,6 +55,19 @@ import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearing
 import { classifyToolResult } from "./tool-result-status";
 /** P0：工具调用/结果配对的唯一实现（请求侧最后一道结构保证）。 */
 import { enforceToolPairing } from "./tool-pairing";
+/**
+ * 长程目标模式（ADR-0006）的**静态**接线。
+ *
+ * 为什么不用动态 import：目标上下文注入是每轮都要做的事，动态 import 在这个热路径上
+ * 只是多一层 Promise；更重要的是——静态 import 让"这些模块被谁使用"在可达性扫描里
+ * 是**显式**的（动态 import 不算接线，会让新文件看起来像死代码）。
+ */
+import { buildGoalModeContext } from "../goal/context";
+import {
+  writeGoalCompactionCheckpoint,
+  finishGoalCompactionCheckpoint,
+  reportGoalContextConflict,
+} from "../goal/checkpoint";
 import { recordVerificationCheck } from "../environment/verification-checks";
 import { decidePreCallSnapshot } from "../environment/pre-call-snapshot";
 import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
@@ -336,6 +349,15 @@ export interface LoopConfig {
   toolExecutor?: Partial<ToolExecutorConfig>;
   /** Called when a tool needs user permission. Return the user's decision. */
   onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionResult>;
+
+  /**
+   * 目标模式存储（默认 `getGoalStore()` 单例）。
+   *
+   * 为什么做成可注入：目标上下文注入是**每轮**发生的读，
+   * 判据需要一个隔离的 store（内存实现）来构造/断言当前阶段，而不去碰真库；
+   * 生产路径不传，走单例。
+   */
+  goalStore?: import("../goal/store").GoalStore;
 
   // ===== Phase 0 新增字段（以下字段暂不使用，为后续 Phase 预留） =====
 
@@ -2665,6 +2687,29 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           "check the actual state first. If a goal is genuinely blocked on something only the " +
           "user can provide, say so plainly instead of working around it.";
         trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + goalSection;
+      }
+
+      /**
+       * ## 长程目标模式（GOAL-12 / GOAL-17）：**每轮固定注入**契约/计划/当前阶段/验收/证据
+       *
+       * 与上面那段「历史 goal 记录」是**两套东西**（见 `goal/types.ts` 头部的说明）：
+       * 这里注入的是新契约模型的里程碑计划与阶段验收。
+       *
+       * 三条硬约束：
+       * 1. **每轮重新从存储算**（`buildGoalModeContext`）—— 不依赖对话历史，压缩删掉多少
+       *    旧消息都不影响目标是否「还在」；这也正是 GOAL-17 的结构性答案；
+       * 2. **走尾部易变上下文**（与时间上下文同一通道）—— 不碰 system 前缀，
+       *    否则 `dsh-d5-prefix-cache-stability` 会红（目标随阶段推进而变）；
+       * 3. 没有活跃目标 ⇒ **一个字都不写**（不把普通对话变成永远带一段固定文本）。
+       */
+      try {
+        const goalModeContext = buildGoalModeContext(sessionId, this.config.goalStore ? { store: this.config.goalStore } : {});
+        if (goalModeContext) {
+          trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + goalModeContext;
+        }
+      } catch (e) {
+        // 观测/注入设施失败不该把这一轮搞挂；留痕即可
+        console.warn("[AgenticLoop] goal mode context injection failed:", e);
       }
 
       // R3-3.1: Surface notice — 让模型知道当前上下文窗口状态
@@ -5814,6 +5859,28 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     const pairing = enforceToolPairing(selected);
     const valid: any[] = pairing.messages;
     /**
+     * A2（GOAL-18）：**目标模式里配对不许被静默切开**。
+     *
+     * `enforceToolPairing` 是请求侧的最后一道结构保证（否则 API 直接 400）；
+     * 但它在目标模式里触发意味着"模型看到的历史和它实际做过的操作不再一致"——
+     * 继续跑只会重复劳动或基于错误前提改代码。所以这里把目标置 `blocked`
+     * （`context_conflict`），让 Runner 在阶段边界停下来、原因在界面上可见。
+     *
+     * 普通会话（没有活跃目标）保持既有行为：只有 context-visibility 的计数。
+     * 只在**真的剥了东西**时才会去问目标（零成本：没有目标时一次内存读）。
+     */
+    if (pairing.strippedToolCalls > 0 || pairing.droppedOrphanToolResults > 0) {
+      try {
+        reportGoalContextConflict(
+          sessionId,
+          `工具配对在上下文精简后被切开（剥掉 ${pairing.strippedToolCalls} 个调用 / ${pairing.droppedOrphanToolResults} 条结果）`,
+          this.config.goalStore,
+        );
+      } catch (e) {
+        console.warn("[AgenticLoop] context_conflict 判定失败（不影响本轮）:", e);
+      }
+    }
+    /**
      * 第 122 轮 B 项：这些剥离原来**只写 console.warn**（界面上完全看不到），
      * 而它们正是"模型突然忘了自己调过什么工具"的直接原因。计数后交给
      * `context-visibility` 投给界面（见下面 `recordContextDrop` 的注释）。
@@ -6076,7 +6143,29 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
 
     try {
+      /**
+       * A2（GOAL-17）：目标模式的压缩**检查点**。
+       *
+       * 压缩会折叠对话历史；目标上下文（契约/计划/当前阶段/验收）本来就不依赖历史
+       * （`goal/context.ts` 每轮从存储现算并注入尾部），但"压缩正好发生在阶段中途"这件事
+       * 必须可审计、且恢复后必须仍是同一个阶段/同一批未完成验收。
+       *
+       * 这里只写一条 `phase_checkpoint` 决策（没有活跃目标时是零成本 no-op），
+       * 压缩完成后再写 `phase_resumed`。**不改计划、不重跑已完成阶段**。
+       */
+      let goalCheckpoint: import("../goal/checkpoint").GoalCompactionCheckpoint | null = null;
+      try {
+        // 传注入的 store：判据里用内存 store，生产不传则 checkpoint 用单例（默认参数）
+        goalCheckpoint = writeGoalCompactionCheckpoint(sessionId, this.config.goalStore);
+      } catch (e) {
+        console.warn("[AgenticLoop] 目标压缩检查点写入失败（不影响压缩）:", e);
+      }
       const result = await this.doCompactMessages(sessionId);
+      try {
+        finishGoalCompactionCheckpoint(goalCheckpoint, result, this.config.goalStore as never);
+      } catch (e) {
+        console.warn("[AgenticLoop] 目标压缩恢复记录失败（不影响压缩）:", e);
+      }
       return result;
     } finally {
       releaseCompactionLock(sessionId);

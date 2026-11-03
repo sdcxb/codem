@@ -144,6 +144,8 @@ export const METHODS = {
   sessionList: "session.list",
   sessionCreate: "session.create",
   sessionGet: "session.get",
+  projectList: "project.list",
+  projectCreate: "project.create",
   sessionWatch: "session.watch",
   leaseTakeover: "host.lease.takeover",
   promptSend: "prompt.send",
@@ -376,9 +378,48 @@ export interface SessionListParams {
 }
 export interface SessionCreateParams {
   title?: string;
+  /**
+   * 归属项目（可选）。
+   *
+   * - 省略/空串 ⇒ 全局会话（项目 `""`，既有语义）；
+   * - 给定 ⇒ 必须已存在于**桌面**项目表，否则 `NOT_FOUND`（不隐式建项目）；
+   * - 想"在新目录新建会话"：先调 `project.create`，再用返回的 id 调这里。
+   */
+  projectId?: string;
 }
 export interface SessionCreateResult {
   session: SessionSummary;
+}
+
+/**
+ * 项目投影（手机项目选择器/新建项目用）。
+ *
+ * 只读投影，**不**带沙箱/安全设置等桌面内部字段：手机只需要"选哪个项目"。
+ */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+  pinned: boolean;
+  lastAccessedAt: number;
+}
+
+export interface ProjectListParams {
+  limit?: number;
+}
+export interface ProjectListResult {
+  items: ProjectSummary[];
+  hasMore: boolean;
+}
+
+export interface ProjectCreateParams {
+  /** 显示名（1..80 字符，去首尾空白） */
+  name: string;
+  /** 绝对路径；必须是**已存在且可读**的目录。不存在 ⇒ `NOT_FOUND`，不在沙箱允许范围 ⇒ `INVALID_PARAMS` */
+  path: string;
+}
+export interface ProjectCreateResult {
+  project: ProjectSummary;
 }
 export interface SessionListResult {
   items: SessionSummary[];
@@ -772,6 +813,8 @@ export interface MethodMap {
   [METHODS.diagnostics]: { params: { sessionId?: string }; result: HostDiagnostics };
   [METHODS.sessionList]: { params: SessionListParams; result: SessionListResult };
   [METHODS.sessionCreate]: { params: SessionCreateParams; result: SessionCreateResult };
+  [METHODS.projectList]: { params: ProjectListParams; result: ProjectListResult };
+  [METHODS.projectCreate]: { params: ProjectCreateParams; result: ProjectCreateResult };
   [METHODS.sessionGet]: { params: SessionGetParams; result: SessionGetResult };
   [METHODS.sessionWatch]: { params: SessionWatchParams; result: SessionWatchResult };
   [METHODS.leaseTakeover]: { params: LeaseTakeoverParams; result: LeaseTakeoverResult };

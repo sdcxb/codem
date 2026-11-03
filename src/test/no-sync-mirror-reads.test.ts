@@ -67,6 +67,12 @@ const DATA_LAYER_FILES = new Set([
   "src/core/storage/message.ts",
   "src/core/storage/context-history.ts",
   "src/core/storage/event-projection.ts",
+  /**
+   * ADR-0006 的五张目标表适配器：小域（一个会话最多一个 active goal + 十来个阶段），
+   * 同步读的是**有界领域投影**，与 `project.ts` / `account.ts` 同类；
+   * 它只是把行读写和失败上报收在数据层，业务规则仍在 `goal/store.ts`。
+   */
+  "src/core/storage/goal-domain.ts",
 ]);
 
 /**

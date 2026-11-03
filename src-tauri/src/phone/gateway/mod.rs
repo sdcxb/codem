@@ -11,6 +11,7 @@
 // 闭环由五块组成：
 //   1. `GET /` + `/ui.js` + `/ui.css`：共享 UI（packages/host/web 构建物）；
 //   2. `pair.claim`：6 位一次性码 → HttpOnly 设备 cookie（Rust 内存配对）；
+//      2b. Tailscale Serve 身份头（loopback + `*.ts.net` + 非 Funnel）→ 零配对码自动登记；
 //   3. `POST /rpc`：只放行下面的**精确白名单**（只读 + 写 + 审批 + 只读文件面 +
 //      变更记录，共 13 条）；其余（引导/新建/附件）在网关层就拒绝 —— 不依赖渲染层
 //      自觉，也不给手机画一个点不通的入口；
@@ -46,9 +47,11 @@
 //
 // ## 生命周期
 //
-// 只有 `gateway_start` / `gateway_stop` / `gateway_status` / `gateway_pair_start`
-// 四个命令，**不自动启动**。启动绑 `127.0.0.1:0`（随机端口）；停止会等监听任务
-// 真正结束（端口已关闭）并清空配对状态（所有设备 cookie 随之下线）。
+// 只有 `gateway_start` / `gateway_stop` / `gateway_status` / `gateway_pair_start` /
+// `gateway_devices` / `gateway_device_revoke` 六个命令。渲染层按设置（默认开）自动启动；
+// 启动优先绑 `127.0.0.1:41873`（手机保存的 origin 在重启后仍然有效），端口被占才回退随机端口。
+// 停止会等监听任务真正结束（端口已关闭）并清空配对状态（所有设备 cookie 随之下线，磁盘也清空；
+// 进程退出不调用 stop，所以桌面重启后已配对设备仍然有效）。
 //
 // ## 明确不做（旧 phone-link 的这些东西已整块删除，不要恢复）
 //
@@ -64,7 +67,7 @@ pub mod workspace;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, watch, Mutex as TokioMutex};
@@ -79,11 +82,18 @@ use assets::{Asset, GatewayWeb};
 use bridge::{RendererBridge, TauriBridge};
 use events::EventHub;
 use pairing::{
-    PairError, PairingState, DEVICE_COOKIE_MAX_AGE_SEC, DEVICE_COOKIE_NAME,
+    normalize_tailscale_login, PairClaim, PairError, PairingState, PersistedPairing,
+    DEVICE_COOKIE_MAX_AGE_SEC, DEVICE_COOKIE_NAME,
 };
 
-/// 只绑回环 + 随机端口：不和别的程序抢固定端口，也不对局域网暴露。
+/// 只绑回环 + 优先固定端口：不和别的程序抢固定端口，也不对局域网暴露。
+/// 固定端口让**手机保存的地址在桌面重启后仍然有效**（cookie 按 origin 隔离）；
+/// 端口被占时回退到随机端口，并在状态里如实报告实际端口。
 const BIND_ADDR: &str = "127.0.0.1:0";
+const PREFERRED_PORT: u16 = 41873;
+
+/// 配对设备持久化文件名（app_data_dir 下）。只存 token 的 sha256。
+const PAIRING_FILE: &str = "phone-pairing.json";
 
 /// 健康检查（与 TS `gateway-engine.ts` 的 `GATEWAY_HEALTH_PATH` 对齐）。
 const HEALTH_PATH: &str = "/health";
@@ -97,15 +107,18 @@ const PAIR_CLAIM_METHOD: &str = "pair.claim";
 ///
 /// M1 = 前四个只读方法；M2 = `prompt.send` / `run.cancel` + 审批两条；
 /// M3 = `workspace.list` / `workspace.read` / `workspace.diff`（只读文件面）+
-/// `session.changes` / `session.change.diff`（只读变更记录）。
-/// 引导（`run.guidance`）、新建（`session.create`）、附件（`attachment.put`）
-/// **都还不在**这里 —— 它们各自需要渲染层与共享 UI 的真实实现，先加白名单 =
-/// 手机上出现"点了必失败"的按钮。
+/// `session.changes` / `session.change.diff`（只读变更记录）；
+/// B1 = `project.list` / `project.create` / `session.create`（远程新建，写的是桌面**同一份**库）。
+/// 引导（`run.guidance`）、附件（`attachment.put`）**都还不在**这里 —— 它们各自需要
+/// 渲染层与共享 UI 的真实实现，先加白名单 = 手机上出现"点了必失败"的按钮。
 const RPC_ALLOWED_METHODS: &[&str] = &[
     "host.hello",
     "host.diagnostics",
     "session.list",
     "session.get",
+    "session.create",
+    "project.list",
+    "project.create",
     "prompt.send",
     "run.cancel",
     "approval.list",
@@ -149,6 +162,8 @@ pub struct GatewayState {
     inner: TokioMutex<GatewayInner>,
     /// 配对码与设备 token hash。与生命周期分开，`stop` 会整体清空。
     pairing: TokioMutex<PairingState>,
+    /// 设备表持久化路径（`None` = 拿不到 app 数据目录，退化为纯内存，如实可解释）。
+    pairing_file: std::sync::Mutex<Option<std::path::PathBuf>>,
     /// 启动时加载的共享 UI 静态资源；停止后清掉。
     web: TokioMutex<Option<Arc<GatewayWeb>>>,
     /// 事件枢纽。**跨 stop/start 保留**：同一进程里停止期间仍在跑的回合，
@@ -161,6 +176,7 @@ impl GatewayState {
         Arc::new(GatewayState {
             inner: TokioMutex::new(GatewayInner::default()),
             pairing: TokioMutex::new(PairingState::new()),
+            pairing_file: std::sync::Mutex::new(None),
             web: TokioMutex::new(None),
             events: EventHub::new(),
         })
@@ -279,8 +295,22 @@ struct RequestHeaders {
     host: Option<String>,
     origin: Option<String>,
     content_type: Option<String>,
+    /// 隧道/反代终结 TLS 时由代理带上来（cloudflared / Tailscale / nginx）。
+    forwarded_proto: Option<String>,
     /// SSE 断线重连时浏览器自动带的续传水位（`id:` 帧的最后一个值）。
     last_event_id: Option<String>,
+    /// Tailscale Serve 注入的身份头（只有 Serve 会注入；Funnel 不注入）。
+    tailscale_login: Option<String>,
+    tailscale_user_name: Option<String>,
+    /// Funnel 请求标记；存在即拒绝零配对码。
+    tailscale_funnel_request: Option<String>,
+}
+
+/// 可信的 Tailscale Serve 身份。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TailscaleIdentity {
+    login: String,
+    name: Option<String>,
 }
 
 impl RequestHeaders {
@@ -290,7 +320,11 @@ impl RequestHeaders {
             host: header_value(head, "host"),
             origin: header_value(head, "origin"),
             content_type: header_value(head, "content-type"),
+            forwarded_proto: header_value(head, "x-forwarded-proto"),
             last_event_id: header_value(head, "last-event-id"),
+            tailscale_login: header_value(head, "tailscale-user-login"),
+            tailscale_user_name: header_value(head, "tailscale-user-name"),
+            tailscale_funnel_request: header_value(head, "tailscale-funnel-request"),
         }
     }
 
@@ -298,12 +332,100 @@ impl RequestHeaders {
         cookie_value(self.cookie.as_deref(), DEVICE_COOKIE_NAME)
     }
 
+    /// 零配对码的身份判定：**四项同时满足**才可信。
+    ///
+    /// 1. TCP 对端是 loopback（tailscaled 的 Serve 代理从本机连入）；
+    /// 2. Host 是 `*.ts.net`（Tailscale Serve 的 MagicDNS 域名）；
+    /// 3. 不是 Funnel（Funnel 不注入身份，且会带 `Tailscale-Funnel-Request`）；
+    /// 4. `Tailscale-User-Login` 是 ASCII 邮箱形态。
+    ///
+    /// 这是 Tailscale 官方文档描述的信任模型：后端只监听 localhost，身份头由
+    /// tailscaled 注入并清掉客户端伪造值；本机进程被视为可信边界。
+    fn tailscale_identity(&self, peer_is_loopback: bool) -> Option<TailscaleIdentity> {
+        if !peer_is_loopback || self.tailscale_funnel_request.is_some() {
+            return None;
+        }
+        let host = self.host.as_deref()?.trim();
+        let hostname = host
+            .rsplit_once(':')
+            .map(|(name, _)| name)
+            .unwrap_or(host)
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_ascii_lowercase();
+        if !hostname.ends_with(".ts.net") {
+            return None;
+        }
+        let login = normalize_tailscale_login(self.tailscale_login.as_deref()?)?;
+        let name = self
+            .tailscale_user_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.chars().take(64).collect::<String>());
+        Some(TailscaleIdentity { login, name })
+    }
+
+    /// 这次请求对外是不是 HTTPS（隧道终结 TLS）。`Secure` cookie 必须按它决定，
+    /// 否则走隧道时浏览器会把凭据当成"可被明文发送的 cookie"。
+    fn is_https(&self) -> bool {
+        if let Some(proto) = self.forwarded_proto.as_deref() {
+            if proto.eq_ignore_ascii_case("https") {
+                return true;
+            }
+        }
+        self.origin
+            .as_deref()
+            .map(|origin| origin.trim().to_ascii_lowercase().starts_with("https://"))
+            .unwrap_or(false)
+    }
+
     fn is_json(&self) -> bool {
         self.content_type
             .as_deref()
-            .map(|v| v.trim().to_ascii_lowercase().starts_with("application/json"))
+            .map(|v| {
+                v.trim()
+                    .to_ascii_lowercase()
+                    .starts_with("application/json")
+            })
             .unwrap_or(false)
     }
+}
+
+/**
+ * Host 白名单：回环、已知隧道域名（cloudflared quick tunnel / Tailscale），
+ * 或用 `CODEM_GATEWAY_ALLOWED_HOSTS=a.example.com,b.example.com` 显式放行的自有域名。
+ *
+ * 为什么需要：`Origin == Host` 只能挡"别的站点借浏览器打本机"；DNS rebinding 可以让
+ * 攻击者的域名解析到 127.0.0.1，此时 Origin 与 Host 都是攻击者域名，前一条判据不成立。
+ * 隧道域名是**用户自己的入口**（URL 只在他手机上），自有域名必须显式声明——不默认放开。
+ */
+fn host_allowed(host: Option<&str>) -> bool {
+    let Some(host) = host else {
+        // HTTP/1.0 / 本机 curl 可以不带 Host；后面仍要过 cookie 鉴权
+        return true;
+    };
+    let host = host.trim();
+    let hostname = match host.rsplit_once(':') {
+        Some((name, _port)) => name,
+        None => host,
+    }
+    .trim_start_matches('[')
+    .trim_end_matches(']')
+    .to_ascii_lowercase();
+    if matches!(hostname.as_str(), "127.0.0.1" | "localhost" | "::1") {
+        return true;
+    }
+    if hostname.ends_with(".trycloudflare.com") || hostname.ends_with(".ts.net") {
+        return true;
+    }
+    std::env::var("CODEM_GATEWAY_ALLOWED_HOSTS")
+        .map(|extra| {
+            extra
+                .split(',')
+                .any(|allowed| allowed.trim().eq_ignore_ascii_case(&hostname))
+        })
+        .unwrap_or(false)
 }
 
 /// 同源校验：带 `Origin` 的浏览器请求必须与 `Host` 一致。
@@ -339,10 +461,13 @@ fn cookie_value(header: Option<&str>, name: &str) -> Option<String> {
     None
 }
 
-fn device_cookie(token: &str) -> String {
+fn device_cookie(token: &str, secure: bool) -> String {
     format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
-        DEVICE_COOKIE_NAME, token, DEVICE_COOKIE_MAX_AGE_SEC
+        "{}={}; Path=/; HttpOnly; SameSite=Strict;{} Max-Age={}",
+        DEVICE_COOKIE_NAME,
+        token,
+        if secure { " Secure;" } else { "" },
+        DEVICE_COOKIE_MAX_AGE_SEC
     )
 }
 
@@ -398,14 +523,18 @@ async fn handle_conn(
         Err(_) => return Ok(()),
     };
     let headers = RequestHeaders::from_head(&head);
+    let peer_is_loopback = stream
+        .peer_addr()
+        .map(|addr| addr.ip().is_loopback())
+        .unwrap_or(false);
 
     if classify(&req.method, &req.path) == Route::Events {
-        return handle_events(st, stream, req, headers).await;
+        return handle_events(st, stream, req, headers, peer_is_loopback).await;
     }
 
     let resp = match timeout(
         CONN_TIMEOUT,
-        route(&st, &renderer, req, &headers),
+        route(&st, &renderer, req, &headers, peer_is_loopback),
     )
     .await
     {
@@ -425,18 +554,40 @@ async fn handle_events(
     mut stream: TcpStream,
     req: HttpRequest,
     headers: RequestHeaders,
+    peer_is_loopback: bool,
 ) -> Result<(), ()> {
-    if !origin_allowed(headers.origin.as_deref(), headers.host.as_deref()) {
+    if !origin_allowed(headers.origin.as_deref(), headers.host.as_deref())
+        || !host_allowed(headers.host.as_deref())
+    {
         let _ = stream
             .write_all(&json_error(403, "forbidden", "跨源请求被拒绝").to_bytes())
             .await;
         return Ok(());
     }
-    let Some(device) = authenticate_device(&st, headers.device_token()).await else {
-        let _ = stream
-            .write_all(&json_error(401, "unauthorized", "缺少或错误的设备凭据").to_bytes())
-            .await;
-        return Ok(());
+    let device = match authenticate_device(&st, headers.device_token()).await {
+        Some(device) => device,
+        None => {
+            let Some(identity) = headers.tailscale_identity(peer_is_loopback) else {
+                let _ = stream
+                    .write_all(&json_error(401, "unauthorized", "缺少或错误的设备凭据").to_bytes())
+                    .await;
+                return Ok(());
+            };
+            match claim_tailscale_device(&st, &identity, None, "web").await {
+                Ok(claimed) => {
+                    persist_pairing(&st).await;
+                    claimed.device
+                }
+                Err(_) => {
+                    let _ = stream
+                        .write_all(
+                            &json_error(401, "unauthorized", "Tailscale 身份未获授权").to_bytes(),
+                        )
+                        .await;
+                    return Ok(());
+                }
+            }
+        }
     };
     let Some(session_id) = req
         .query
@@ -514,10 +665,11 @@ async fn route(
     renderer: &Arc<dyn RendererBridge>,
     req: HttpRequest,
     headers: &RequestHeaders,
+    peer_is_loopback: bool,
 ) -> HttpResponse {
     match classify(&req.method, &req.path) {
         Route::Health => renderer.forward(req).await,
-        Route::Rpc => handle_rpc(st, renderer, req, headers).await,
+        Route::Rpc => handle_rpc(st, renderer, req, headers, peer_is_loopback).await,
         Route::Asset(asset) => static_response(st, asset).await,
         // 事件流在 `handle_conn` 里就走掉了（长连接不能套 25s 整连接时限）；
         // 真走到这里说明调用方绕过了分叉，如实报错而不是假装写了一条 JSON 事件流。
@@ -552,8 +704,11 @@ async fn handle_rpc(
     renderer: &Arc<dyn RendererBridge>,
     req: HttpRequest,
     headers: &RequestHeaders,
+    peer_is_loopback: bool,
 ) -> HttpResponse {
-    if !origin_allowed(headers.origin.as_deref(), headers.host.as_deref()) {
+    if !origin_allowed(headers.origin.as_deref(), headers.host.as_deref())
+        || !host_allowed(headers.host.as_deref())
+    {
         return rpc_response(
             403,
             jsonrpc_error(
@@ -609,28 +764,45 @@ async fn handle_rpc(
             None,
         );
     }
-    let id = payload.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let id = payload
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let Some(method) = payload.get("method").and_then(|v| v.as_str()) else {
         return rpc_response(
             200,
-            jsonrpc_error(
-                id,
-                -32600,
-                "缺少 method",
-                "INVALID_REQUEST",
-                None,
-            ),
+            jsonrpc_error(id, -32600, "缺少 method", "INVALID_REQUEST", None),
             None,
         );
     };
 
     if method == PAIR_CLAIM_METHOD {
-        return handle_pair_claim(st, payload, id).await;
+        return handle_pair_claim(st, payload, id, headers).await;
     }
 
-    let authenticated = authenticate_device(st, headers.device_token())
+    let requested_device_name = payload
+        .get("params")
+        .and_then(|params| params.get("deviceName"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    let mut bootstrap_cookie: Option<String> = None;
+    let authenticated = if authenticate_device(st, headers.device_token())
         .await
-        .is_some();
+        .is_some()
+    {
+        true
+    } else if let Some(identity) = headers.tailscale_identity(peer_is_loopback) {
+        match claim_tailscale_device(st, &identity, requested_device_name.as_deref(), "web").await {
+            Ok(claimed) => {
+                bootstrap_cookie = Some(claimed.token);
+                persist_pairing(st).await;
+                true
+            }
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
     if !authenticated {
         return rpc_response(
             401,
@@ -660,15 +832,41 @@ async fn handle_rpc(
     }
 
     // 已鉴权且在白名单里：交给渲染层，由桌面现有存储/引擎回答。
-    renderer.forward(req).await
+    let mut response = renderer.forward(req).await;
+    if let Some(token) = bootstrap_cookie {
+        response.headers.push((
+            "Set-Cookie".to_string(),
+            device_cookie(&token, headers.is_https()),
+        ));
+    }
+    response
+}
+
+async fn claim_tailscale_device(
+    st: &Arc<GatewayState>,
+    identity: &TailscaleIdentity,
+    device_name: Option<&str>,
+    platform: &str,
+) -> Result<PairClaim, PairError> {
+    let mut pairing = st.pairing.lock().await;
+    pairing.claim_tailscale(
+        &identity.login,
+        device_name.or(identity.name.as_deref()),
+        Some(platform),
+        crate::phone::now_ms(),
+    )
 }
 
 async fn handle_pair_claim(
     st: &Arc<GatewayState>,
     payload: serde_json::Value,
     id: serde_json::Value,
+    headers: &RequestHeaders,
 ) -> HttpResponse {
-    let params = payload.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    let params = payload
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let Some(code) = params.get("code").and_then(|v| v.as_str()) else {
         return rpc_response(
             200,
@@ -706,7 +904,13 @@ async fn handle_pair_claim(
                     },
                 }),
             );
-            rpc_response(200, body, Some(device_cookie(&claimed.token)))
+            // B2：配对成功立刻落盘（只存 token 的 sha256）—— 重启桌面后这台设备仍然有效
+            persist_pairing(&st).await;
+            rpc_response(
+                200,
+                body,
+                Some(device_cookie(&claimed.token, headers.is_https())),
+            )
         }
         Err(err) => {
             let (code, message) = match &err {
@@ -715,6 +919,7 @@ async fn handle_pair_claim(
                 PairError::Locked => (-32001, "配对码错误次数过多，已锁定"),
                 PairError::RateLimited { .. } => (-32001, "尝试过于频繁"),
                 PairError::DeviceLimit => (-32001, "已配对设备达到上限"),
+                PairError::Revoked => (-32001, "该 Tailscale 身份已撤销，请用配对码重新认领"),
             };
             let mut details = serde_json::json!({ "reason": err.reason() });
             if let PairError::RateLimited { retry_after_ms } = err {
@@ -730,6 +935,64 @@ async fn handle_pair_claim(
 
 // ---- 启停（命令层复用它，测试也可直接调）----
 
+/// 配对设备文件位置（拿不到 app 数据目录 ⇒ `None`，网关退化为纯内存）。
+fn pairing_file_of(app: &AppHandle) -> Option<std::path::PathBuf> {
+    crate::app_data_dir_path(app)
+        .ok()
+        .map(|dir| dir.join(PAIRING_FILE))
+}
+
+/// 读设备表。坏文件**不阻断启动**（记一行日志，按"没有设备"处理 ⇒ 手机重新配对）。
+fn read_pairing_file(path: &std::path::Path) -> Option<PersistedPairing> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<PersistedPairing>(&text) {
+        Ok(persisted) => Some(persisted),
+        Err(e) => {
+            eprintln!(
+                "[gateway] 配对设备文件损坏，按空设备处理（需要重新配对）：{}",
+                e
+            );
+            None
+        }
+    }
+}
+
+/// 原子写：先写 `.tmp` 再 rename，避免断电留下半份文件（半份文件 = 所有设备掉线）。
+fn write_pairing_file(path: &std::path::Path, persisted: &PersistedPairing) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let text = serde_json::to_string_pretty(persisted).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 把当前设备表写盘（配对/撤销后调用）。失败只记日志：内存态仍然正确，重启会退化为重新配对。
+async fn persist_pairing(st: &Arc<GatewayState>) {
+    let path = st
+        .pairing_file
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let Some(path) = path else { return };
+    let persisted = st.pairing.lock().await.export();
+    if let Err(e) = write_pairing_file(&path, &persisted) {
+        eprintln!("[gateway] 配对设备写盘失败（重启后需要重新配对）：{}", e);
+    }
+}
+
+fn device_json(view: &pairing::DeviceView) -> serde_json::Value {
+    serde_json::json!({
+        "id": view.id,
+        "name": view.name,
+        "platform": view.platform,
+        "createdAt": view.created_at,
+        "lastSeenAt": view.last_seen_at,
+    })
+}
+
 /// 启动网关（幂等：已在跑就回当前状态，新绑的端口不会被采用）。
 pub async fn start(
     app: AppHandle,
@@ -741,9 +1004,39 @@ pub async fn start(
     }
     // 先加载静态资源：缺 UI 时启动失败，而不是让手机打开一个空白页。
     let web = GatewayWeb::load(&app)?;
-    let listener = TcpListener::bind(BIND_ADDR)
-        .await
-        .map_err(|e| format!("网关绑定回环端口失败: {}", e))?;
+    /**
+     * B2：先把上次的设备表读回来（重启桌面后手机直接进入，不用重新配对）。
+     *
+     * 只读文件、不建网关；文件损坏按空设备处理并记日志（见 `read_pairing_file`）。
+     */
+    let file = pairing_file_of(&app);
+    if let Some(path) = &file {
+        if let Some(persisted) = read_pairing_file(path) {
+            let restored = st.pairing.lock().await.import(persisted);
+            if restored > 0 {
+                eprintln!("[gateway] 已恢复 {} 台已配对设备", restored);
+            }
+        }
+    }
+    *st.pairing_file
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = file;
+    /**
+     * 优先固定端口（手机保存的 origin 不变 ⇒ HttpOnly cookie 继续有效）；
+     * 被占用时回退随机端口，并在 `status.url` 里报告实际端口（不假装还是 41873）。
+     */
+    let listener = match TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!(
+                "[gateway] 首选端口 {} 不可用（{}），回退随机端口；手机需要重新保存地址",
+                PREFERRED_PORT, e
+            );
+            TcpListener::bind(BIND_ADDR)
+                .await
+                .map_err(|e| format!("网关绑定回环端口失败: {}", e))?
+        }
+    };
     let renderer: Arc<dyn RendererBridge> = Arc::new(TauriBridge::new(app, phone));
     start_with(listener, st, renderer, web).await
 }
@@ -768,12 +1061,7 @@ async fn start_with(
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     // 事件流的停止信号：与监听任务分开（长连接是独立任务，必须主动断开）。
     let (clients_tx, _clients_rx) = watch::channel(false);
-    let handle = tauri::async_runtime::spawn(serve(
-        listener,
-        renderer,
-        st.clone(),
-        shutdown_rx,
-    ));
+    let handle = tauri::async_runtime::spawn(serve(listener, renderer, st.clone(), shutdown_rx));
     g.running = true;
     g.port = port;
     g.shutdown = Some(shutdown_tx);
@@ -806,6 +1094,13 @@ pub async fn stop(st: Arc<GatewayState>) -> serde_json::Value {
         let _ = h.await;
     }
     st.pairing.lock().await.reset();
+    /**
+     * 停止 = 撤销全部设备（保持旧语义）：内存清空后**磁盘也清空**，
+     * 否则下次启动会把"用户明确停掉时撤销的设备"又恢复回来。
+     *
+     * 与"重启桌面"区分：进程退出不走这里（不调用 stop），所以崩溃/重启后设备仍在。
+     */
+    persist_pairing(&st).await;
     *st.web.lock().await = None;
     let mut g = st.inner.lock().await;
     g.running = false;
@@ -831,14 +1126,42 @@ pub async fn gateway_start(
 
 /// 停止网关（端口随之关闭；配对状态清空）。
 #[tauri::command]
-pub async fn gateway_stop(state: State<'_, Arc<GatewayState>>) -> Result<serde_json::Value, String> {
+pub async fn gateway_stop(
+    state: State<'_, Arc<GatewayState>>,
+) -> Result<serde_json::Value, String> {
     Ok(stop(state.inner().clone()).await)
 }
 
 /// 读网关状态：`{running, port, url, pairedDevices}`。
 #[tauri::command]
-pub async fn gateway_status(state: State<'_, Arc<GatewayState>>) -> Result<serde_json::Value, String> {
+pub async fn gateway_status(
+    state: State<'_, Arc<GatewayState>>,
+) -> Result<serde_json::Value, String> {
     Ok(status(state.inner().clone()).await)
+}
+
+/// 已配对设备列表（桌面设置页；**不含 token/hash**）。
+#[tauri::command]
+pub async fn gateway_devices(
+    state: State<'_, Arc<GatewayState>>,
+) -> Result<serde_json::Value, String> {
+    let views = state.pairing.lock().await.devices();
+    Ok(serde_json::json!({
+        "devices": views.iter().map(device_json).collect::<Vec<_>>(),
+    }))
+}
+
+/// 撤销单台设备（旧 cookie 立即失效；其它设备不受影响）。未知 id 幂等返回 `revoked=false`。
+#[tauri::command]
+pub async fn gateway_device_revoke(
+    state: State<'_, Arc<GatewayState>>,
+    device_id: String,
+) -> Result<serde_json::Value, String> {
+    let st = state.inner().clone();
+    let revoked = st.pairing.lock().await.revoke(&device_id);
+    // 撤销后立刻落盘：否则重启后磁盘上的旧记录会把"已撤销"的设备又带回来
+    persist_pairing(&st).await;
+    Ok(serde_json::json!({ "revoked": revoked }))
 }
 
 /// 生成一次性 6 位配对码。只在网关运行时可用；码只存在内存，5 分钟/单次有效。
@@ -850,11 +1173,7 @@ pub async fn gateway_pair_start(
     if !running {
         return Err("网关尚未启动".to_string());
     }
-    let code = state
-        .pairing
-        .lock()
-        .await
-        .new_code(crate::phone::now_ms());
+    let code = state.pairing.lock().await.new_code(crate::phone::now_ms());
     Ok(serde_json::json!({
         "code": code.code,
         "expiresAt": code.expires_at,
@@ -951,7 +1270,9 @@ mod tests {
     }
 
     async fn raw(port: u16, text: &str) -> String {
-        let mut s = TcpStream::connect(("127.0.0.1", port)).await.expect("connect");
+        let mut s = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect");
         s.write_all(text.as_bytes()).await.expect("write");
         let mut buf = Vec::new();
         let _ = timeout(Duration::from_secs(5), s.read_to_end(&mut buf)).await;
@@ -982,6 +1303,22 @@ mod tests {
         raw(port, &req).await
     }
 
+    async fn post_rpc_with_headers(
+        port: u16,
+        host: &str,
+        extra_headers: &str,
+        body: &str,
+    ) -> String {
+        let req = format!(
+            "POST /rpc HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{}\r\n{}",
+            host,
+            body.as_bytes().len(),
+            extra_headers,
+            body
+        );
+        raw(port, &req).await
+    }
+
     fn cookie_from(resp: &str) -> String {
         for line in resp.split("\r\n") {
             if let Some(value) = line.strip_prefix("Set-Cookie: ") {
@@ -996,7 +1333,12 @@ mod tests {
 
     /// 真 TCP 配对一次，返回可用的设备 cookie（事件流/RPC 共用同一份鉴权）。
     async fn pair_device(st: &Arc<GatewayState>, port: u16) -> String {
-        let code = st.pairing.lock().await.new_code(crate::phone::now_ms()).code;
+        let code = st
+            .pairing
+            .lock()
+            .await
+            .new_code(crate::phone::now_ms())
+            .code;
         let body = rpc_body("pair.claim", serde_json::json!({ "code": code }));
         let claimed = post_rpc(port, &body, None).await;
         assert!(claimed.starts_with("HTTP/1.1 200 OK"), "{}", claimed);
@@ -1091,10 +1433,40 @@ mod tests {
     #[test]
     fn origin_check_is_exact() {
         assert!(origin_allowed(None, Some("127.0.0.1:1234")));
-        assert!(origin_allowed(Some("http://127.0.0.1:1234"), Some("127.0.0.1:1234")));
-        assert!(!origin_allowed(Some("http://evil.test"), Some("127.0.0.1:1234")));
+        assert!(origin_allowed(
+            Some("http://127.0.0.1:1234"),
+            Some("127.0.0.1:1234")
+        ));
+        assert!(!origin_allowed(
+            Some("http://evil.test"),
+            Some("127.0.0.1:1234")
+        ));
         assert!(!origin_allowed(Some("null"), Some("127.0.0.1:1234")));
         assert!(!origin_allowed(Some("http://127.0.0.1:1234"), None));
+    }
+
+    /// B4：隧道/自有域名下的 Host 白名单，以及 HTTPS 时才下发 `Secure` cookie。
+    #[test]
+    fn host_allowlist_and_secure_cookie() {
+        assert!(host_allowed(Some("127.0.0.1:41873")));
+        assert!(host_allowed(Some("localhost:41873")));
+        assert!(host_allowed(Some("[::1]:41873")));
+        assert!(host_allowed(Some("random-words-123.trycloudflare.com")));
+        assert!(host_allowed(Some("desktop.tailnet-abc.ts.net")));
+        assert!(!host_allowed(Some("evil.example.com")));
+        assert!(!host_allowed(Some("127.0.0.1.evil.com")));
+
+        assert!(!device_cookie("tok", false).contains("Secure"));
+        assert!(device_cookie("tok", true).contains("Secure"));
+        assert!(device_cookie("tok", true).contains("HttpOnly"));
+        assert!(device_cookie("tok", true).contains("SameSite=Strict"));
+
+        let tunnel = RequestHeaders::from_head(
+            "POST /rpc HTTP/1.1\r\nHost: x.trycloudflare.com\r\nX-Forwarded-Proto: https\r\n\r\n",
+        );
+        assert!(tunnel.is_https());
+        let loopback = RequestHeaders::from_head("POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:1\r\n\r\n");
+        assert!(!loopback.is_https());
     }
 
     #[tokio::test]
@@ -1118,7 +1490,11 @@ mod tests {
         assert_eq!(fake.calls(), 0, "静态资源不该经过渲染层");
 
         let traversal = raw(port, "GET /..%2Fsecret HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").await;
-        assert!(traversal.starts_with("HTTP/1.1 404 Not Found"), "{}", traversal);
+        assert!(
+            traversal.starts_with("HTTP/1.1 404 Not Found"),
+            "{}",
+            traversal
+        );
         assert_eq!(fake.calls(), 0);
 
         stop(st).await;
@@ -1153,6 +1529,9 @@ mod tests {
                 "host.diagnostics",
                 "session.list",
                 "session.get",
+                "session.create",
+                "project.list",
+                "project.create",
                 "prompt.send",
                 "run.cancel",
                 "approval.list",
@@ -1164,13 +1543,8 @@ mod tests {
                 "session.change.diff",
             ]
         );
-        // 还没做的那些：引导 / 新建 / 附件
-        for banned in [
-            "run.guidance",
-            "session.create",
-            "attachment.put",
-            "events",
-        ] {
+        // 还没做的那些：引导 / 附件
+        for banned in ["run.guidance", "attachment.put", "events"] {
             assert!(
                 !RPC_ALLOWED_METHODS.contains(&banned),
                 "{} 还不在 M3 白名单里，不能进网关白名单",
@@ -1186,7 +1560,11 @@ mod tests {
 
         // 未配对：host.hello 必须被 401；渲染层一次都不该被叫。
         let unauth = post_rpc(port, &rpc_body("host.hello", serde_json::json!({})), None).await;
-        assert!(unauth.starts_with("HTTP/1.1 401 Unauthorized"), "{}", unauth);
+        assert!(
+            unauth.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            unauth
+        );
         assert_eq!(fake.calls(), 0);
 
         // 未配对：写方法同样在鉴权这一层就被挡（不靠白名单顺序）。
@@ -1207,14 +1585,23 @@ mod tests {
         assert_eq!(fake.calls(), 0);
 
         // 生成码 → 兑换 → 拿 cookie。
-        let code = st.pairing.lock().await.new_code(crate::phone::now_ms()).code;
+        let code = st
+            .pairing
+            .lock()
+            .await
+            .new_code(crate::phone::now_ms())
+            .code;
         let claim_body = rpc_body(
             "pair.claim",
             serde_json::json!({ "code": code, "deviceName": "Test Phone", "platform": "web" }),
         );
         let claimed = post_rpc(port, &claim_body, None).await;
         assert!(claimed.starts_with("HTTP/1.1 200 OK"), "{}", claimed);
-        assert!(claimed.contains("\"hostId\":\"codem-desktop\""), "{}", claimed);
+        assert!(
+            claimed.contains("\"hostId\":\"codem-desktop\""),
+            "{}",
+            claimed
+        );
         let cookie = cookie_from(&claimed);
         assert!(cookie.starts_with("codem_gateway_device="), "{}", cookie);
         assert!(claimed.contains("HttpOnly"), "{}", claimed);
@@ -1274,7 +1661,12 @@ mod tests {
 
         // M2：审批两条也必须到达渲染层（读/答都走桌面既有审批代理，网关不编结果）。
         for method in ["approval.list", "approval.respond"] {
-            let reply = post_rpc(port, &rpc_body(method, serde_json::json!({})), Some(&cookie)).await;
+            let reply = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
             assert!(reply.starts_with("HTTP/1.1 200 OK"), "{} {}", method, reply);
             assert!(
                 reply.contains("fake-renderer"),
@@ -1288,7 +1680,12 @@ mod tests {
         // M3：工作区三条只读方法也必须**到达**渲染层（边界/敏感判定由渲染层注入的数据层做，
         // 网关只做鉴权与白名单，不替它编造文件内容）。
         for method in ["workspace.list", "workspace.read", "workspace.diff"] {
-            let reply = post_rpc(port, &rpc_body(method, serde_json::json!({})), Some(&cookie)).await;
+            let reply = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
             assert!(reply.starts_with("HTTP/1.1 200 OK"), "{} {}", method, reply);
             assert!(
                 reply.contains("fake-renderer"),
@@ -1302,7 +1699,12 @@ mod tests {
         // M3：变更记录两条只读方法也必须**到达**渲染层（数据来自桌面库与 git 对象，
         // 网关只做鉴权与白名单，不替它编造记录）。
         for method in ["session.changes", "session.change.diff"] {
-            let reply = post_rpc(port, &rpc_body(method, serde_json::json!({})), Some(&cookie)).await;
+            let reply = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
             assert!(reply.starts_with("HTTP/1.1 200 OK"), "{} {}", method, reply);
             assert!(
                 reply.contains("fake-renderer"),
@@ -1313,13 +1715,36 @@ mod tests {
         }
         assert_eq!(fake.calls(), 10, "session.changes* 必须交给渲染层");
 
+        // B1：项目面三条也必须到达渲染层（真正的校验/写入在 `gateway-engine` 与桌面存储）
+        for method in ["session.create", "project.list", "project.create"] {
+            let reply = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
+            assert!(reply.starts_with("HTTP/1.1 200 OK"), "{} {}", method, reply);
+            assert!(
+                reply.contains("fake-renderer"),
+                "{} 必须交给渲染层：{}",
+                method,
+                reply
+            );
+        }
+        assert_eq!(fake.calls(), 13, "项目面三条必须交给渲染层");
+
         // 还没实现的方法：网关层拒绝，渲染层调用数不变。
-        for method in ["run.guidance", "session.create", "attachment.put"] {
-            let write = post_rpc(port, &rpc_body(method, serde_json::json!({})), Some(&cookie)).await;
+        for method in ["run.guidance", "attachment.put"] {
+            let write = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
             assert!(write.starts_with("HTTP/1.1 200 OK"), "{} {}", method, write);
             assert!(write.contains("UNSUPPORTED"), "{}: {}", method, write);
         }
-        assert_eq!(fake.calls(), 10, "未实现的方法不得到达渲染层");
+        assert_eq!(fake.calls(), 13, "未实现的方法不得到达渲染层");
 
         // /events 未配对必须是 401（JSON 错误，不能是事件流），且**不经过渲染层**。
         let events = raw(
@@ -1327,10 +1752,111 @@ mod tests {
             "GET /events?sessionId=s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
         )
         .await;
-        assert!(events.starts_with("HTTP/1.1 401 Unauthorized"), "{}", events);
+        assert!(
+            events.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            events
+        );
         assert!(!events.contains("text/event-stream"), "{}", events);
-        assert_eq!(fake.calls(), 10, "事件流不该转发给渲染层");
+        assert_eq!(fake.calls(), 13, "事件流不该转发给渲染层");
 
+        stop(st).await;
+    }
+
+    #[test]
+    fn tailscale_identity_requires_loopback_and_serve_host() {
+        let head = "Host: win-test.tailnet.ts.net\r\nTailscale-User-Login: user@example.com\r\n";
+        let headers = RequestHeaders::from_head(head);
+        assert!(
+            headers.tailscale_identity(true).is_some(),
+            "Serve 的 loopback 请求应被信任"
+        );
+        assert!(
+            headers.tailscale_identity(false).is_none(),
+            "非 loopback 请求即使带头也不能信"
+        );
+
+        let funnel = RequestHeaders::from_head(
+            "Host: win-test.tailnet.ts.net\r\nTailscale-User-Login: user@example.com\r\nTailscale-Funnel-Request: ?1\r\n",
+        );
+        assert!(funnel.tailscale_identity(true).is_none(), "Funnel 必须拒绝");
+    }
+
+    #[tokio::test]
+    async fn tailscale_serve_identity_bootstraps_a_device_without_a_code() {
+        let fake = Arc::new(FakeRenderer::default());
+        let (st, port) = start_test_server(fake.clone()).await;
+        let body = rpc_body("host.hello", serde_json::json!({ "protocolVersion": 1 }));
+        let resp = post_rpc_with_headers(
+            port,
+            "win-test.tailnet.ts.net",
+            "Tailscale-User-Login: user@example.com\r\nTailscale-User-Name: User\r\n",
+            &body,
+        )
+        .await;
+        assert!(resp.starts_with("HTTP/1.1 200 OK"), "{}", resp);
+        assert!(
+            resp.contains("Set-Cookie: codem_gateway_device="),
+            "{}",
+            resp
+        );
+        assert_eq!(fake.calls(), 1, "身份可信时必须放行到渲染层");
+
+        let devices = st.pairing.lock().await.devices();
+        assert_eq!(devices.len(), 1);
+        assert!(devices[0].name.contains("User"));
+        stop(st).await;
+    }
+
+    #[tokio::test]
+    async fn tailscale_identity_is_not_trusted_for_funnel_or_non_tailnet_hosts() {
+        let fake = Arc::new(FakeRenderer::default());
+        let (st, port) = start_test_server(fake.clone()).await;
+        let body = rpc_body("host.hello", serde_json::json!({ "protocolVersion": 1 }));
+
+        // Funnel：显式标记，必须拒绝。
+        let funnel = post_rpc_with_headers(
+            port,
+            "win-test.tailnet.ts.net",
+            "Tailscale-User-Login: user@example.com\r\nTailscale-Funnel-Request: ?1\r\n",
+            &body,
+        )
+        .await;
+        assert!(
+            funnel.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            funnel
+        );
+        assert!(!funnel.contains("Set-Cookie"), "{}", funnel);
+
+        // 非 ts.net：即使有头也不信。
+        let other_host = post_rpc_with_headers(
+            port,
+            "127.0.0.1",
+            "Tailscale-User-Login: user@example.com\r\n",
+            &body,
+        )
+        .await;
+        assert!(
+            other_host.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            other_host
+        );
+
+        // 畸形登录：拒绝。
+        let malformed = post_rpc_with_headers(
+            port,
+            "win-test.tailnet.ts.net",
+            "Tailscale-User-Login: not-an-email\r\n",
+            &body,
+        )
+        .await;
+        assert!(
+            malformed.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            malformed
+        );
+        assert_eq!(fake.calls(), 0);
         stop(st).await;
     }
 
@@ -1397,7 +1923,11 @@ mod tests {
             "GET /events?sessionId=s1 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
         )
         .await;
-        assert!(unauth.starts_with("HTTP/1.1 401 Unauthorized"), "{}", unauth);
+        assert!(
+            unauth.starts_with("HTTP/1.1 401 Unauthorized"),
+            "{}",
+            unauth
+        );
         assert!(!unauth.contains("text/event-stream"), "{}", unauth);
 
         let cookie = pair_device(&st, port).await;
@@ -1411,7 +1941,11 @@ mod tests {
             ),
         )
         .await;
-        assert!(missing.starts_with("HTTP/1.1 400 Bad Request"), "{}", missing);
+        assert!(
+            missing.starts_with("HTTP/1.1 400 Bad Request"),
+            "{}",
+            missing
+        );
         assert!(missing.contains("sessionId"), "{}", missing);
 
         // sinceSeq 非数字：400，不猜成 0（猜会导致"以为续传了其实重放了一遍"）。
@@ -1423,7 +1957,11 @@ mod tests {
             ),
         )
         .await;
-        assert!(bad_since.starts_with("HTTP/1.1 400 Bad Request"), "{}", bad_since);
+        assert!(
+            bad_since.starts_with("HTTP/1.1 400 Bad Request"),
+            "{}",
+            bad_since
+        );
 
         // POST /events：405（事件流是 GET 长连接）。
         let post = raw(
@@ -1434,7 +1972,11 @@ mod tests {
             ),
         )
         .await;
-        assert!(post.starts_with("HTTP/1.1 405 Method Not Allowed"), "{}", post);
+        assert!(
+            post.starts_with("HTTP/1.1 405 Method Not Allowed"),
+            "{}",
+            post
+        );
 
         assert_eq!(fake.calls(), 0, "事件流鉴权/参数错误都不该惊动渲染层");
         stop(st).await;
@@ -1449,7 +1991,12 @@ mod tests {
         // 连接前就有一条"历史"：新连接（没有 Last-Event-ID）**不该**收到它。
         let old = st
             .events
-            .publish("s1", "assistant.text", serde_json::json!({ "text": "旧文本" }), None)
+            .publish(
+                "s1",
+                "assistant.text",
+                serde_json::json!({ "text": "旧文本" }),
+                None,
+            )
             .expect("old");
         assert_eq!(old.seq, 1);
 
@@ -1483,7 +2030,12 @@ mod tests {
 
         // 断开期间又发生了一条：重连带 Last-Event-ID: 2 ⇒ 只补 seq=3。
         st.events
-            .publish("s1", "run.finished", serde_json::json!({ "state": "succeeded" }), Some("run-1".into()))
+            .publish(
+                "s1",
+                "run.finished",
+                serde_json::json!({ "state": "succeeded" }),
+                Some("run-1".into()),
+            )
             .expect("terminal");
         let mut resumed = open_stream(port, "sessionId=s1", &cookie, Some(2)).await;
         let replay = read_until(&mut resumed, &json_type("run.finished"), 3000).await;
@@ -1496,7 +2048,12 @@ mod tests {
 
         // 其它会话的事件不得串台（即使在同一序号空间里）。
         st.events
-            .publish("s2", "assistant.text", serde_json::json!({ "text": "别的会话" }), None)
+            .publish(
+                "s2",
+                "assistant.text",
+                serde_json::json!({ "text": "别的会话" }),
+                None,
+            )
             .expect("other session");
         let mut crossed = open_stream(port, "sessionId=s1", &cookie, Some(3)).await;
         let after = read_until(&mut crossed, &json_type("gateway.ready"), 3000).await;

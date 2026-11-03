@@ -61,6 +61,15 @@ export interface ExecuteSessionTurnParams {
    * 既有分支写 —— 观察者不是第二个写入者。
    */
   onEvent?: (event: LoopEvent) => void;
+  /**
+   * 注入消息的**显式 id**（目标模式的阶段回合用）。
+   *
+   * 为什么需要：阶段提示词是系统写的（契约/计划/验收），不是用户打的话。
+   * 由 Goal Runner 传 `goalPhaseMessageId(goalId, phaseKey, attempt)`，
+   * UI 据 id 前缀把它渲染成「系统说明」而不是用户气泡；同一 goal/phase/attempt
+   * 重复注入是同 id 覆盖，不会叠出两条一样的阶段指令（与委派注入同一条纪律）。
+   */
+  messageId?: string;
 }
 
 export interface ExecuteSessionTurnResult {
@@ -159,7 +168,7 @@ function estimateEventTokens(event: any): string | undefined {
  * - 完成后通知 DelegationOrchestrator
  */
 export async function executeSessionTurn(params: ExecuteSessionTurnParams): Promise<ExecuteSessionTurnResult> {
-  const { sessionId, message, cwd, engine, delegationTaskId, abortSignal, onPermissionRequest, onEvent } = params;
+  const { sessionId, message, cwd, engine, delegationTaskId, abortSignal, onPermissionRequest, onEvent, messageId } = params;
   const zh = getLang() === "zh";
   const bus = getSessionMessageBus();
   const orchestrator = getDelegationOrchestrator();
@@ -483,9 +492,11 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
      *   · 界面据此把它渲染成「委派任务」记录，而不是用户自己的气泡。
      * 普通（人打的）消息仍用「时间戳 + 随机」的形态，两者一眼可分。
      */
-    const userMsgId = delegationTaskId
-      ? delegatedMessageId(delegationTaskId)
-      : `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const userMsgId = messageId
+      ? messageId
+      : delegationTaskId
+        ? delegatedMessageId(delegationTaskId)
+        : `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const prefix = delegationTaskId ? DELEGATED_TASK_PREFIX : "";
     // 第 63 波（审计补）：给"接收方"一句兜底约束。
     // 交接正文再规范，也可能漏东西；漏了的时候模型的本能是"把整个盘扫一遍找找看" ——

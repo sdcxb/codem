@@ -115,10 +115,6 @@ export function readLastExactWater(sessionId: string): ExactWaterCapture | null 
   return lastExactWater.get(sessionId) ?? null;
 }
 
-export function __resetExactWaterForTests(): void {
-  lastExactWater.clear();
-}
-
 /**
  * 计算某个会话当前的水位（模型侧口径）。
  *

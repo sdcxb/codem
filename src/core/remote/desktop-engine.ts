@@ -21,6 +21,9 @@
  */
 import * as ProjectStorage from "../storage/project";
 import * as SessionStorage from "../storage/session";
+import type { Project, Session } from "../types";
+import { listDirectory } from "../file-api";
+import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "../sandbox/sandbox-acl";
 // 第 191 波：「会话 → 项目根路径」走唯一实现（本文件原来自己反查了一遍）
 import { sessionProjectPath } from "../storage/session-project";
 import * as MessageStorage from "../storage/message";
@@ -64,9 +67,12 @@ import {
   type GatewayApprovalView,
   type GatewayCancelRunInput,
   type GatewayCancelRunResult,
+  type GatewayCreateOutcome,
+  type GatewayProjectSummary,
   type GatewaySendPromptInput,
   type GatewaySendPromptResult,
   type GatewaySessionDetail,
+  type GatewaySessionSummary,
 } from "./gateway-engine";
 // M2 写路径第一批：run 归属表（纯逻辑；执行仍然只走下面的 runAgentTurn）。
 import { GatewayRunRegistry } from "./gateway-runs";
@@ -862,6 +868,185 @@ async function runAgentTurn(
   }
 }
 
+// ===== B1：远程新建项目/会话（写桌面**同一份**库，不建第二份） =====
+
+const REMOTE_PROJECT_NAME_MAX = 80;
+const REMOTE_SESSION_TITLE_MAX = 200;
+
+function newRemoteId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function toGatewayProject(p: Project): GatewayProjectSummary {
+  return {
+    id: p.id,
+    name: p.name,
+    path: p.path,
+    pinned: p.pinned === true,
+    lastAccessedAt: p.lastAccessedAt,
+  };
+}
+
+/** 项目列表：与 `session.list` 同源（`wx-workspace` 是内部工作区，不进手机列表） */
+export function gatewayListProjects(): GatewayProjectSummary[] {
+  return ProjectStorage.listProjects()
+    .filter((p) => p.id !== "wx-workspace")
+    .map(toGatewayProject);
+}
+
+/** Windows 绝对路径（盘符或 UNC）。相对路径**一律拒绝**：网关不猜用户想在哪建 */
+function isAbsolutePath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
+}
+
+/**
+ * 远程新建项目。
+ *
+ * 安全边界（与 `file-api` 的沙箱同源，不另写一套）：
+ * - 路径必须绝对；
+ * - 必须是**已存在且可读的目录**（不替用户 `mkdir`：远程命令不该凭空造目录）；
+ * - 沙箱开启时必须在允许目录内 ⇒ 否则明确拒绝，并告诉用户去桌面加允许目录。
+ */
+export async function gatewayCreateProject(input: {
+  name: string;
+  path: string;
+}): Promise<GatewayCreateOutcome<GatewayProjectSummary>> {
+  const name = input.name.trim();
+  const path = input.path.trim();
+  if (!name || name.length > REMOTE_PROJECT_NAME_MAX) {
+    return { ok: false, code: "INVALID_PARAMS", message: `项目名必填且不超过 ${REMOTE_PROJECT_NAME_MAX} 字` };
+  }
+  if (!isAbsolutePath(path)) {
+    return {
+      ok: false,
+      code: "INVALID_PARAMS",
+      message: "路径必须是绝对路径（例如 D:\\work\\repo）",
+      hint: "手机端只接受绝对路径；先确认桌面这台机器上目录存在",
+    };
+  }
+  if (isSandboxAclEnabled() && !isWithinAllowedDirs(path, getSandboxAllowedDirs())) {
+    return {
+      ok: false,
+      code: "INVALID_PARAMS",
+      message: "该路径不在允许的沙箱目录内",
+      hint: "到桌面「设置 → 沙箱」把该目录加入允许列表，或先在桌面创建这个项目",
+    };
+  }
+  try {
+    await listDirectory(path);
+  } catch {
+    return { ok: false, code: "NOT_FOUND", message: `目录不存在或不可读：${path}` };
+  }
+  const normalize = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+  const existing = ProjectStorage.listProjects().find((p) => normalize(p.path) === normalize(path));
+  if (existing) {
+    return {
+      ok: false,
+      code: "CONFLICT",
+      message: `该目录已经是项目「${existing.name}」`,
+      hint: "刷新项目列表后直接选它即可",
+    };
+  }
+  const project: Project = {
+    id: newRemoteId("proj"),
+    name,
+    path,
+    pinned: false,
+    createdAt: Date.now(),
+    lastAccessedAt: Date.now(),
+  };
+  ProjectStorage.createProject(project);
+  // 写后读回：存储未就绪时 createProject 是 void（上报由存储层做），这里必须确认真的落库
+  const saved = ProjectStorage.listProjects().find((p) => p.id === project.id);
+  if (!saved) {
+    return {
+      ok: false,
+      code: "UNAVAILABLE",
+      message: "项目写入后读不回来（桌面存储未就绪）",
+      hint: "稍后重试；若一直失败请在桌面查看存储状态",
+    };
+  }
+  useProjectStore.setState((s) => ({ projects: [...s.projects, saved] }));
+  return { ok: true, value: toGatewayProject(saved) };
+}
+
+/**
+ * 远程新建会话。
+ *
+ * - `projectId` 省略/空 ⇒ 全局会话（与桌面既有语义一致）；
+ * - 非空 ⇒ 必须已存在（不隐式建项目，避免"路径写错也建出一个空项目"）；
+ * - 标题去重：同名追加 ` · 2`（与桌面 `createSession` 同一条规则，避免侧栏出现同名会话）。
+ */
+export async function gatewayCreateSession(input: {
+  title?: string;
+  projectId?: string;
+}): Promise<GatewayCreateOutcome<GatewaySessionSummary>> {
+  const title = (input.title ?? "").trim();
+  if (title.length > REMOTE_SESSION_TITLE_MAX) {
+    return { ok: false, code: "INVALID_PARAMS", message: `标题不超过 ${REMOTE_SESSION_TITLE_MAX} 字` };
+  }
+  const projectId = (input.projectId ?? "").trim();
+  const projects = ProjectStorage.listProjects();
+  const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
+  if (projectId && !project) {
+    return { ok: false, code: "NOT_FOUND", message: `项目不存在：${projectId}`, hint: "先刷新项目列表" };
+  }
+  let sessionNumber = 1;
+  try {
+    sessionNumber = SessionStorage.listSessions(projectId).length + 1;
+  } catch {
+    // 读不到数量就用 1；会话仍会创建（标题只是显示名）
+  }
+  const baseTitle = title || `对话 ${sessionNumber}`;
+  let finalTitle = baseTitle;
+  try {
+    const taken = new Set(SessionStorage.listSessions(projectId).map((s) => s.title));
+    if (taken.has(baseTitle)) {
+      let n = 2;
+      while (taken.has(`${baseTitle} · ${n}`)) n++;
+      finalTitle = `${baseTitle} · ${n}`;
+    }
+  } catch {
+    // 同上：去重失败不阻塞创建
+  }
+  const now = Date.now();
+  const session: Session = {
+    id: newRemoteId("sess"),
+    projectId,
+    title: finalTitle,
+    createdAt: now,
+    lastMessageAt: now,
+    messageCount: 0,
+    attachments: [],
+  };
+  SessionStorage.createSession(session);
+  const saved = SessionStorage.listSessions(projectId).find((s) => s.id === session.id);
+  if (!saved) {
+    return {
+      ok: false,
+      code: "UNAVAILABLE",
+      message: "会话写入后读不回来（桌面存储未就绪）",
+      hint: "稍后重试；若一直失败请在桌面查看存储状态",
+    };
+  }
+  // 桌面侧栏**立刻**出现：当前项目就是它时，把新会话追加进内存列表（否则要等下一次重载）
+  if ((useProjectStore.getState().currentProject?.id ?? "") === projectId) {
+    useProjectStore.setState((s) => ({ sessions: [...s.sessions, saved] }));
+  }
+  return {
+    ok: true,
+    value: {
+      id: saved.id,
+      title: saved.title,
+      projectId,
+      projectName: project?.name ?? "",
+      updatedAt: saved.lastMessageAt,
+      createdAt: saved.createdAt,
+      messageCount: 0,
+    },
+  };
+}
+
 async function handleRemoteRequest(req: RemoteProxyRequest): Promise<void> {
   /**
    * PC 远程网关（ADR-0005）：Rust 网关与 AA bridge 共用同一条 `remote-request`
@@ -889,6 +1074,9 @@ async function handleRemoteRequest(req: RemoteProxyRequest): Promise<void> {
           root: gatewayWorkspace.root,
         },
         changes: gatewayChanges,
+        listProjects: gatewayListProjects,
+        createProject: gatewayCreateProject,
+        createSession: gatewayCreateSession,
       },
     )
   ) {

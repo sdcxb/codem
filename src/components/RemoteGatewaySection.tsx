@@ -9,6 +9,7 @@
  * 网关停止后 Rust 会清空配对状态，所以停止也等于撤销所有已配对设备。
  */
 import { useCallback, useEffect, useState } from "react";
+import { getSetting, setSetting } from "../core/storage/settings";
 import { showToast } from "./ToastNotification";
 
 interface GatewayStatus {
@@ -18,10 +19,38 @@ interface GatewayStatus {
   pairedDevices: number;
 }
 
+interface GatewayDevice {
+  id: string;
+  name: string;
+  platform: string;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
 interface PairCode {
   code: string;
   expiresAt: number;
   ttlMs: number;
+}
+
+/** 自动启动设置（默认开；只有显式 "false"/"0" 才关） */
+const AUTO_START_KEY = "codem-gateway-autostart";
+function readAutoStart(): boolean {
+  try {
+    const raw = getSetting(AUTO_START_KEY);
+    return raw === "false" || raw === "0" ? false : true;
+  } catch {
+    // 读不到设置 ⇒ 不自动开（fail-closed）：读不出用户意图时不擅自把远程入口挂起来。
+    // 用户仍可在本卡片点「启动网关」。
+    return false;
+  }
+}
+function writeAutoStart(enabled: boolean): void {
+  try {
+    setSetting(AUTO_START_KEY, enabled ? "true" : "false");
+  } catch {
+    // 写设置失败不阻断当前会话：开关状态会在下次启动回落到默认值
+  }
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -51,10 +80,19 @@ export function RemoteGatewaySection({ zh }: { zh: boolean }): React.ReactElemen
   const [pairCode, setPairCode] = useState<PairCode | null>(null);
   const [pairBusy, setPairBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [devices, setDevices] = useState<GatewayDevice[]>([]);
+  const [autoStart, setAutoStart] = useState<boolean>(() => readAutoStart());
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await invoke<GatewayStatus>("gateway_status"));
+      const st = await invoke<GatewayStatus>("gateway_status");
+      setStatus(st);
+      if (st.running) {
+        const got = await invoke<{ devices: GatewayDevice[] }>("gateway_devices");
+        setDevices(Array.isArray(got.devices) ? got.devices : []);
+      } else {
+        setDevices([]);
+      }
       setError("");
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
@@ -123,6 +161,26 @@ export function RemoteGatewaySection({ zh }: { zh: boolean }): React.ReactElemen
     }
   }
 
+  async function revokeDevice(device: GatewayDevice): Promise<void> {
+    setBusy(true);
+    setError("");
+    try {
+      const got = await invoke<{ revoked: boolean }>("gateway_device_revoke", { deviceId: device.id });
+      await refresh();
+      // 提示放在 refresh 之后：refresh 会清空 error（它是"拉取失败"通道）
+      if (!got.revoked) setError(zh ? "该设备已不存在（可能已被撤销）" : "Device no longer exists");
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleAutoStart(next: boolean): void {
+    setAutoStart(next);
+    writeAutoStart(next);
+  }
+
   const url = status.url ?? "";
   return (
     <div style={{ display: "grid", gap: 10 }}>
@@ -136,9 +194,23 @@ export function RemoteGatewaySection({ zh }: { zh: boolean }): React.ReactElemen
       </div>
       <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", lineHeight: 1.7 }}>
         {zh
-          ? "手机/浏览器连的是这台电脑的桌面数据：项目、会话、历史都来自桌面现有存储，不另建库。可以在已有会话里发送消息、回答审批、停止运行、查看文件与变更；暂不支持在手机上新建会话或上传附件。网关不会自动启动。"
-          : "Phones/browsers reach this PC's desktop data: projects, sessions and history come from the existing desktop storage, not a second database. Send messages in existing sessions, answer approvals, stop runs, and view files/changes; creating sessions or uploading attachments from the phone is not supported yet. The gateway does not start automatically."}
+          ? "手机/浏览器连的是这台电脑的桌面数据：项目、会话、历史都来自桌面现有存储，不另建库。可以在手机上新建会话/项目、发送消息、回答审批、停止运行、查看文件与变更；暂不支持上传附件。网关默认随桌面自动启动（可关闭）；已配对设备会持久化，桌面重启后手机无需重新配对。Tailscale Serve 入口支持免配对码（按 Tailscale 身份自动登记）；Funnel/公网入口仍需配对码。"
+          : "Phones/browsers reach this PC's desktop data. Create sessions/projects from the phone, send messages, answer approvals, stop runs, and view files/changes; attachments are not supported yet. The gateway starts with the desktop by default (can be disabled). Paired devices persist, so phones do not need to re-pair after a desktop restart. Tailscale Serve entries support code-free pairing via Tailscale identity; Funnel/public entries still require a pairing code."}
       </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-sm)" }}>
+        <input
+          type="checkbox"
+          data-testid="gateway-autostart"
+          checked={autoStart}
+          onChange={(e) => toggleAutoStart(e.target.checked)}
+        />
+        <span>
+          {zh
+            ? "桌面启动时自动开启网关（关闭后需手动「启动网关」）"
+            : "Start the gateway when the desktop starts (otherwise start manually)"}
+        </span>
+      </label>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {status.running ? (
@@ -207,8 +279,37 @@ export function RemoteGatewaySection({ zh }: { zh: boolean }): React.ReactElemen
           </div>
           <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)", lineHeight: 1.6 }}>
             {zh
-              ? "手机第一次打开页面会要求 6 位配对码。配对码 5 分钟内有效、只能用一次；配对成功后浏览器拿到的 HttpOnly cookie 在停止网关或桌面进程重启后失效，需要重新配对。"
-              : "The phone asks for a 6-digit code on first open. It is valid for 5 minutes and single use. The HttpOnly cookie expires when the gateway stops or the desktop process restarts, so pair again after a restart."}
+              ? "手机第一次打开页面会要求 6 位配对码。配对码 5 分钟内有效、只能用一次；配对成功后浏览器拿到 30 天有效的 HttpOnly cookie。桌面重启不会让你重新配对；停止网关会撤销全部设备。"
+              : "The phone asks for a 6-digit code on first open. It is valid for 5 minutes and single use; pairing sets a 30-day HttpOnly cookie. A desktop restart keeps it; stopping the gateway revokes all devices."}
+          </div>
+
+          <div style={{ display: "grid", gap: 6 }} data-testid="gateway-devices">
+            <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600 }}>
+              {zh ? `已配对设备（${devices.length}）` : `Paired devices (${devices.length})`}
+            </div>
+            {devices.length === 0 ? (
+              <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
+                {zh ? "还没有设备。生成配对码，用手机打开上面的地址。" : "No devices yet."}
+              </div>
+            ) : (
+              devices.map((d) => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "var(--fs-sm)" }}>
+                    {d.name} · {d.platform}
+                  </span>
+                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
+                    {new Date(d.lastSeenAt).toLocaleString()}
+                  </span>
+                  <button
+                    data-testid={`gateway-device-revoke-${d.id}`}
+                    disabled={busy}
+                    onClick={() => void revokeDevice(d)}
+                  >
+                    {zh ? "撤销" : "Revoke"}
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       ) : null}

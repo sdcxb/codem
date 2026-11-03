@@ -7,6 +7,12 @@
 
 ## 文档
 
+- `ADR-0006-LONG-HORIZON-GOAL.md`：**长程里程碑目标模式**——稳定契约 + 一次只读深规划 + 阶段证据验收 + 受控重规划；把「禁止一切目标模式」收窄为「禁止短步/无约束目标」
+
+- `ADR-0007-NATIVE-ANDROID-CLIENT.md`：**Flutter 原生 Android 客户端**——桌面同源设计系统、复用 Host 协议、Tailscale Serve 零配对码；`android-shell` 退为历史/调试壳
+
+- `MOBILE-INTENT-AUDIT.md`：**目标意图审计**——原生客户端/设计/协议/零配对码逐项对照，PC 全量回归读数与未完成边界
+
 - `ADR-0005-PC-REMOTE-GATEWAY.md`：**当前目标架构**——PC 桌面数据由桌面拥有，手机远程经桌面网关访问；ADR-0004 Phase 3 已取消
 
 - `ADR-0004-DATA-PLANE.md`：桌面与 Host 数据面统一决策（Phase 1 工作区 → Phase 3 Host 单写）
