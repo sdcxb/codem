@@ -288,9 +288,10 @@
   `prompt.send`、`run.cancel`、`approval.respond`、`workspace.list/read`；附件方法
   仅在 Host 能力位支持时使用。
 - 验证：`flutter analyze` 0 issue；`flutter test` 10/10；x86_64 release APK 安装到模拟器并截图；
+  Release 另附 `Codem-Mobile-1.0.0-arm64.apk`（arm64-v8a，debug 签名预览）；
   `CodemForegroundService` 实测 `isForeground=true`（通知渠道 `codem.connection`）。
 - 已知限制：本机 Host 启动/发现未接；cookie 暂存 SharedPreferences
-  （正式发布前换 Keystore）；只验证 x86_64，arm64 APK 已尝试构建但未上真机。
+  （正式发布前换 Keystore）；arm64 预览包已提供但发布环境未做完整真机回归。
 
 ---
 

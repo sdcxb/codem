@@ -13,6 +13,8 @@
 
 - `MOBILE-INTENT-AUDIT.md`：**目标意图审计**——原生客户端/设计/协议/零配对码逐项对照，PC 全量回归读数与未完成边界
 
+- `BENCHMARK-1.18.0.md`：**跨实现评测**——12 个真实仓库修复任务、同一 DeepSeek Flash 模型下的通过数/token/耗时与口径限制
+
 - `ADR-0005-PC-REMOTE-GATEWAY.md`：**当前目标架构**——PC 桌面数据由桌面拥有，手机远程经桌面网关访问；ADR-0004 Phase 3 已取消
 
 - `ADR-0004-DATA-PLANE.md`：桌面与 Host 数据面统一决策（Phase 1 工作区 → Phase 3 Host 单写）

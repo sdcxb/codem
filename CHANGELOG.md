@@ -7,7 +7,7 @@ All notable changes to Codem will be documented in this file.
 ### 新增
 
 - **长任务目标模式**：复杂任务会先拆成可验收的阶段，逐阶段执行并核对结果；支持暂停、修改目标、自动续跑、重启/上下文压缩后继续，已完成阶段不会重跑。界面在输入区上方显示阶段进度、契约、证据与决策记录。
-- **手机原生客户端（预览）**：新增 Flutter 原生 Android 客户端，采用 Codem 自己的炭黑 + 紫视觉与移动密度，不再依赖 WebView 共享页面；支持会话、流式对话、工具卡、审批、项目、文件树/预览、改动 diff、主题与主机切换。当前 APK 仅提供 x86_64 预览，未随 Windows 安装包发布。
+- **手机原生客户端（预览）**：新增 Flutter 原生 Android 客户端，采用 Codem 自己的炭黑 + 紫视觉与移动密度，不再依赖 WebView 共享页面；支持会话、流式对话、工具卡、审批、项目、文件树/预览、改动 diff、主题与主机切换。Release 附 `Codem-Mobile-1.0.0-arm64.apk`（真机）与 `Codem-Mobile-1.0.0-x86_64.apk`（模拟器），当前为 debug 签名预览包。
 - **零配对码（Tailscale Serve）**：同一 tailnet 内通过 Serve 打开时，桌面按 Tailscale 身份自动登记设备，手机无需再输入 6 位码；Funnel、Cloudflare 与自定义反代仍使用配对码。
 - **远程新建项目/会话**：手机可直接在桌面同一份库中新建项目与会话，项目选择、失败原因与能力缺失都会明确显示。
 
@@ -28,10 +28,17 @@ All notable changes to Codem will be documented in this file.
 - 零配对码只信任同时满足以下条件的请求：连接来自回环、Host 为 `*.ts.net`、不是 Funnel、Tailscale 登录为 ASCII 邮箱；同一登录 + 设备名只保留一台设备，撤销后进入 deny-list，需要配对码重新认领。
 - 零配对码不会放宽 Funnel/公网入口：这些入口没有可信的 Tailscale 身份，继续要求一次性配对码。
 
+### 对标
+
+- 同一套 12 个真实仓库修复任务、同一 `deepseek-flash` 模型：本版通过 **10/12**，DSH 通过 **9/12**。
+- 每任务平均总 token：本版约 **11.9M**，DSH 约 **23.2M**；本版缓存读取更少，但输入/输出 token 更高。
+- 每任务平均耗时：本版约 **644s**，DSH 约 **415s**；本版更慢。
+- 本轮每任务只跑 1 次，报告标记 `insufficient-repetition`，只能作为方向性结论；DSH 的 `repo-09` 记录因越界读取被标为污染、不参与加分判断。
+
 ### 已知问题
 
 - 零配对码仅适用于 Tailscale Serve；Funnel 与自定义反代仍需配对码。
-- 手机原生客户端当前只验证 x86_64 模拟器，arm64 未上真机；凭据暂存 SharedPreferences，正式移动端发布前需迁移到 Keystore。
+- 手机原生客户端目前只验证 x86_64 模拟器；本次 Release 已附 arm64 真机预览包（debug 签名），arm64 仍未在发布环境做完整回归；凭据暂存仍需在正式移动端发布前迁移到 Keystore。
 - 本机 Host 的启动/发现尚未接入手机原生客户端；当前主路径是连接远程桌面 Host。
 
 ## [1.17.0] - 2026-11-03
