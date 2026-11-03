@@ -1,8 +1,8 @@
 {
   "wave": "system-injected-198",
   "description": "第 198 波：系统提醒（nudge / 压缩标记等机器注入的 user 消息）不许被当成用户自己说的话 —— 用户真机直报「重开对话，它们在我头像后面、和我发的一样的格式」。判据 SYSINJ-1..5（含一道防止「新加提醒没人认」的棘轮）。",
-  "runAt": "2026-10-10T06:16:58.060Z",
-  "specFingerprint": "482c69537b25aca0fc6ff0b23b4b41acccc00094",
+  "runAt": "2026-11-01T07:33:19.628Z",
+  "specFingerprint": "f0026875ec0a6951229dfa66a6eb8650b972102a",
   "files": [
     "src/components/MessageBubble.tsx",
     "src/core/storage/session.ts",
@@ -20,8 +20,13 @@
       "patches": [
         {
           "file": "src/components/MessageBubble.tsx",
-          "from": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\" && !machineInjected;",
-          "to": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\";"
+          "from": "  const isUser = m.role === \"user\" && !machineInjected;",
+          "to": "  const isUser = m.role === \"user\";"
+        },
+        {
+          "file": "src/components/MessageBubble.tsx",
+          "from": "  const isSystem = m.role === \"system\" || (machineInjected && !delegatedTask);",
+          "to": "  const isSystem = m.role === \"system\";"
         }
       ],
       "tests": [
@@ -32,7 +37,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2900
+      "ms": 3730
     },
     {
       "id": "MUT-2 判定不认系统提醒（只认委派注入）",
@@ -52,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2917
+      "ms": 3774
     },
     {
       "id": "MUT-3 提醒名单里删掉一个前缀（新加提醒没人认的形态）",
@@ -72,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2904
+      "ms": 3812
     },
     {
       "id": "MUT-4 轮次边界又按 role === \"user\" 断轮（提醒被当成新一轮的开始）",
@@ -92,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2953
+      "ms": 3813
     },
     {
       "id": "MUT-5 滚动条标记又按 role === \"user\" 收（多出一串假的 User 标记）",
@@ -112,7 +117,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2934
+      "ms": 3758
     },
     {
       "id": "MUT-6 反向对照：只改一行说明注释",
@@ -132,7 +137,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2936
+      "ms": 3715
     }
   ]
 }

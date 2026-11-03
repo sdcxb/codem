@@ -445,9 +445,6 @@
 - id: wechat-bridge
   name: '@codem/wechat-bridge'
 
-- id: phone-link
-  name: '@codem/phone-link'
-
 - id: dynamic-runner
   name: '@codem/dynamic-runner'
 

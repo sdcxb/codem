@@ -355,7 +355,9 @@ import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
 import { tryGetCtx } from "./core/consumer";
 import { PermissionDialog, getToolDescription } from "./components/PermissionDialog";
-import { DecisionTray, type ApprovalRequest } from "./components/DecisionTray";
+import { DecisionTray } from "./components/DecisionTray";
+import { alwaysAllowOffered, toPermissionResult } from "./components/approval-decision";
+import type { ApprovalDecisionRequest, DecisionOutcome } from "../packages/ui/src/approval-card";
 import { RightSidebar } from "./components/RightSidebar";
 import { Drawer } from "./components/Drawer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -2492,36 +2494,25 @@ flushStreamBuffer(); // flush all on unmount
     };
   }, [dbReady, wechatBridgeEnabled]);
 
-  // ========== 手机连接（phone-link，对标 dsh-phone）==========
-  // dbReady + 插件启用后启动引擎半层：监听 phone-request（Rust LAN 服务代理上来的
-  // /api/* 请求）→ 真实数据/引擎回合 → phone_respond；autoStart 拉起 LAN 服务。
-  // 插件被禁用：不启动监听并停掉 Rust LAN 服务（已配对手机随即不可访问——D2/P5 修复）。
-  const phoneLinkEnabled = !isPluginDisabled("@codem/phone-link");
+  // ========== 桌面引擎桥（AA 远程用）==========
+  // Rust 侧在应用启动时拉起只绑 127.0.0.1 的 bridge；这里启动渲染侧的事件桥：
+  // 监听 remote-request → 真实数据/引擎回合 → remote_respond。
+  // 没有旧 LAN 配对/二维码/设备列表，也没有 autoStart 设置。
   useEffect(() => {
-    if (!dbReady || !phoneLinkEnabled) {
-      // 禁用态兜底：若 Rust LAN 服务仍在运行则停掉（关闭外部可达面）
-      try {
-        (window as any).__TAURI__?.core?.invoke?.("phone_stop");
-      } catch { /* noop */ }
-      return;
-    }
+    if (!dbReady) return;
     let cleanup: (() => void) | null = null;
     let cancelled = false;
-    import("./core/phone-link/phone-link")
+    import("./core/remote/desktop-engine")
       .then((m) => {
         if (cancelled) return;
-        cleanup = m.startPhoneLink();
+        cleanup = m.startRemoteEngine();
       })
-      .catch((e) => console.warn("[phone-link] start failed:", e));
+      .catch((e) => console.warn("[remote-engine] start failed:", e));
     return () => {
       cancelled = true;
       cleanup?.();
-      // 本 effect 因插件禁用/卸载而清理时，同样停掉 Rust LAN 服务
-      try {
-        (window as any).__TAURI__?.core?.invoke?.("phone_stop");
-      } catch { /* noop */ }
     };
-  }, [dbReady, phoneLinkEnabled]);
+  }, [dbReady]);
 
   // ========== computer-use 插件启停联动 ==========
   // 工具注册在引擎构造时无条件进行；禁用插件时把门禁标志置 false（modeGate 全拒）
@@ -6040,36 +6031,41 @@ onClose={() => setCitationViewer(null)}
 
 
 
-      {/* P1 #24: DecisionTray — inline decision UI replaces popup for main permissions */}
+      {/* P1 #24: 桌面前台审批 —— 卡片本体是共享实现（packages/ui/src/approval-card.tsx），这里只做数据映射与结算 */}
       {pendingPermission && (() => {
-        const req = pendingPermission.request as any;
+        const req = pendingPermission.request;
         // DSH-aligned: PermissionRequest 的字段是 input（不是 args）。
-        // description 复用 PermissionDialog 的 getToolDescription，从 input
-        // 提取命令/路径/pattern，让用户在批准前能看到具体内容。
+        // summary 复用 getToolDescription，从 input 提取命令/路径/pattern，
+        // 让用户在批准前能看到具体内容（detail 再给命令原文或参数 JSON）。
         const reqInput: Record<string, unknown> = req.input && typeof req.input === "object" ? req.input : {};
         // DSH commandOf: bash 家族只展示命令本身（muted code line），
         // 其他工具展示完整参数 JSON。
-        const approvalReq: ApprovalRequest = {
-          type: "approval",
+        const detail = typeof reqInput.command === "string"
+          ? reqInput.command
+          : (Object.keys(reqInput).length > 0 ? JSON.stringify(reqInput, null, 2) : undefined);
+        const approvalReq: ApprovalDecisionRequest = {
+          kind: "approval",
           id: req.id,
-          toolName: req.tool || req.title || "tool",
-          description: getToolDescription(req.tool, reqInput),
-          args: typeof reqInput.command === "string"
-            ? reqInput.command
-            : (Object.keys(reqInput).length > 0 ? JSON.stringify(reqInput, null, 2) : undefined),
+          tool: req.tool || req.title || "tool",
+          summary: getToolDescription(req.tool, reqInput),
+          ...(detail === undefined ? {} : { detail }),
         };
         return (
           <SlotBridge name="app.decision-tray" fallback={DecisionTray}
             request={approvalReq}
-            onApprove={(id: string) => {
-              pendingPermission.resolve({ requestId: id, action: "allow", alwaysAllow: false });
+            /* 「始终允许」只在**会被兑现**时出现（见 `alwaysAllowOffered`）：
+               有 resource + 有 sessionId + ask 模式；auto 会对危险命令二次裁决、full 根本不问。
+               措辞写明范围 —— 它只记本会话的这一个操作，不是"以后都别问"。 */
+            capabilities={{ alwaysAllow: alwaysAllowOffered(securityMode, req.resource, req.sessionId), rejectReason: true }}
+            labels={lang === "zh"
+              ? { alwaysAllow: "始终允许（本会话内，仅此操作）" }
+              : { alwaysAllow: "Always allow (this session, this action only)" }}
+            onResolve={(id: string, outcome: DecisionOutcome) => {
+              /* 映射在 `approval-decision.ts`（唯一一处）：拒绝理由必须随结果回到引擎，
+                 否则用户写了理由、模型却只看到"被拒绝"。 */
+              pendingPermission.resolve(toPermissionResult(id, outcome));
               clearPendingPermission();
             }}
-            onReject={(id: string) => {
-              pendingPermission.resolve({ requestId: id, action: "deny", alwaysAllow: false });
-              clearPendingPermission();
-            }}
-            onClarify={() => {}}
           />
         );
       })()}
@@ -6077,12 +6073,16 @@ onClose={() => setCitationViewer(null)}
       {/* Background session permission (from delegation system) — still uses popup as fallback */}
       {!pendingPermission && backgroundPermission && (
         <SlotBridge name="app.permission-dialog" fallback={PermissionDialog}
-          request={{ ...(backgroundPermission.request as any), title: `[委派任务] ${(backgroundPermission.request as any).title || backgroundPermission.request.tool || ''}` } as any}
-          onResolve={(allow: boolean, alwaysAllow?: boolean) => {
+          request={{ ...backgroundPermission.request, title: `[委派任务] ${backgroundPermission.request.title || backgroundPermission.request.tool || ''}` }}
+          /* 委派回合直接兑现引擎的 Promise ⇒ 拒绝理由送得到；「始终允许」仍不提供
+             （后台任务不替用户做本会话的长期放行决定；远端入口见下）。 */
+          rejectReason
+          onResolve={(allow: boolean, alwaysAllow?: boolean, reason?: string) => {
             backgroundPermission.resolve({
               requestId: backgroundPermission.request.id,
               action: allow ? "allow" : "deny",
               alwaysAllow,
+              ...(allow || !reason ? {} : { reason }),
             });
             setPendingPermissions((prev) => {
               const next = new Map(prev);
@@ -6105,7 +6105,9 @@ onClose={() => setCitationViewer(null)}
             timestamp: remoteApproval.createdAt,
             // 标题带上来源，用户才知道"这是手机那边发起的回合在等我"
             title: `[${remoteApproval.origin === "phone" ? "手机" : remoteApproval.origin === "wechat" ? "微信" : "远端"}发起] ${remoteApproval.tool}`,
-          } as any}
+          }}
+          /* 远端保持一次性：`answerApproval()` 的契约只有 allow/deny（AB-4），
+             理由与「始终允许」都送不到引擎 ⇒ 两个能力位都不打开，不画没有出口的控件。 */
           onResolve={(allow: boolean) => {
             /**
              * 走 `answerApproval` 而不是直接 resolve：一次性语义与"回合收尾即拒绝"

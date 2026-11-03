@@ -11,6 +11,9 @@
   这些都是 jsdom 测不出来的（用户报的「刷新按钮没靠右、右边空一片」就是 ①②）。
 -->
 <link rel="stylesheet" href="../../styles.css" />
+<!-- 共享组件样式：与 src/main.tsx 同序（styles.css → ui.css → 皮肤 → codem-ui.css）。
+     文件树的搜索行/行组件已迁进 ui.css（桌面与手机同一份）⇒ 探针必须加载它。 -->
+<link rel="stylesheet" href="../../../packages/ui/src/ui.css" />
 <link rel="stylesheet" href="../../styles/skin-hub.css" />
 <link rel="stylesheet" href="../../styles/skin-dream.css" />
 <link rel="stylesheet" href="../../styles/notebook-workspace.css" />

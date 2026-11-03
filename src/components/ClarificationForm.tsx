@@ -1,14 +1,24 @@
 /**
- * ClarificationForm — AI 提问的交互式表单
+ * ClarificationForm — AI 反问表单（第 3 步：只剩数据映射 + 文案）
  *
- * 支持单选、多选、文本输入
- * 用户填写后，答案格式化为 Markdown 消息发回 AI
+ * 表单本体（单选 / 多选 / 文本、必填门控、提交与取消）在
+ * `packages/ui/src/approval-card.tsx` 的 `clarification` 分支里；本文件把
+ * `ClarificationFormData`（单一问题，来自 `ask_clarification`）映射成共享卡的
+ * `ClarificationDecisionRequest`，并把双语按钮文案/占位符传下去。
+ *
+ * 与 `InteractiveFormDialog` 的分工（刻意不合并）：
+ * - 这里服务 `ask_clarification`：一个问题、`radio|checkbox|text` 三选一；
+ * - `InteractiveFormDialog` 服务 `interactive_form_question`：多问题 + 自定义输入 + 默认值，
+ *   是那个工具**专用**的对话框 UI，留在桌面。
+ *
+ * 必填的处置：以前是"点提交 → 弹一个错误框"（`alertDialog`），现在是**提交按钮不可用** ——
+ * 用户不会先点到一个什么都没发生的按钮再被追着报错。
  */
+import { memo, useMemo } from "react";
 
-import { memo, useState } from "react";
+import { ApprovalCard, type DecisionLabels } from "../../packages/ui/src/approval-card";
 import { useLang, S } from "../core/i18n/lang";
 import type { ClarificationFormData } from "../core/llm/agentic-loop";
-import { alertDialog } from "../core/ui/native-dialog";
 
 interface ClarificationFormProps {
   /** Form data from AI */
@@ -25,94 +35,39 @@ export const ClarificationForm = memo(function ClarificationForm({
   onCancel,
 }: ClarificationFormProps) {
   const lang = useLang();
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
 
-  const handleSubmit = () => {
-    if (form.required && !answers[form.formId]) {
-      void alertDialog(S.clarification.required[lang]);
-      return;
-    }
-    onSubmit(answers);
-  };
-
-  const handleRadioChange = (value: string) => {
-    setAnswers({ [form.formId]: value });
-  };
-
-  const handleCheckboxChange = (value: string, checked: boolean) => {
-    const current = (answers[form.formId] as string[]) || [];
-    if (checked) {
-      setAnswers({ [form.formId]: [...current, value] });
-    } else {
-      setAnswers({ [form.formId]: current.filter((v) => v !== value) });
-    }
-  };
-
-  const handleTextChange = (value: string) => {
-    setAnswers({ [form.formId]: value });
-  };
+  const labels = useMemo<Partial<DecisionLabels>>(
+    () => ({
+      submit: `✓ ${S.clarification.submit[lang]}`,
+      cancel: `✕ ${S.clarification.cancel[lang]}`,
+      requiredMark: S.clarification.requiredMark[lang],
+      textPlaceholder: S.clarification.placeholder[lang],
+    }),
+    [lang],
+  );
 
   return (
-    <div className="clarification-form">
-      <div className="clarification-question">{form.question}</div>
-      {form.required && (
-        <div className="clarification-required">{S.clarification.requiredMark[lang]}</div>
-      )}
-
-      <div className="clarification-inputs">
-        {form.type === "radio" && form.options && (
-          <div className="radio-group">
-            {form.options.map((option, index) => (
-              <label key={index} className="radio-option">
-                <input
-                  type="radio"
-                  name={form.formId}
-                  value={option}
-                  checked={answers[form.formId] === option}
-                  onChange={(e) => handleRadioChange(e.target.value)}
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {form.type === "checkbox" && form.options && (
-          <div className="checkbox-group">
-            {form.options.map((option, index) => (
-              <label key={index} className="checkbox-option">
-                <input
-                  type="checkbox"
-                  name={form.formId}
-                  value={option}
-                  checked={(answers[form.formId] as string[])?.includes(option) || false}
-                  onChange={(e) => handleCheckboxChange(option, e.target.checked)}
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {form.type === "text" && (
-          <textarea
-            className="clarification-textarea"
-            rows={3}
-            placeholder={S.clarification.placeholder[lang]}
-            value={answers[form.formId] as string || ""}
-            onChange={(e) => handleTextChange(e.target.value)}
-          />
-        )}
-      </div>
-
-      <div className="clarification-actions">
-        <button className="clarification-btn submit" onClick={handleSubmit}>
-          ✓ {S.clarification.submit[lang]}
-        </button>
-        <button className="clarification-btn cancel" onClick={onCancel}>
-          ✕ {S.clarification.cancel[lang]}
-        </button>
-      </div>
-    </div>
+    <ApprovalCard
+      request={{
+        kind: "clarification",
+        id: form.formId,
+        questions: [
+          {
+            id: form.formId,
+            question: form.question,
+            type: form.type,
+            required: form.required,
+            placeholder: S.clarification.placeholder[lang],
+            ...(form.options ? { options: form.options } : {}),
+          },
+        ],
+      }}
+      capabilities={{ alwaysAllow: false, rejectReason: false }}
+      labels={labels}
+      onResolve={(_id, outcome) => {
+        if (outcome.kind === "clarify") onSubmit(outcome.answers);
+        else if (outcome.kind === "cancel") onCancel();
+      }}
+    />
   );
 });

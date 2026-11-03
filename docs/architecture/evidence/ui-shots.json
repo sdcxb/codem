@@ -1,0 +1,21 @@
+{
+  "shots": {
+    "ui-list.png": 72383,
+    "ui-chat.png": 70183,
+    "ui-approval.png": 139158,
+    "ui-info.png": 166726,
+    "ui-files.png": 166173,
+    "ui-wide-900.png": 72281,
+    "ui-wide-900-collapsed.png": 53543,
+    "ui-wide-1200.png": 83858,
+    "ui-wide-1200-diff.png": 83277,
+    "ui-wide-1200-physical.png": 45943
+  },
+  "collapsed": true,
+  "folded": "{\"sidebar\":\"none\",\"layout\":\"layout in-session sidebar-collapsed\"}",
+  "dom1200": "{\"sidebars\":1,\"headers\":1,\"layouts\":1,\"appChildren\":2,\"body\":\"←\\n新会话\\n文件\\n信息\\n收起列表\\n已完成\\n新会话\\n0 条消息 · 11/2/2026, 4:10:24 AM\\n欢迎使用 Codem\\n1 条消息 · 11/2/2\"}",
+  "pickedFile": true,
+  "diffTab": true,
+  "diffPane": "{\"tab\":\"true\",\"path\":\"index.html\",\"text\":\"index.html刷新\\n此工作区不是 git 仓库，无法显示 diff\"}",
+  "ok": true
+}

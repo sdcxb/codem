@@ -1,8 +1,9 @@
-# 09 · 当前状态、未完成项与风险（2026-10-31 快照）
+# 09 · 当前状态、未完成项与风险（2026-11-03 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（1.16.334 发布提交）｜ **1.16.334**（2026-10-31 发布）
+> 基线：`master` @ 代码提交见 `git log -1`（1.17.0 发版准备）｜ **1.17.0**（2026-11-03 待发布；上一稳定版 1.16.334，2026-10-31）
 >
-> 1.16.334 包含：上下文检查点/完整历史/虚拟列表/检查点索引/真实请求水位/溢出全文查看。
+> 1.17.0 包含：桌面远程网关（PC 远程唯一入口）+ Android 本机模式（独立 Host/数据/项目）+ 共享 UI/能力表 +
+> 网关安全（一次性配对码 / HttpOnly cookie / 设备撤销 / 敏感文件读审批）；旧 LAN/TLS/二维码配对与桌面 Host sidecar 已删除。
 > 本文是“现在到底能不能用、哪些没验、哪些别碰”的唯一当前口径。它**会过期**；每个版本更新一次。
 
 ---
@@ -11,11 +12,11 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.16.334** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.16.334` = **Latest**（2026-10-31 发布） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` version 1.16.334 | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（1.16.334 发布提交） | `git rev-parse --short HEAD` |
-| 分支 | `master`，与 `origin/master` 同步 | `git status -sb` |
+| 版本 | **1.17.0**（待发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | 上一稳定版 GitHub `Codem v1.16.334` = **Latest**（2026-10-31）；1.17.0 未发布、未构建安装包 | `gh release list --limit 1` |
+| 更新清单 | `latest.json` 仍是 1.16.334（发版构建后再生成） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（1.17.0 发版准备） | `git rev-parse --short HEAD` |
+| 分支 | `master`；工作区有 1.17.0 未提交改动 | `git status -sb` |
 | 本地 tag | 最新为 **v1.16.334** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：v1.16.322–330 的 GitHub Release 存在，但本地 tag 列表没跟上（可能未拉取/未创建本地 tag）。以 `gh release list` 与 `latest.json` 为准。
@@ -26,30 +27,25 @@
 
 ```text
 ## master...origin/master
- M .gitignore
- M .jscpd.json
-?? .edge-ref-profile/
-?? .edge-ref-profile2/
-?? .edge-ref-profile3/
-?? .edge-shot/
-?? art/
-?? docs/ref-analysis/
-?? prototype/
+ M package.json / package-lock.json / src-tauri/{Cargo.toml,Cargo.lock,tauri.conf.json}
+ M src/App.tsx、src/components/*、src/core/{remote,storage,permission}/* 等 1.17.0 改动
+ D src/core/phone-link/*、src-tauri/src/phone/{lan,tls,connector}.rs（旧 LAN 配对/中继）
+ ?? src/core/remote/、src-tauri/src/phone/gateway/、packages/、android-shell/、docs/architecture/
+ ?? art/、prototype/、docs/ref-analysis/（未跟踪的大块内容）
 ```
 
-- `.gitignore` / `.jscpd.json` 的修改是为 `rich4-renew-app` 研究克隆加忽略项（GPL-3.0 参考，不入库）。
-- `art/`（1727 文件）、`prototype/`（2330 文件）、`docs/ref-analysis/`（游戏原版地图研究）都是**未跟踪**的大块内容。
-- `docs/` 总计约 **309 MB**；根级 **173 份 `.md`** + 本套文档；跟踪数用 `git ls-files docs` 查；混有大量游戏美术 PNG/JPG 与历史稿。
-- **不要 `git add -A`**；只 `git add` 你真正要提交的显式路径。
+- 1.17.0 的网关 / Android 本机 Host 改动**尚未提交**；本次发版准备只改版本号与文档，不 stage、不 commit。
+- `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不要 `git add -A`；只加显式路径。
+- `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
 ---
 
-## 3. 验证基线（2026-10-31 实测）
+## 3. 验证基线（2026-11-02 实测）
 
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **796 文件 / 8842 用例：8825 通过、17 跳过、0 失败**（约 160s） |
+| `npx vitest run` | **839 文件 / 9147 用例：9130 通过、17 跳过、0 失败**（约 171s） |
 | 已知失败 | **0** |
 
 ### 3.1 2026-10-26 那两条失败已经消失
@@ -63,7 +59,7 @@
 
 - `AGENTS.md` 正文写 **699 文件 / 8344 用例**（1.16.323 时代）；
 - `docs/HANDOVER-2026-10-17.md` 写 **722 / 8446**（1.16.329 时代）；
-- 当前实测 **796 / 8842**（2026-10-31；`AGENTS.md` 与正文已对齐）。
+- 当前实测 **839 / 9147**（2026-11-02；旧 LAN 配对删除后判据有增删）。
 - 这些数字会随测试增删变化；以 `npx vitest run` 为准，不要从旧文档抄。
 
 ---
@@ -72,6 +68,9 @@
 
 | 能力 | 证据级别 | 备注 |
 |---|---|---|
+| 桌面远程网关（PC 远程唯一入口） | 判据 + Android 15 x86_64 模拟器设备用例 | 手动启动；loopback + adb reverse / 外部通道；发消息 / 流式 / 审批 / 取消 / 文件树 / 预览 / diff / 变更；手机暂不能新建会话或上传附件 |
+| Android 本机模式 | 判据 + Android 15 x86_64 模拟器 | 独立 Host / 数据 / 项目；本机模型 Keystore；随机端口 + 本地鉴权；**arm64 真机未验** |
+| 共享 UI（手机 / 平板） | 判据 | 只读 / 可写由能力表决定；平板双列 / 三列；diff 渲染统一；手机端显示当前连的是 PC 还是本机 |
 | 主对话 / 流式 / 工具调用 | 判据 + 真机 | 日常主路径 |
 | 压缩（手动） | 判据 + 真机 | 回执“保留最近 20 条、最近 3 轮不切断” |
 | 压缩（自动） | 判据 | **真机完整验证未完成**（见 §5.1） |
@@ -89,40 +88,20 @@
 
 ## 5. 未完成 / 未验证（不要写成“已完成”）
 
-### 5.0 上下文检查点（2026-10-30 代码完成 + 隔离真机冒烟）
+### 5.0 1.17.0 远程与 Android 本机（已交付 / 仍有缺口）
 
-- 已完成：压缩只写 marker + `metadata.contextEpoch`，不再 hidden/墓碑；主对话默认完整时间线，可切模型视图；
-  完整历史面板、打开会话自动 best-effort 回填 + 手动重试、回滚维护入口（带确认）、spill 默认永久保留、
-  水位优先使用最近一次真实请求的 `promptTokens`（可见 id 集合一致时），不一致才退回
-  system/tools/消息估算；时间线分块渲染（主对话 120、面板 80，可「载入更早」）；
-  `context_epochs` 派生索引表（从 marker metadata 投影，供审计/查询，不参与同步读）；
-  spill 全文查看（缺文件如实报「已丢失或读不到」）。
-- 自动化：`tsc` 0；全量 796 文件 / 8842 用例 / 8825 通过 / 17 skipped / 0 失败；`npm run build` 成功；
-  knip/可达性/上报点/变异/CSS/UI 门禁全绿。
-- **隔离真机冒烟（2026-10-30，release exe + 用户库副本 + `CODEM_DB_PATH`）**：
-  ① 含 217 条旧 hidden 的会话显示「完整历史 278 / 模型 61」，滚到顶部能看到旧 hidden 原文；
-  ② 切「模型视图」后旧 hidden 消失（6 个 bubble），切回完整历史恢复；
-  ③ 「回填旧历史」追加 117 条、已有 100 条、失败 0，JSONL 从 288 行增至 405 行；
-  ④ 页面 reload 后仍是 278 / 61，旧 hidden 原文仍在完整历史；
-  ⑤ **静默安装 1.16.333 后**在同一副本上复跑 ①③：完整历史 278 / 模型 61、回填 117+100/0；
-  ⑥ 写 `codem-index-rebuild-needed.json` 并重启，维护从权威日志重建：索引 278 行、hidden 217 保留、
-     模型视图仍 61、旧 hidden 原文仍在，标记被清除；
-  ⑦ 合成检查点会话「6 历史 / 4 模型」，点「回滚到旧版」：cutoff 前 2 条写回 hidden、0 失败，正文长度不变；
-  ⑧ spill 目录经安装后 app 的 Tauri `delete_directory_permanent` 真机删除成功；会话删除 wiring 由 `SPILL-8` 守；
-  ⑨ **不点按钮**打开含旧 hidden 的会话：自动回填触发，日志 278 → 405 行后由日志压缩收敛为 278 个唯一 id，
-     其中 117 条为 `hidden=1`；完整历史 278 / 模型 61 不变；
-  ⑩ 反例真机：删掉 `context_epochs` 表 + 塞一条坏 JSON marker + 一条合法 marker 后启动安装版——
-     表被 schema 自动重建，面板「检查点索引 1」，坏 marker 被忽略，历史 280 / 模型 2，不崩；
-  ⑪ **真实 UI 删除会话**：新建 `ADV DEL E2E` + 该会话 spill 文件，点删除并确认后，DB 会话行消失、
-     `spill/adv-del-session` 目录消失；
-  ⑫ **缺失 spill 查看**：合成带工具调用的会话（JSONL + 索引），展开工具组/工具卡点「查看溢出全文」，
-     弹层如实显示「全文文件已丢失或读不到：系统找不到指定的路径 (os error 3)」；
-  ⑬ **完整历史虚拟列表（2000 条）**：安装版打开面板，`data-virtual-total=2000`，底部只挂 8 个消息节点
-      （start=1992/end=2000）；滚到顶部只挂 15 个（start=0/end=15），上下留白撑起 126,182px 滚动高度。
-  ⑭ **主对话虚拟列表（2000 条）**：安装版打开会话底部只挂 10 个 `.message-bubble`，滚动高度 266,530px；滚到顶部仍只挂 10 个，顶部可见「主对话虚拟消息 0」，底部消息 1999 不再挂载。
-- 已无“未验主链路”；完整历史与主对话都已改为**可视区虚拟列表**（主对话 >160 条启用，小会话 fail-open 全量）。
-- 设计取舍：`context_epochs` 是**派生索引**（`messages.metadata` 仍是权威，同步读不依赖表）；
-  完整历史按测量高度计算窗口 + 上下留白；主对话按块估算窗口 + 上下留白（>160 条启用），未知视口 fail-open；回滚必须二次确认。
+- 已完成：桌面远程网关 M1–M3（只读 → 写 / 审批 / 取消 / 事件流 → 文件树 / 预览 / diff / 变更）；共享 UI 与能力表；
+  一次性 6 位配对码 + HttpOnly cookie + 设备上限 8；敏感文件读审批；旧 LAN/TLS/二维码配对与桌面 Host sidecar 删除。
+- 已完成：Android 本机模式（自包含 APK、设备内 Host、本机回合、本机模型 Keystore + 保存后热重启 Host、随机端口 + 本地鉴权）。
+- 自动化：`tsc` 0；网关/主机判据见 `src/test/host-*.test.ts`、`src/test/gateway-*.test.ts`、`src/test/remote-*.test.ts`、
+  `src/test/ui-*.test.tsx`；Android 设备用例脚本在 `android-shell/`。
+- **真机覆盖**：Android 15 x86_64 模拟器通过（`docs/architecture/ANDROID-VERIFICATION.md`）；
+  arm64 的 PRoot / WebView / 厂商保活 **未验证**。
+- **M2 剩余诚实缺口**（ADR-0005 §7）：`run.guidance`、`session.create`、`attachment.put`、
+  `session.get` 的工具行形状与 `hasMore` ⇒ 手机暂不能新建会话、上传附件、运行中追加引导。
+- **网关只绑 `127.0.0.1`**：手机需 adb reverse 或外部通道；跨网 / NAT / 公网场景未验证。
+- **撤销粒度**：停止网关 = 撤销全部已配对设备；没有单设备撤销 UI（设备上限 8）。
+- 旧上下文检查点（1.16.334）的证据仍有效，见 `18-CONTEXT-CHECKPOINT-DESIGN.md` / `19-CONTEXT-CHECKPOINT-CRITERIA.md` 与 `CHANGELOG.md`，本条不再重复。
 
 ### 5.1 自动压缩（2026-10-29 已真机验证）
 
@@ -183,17 +162,17 @@
 | 1 | `session_events` 增长 | **已缓解（2026-10-29）**：90 天前的高频事件先归档 JSONL 再删，语义事件永久保留；见 `event-archive.ts` / `events.archive_before` | `maintenance.ts`、`event-archive.ts` |
 | 2 | `execute_command` 不做工作区校验（**设计取舍，非缺口**） | 只读越界是必要能力；写文件的沙箱仍独立生效；历史上多次收紧均误伤正常命令后回退（见 §9） | `lib.rs:2243-2491` |
 | 3 | 无 Job Object，只 `taskkill /T /F` | 退出/超时可能留孤儿进程 | 全仓 0 命中 `JobObject` |
-| 4 | `needs_you_pending` / `agent_messages` 有表无实现 | 队列不持久化；重启丢失 | `needs-you-queue.ts:8`、`agent-message-queue.ts:8` |
+| 4 | 桌面网关只绑 `127.0.0.1` | 手机开箱不能跨网访问；需要 adb reverse / 外部通道，跨网未验证 | `phone/gateway/mod.rs` `BIND_ADDR` |
 | 5 | `message_count` 多口径 | 计数可能偏差，靠维护对账自愈 | `repo.rs:1052/1964`、`session.ts:686` |
 | 6 | 软删三态易分叉 | `hidden=0,trimmed=1` 矛盾态；压缩消息可能复活 | `repo.rs:1255`、`session-jsonl.ts:184` |
 | 7 | 中文 FTS 依赖一次性重建 | 老 FTS4 库不重建则中文搜索 0 条 | `bootstrap.ts:584-638` |
 | 8 | 镜像预算可把“读不到”伪装成“没内容” | 面板空列表；用户以为数据丢了 | `rust-port.ts:2928-2955` |
 | 9 | 数据根两来源 | `CODEM_DATA_HOME` 与 `legacyDbPath` / 设置文件不一致 | `bootstrap.ts:863-870` |
-| 10 | 设置分区 23 vs 文档 22 | 文档/走查口径不一致 | `SettingsPanel.tsx:646` |
-| 11 | `ChatPanel.showWorkbench` 不可达 | 分屏工作台永不出现 | `ChatPanel.tsx:350,948,1347` |
-| 12 | `SpaceSwitcher` 孤儿 | 无“工作空间切换”UI | `Sidebar.tsx:14,601` |
+| 10 | 设置分区 23 vs 文档 22 | 文档/走查口径不一致 | `SettingsPanel.tsx` |
+| 11 | 网关设备撤销只有“停止 = 全部撤销” | 单台设备丢失只能全部重配 | `phone/gateway/pairing.rs` |
+| 12 | Android arm64 未验证 | PRoot / WebView / 厂商保活可能失败 | `docs/architecture/ANDROID-VERIFICATION.md` |
 | 13 | dream 皮肤缺 6 个语义令牌 | 状态色/浮层底不随梦幻皮肤 | `skin-dream.css` 0 处 |
-| 14 | 巨型单文件 | 改 CSS/App/Settings 风险高、review 难 | `styles.css` 19k 行、`App.tsx` 6.2k |
+| 14 | 巨型单文件 | 改 CSS/App/Settings 风险高、review 难 | `styles.css` 21.5k 行、`App.tsx` 6.4k |
 | 15 | 视觉回归资产在 `.preview-shot/` | 干净 clone 无法复跑像素/CDP 取证 | `.gitignore:143` |
 
 ---
@@ -202,8 +181,8 @@
 
 | 文档 | 最后口径 | 问题 |
 |---|---|---|
-| `docs/PROJECT-GUIDE.md` | 823 KB；头部写“最后更新 2026-10-23（v1.16.333）”，但正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
-| `AGENTS.md` | 1.16.323（本次已改顶部版本/测试数） | 正文的状态/评测叙述仍偏旧；以本套为准 |
+| `docs/PROJECT-GUIDE.md` | 823 KB；头部已更新为 2026-11-03（v1.17.0 待发布），但正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
+| `AGENTS.md` | 顶部 1.16.334，正文 1.16.323 | 正文的状态/评测叙述仍偏旧；以本套为准 |
 | `docs/NEW-SESSION-START.md` | 1.16.319 | 待办/版本/测试数过时 |
 | `docs/HANDOVER-2026-10-17.md` | 1.16.329 | 三条主动脉仍有效；命令面“全在 lib.rs”等细节过时 |
 | `docs/GAP-LIST.md` | 最高记录 1.16.305 | 声称“唯一当前缺口清单”，但 1.16.306–330 未回填；机器状态停在 1.16.181 |
@@ -218,18 +197,18 @@
 
 ## 8. 建议的下一步（按优先级，供接手者参考）
 
-### P0：把“当前事实”固定下来
+### P0：1.17.0 发版收尾
 
-1. 评审并采纳这套 `docs/project-guide/`；
-2. 决定两条测试失败的处理（去 BOM / 加历史横幅 / 保持现状并在 CI 里排除未跟踪文件）；
-3. 把 `.gitignore` / `.jscpd.json` 的未提交修改与 `art/`、`prototype/`、`docs/ref-analysis/` 的去留拍板（提交、忽略、还是移出仓库）。
+1. 三处版本号已改 1.17.0、`package-lock` / `Cargo.lock` 已同步；`npm run docs:sync` + `audit:docs` 已过；
+2. 构建 + 签名 → 生成并校验 `latest.json` → `gh release create v1.17.0`（只发稳定版，建完抢回 `Latest`）；
+3. 1.17.0 工作区改动按显式路径提交（**不要 `git add -A`**，不要把 `art/`、`prototype/` 带进去）。
 
-### P1：补最关键的“未验证”
+### P1：远程与 Android 的关键“未验证”
 
-4. ~~自动压缩真机完整验证~~（2026-10-29 已完成，见 §5.1；剩"真实 80 万 token 会话"与"成本面板标签"两点）；
-5. 项目工作台真实模型 3 并发稳定性；
-6. 托盘退出端到端计时；
-7. 免费模型模态实测（可选）。
+4. arm64 Android 真机：PRoot / WebView / 厂商保活；
+5. M2 诚实缺口：`run.guidance`、`session.create`、`attachment.put`、`session.get` 形状与 `hasMore`；
+6. 单设备撤销 UI；跨网 / NAT 通道真机；
+7. 自动压缩的“真实 80 万 token 会话”；项目工作台真实模型 3 并发；托盘退出计时；免费模型模态实测（可选项）。
 
 ### P2：结构债（需要产品/风险取舍）
 
@@ -257,6 +236,9 @@
 - **目标模式 / 自动续跑**：用户明确禁止（2026-10-15）。
 - **按标题相似度挑会话交接**：已修；必须用 `handoff_to_new_session`。
 - **免费模型“超时=不可用”**：用户已裁定没问题；不要改探测口径。
+- **恢复桌面 Host sidecar / 旧 LAN·TLS·二维码配对 / 自建中继当 PC 远程入口**：已删除；PC 远程只走桌面网关，Host 只服务 Android 本机。
+- **让 Host 接管桌面数据 / 桌面与手机共用数据库**：ADR-0004 Phase 3 已取消（ADR-0005），不要再做迁移。
+- **给手机再写一套聊天 UI**：共享 UI 是唯一实现，行为漂移无法测。
 
 ---
 

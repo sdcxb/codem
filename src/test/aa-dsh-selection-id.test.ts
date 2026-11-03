@@ -33,8 +33,8 @@ import {
   parseSelections,
   base64url,
   base64urlDecode,
-} from "../core/phone-link/dsh-selection-id";
-import { protocolSelectionId, canonicalJson, sha256 } from "../core/phone-link/aa-protocol-ids";
+} from "../core/remote/dsh-selection-id";
+import { protocolSelectionId, canonicalJson, sha256 } from "../core/remote/aa-protocol-ids";
 
 const read = (p: string) => readFileSync(p, "utf8");
 

@@ -1,13 +1,13 @@
 {
   "wave": "session-count-191",
   "description": "第 191 波同簇收口：sessions.message_count 只许引擎写（渲染侧「读到的值 + 1」必须消失）",
-  "runAt": "2026-10-08T15:30:07.821Z",
-  "specFingerprint": "3452a6962c922638bc8623408b80c75c00d36cb4",
+  "runAt": "2026-11-01T17:13:40.775Z",
+  "specFingerprint": "e759bbdc01898627d3493f568867ee22eb574118",
   "files": [
     "src/App.tsx",
     "src/core/wechat-bridge/wechat-bridge.ts",
     "src/test/session-count-single-writer.test.ts",
-    "src/core/phone-link/phone-link.ts"
+    "src/core/remote/desktop-engine.ts"
   ],
   "tests": [
     "src/test/session-count-single-writer.test.ts"
@@ -27,11 +27,12 @@
       "tests": [
         "src/test/session-count-single-writer.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2085
+      "ms": 2346
     },
     {
       "id": "MUT-2 微信桥恢复 row.messageCount + 1",
@@ -46,11 +47,12 @@
       "tests": [
         "src/test/session-count-single-writer.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2120
+      "ms": 2318
     },
     {
       "id": "MUT-3 例外表次数写错（条目过期/漏登记必须红）",
@@ -65,18 +67,19 @@
       "tests": [
         "src/test/session-count-single-writer.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2085
+      "ms": 2333
     },
     {
       "id": "MUT-4 反向对照：只改一处说明注释",
       "why": "反向对照：不写 messageCount 时判据不许红",
       "patches": [
         {
-          "file": "src/core/phone-link/phone-link.ts",
+          "file": "src/core/remote/desktop-engine.ts",
           "from": "    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；",
           "to": "    // 反向对照：只改这一行注释，不写 messageCount 的行为逐字不变\n    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；"
         }
@@ -84,11 +87,12 @@
       "tests": [
         "src/test/session-count-single-writer.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": false,
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2118
+      "ms": 2351
     }
   ]
 }

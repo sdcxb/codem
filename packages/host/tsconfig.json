@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "baseUrl": "../..",
+    "paths": {
+      "@codem/protocol": ["packages/protocol/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "../protocol/src/**/*.ts", "../../src/vite-env.d.ts"]
+}

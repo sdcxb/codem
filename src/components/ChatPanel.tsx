@@ -4,11 +4,16 @@ import { useProjectStore } from "../core/store";
 /* 第 215 波：模型选择器要能标出「当前不可用」的免费模型（判定与文案都在 model-index / service 里） */
 import { isFreeModelId } from "../core/free-model-plugin/model-index";
 import { freeModelPlugin } from "../core/free-model-plugin/service";
+/*
+ * 第 2 步：`./MessageBubble` 现在是**入口 + 桌面平台适配器**，
+ * 气泡骨架由共享实现 `packages/ui/src/message-bubble.tsx` 渲染（默认路径已切换，没有第二份）。
+ */
 import { MessageBubble } from "./MessageBubble";
 import { useStableMessageHandlers } from "./useStableMessageHandlers";
 import { computeHasAssistantAfter } from "../core/ui/message-suffix";
 import { computeVirtualWindow } from "../core/ui/virtual-window";
 import { isMachineInjectedMessage } from "../core/storage/session";
+import { ContinueBar } from "./ContinueBar";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -347,6 +352,16 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   };
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
+  /**
+   * 「继续」只在一轮**正常结束**且最后一条是助手正文时出现：
+   * 失败/取消/空正文/流式中都不出现（避免把"重试"伪装成"继续"）。
+   */
+  const canContinue =
+    Boolean(currentSessionId) &&
+    !isSessionStreaming &&
+    lastMessage?.role === "assistant" &&
+    (lastMessage.status ?? "done") === "done" &&
+    String(lastMessage.content ?? "").trim().length > 0;
   /* 引导栏是纯内容滚动区（max-height 168px）：边缘 7 档渐隐，判据 EDGEFADE-* */
   const guidanceFade = useEdgeFade<HTMLDivElement>();
 
@@ -1852,6 +1867,14 @@ canEdit={editable}
         </div>
       )}
 
+      {canContinue ? (
+        <ContinueBar
+          onContinue={() => {
+            playSoundCue("sent");
+            onSend("继续", [], []);
+          }}
+        />
+      ) : null}
       <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
         /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
         searchOpen={showSearch}

@@ -322,8 +322,8 @@
       "patches": [
         {
           "file": "src-tauri/tauri.conf.json",
-          "from": "      \"resources/ofm/**/*\",\n      \"resources/node/**/*\"",
-          "to": "      \"resources/ofm/**/*\""
+          "from": "      \"resources/ofm/**/*\",\n      \"resources/host/web/**/*\",\n      \"resources/node/**/*\"",
+          "to": "      \"resources/ofm/**/*\",\n      \"resources/host/web/**/*\""
         }
       ],
       "tests": [

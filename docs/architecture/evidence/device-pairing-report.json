@@ -1,0 +1,179 @@
+{
+  "schema": "codem-device-pairing-revoke/1",
+  "startedAt": "2026-11-02T01:21:30.921Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "adbSerial": "emulator-5554",
+    "apk": "C:\\mimo-gui\\android-shell\\build\\codem-shell-x86_64.apk",
+    "apkSha256": "89311bc4be2cdaf45a26e3c1d7c412e8d0a6dfd80b5da851dee95d0254d5db8f",
+    "androidApi": 35,
+    "abi": "x86_64"
+  },
+  "host": {
+    "url": "http://127.0.0.1:58094",
+    "port": 58094,
+    "hostId": "host-64617461",
+    "authMode": "paired",
+    "dataHome": "C:\\Users\\abee\\AppData\\Local\\Temp\\codem-pairing-verify-2026-11-02T01-21-30-920Z\\data"
+  },
+  "checks": {
+    "hostReady": true,
+    "apkInstalled": true,
+    "appDataCleared": true,
+    "appLaunched": true,
+    "cdpAttached": true,
+    "pairingGateShown": true,
+    "pairCodeObtained": true,
+    "pairingSucceeded": true,
+    "pairingElapsedMs": 319,
+    "helloAuthenticated": true,
+    "deviceListedAfterClaim": true,
+    "sessionOpened": true,
+    "preRevokeRpcStatus": 200,
+    "preRevokeRpcOk": true,
+    "deviceCookieCaptured": true,
+    "revokeAccepted": true,
+    "deviceListEmptyAfterRevoke": true,
+    "autoReturnToGate": true,
+    "autoReturnMs": 5,
+    "postRevokeRpcStatus": 401,
+    "postRevokeRpcRejected": true,
+    "revokedCookieRejected": true,
+    "revokedCookieCleared": true,
+    "screenshotSaved": true,
+    "allPassed": true
+  },
+  "steps": [
+    {
+      "step": "preconditions",
+      "ok": true,
+      "at": "2026-11-02T01:21:31.171Z",
+      "detail": "api=35 abi=x86_64 apk=89311bc4be2c…"
+    },
+    {
+      "step": "host",
+      "ok": true,
+      "at": "2026-11-02T01:21:31.581Z",
+      "detail": "http://127.0.0.1:58094 authMode=paired port=58094"
+    },
+    {
+      "step": "install",
+      "ok": true,
+      "at": "2026-11-02T01:21:33.774Z",
+      "detail": "Performing Streamed Install | Success"
+    },
+    {
+      "step": "pm-clear",
+      "ok": true,
+      "at": "2026-11-02T01:21:34.029Z",
+      "detail": "Success"
+    },
+    {
+      "step": "launch",
+      "ok": true,
+      "at": "2026-11-02T01:21:35.348Z",
+      "detail": "Status: ok pid=8306"
+    },
+    {
+      "step": "cdp",
+      "ok": true,
+      "at": "2026-11-02T01:21:35.527Z",
+      "detail": "target=http://10.0.2.2:58094/"
+    },
+    {
+      "step": "pairing-gate",
+      "ok": true,
+      "at": "2026-11-02T01:21:36.308Z",
+      "detail": "连接这台电脑 在电脑的「设置 → 连接手机」里生成 6 位配对码，然后在这里输入。配对码 5 分钟内有效、只能用一次。 配对 已有访问令牌？（旧版 Host）"
+    },
+    {
+      "step": "pair-start",
+      "ok": true,
+      "at": "2026-11-02T01:21:36.323Z",
+      "detail": "status=200（配对码已获取，未记录）"
+    },
+    {
+      "step": "pair-claim",
+      "ok": true,
+      "at": "2026-11-02T01:21:37.038Z",
+      "detail": "elapsed=319ms error=none"
+    },
+    {
+      "step": "device-listed",
+      "ok": true,
+      "at": "2026-11-02T01:21:37.055Z",
+      "detail": "devices=1 platform=android"
+    },
+    {
+      "step": "session",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.594Z",
+      "detail": "新会话 文件 信息 就绪 附件 发送"
+    },
+    {
+      "step": "pre-revoke-rpc",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.608Z",
+      "detail": "session.list status=200 sessions=1"
+    },
+    {
+      "step": "device-cookie",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.614Z",
+      "detail": "HttpOnly cookie name=codem_device_7e30205c64a31245（值未记录）"
+    },
+    {
+      "step": "revoke",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.629Z",
+      "detail": "status=200 revoked=true"
+    },
+    {
+      "step": "device-list-empty",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.631Z",
+      "detail": "devices=0"
+    },
+    {
+      "step": "auto-return",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.640Z",
+      "detail": "elapsed=5ms dom=连接这台电脑 在电脑的「设置 → 连接手机」里生成 6 位配对码，然后在这里输入。配对码 5 分钟内有效、只能用一次。 "
+    },
+    {
+      "step": "post-revoke-rpc",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.656Z",
+      "detail": "host.hello status=401 kind=UNAUTHORIZED"
+    },
+    {
+      "step": "revoked-cookie",
+      "ok": true,
+      "at": "2026-11-02T01:21:38.670Z",
+      "detail": "撤销前抓到的设备 cookie 直连 /rpc status=401 clearCookie=true"
+    },
+    {
+      "step": "screenshot",
+      "ok": true,
+      "at": "2026-11-02T01:21:39.896Z",
+      "detail": "92123 bytes sha256=f751f867fdc8…"
+    },
+    {
+      "step": "all",
+      "ok": true,
+      "at": "2026-11-02T01:21:39.896Z",
+      "detail": "端到端判据"
+    }
+  ],
+  "failure": null,
+  "limitations": [],
+  "secretsPolicy": "未写入控制令牌、配对码与设备 token；报告中的 DOM 摘要已做同值脱敏",
+  "screenshot": {
+    "path": "docs/architecture/evidence/device-pairing-revoke.png",
+    "bytes": 92123,
+    "sha256": "f751f867fdc87b75bfc6165e0fdb499d12f92503d827246b447dffa014b097b4"
+  },
+  "finishedAt": "2026-11-02T01:21:40.635Z",
+  "ok": true
+}

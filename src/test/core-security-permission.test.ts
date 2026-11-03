@@ -351,6 +351,9 @@ describe("权限 — PermissionManager", () => {
     await promise1;
 
     // Manually set always-allow (simulating what the UI would do)
+    // 注意：这条只证明**记忆半**（评估器能记住并回查）。"引擎真的会读写它"
+    // （`agentic-loop` → `setAlwaysAllow` / `getAlwaysAllow`）由 `permission-semantics`
+    // 的 PRM-1..4 覆盖 —— 别把这里的绿读成"按钮已经能用"。
     mgr.getEvaluator().setAlwaysAllow("read_file", "/test", "allow");
 
     // Second request for same tool:resource — should auto-allow without needing resolve

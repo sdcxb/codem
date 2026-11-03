@@ -720,19 +720,25 @@ describe("P0-3: FileExplorer Git 状态 — 集成验证", () => {
   });
 
   it("onFileChangesTracked 监听 — Agent 变更后自动刷新", () => {
-    // Verify FileExplorer imports onFileChangesTracked
+    // 适配器保留平台能力（事件订阅 + gitStatus 装配）；
+    // 徽章表现在属于共享文件树（`packages/ui/src/file-tree.ts`），与手机同一份。
     const source = require("fs").readFileSync(
       "src/components/FileExplorer.tsx",
       "utf-8"
     );
     expect(source).toContain("onFileChangesTracked");
     expect(source).toContain("gitStatus");
-    expect(source).toContain("GIT_STATUS_BADGES");
+    const sharedTree = require("fs").readFileSync(
+      "packages/ui/src/file-tree.ts",
+      "utf-8"
+    );
+    expect(sharedTree).toContain("GIT_STATUS_BADGES");
   });
 
   it("FileEntry 接口 — 包含 gitStatus 字段", () => {
+    // 条目模型随行组件迁到共享包（桌面适配器直接复用它，不再有第二份 FileEntry 类型）
     const source = require("fs").readFileSync(
-      "src/components/FileExplorer.tsx",
+      "packages/ui/src/file-tree.ts",
       "utf-8"
     );
     expect(source).toContain("gitStatus?: string");

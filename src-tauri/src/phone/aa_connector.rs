@@ -543,8 +543,25 @@ impl AaConnectorState {
     }
 }
 
-/// 把一条本地调用转给**本机回环上游**（与 LAN 边缘共用同一个上游）。
-async fn forward_local(upstream_port: u16, edge_token: &str, call: &LocalCall) -> Result<(u16, Vec<(String, String)>, Vec<u8>), String> {
+/// 解析本机 bridge 的 HTTP/1.1 响应（状态行 + 头 + body）。
+fn parse_http_response(raw: &[u8]) -> Option<(u16, Vec<(String, String)>, Vec<u8>)> {
+    let sep = raw.windows(4).position(|w| w == b"\r\n\r\n")?;
+    let head = String::from_utf8_lossy(&raw[..sep]).to_string();
+    let body = raw[sep + 4..].to_vec();
+    let mut lines = head.split("\r\n");
+    let status_line = lines.next()?;
+    let status: u16 = status_line.split_whitespace().nth(1)?.parse().ok()?;
+    let mut headers = Vec::new();
+    for l in lines {
+        if let Some((k, v)) = l.split_once(':') {
+            headers.push((k.trim().to_lowercase(), v.trim().to_string()));
+        }
+    }
+    Some((status, headers, body))
+}
+
+/// 把一条本地调用转给**本机回环 bridge**。
+async fn forward_local(bridge_port: u16, bridge_token: &str, call: &LocalCall) -> Result<(u16, Vec<(String, String)>, Vec<u8>), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let target = format!("{}{}", call.path, call.query);
     let mut head = format!("{} {} HTTP/1.1\r\n", call.method, target);
@@ -553,11 +570,11 @@ async fn forward_local(upstream_port: u16, edge_token: &str, call: &LocalCall) -
         head.push_str("Content-Type: application/json\r\n");
         head.push_str(&format!("Content-Length: {}\r\n", call.body.len()));
     }
-    // 上游只认带本次运行边缘标记的请求（阶段 1）
-    head.push_str(&format!("{}: {}\r\n", super::guard::EDGE_HEADER, edge_token));
+    // bridge 只认带本次运行 token 的请求。
+    head.push_str(&format!("{}: {}\r\n", super::guard::BRIDGE_HEADER, bridge_token));
     head.push_str("\r\n");
 
-    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", upstream_port))
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", bridge_port))
         .await
         .map_err(|e| format!("连本机上游失败: {}", e))?;
     stream.write_all(head.as_bytes()).await.map_err(|e| e.to_string())?;
@@ -578,7 +595,7 @@ async fn forward_local(upstream_port: u16, edge_token: &str, call: &LocalCall) -
             }
         }
     }
-    super::connector::parse_http_response(&raw).ok_or_else(|| "上游响应无法解析".to_string())
+    parse_http_response(&raw).ok_or_else(|| "上游响应无法解析".to_string())
 }
 
 /// 一次"连上并服务"的完整过程。返回 `Ok(())` 表示连接断了需要重连；
@@ -744,17 +761,17 @@ async fn handle_request(
             return AaRpcResponse::err(id, err);
         }
     };
-    let (upstream_port, edge_token, running) = {
+    let (bridge_port, bridge_token, running) = {
         let g = st.inner.lock().await;
-        (g.upstream_port, g.edge_token.clone(), g.running)
+        (g.bridge_port, g.bridge_token.clone(), g.running)
     };
-    if !running || upstream_port == 0 {
+    if !running || bridge_port == 0 {
         let mut err = BTreeMap::new();
         err.insert("code".to_string(), "engine_unavailable".to_string());
         err.insert("message".to_string(), "本机服务未运行".to_string());
         return AaRpcResponse::err(id, err);
     }
-    match forward_local(upstream_port, &edge_token, &call).await {
+    match forward_local(bridge_port, &bridge_token, &call).await {
         Ok((status, _headers, body)) => {
             let parsed: serde_json::Value =
                 serde_json::from_slice(&body).unwrap_or(serde_json::json!({ "raw": String::from_utf8_lossy(&body) }));

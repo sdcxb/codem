@@ -6,7 +6,7 @@
  * 修 O-46 时发现同一个事实在三条路径上各有一份等价反查：
  * - `core/llm/index.ts` 的 `resolveMemoryProjectId`（记忆归属的项目身份）；
  * - `core/session/executor.ts` 的安全模式解析（`getEffectiveSecurityMode(cwd)`）；
- * - `core/phone-link/phone-link.ts` 的 `cwdForSession`（**注意**：那条刻意**先取
+ * - `core/remote/desktop-engine.ts` 的 `cwdForSession`（**注意**：那条刻意**先取
  *   `worktreePath`**，回答的是"这个会话该在哪个目录跑"，与本模块回答的"这个会话属于哪个项目"
  *   是**两个不同的问题**，所以它不并入这里 —— 见下面的边界说明）。
  *

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.334",
-  "notes": "上下文检查点：压缩不删历史，完整历史/模型视图双轨；长会话虚拟列表；检查点索引；溢出全文查看；水位优先真实请求用量",
-  "pub_date": "2026-10-31T04:37:24Z",
+  "version": "1.17.0",
+  "notes": "手机远程访问 PC 桌面项目与会话；安卓本机模型设置；统一桌面/手机界面与安全加固",
+  "pub_date": "2026-11-03T00:19:42Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1ZiMzFEdXM2TEltVkVGK3hIbDh3NjBOOG5hL2xJaVVHRll5RW1UZEhXMUZyVlQydkdYQUhpck40VnZIc0YzRUNqQTJqK0hmbGliczM0bncwVDFrNUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDIxNDQwCWZpbGU6Q29kZW1fMS4xNi4zMzRfeDY0LXNldHVwLmV4ZQpaVzRTN3NyV0lSd3pBbWhRQTJnMU5aSENlRFZDQytpV2Mwci9yc08xSVlIc3U5d1hEZEtCUW9NNEwwWURtWUo5UHI0bzlPWFpqRXREcTdqT2ZxeXJBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.334/Codem_1.16.334_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1U5QnVzdUYyOVlNZnBFYjY2NDJhS3ZtaEZBVFNqNnBCY2VzMFl4eTZnT01sSE8zdzh4YXd1aGZnak9Oa1paekZ6ME9Pbit2ZmErdkt2SmFBdGliUUFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjY1MTc2CWZpbGU6Q29kZW1fMS4xNy4wX3g2NC1zZXR1cC5leGUKRzFESy85MlBUdXMzdVo2L1NMMjhjekhyVTcvQ3FrcHVqQThhc2dxMDdzRU82TzgyVEdSRGNFY2svMW1ZSmZZQTZvRDdmRHA3ajRXSmFXdTUwZWFaQXc9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.17.0/Codem_1.17.0_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1ZiMzFEdXM2TEltVkVGK3hIbDh3NjBOOG5hL2xJaVVHRll5RW1UZEhXMUZyVlQydkdYQUhpck40VnZIc0YzRUNqQTJqK0hmbGliczM0bncwVDFrNUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDIxNDQwCWZpbGU6Q29kZW1fMS4xNi4zMzRfeDY0LXNldHVwLmV4ZQpaVzRTN3NyV0lSd3pBbWhRQTJnMU5aSENlRFZDQytpV2Mwci9yc08xSVlIc3U5d1hEZEtCUW9NNEwwWURtWUo5UHI0bzlPWFpqRXREcTdqT2ZxeXJBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.334/Codem_1.16.334_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1U5QnVzdUYyOVlNZnBFYjY2NDJhS3ZtaEZBVFNqNnBCY2VzMFl4eTZnT01sSE8zdzh4YXd1aGZnak9Oa1paekZ6ME9Pbit2ZmErdkt2SmFBdGliUUFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjY1MTc2CWZpbGU6Q29kZW1fMS4xNy4wX3g2NC1zZXR1cC5leGUKRzFESy85MlBUdXMzdVo2L1NMMjhjekhyVTcvQ3FrcHVqQThhc2dxMDdzRU82TzgyVEdSRGNFY2svMW1ZSmZZQTZvRDdmRHA3ajRXSmFXdTUwZWFaQXc9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.17.0/Codem_1.17.0_x64-setup.exe"
     }
   }
 }

@@ -36,8 +36,8 @@ import {
   trimClosedHistory,
   expirePendingForTurnEnd,
   type ApprovalLike,
-} from "../core/phone-link/aa-notice";
-import { canonicalJson, compareCodePoints, sha256Hex } from "../core/phone-link/aa-protocol-ids";
+} from "../core/remote/aa-notice";
+import { canonicalJson, compareCodePoints, sha256Hex } from "../core/remote/aa-protocol-ids";
 
 const pendingApproval: ApprovalLike = {
   requestId: "evt-1",
@@ -125,7 +125,9 @@ describe("阶段 R4 · 通知/交互模型", () => {
     /**
      * 这不是文案洁癖：它是一句**安全承诺** ——
      * 用户看到"允许"时要知道这**不会**变成长期放行。
-     * 我们的实现也确实只支持一次性授权（`alwaysAllow` 恒为 false）。
+     * 远端通道（手机 / 微信）确实只支持一次性授权（`approval-broker.ts` AB-4：
+     * `answerApproval()` 只有 allow/deny）；桌面**前台**托盘的「始终允许」是另一条路
+     * （引擎按会话 + 精确 tool/resource 记忆，`agentic-loop.ts`），不走这里。
      */
     expect(noReason.message).toContain("仅对本次请求生效");
     // 有 reason 时用 reason（它的行为）
@@ -249,7 +251,7 @@ describe("阶段 R4 · 通知/交互模型", () => {
   });
 
   it("R4-12: 通知层**真的接进了**路由，且读的是同一份状态（不许是悬空模块）", () => {
-    const src = readFileSync("src/core/phone-link/phone-link.ts", "utf8");
+    const src = readFileSync("src/core/remote/desktop-engine.ts", "utf8");
     // 路由存在
     expect(src).toContain('case "notices"');
     expect(src).toContain('rest === "/notices"');

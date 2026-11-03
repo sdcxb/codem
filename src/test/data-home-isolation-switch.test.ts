@@ -84,7 +84,6 @@ describe("ISO-STATIC：隔离数据根的结构性不变量", () => {
       "ofm.rs",
       "ilink/mod.rs",
       "phone/mod.rs",
-      "phone/connector.rs",
     ];
     for (const f of rustFiles) {
       const src = read("src-tauri/src/" + f);
@@ -162,19 +161,18 @@ describe("ISO-STATIC：隔离数据根的结构性不变量", () => {
     );
   });
 
-  it("ISO-S4：功能目录（插件 / 手机 / iLink）也走同一个入口（不许留一个写进真目录的口子）", () => {
+  it("ISO-S4：功能目录（插件 / 桌面桥 / iLink）也走同一个入口（不许留一个写进真目录的口子）", () => {
     const callers: Array<[string, string]> = [
       ["src-tauri/src/ofm.rs", "crate::app_data_dir_path(&app)"],
       ["src-tauri/src/ilink/mod.rs", "crate::app_data_dir_path(app)"],
       ["src-tauri/src/phone/mod.rs", "crate::app_data_dir_path(app)"],
-      ["src-tauri/src/phone/connector.rs", "crate::app_data_dir_path(app)"],
     ];
     for (const [file, needle] of callers) {
       const src = read(file);
       expect(count(src, needle), `${file} 必须走应用数据目录的唯一入口`).toBeGreaterThanOrEqual(1);
     }
-    // 手机那一侧原来有**三个**各自读 app_data_dir 的地方（data_dir / phone_dir / app_data_root）
-    expect(count(read("src-tauri/src/phone/mod.rs"), "crate::app_data_dir_path(app)")).toBe(3);
+    // 旧配对/中继的三个目录入口已删；现在只剩 AA 账号态用的 phone_dir 一处。
+    expect(count(read("src-tauri/src/phone/mod.rs"), "crate::app_data_dir_path(app)")).toBe(1);
   });
 
   it("ISO-S5：`ensure_isolated_root` 的必需目录表**与 TS 侧实际用的目录名逐条对得上**", () => {

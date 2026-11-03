@@ -603,7 +603,6 @@ backdrop-filter: none !important;
 [data-skin="dream"] .project-manager,
 [data-skin="dream"] .config-editor,
 [data-skin="dream"] .confirm-dialog,
-[data-skin="dream"] .permission-dialog,
 [data-skin="dream"] .search-dialog {
   background: var(--dream-c31) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
@@ -619,7 +618,6 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] .project-manager,
 [data-skin="dream"][data-theme="dark"] .config-editor,
 [data-skin="dream"][data-theme="dark"] .confirm-dialog,
-[data-skin="dream"][data-theme="dark"] .permission-dialog,
 [data-skin="dream"][data-theme="dark"] .search-dialog {
   background: var(--dream-c32) !important;
   color: var(--dream-text-main, #e0d8e0) !important;

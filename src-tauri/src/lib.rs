@@ -1059,7 +1059,7 @@ fn lexical_normalize(p: &std::path::Path) -> std::path::PathBuf {
 /// 所以：存在 ⇒ 真 `canonicalize`；不存在 ⇒ 规范化**最近的已存在祖先**，
 /// 再把剩余分量（含 `..` 的词法折叠）拼回去。两条路得到的形式都剥掉 `\\?\`，
 /// 保证与调用方给的普通路径可以直接比较。
-fn resolve_sandbox_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+pub(crate) fn resolve_sandbox_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return Ok(strip_verbatim_prefix(&canonical));
     }
@@ -1111,7 +1111,7 @@ fn component_fold(s: &str) -> String {
 ///
 /// `C:\mimo-gui-backup\x.txt` 的字符串前缀**就是** `C:\mimo-gui` ⇒ 字符串比较会放行
 /// 一次**越界写**。逐组件比较（`C:\mimo-gui-backup` ≠ `C:\mimo-gui`）才能挡住它。
-fn path_within_workspace(target: &std::path::Path, workspace: &std::path::Path) -> bool {
+pub(crate) fn path_within_workspace(target: &std::path::Path, workspace: &std::path::Path) -> bool {
     let t: Vec<String> = target
         .components()
         .map(|c| component_fold(&c.as_os_str().to_string_lossy()))
@@ -4663,12 +4663,12 @@ install_panic_hook();
     }
 // ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
 let ilink_state = ilink::IlinkState::new();
-// ===== 手机连接（phone-link）管理态 =====
+// ===== 桌面引擎桥（AA 远程用；只绑 127.0.0.1，无旧 LAN 配对）=====
 let phone_state = phone::PhoneState::new();
-        // 阶段 R6：AA connector 的运行时状态（与手机那套并列，互不干扰）
+// ===== PC 远程网关（ADR-0005；独立回环监听 + 随机端口，命令启停，不自动启动）=====
+let gateway_state = phone::gateway::GatewayState::new();
+        // 阶段 R6：AA connector 的运行时状态（与桌面引擎桥并列，互不干扰）
         let aa_connector_state = phone::aa_connector::AaConnectorState::new();
-// ===== 出站 connector（远程中继，第 122 轮 §11B）管理态 =====
-let connector_state = phone::connector::ConnectorState::new();
 // ===== 存储引擎（Rust 原生 SQLite）管理态 =====
 // 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
 // 引擎本体在首次调用时惰性打开。
@@ -4682,8 +4682,8 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_dialog::init())
         .manage(ilink_state.clone())
         .manage(phone_state.clone())
+        .manage(gateway_state.clone())
         .manage(aa_connector_state)
-        .manage(connector_state.clone())
         .manage(storage_state)
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         // 第 103 波：Rust 侧 JS 沙箱的"等前端回复"表（run_code / workflow 的 sdk 调用走它）
@@ -4811,8 +4811,8 @@ path_exists,
             ilink::ilink_login_submit_verify,
             ilink::ilink_logout,
             ilink::ilink_send_text,
-            // 手机连接（phone-link）
-            phone::aa_account_login,
+            // AA（Agents Anywhere）远程
+        phone::aa_account_login,
         phone::aa_account_send_code,
         phone::aa_account_logout,
         phone::aa_account_status,
@@ -4820,19 +4820,19 @@ path_exists,
         phone::aa_connector_start,
         phone::aa_connector_stop,
         phone::aa_connector_status,
-        phone::phone_start,
-            phone::phone_stop,
-            phone::phone_status,
-            phone::phone_decide,
-            phone::phone_unpair,
-            phone::phone_respond,
-            // 第 122 轮阶段 1：CA 指纹与证书（桌面展示/保存用）
-            phone::phone_ca_pem,
-            phone::phone_ca_fingerprint,
-            // 第 122 轮 §11B：出站 connector（远程中继）
-            phone::connector::phone_relay_start,
-            phone::connector::phone_relay_stop,
-            phone::connector::phone_relay_status,
+        // 桌面引擎桥：TS 应答 bridge 请求（只绑 127.0.0.1）
+        phone::remote_respond,
+        // PC 远程网关（ADR-0005）：启停/状态/一次性配对码，没有自动启动
+        phone::gateway::gateway_start,
+        phone::gateway::gateway_stop,
+        phone::gateway::gateway_status,
+        phone::gateway::gateway_pair_start,
+        // 事件流：渲染层把桌面循环事件发进网关（唯一入口，不是 HTTP 路由）
+        phone::gateway::gateway_publish_event,
+        // M3 文件面：只读工作区（无条件边界；敏感审批在渲染层按 Host 同一规则判定）
+        phone::gateway::workspace::gateway_workspace_list,
+        phone::gateway::workspace::gateway_workspace_stat,
+        phone::gateway::workspace::gateway_workspace_read,
             // 存储引擎（Rust 原生 SQLite）：类型化仓储命令，不接受 SQL
             storage::storage_invoke,
             storage::storage_batch,
@@ -4845,7 +4845,17 @@ path_exists,
         .setup({
             // 捕获 ilink_state（Arc owned）以满足 setup 闭包的 'static 约束。
             let ilink_state = ilink_state.clone();
+            // 桌面引擎桥在应用启动时拉起（只绑 127.0.0.1；无旧 LAN 配对）。
+            let phone_state_for_bridge = phone_state.clone();
             move |app| {
+            {
+                let bridge_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = phone::start_bridge(bridge_app, phone_state_for_bridge).await {
+                        runtime_log::append_line("WARN", &format!("remote bridge 启动失败: {}", e));
+                    }
+                });
+            }
             /**
              * 第 233 轮（用户拍板 B）：**事件保留策略，默认开**。
              *

@@ -1,7 +1,7 @@
 # 00 · AI 接手手册（任何模型 / Agent 平台先读这份）
 
 > **目标**：只读这份手册 + `02-CODE-MAP.md` + `08-ENGINEERING-GATES.md`，就能在 **30–40 分钟**内安全地改第一行代码，并且知道“什么不能做、做完怎么证明”。
-> **基线**：2026-10-26 ｜ `master` @ 代码提交见 `git log -1`（1.16.334 发布）｜ **1.16.334** ｜ Node 24.19 / rustc 1.97.1。
+> **基线**：2026-11-03 ｜ `master` @ 代码提交见 `git log -1`（1.17.0 发版准备）｜ **1.17.0**（待发布；上一稳定版 1.16.334）｜ Node 24.19 / rustc 1.97.1。
 > **适用范围**：`C:\mimo-gui` 这个仓库（Codem 桌面 AI 编程助手）。大富翁 / Godot 实验线见 `10-GAME-AND-PROTOTYPE.md`。
 
 ---
@@ -9,7 +9,7 @@
 ## 0. 先记住这 10 件事
 
 1. **这是 Windows 优先的 Tauri v2 桌面应用**：Rust 进程 + WebView2 里的 React SPA；不是纯 Web 项目，也不是 Electron。
-2. **`src/App.tsx` 是应用外壳**（6251 行），**`src/core/llm/agentic-loop.ts` 是 agent 主循环**（6810 行），**`src-tauri/src/lib.rs` 是 Rust 主入口**（7784 行）。这三个文件不要“通读”，按函数名/关键词检索。
+2. **`src/App.tsx` 是应用外壳**（6432 行），**`src/core/llm/agentic-loop.ts` 是 agent 主循环**（7028 行），**`src-tauri/src/lib.rs` 是 Rust 主入口**（7883 行）。这三个文件不要“通读”，按函数名/关键词检索。
 3. **代码 > 判据 > 文档**。文档会过期；`src/test/` 里的判据是这个仓库的“法律”。
 4. **任何改动都要先写判据，再做变异自证**：把实现改坏，判据必须变红；不变红 = 判据无效。这是本仓库最看重的纪律。
 5. **禁止“目标模式 / 持久目标 / 自动续跑 / goal mode”**。用户 2026-10-15 明确要求，已写入 `AGENTS.md §5.9`。一次把事做完；多步用 `todo_write`；需要用户拍板的岔路直接问。
@@ -17,7 +17,7 @@
 7. **凭据是封存的**：库里 `providers[].apiKey` 是空串、`apiKeySealed` 是 `dsh1:…` 密文；不要据此判断“用户没填 Key”。
 8. **插件“注册 ≠ 生效”**：`builtin-registry.ts` 只填注册表；真正装配在 `config/codem.base.yml` → `loadFromEntries()`。只注册不写 YAML = 功能永不生效但单测可能全绿。
 9. **发布必须先问用户**；评测/构建有互斥纪律；不要整树 `git` 操作。
-10. **当前工作区不是干净的**：有未提交的 `.gitignore` / `.jscpd.json`，有未跟踪的 `art/`、`prototype/`、`docs/ref-analysis/`。不要 `git add -A`。
+10. **当前工作区不是干净的**：1.17.0 的远程网关 / Android 本机 Host 改动大量未提交（`src/core/remote/`、`src-tauri/src/phone/gateway/`、`packages/`、`android-shell/` 等）；另有未跟踪的 `art/`、`prototype/`、`docs/ref-analysis/`。不要 `git add -A`。
 
 ---
 
@@ -60,7 +60,13 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 - **Agent 主链路**：`App.tsx::runAgenticLoop` → `LLMEngine.process` → `AgenticLoop.run` → `provider.stream` → `StreamingToolExecutor` + `ToolPipeline` → 消息/事件落库。
 - **插件装配链**：`config/codem.base.yml`（171 条）+ `codem.desktop.yml` → `mergeYamlEntries` → `loadFromEntries` → Cordis `ctx.plugin()` → 服务/工具/UI 槽位。
-- **存储链**：`src/core/storage/*` → `rust-port.ts` → `storage_invoke`（117 命令中的 7 个）→ `codem-db` 引擎（WAL、单写者、authorizer 禁裸 SQL）。
+- **存储链**：`src/core/storage/*` → `rust-port.ts` → `storage_invoke`（116 个命令注解中的 7 个）→ `codem-db` 引擎（WAL、单写者、authorizer 禁裸 SQL）。
+
+**PC 远程 / Android 本机（1.17.0 起）**：
+
+- PC 远程**唯一入口**是**桌面远程网关**（`src/core/remote/gateway-*.ts` + `src-tauri/src/phone/gateway/`）：手机用一次性 6 位码配对，直接看桌面自己的项目/会话/历史，数据仍由桌面拥有。
+- **Host 只服务 Android 本机模式**（`packages/host/`、`android-shell/`）：手机自己的 Host、数据、项目；本机模型用 Android Keystore 加密保存。
+- 桌面 Host sidecar 已退役。任何把「Remote Host / 桌面 Host」当成 PC 远程入口的段落都视为过期文档。
 
 ---
 
@@ -109,15 +115,14 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.16.334**（`package.json` / `tauri.conf.json` / `Cargo.toml` / `latest.json` 一致） |
-| 发布 | GitHub `Codem v1.16.334` = `Latest`（2026-10-31） |
-| HEAD | 以 `git log -1` 为准；代码基线 `bb5d4cce` |
-| `tsc --noEmit` | **0 错误** |
-| 全量测试 | **796 文件 / 8842 用例：8825 通过、17 跳过、0 失败**（约 158 秒） |
-| 已知失败 | **0**（2026-10-26 那两条未跟踪文档的失败随未跟踪内容清理而消失，不是产品代码修复） |
+| 版本 | **1.17.0**（待发布；`package.json` / `tauri.conf.json` / `Cargo.toml` 一致） |
+| 发布 | 上一稳定版 GitHub `Codem v1.16.334` = `Latest`（2026-10-31）；1.17.0 未发布 |
+| HEAD | 以 `git log -1` 为准（1.17.0 发版准备） |
+| `tsc --noEmit` | **0 错误**（2026-11-03 实测） |
+| 全量测试 | 见 `09-CURRENT-STATE.md` §3（以 `npx vitest run` 实测为准） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
-| 上报点分诊 | 278 = 278（`node tools/audit/scan-report-sites.mjs --check`） |
-| 工作区 | `master...origin/master` 同步；`.gitignore` / `.jscpd.json` 有未提交修改；`art/`、`prototype/`、`docs/ref-analysis/` 未跟踪 |
+| 上报点分诊 | 281 = 281（`node tools/audit/scan-report-sites.mjs --check`） |
+| 工作区 | **不是干净树**：1.17.0 网关/Android 本机 Host 改动未提交；`art/`、`prototype/`、`docs/ref-analysis/` 未跟踪 |
 
 > 如果你跑出来不是这个数：先确认是不是多了未跟踪文件（`git status`），再看 `09-CURRENT-STATE.md`。不要为了让“全绿”去改产品代码。
 
@@ -144,7 +149,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.16.334，tsc 0，796 测试文件 / 8842 用例（0 失败）。
+当前基线：1.17.0（待发布），tsc 0，865 个测试文件（用例数见 09 §3）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 
@@ -183,8 +188,8 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 10. **不要用“目标模式/自动续跑”**：见 §3.3。
 11. **同名“保存”按钮**：面板里只有 `handleSave` 是规范路径；其余可能只是刷新模型/立即生效的选项。
 12. **`session_events` 不可从 JSONL 重建**：它含压缩、工具配对、turn 时间线；维护刻意不压缩它。
-13. **`needs_you_pending` / `agent_messages` 有表无实现**：队列实际在内存，不要据表名以为已持久化。
-14. **`execute_command` 与 `write_file` 是两套安全事实**：写文件有沙箱判定；跑命令**不做工作区校验是设计取舍**（只读越界必要，历史多次收紧均误伤回退，见  9 §9）。**不要再加 cwd/字符串校验。**
+13. **`needs_you_pending` / `agent_messages` 已持久化**（2026-10-29，判据 `PENDING-PERSIST`）：走通用 `crud.upsert/list/delete` 写穿 + 重启回填；不要再按“有表无实现”处理。
+14. **`execute_command` 与 `write_file` 是两套安全事实**：写文件有沙箱判定；跑命令**不做工作区校验是设计取舍**（只读越界必要，历史多次收紧均误伤回退，见 09 §9）。**不要再加 cwd/字符串校验。**
 15. **删除运行中会话**：必须先 abort loop 再删；否则会撞 FK / 消息归属不一致。当前版本已修，但新增删除路径要沿用同一登记表。
 
 ---
@@ -196,7 +201,7 @@ npx tsc --noEmit                          # 0
 npm run audit:docs                        # 版本/必读文档/BOM/索引/章节
 npx vitest run <相关判据>                  # 先单跑
 npx vitest run                            # 全量（知道基线，别被 2 条未跟踪失败骗）
-node tools/audit/scan-report-sites.mjs --check   # 278 = 278
+node tools/audit/scan-report-sites.mjs --check   # 281 = 281
 node tools/mutate/check-artifacts.mjs     # 变异产物未过期
 node tools/ui-audit/css-contract.mjs      # 改 CSS 后先 --write
 node tools/audit/knip-gate.mjs            # 未使用导出不许增长

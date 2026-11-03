@@ -124,11 +124,13 @@ describe("`hidden` 按数字判、且四处同源（第 184 波存储审计 S2�
     setStoragePort(null);
     expect(await msgMod.hydrateSessionLog(A), "夹具前提：日志镜像已就绪（3 行）").toBe(3);
 
+    // 2026-11 语义定稿：默认列表不铺开被裁行；「被裁的历史仍读得到」由完整历史视图证明
     const merged = msgMod.listMessagesMerged(A);
+    expect(merged.map((m) => m.id), "被压缩隐藏的 m2 绝不能合回来；被裁的 m3 不进默认列表").toEqual(["m1"]);
     expect(
-      merged.map((m) => m.id),
-      "被压缩隐藏的 m2 绝不能合回来；被裁剪的 m3 必须保留（那是「被裁的历史仍读得到」）",
-    ).toEqual(["m1", "m3"]);
+      msgMod.listTimelineMessages(A).map((m) => m.id),
+      "被裁的历史仍读得到（完整历史视图）",
+    ).toEqual(["m1", "m2", "m3"]);
   });
 
   it("S2-B: 写侧 / 读侧 / 重建侧对同一个数字 1 得到**同一个结论**", async () => {

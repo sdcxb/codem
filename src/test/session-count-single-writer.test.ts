@@ -11,7 +11,7 @@
  * | `src/App.tsx` `safeAddMessage` | `updateSession(id, { messageCount: session.messageCount + 1 })` |
  * | `src/components/NotebookWorkspace.tsx` | 同上（`updatedCount`） |
  * | `src/core/wechat-bridge/wechat-bridge.ts` | `{ messageCount: row.messageCount + 1 }` |
- * | `src/core/phone-link/phone-link.ts` | `{ messageCount: (row.messageCount \|\| 0) + 1 }` |
+ * | `src/core/remote/desktop-engine.ts` | `{ messageCount: (row.messageCount \|\| 0) + 1 }` |
  *
  * ## 为什么这是缺陷（不是"顺手更新一下"）
  *
@@ -136,7 +136,7 @@ describe("SESSION-COUNT-SINGLE-WRITER：会话消息计数只许引擎写（第 
       "src/App.tsx",
       "src/components/NotebookWorkspace.tsx",
       "src/core/wechat-bridge/wechat-bridge.ts",
-      "src/core/phone-link/phone-link.ts",
+      "src/core/remote/desktop-engine.ts",
     ]) {
       const code = stripComments(readFileSync(path.join(ROOT, rel), "utf8"));
       expect(looksLikeRendererCountWrite(code), `${rel} 不许再给 updateSession 传 messageCount`).toBe(false);

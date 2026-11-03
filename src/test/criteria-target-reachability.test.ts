@@ -69,6 +69,11 @@ const ALLOWED: Array<{ test: string; target: string; reason: string }> = [
   },
   {
     test: "src/test/reachability-gate.test.ts",
+    target: "src/components/MessageActions.tsx",
+    reason: "可达性门禁自检用到的未接线组件（第 2 步起气泡工具栏由共享实现承担，白名单里有登记）",
+  },
+  {
+    test: "src/test/reachability-gate.test.ts",
     target: "src/components/RegenerateModelPopover.tsx",
     reason: "可达性门禁自检用到的未接线组件（白名单里有登记）",
   },

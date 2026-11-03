@@ -152,7 +152,7 @@ src\
 | `automation/` | 1 | 定时/文件监听触发器 | `automation-manager.ts` |
 | `issue/` | 4 | 结构化任务（Issues） | `issue.ts`、`issue-tools.ts`、`issue-storage.ts` |
 | `inbox/` | 3 | 全局通知聚合 | `inbox.ts`、`inbox-storage.ts` |
-| `phone-link/` | 7 | 手机连接：LAN 配对、事件流、AA 协议 | `phone-link.ts`、`event-stream.ts`、`aa-notice.ts` |
+| `remote/` | 6 | 桌面引擎桥（AA）+ 新 Host 启动 | `desktop-engine.ts`、`host-bootstrap.ts`、`aa-notice.ts` |
 | `wechat-bridge/` | 1 | 微信 ClawBot 桥（iLink） | `wechat-bridge.ts` |
 | `computer-use/` | 2 | 读屏/鼠标键盘自动化 | `computer-use.ts` |
 | `hooks/` | 2 | 工具钩子（PreToolUse/PostToolUse） | `hook-manager.ts` |
@@ -200,7 +200,7 @@ src-tauri\
 │  ├─ js_sandbox.rs          870 行：boa_engine 单发沙箱（2 命令）
 │  ├─ js_sandbox_session.rs  1052 行：会话级 JS 沙箱（4 命令）
 │  ├─ ilink\                 5 文件：微信 iLink 传输层（5 命令）
-│  └─ phone\                 13 文件：Phone Link / AA / TLS / 中继（19 命令）
+│  └─ phone\                 8 文件：桌面引擎桥 / AA（9 命令；旧 LAN 配对已删）
 ├─ codem-db\
 │  ├─ src\engine.rs          1010 行：连接、WAL、事务、健康
 │  ├─ src\repo.rs            2353 行：类型化仓储（messages/sessions/events…）
@@ -210,14 +210,14 @@ src-tauri\
 │  ├─ src\fts.rs             172 行：FTS5 + 中文 bigram
 │  ├─ src\audit.rs           420 行：删除审计触发器
 │  ├─ src\schema.rs          202 行：schema 加载/迁移/种子
-│  └─ sql\schema.sql         595 行：39 表真源
+│  └─ sql\schema.sql         595 行：40 表真源
 ├─ capabilities\default.json 41 条权限（main + pet）
 ├─ resources\                内置 Node / 图标等
 ├─ icons\、binaries\、gen\
 └─ tauri.conf.json           窗口、CSP、updater、bundle
 ```
 
-**命令分布**（117 注册）：lib.rs 66、phone 16、ofm 9、storage 7、ilink 5、js_sandbox_session 4、crash_evidence 3、phone/connector 3、secret 3、js_sandbox 2。详见 `07-BACKEND-IPC.md`。
+**命令分布**（116 个注解，以 `BASELINE.json` 为准）：lib.rs、phone（含 `gateway/`）、ofm、storage、ilink、js_sandbox_session、crash_evidence、secret、js_sandbox。详见 `07-BACKEND-IPC.md`。
 
 ---
 

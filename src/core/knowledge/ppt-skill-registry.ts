@@ -17,15 +17,38 @@ import type { SkillDefinition } from '../skill/skill';
 import { parseSkillMarkdown } from '../skill/skill';
 
 // Vite 构建时收集所有 SKILL.md 文件 (eager + raw)
-const styleSkillModules = import.meta.glob(
-  './skills/styles/*/SKILL.md',
-  { query: '?raw', import: 'default', eager: true }
-) as Record<string, string>;
+//
+// ★ 可移植性（Host 抽取）：`import.meta.glob` 是 **Vite 专属** API。
+// 在 Node（`codem-host` / 判据脚本）里它是 `undefined`，直接调用会在**模块求值**阶段
+// 抛 `TypeError: (intermediate value).glob is not a function` —— 而本文件位于
+// `tools.ts → generate-ppt → ppt-generator → 本文件` 这条**静态**导入链上，
+// 于是"整个工具注册表 + agent 循环都起不来"，症状看起来却像"Host 不支持 PPT"。
+//
+// 这里用 try/catch 包住**字面量调用**（Vite 仍会在构建期把它替换成对象字面量，
+// 所以 Web 端行为一字不变），缺失时退化成空表：PPT 内置风格在非 Vite 宿主里
+// 只是"没有内置风格"，而不是把进程带走。
+function collectSkillModules(): { styles: Record<string, string>; products: Record<string, string> } {
+  try {
+    const styles = import.meta.glob('./skills/styles/*/SKILL.md', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>;
+    const products = import.meta.glob('./skills/products/*/SKILL.md', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>;
+    return { styles, products };
+  } catch {
+    /* 非 Vite 宿主：没有内置风格表（不是错误，是能力差异） */
+    return { styles: {}, products: {} };
+  }
+}
 
-const productSkillModules = import.meta.glob(
-  './skills/products/*/SKILL.md',
-  { query: '?raw', import: 'default', eager: true }
-) as Record<string, string>;
+const collected = collectSkillModules();
+const styleSkillModules = collected.styles;
+const productSkillModules = collected.products;
 
 /** 解析所有风格 SKILL.md 为 SkillDefinition */
 function parseStyleSkills(): SkillDefinition[] {

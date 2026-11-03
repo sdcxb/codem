@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-10-26 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（1.16.334 发布提交）｜ 文档集提交见 `git log -1` ｜ 版本 **1.16.334**（2026-10-31 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（1.17.0 发版准备）｜ 文档集提交见 `git log -1` ｜ 版本 **1.17.0**（2026-11-03 待发布；上一稳定版 1.16.334，2026-10-31）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -12,9 +12,9 @@
 
 - 前端 `src/` 约 **44 万行**（其中 `src/test/` 约 16 万行），`App.tsx` 单文件 6251 行；
 - Rust 侧 `src-tauri/src` 约 **2.2 万行**，`lib.rs` 单文件 7784 行；
-- SQLite **40 张实表** + FTS + 审计表；Tauri **118 个命令注解 / 117 个注册命令**；
+- SQLite **40 张实表** + FTS + 审计表；Tauri **114 个命令注解**；
 - `src/core/` **60 个子域**，`src/components/` 152 个顶层组件 + 6 个子目录；
-- **796 个测试文件 / 8842 个用例**（2026-10-31 全量实测：8825 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **839 个测试文件 / 9147 个用例**（2026-11-02 全量实测：9130 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 的旧正文停在 1.16.323（本次已更新版本/测试数与文档指针，但详细状态仍以本套为准）；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 停在 1.16.319；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读哪一份都可能拿到过期结论。
 
@@ -69,8 +69,8 @@
 | `03-RUNTIME-FLOWS.md` | 启动、发送、Agent 循环、工具管线、流式、审批、压缩、记忆、子代理、项目、IPC | 长 | 主链路变化时 |
 | `04-FEATURE-MODULES.md` | 16 个功能域 + 关键子功能 + 入口 + 成熟度 | 长 | 功能变化时 |
 | `05-UI-UX.md` | 三皮肤外壳、导航、面板、对话区、设计令牌、交互与可访问性 | 长 | UI 变化时 |
-| `06-DATA-STORAGE.md` | 数据分层、39 张表、JSONL、数据根、设置/凭据、迁移/维护 | 长 | schema/存储变化时 |
-| `07-BACKEND-IPC.md` | Rust 文件地图、117 命令、执行器/PTY、存储引擎、安全、OFM、phone/iLink | 长 | Rust 变化时 |
+| `06-DATA-STORAGE.md` | 数据分层、40 张表、JSONL、数据根、设置/凭据、迁移/维护 | 长 | schema/存储变化时 |
+| `07-BACKEND-IPC.md` | Rust 文件地图、命令面、执行器/PTY、存储引擎、安全、OFM、remote/iLink | 长 | Rust 变化时 |
 | `08-ENGINEERING-GATES.md` | 测试/审计/变异/评测、构建发布、环境、改造配方、纪律 | 长 | 门禁变化时 |
 | `09-CURRENT-STATE.md` | 版本/发布/工作区/测试基线、未完成项、文档债、下一步 | 中 | 每个版本 |
 | `10-GAME-AND-PROTOTYPE.md` | 内置大富翁插件、Godot 2.5D 重制、未跟踪资产边界 | 中 | 游戏线变化时 |
@@ -88,20 +88,22 @@
 
 ---
 
-## 4. 当前事实基线（2026-10-31）
+## 4. 当前事实基线（2026-11-03）
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.16.334** | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.16.334` = `Latest`（2026-10-31） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（当前上下文检查点提交） | `git rev-parse --short HEAD` |
-| 分支 | `master`，与 `origin/master` 同步（无 ahead/behind） | `git status -sb` |
-| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-10-31 实测 exit 0） |
-| 全量测试 | **796 文件 / 8842 用例：8825 通过、17 跳过、0 失败** | `npx vitest run`（约 160 秒） |
-| 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
+| 版本 | **1.17.0**（待发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | 上一稳定版 GitHub `Codem v1.16.334` = `Latest`（2026-10-31）；1.17.0 尚未发布 | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（1.17.0 发版准备） | `git rev-parse --short HEAD` |
+| 分支 | `master`；工作区有大量未提交的 1.17.0 改动 | `git status -sb` |
+| TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-03 实测 exit 0） |
+| 全量测试 | 见 `09-CURRENT-STATE.md` §3（`npx vitest run` 实测） | `npx vitest run` |
+| 已知失败 | 见 `09-CURRENT-STATE.md` §3 | 同一处 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
-| 工作区 | 干净（上下文检查点改动已提交推送） | `git status --porcelain` |
+| 工作区 | **不是干净树**：1.17.0 远程网关 / Android 本机 Host 的改动尚未提交 | `git status --porcelain` |
 | 数据根 | `%APPDATA%\com.codem.app\`；库 `codem-db-rust.bin` | `src-tauri/src/storage.rs` |
+
+> **1.17.0 的主线**：PC 远程只走**桌面远程网关**（手机看桌面自己的项目/会话/历史，数据仍由桌面唯一拥有）；**Host 只服务 Android 本机模式**（手机自己的数据与项目）。桌面 Host sidecar 已退役，不要再把 Host 当 PC 远程入口。
 
 > ⚠️ 测试基线会随未跟踪内容变化。跑出来不是这个数：先看 `git status` 与 `09` §3，不要为了让全绿去改产品代码。
 
@@ -152,4 +154,4 @@
 - `docs/NEW-SESSION-START.md` / `AGENTS.md`：**旧开工说明**。`00` 是它们的替代入口；`AGENTS.md` 仍保留命令与发版规程。
 - `docs/GAP-LIST.md`：**已过期**（最后版本记录 1.16.305）。当前缺口见 `09-CURRENT-STATE.md`；在它被重写前，不要把它当“唯一清单”。
 
-**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.16.332 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。
+**没有删除任何旧文档**。这次只新增一套并列的、更新到 1.17.0 的文档；等团队确认后再决定是否在旧文档顶部加指针或归档。

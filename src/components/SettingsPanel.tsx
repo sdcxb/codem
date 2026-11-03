@@ -56,7 +56,7 @@ import { CorrectionModelConfig } from "./CorrectionModelConfig";
 import { PersonaManager } from "./PersonaManager";
 import { ComputerUseSettings } from "./ComputerUseSettings";
 import { WechatSettings } from "./WechatSettings";
-import { PhoneLinkSettings } from "./PhoneLinkSettings";
+import { RemoteAccessSettings } from "./RemoteAccessSettings";
 import { applyUiFontScale, applyStoredUiFont, applyUiFontFamily, applyStoredUiFontFamily, readStoredUiFontFamily, FONT_BASE_PX } from "../core/ui-font";
 import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
 import {
@@ -714,7 +714,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     ["persona", ["人设", "persona", "人格", "角色", "soul"]],
     ["computer", ["电脑操作", "computer", "读屏", "鼠标", "自动化"]],
     ["wechat", ["微信", "wechat", "clawbot", "桥", "绑定", "手机"]],
-    ["phone", ["连接手机", "phone", "手机", "LAN", "配对", "扫码"]],
+    ["phone", ["连接手机", "phone", "手机", "远程", "配对", "远程网关", "AA"]],
     ["codegraph", ["代码图谱", "codegraph", "graph"]],
     ["advanced", ["高级", "advanced", "实验", "分层"]],
     ["help", ["帮助", "help", "关于", "教程"]],
@@ -771,7 +771,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         { id: "persona", zh: "人设", en: "Persona", icon: BrainCircuit },
         { id: "computer", zh: "电脑操作", en: "Computer Use", icon: MousePointer2 },
         { id: "wechat", zh: "微信 ClawBot", en: "WeChat ClawBot", icon: MessageCircle },
-        { id: "phone", zh: "连接手机", en: "Phone Link", icon: Smartphone },
+        { id: "phone", zh: "连接手机", en: "Phone access", icon: Smartphone },
         { id: "codegraph", zh: "代码图谱", en: "CodeGraph", icon: Network },
         { id: "pet", zh: "宠物", en: "Pet", icon: PawPrint },
       ],
@@ -1346,7 +1346,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
             <button className={`settings-sidebar-item ${activeTab === "phone" ? "active" : ""}`}
               aria-current={activeTab === "phone" ? "page" : undefined} onClick={() => setActiveTab("phone")}>
-              <span className="sidebar-icon"><Smartphone size={16} /></span>{lang === "zh" ? "连接手机" : "Phone Link"}
+              <span className="sidebar-icon"><Smartphone size={16} /></span>{lang === "zh" ? "连接手机" : "Phone access"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`}
               aria-current={activeTab === "pet" ? "page" : undefined} onClick={() => setActiveTab("pet")}>
@@ -2668,8 +2668,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 )}
 {activeTab === "phone" && (
 <>
-{/* 手机连接设置（对标 dsh-phone） */}
-<PhoneLinkSettings />
+{/* 远程访问：桌面网关 + Agents Anywhere（旧 LAN 配对与桌面 Host sidecar 均已删除） */}
+<RemoteAccessSettings />
 </>
 )}
 {activeTab === "advanced" && (

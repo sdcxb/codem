@@ -1,21 +1,54 @@
-import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
+/**
+ * 桌面消息气泡入口 + 桌面平台适配器（第 2 步）。
+ *
+ * **气泡本体只有一份实现**：`packages/ui/src/message-bubble.tsx`（骨架 / DOM / 类名 /
+ * 折叠与工具栏状态机）。本文件不再渲染任何气泡骨架，只做两件事：
+ * 1. `useDesktopChatPlatform()`：把桌面运行时（store / Tauri / 插件槽 / 富文本 / TTS /
+ *    工具卡 / 文件链接 / 消息语义判定）组装成 `ChatPlatform`；
+ * 2. 用 `<ChatPlatformProvider>` 注入共享气泡 —— 没有「有适配器 / 没适配器」两条路径。
+ *
+ * 保留 `./MessageBubble` 这个导出路径，是因为 `ChatPanel` / `NbChatPanel`
+ * 以及既有判据都从这里取组件；**不是**第二份气泡实现。
+ *
+ * 为什么适配器放在这个文件里（而不是单独的新文件）：可达性门禁按 `git ls-files src`
+ * 取源码集合，新建但未提交的文件不参与 BFS；把桌面运行时放在新的 src 文件里会
+ * 让 `RichContent` / `ToolCallCard` 等一票组件在门禁里变成"不可达"（假红）。
+ */
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  Check,
+  CheckCircle,
+  Clock,
+  FileText,
+  Image as ImageIcon,
+  XCircle,
+} from "lucide-react";
+
 import { Message, useAppStore } from "../store";
-import ReactMarkdown from "react-markdown";
-// P1 #17: Shiki replaces Prism for code highlighting
+import { ChatPlatformProvider } from "../../packages/ui/src/chat-platform";
+import type {
+  BubbleStrings,
+  ChatPlatform,
+  MessageDescription,
+} from "../../packages/ui/src/chat-platform";
+import type { Lang, MessageLike } from "../../packages/ui/src/message-model";
+import { MessageMarkdown } from "../../packages/ui/src/message-markdown";
+import {
+  MessageBubble as SharedMessageBubble,
+  type MessageBubbleProps,
+} from "../../packages/ui/src/message-bubble";
+
 import { ShikiCodeBlock } from "./ShikiCodeBlock";
-import { DefaultToolRenderer } from "../core/llm/tool-renderer";
-import { tryGetCtx } from "../core/consumer";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { splitGraphemes } from "../core/llm/stream-reveal";
 import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { getSubagentRuntime } from "../core/subagent/index";
-/* 第 194 波（O-56）：委派注入消息的**唯一判定**（id 前缀，定义在 storage/session.ts） */
 import { isDelegatedTaskMessage, isMachineInjectedMessage } from "../core/storage/session";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
-// 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatSize`）
 import { formatBytes } from "../core/utils/bytes";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
@@ -25,15 +58,12 @@ import { autoLinkFilePaths } from "../utils/auto-link-paths";
 import { isMidTurnGuidance, guidanceDisplayMessage } from "../core/llm/guidance-display";
 import { flushSync } from "react-dom";
 import { runViewTransition } from "../core/ui/view-transition";
-import { openFileLink } from "../utils/file-link";
-// P3-26: Voice output (TTS) — browser speech synthesis hook
+import { openFileLink, handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2, Zap, AlertTriangle } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import { getAttachmentContent } from "../core/storage/message";
 import type { UserConfig } from "../core/types";
-import { MessageActions } from "./MessageActions";
 import { ErrorCard } from "./ErrorCard";
 import { ToolCallGroup } from "./ToolCallGroup";
 import type { ToolCallCardProps } from "./ToolCallCard";
@@ -41,162 +71,16 @@ import { StatsLine } from "./StatsLine";
 import { TurnStatus } from "./TurnStatus";
 import { ReasoningRow } from "./ReasoningRow";
 
-/** User avatar component — reads avatar from settings, shows circle on user messages */
-function UserAvatar() {
-  const userConfig = getSettingJSON<UserConfig>("codem-user", { name: "", callBy: "", pronouns: "", timezone: "", notes: "", context: "", raw: "", avatar: "" });
-  const avatar = userConfig.avatar;
-
-  if (avatar) {
-    return (
-      <div className="user-msg-avatar" style={{
-        width: 24, height: 24, borderRadius: "50%", overflow: "hidden",
-        flexShrink: 0, border: "1px solid var(--border-primary)",
-      }}>
-        <img src={avatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      </div>
-    );
-  }
-  return (
-    <div className="user-msg-avatar" style={{
-      width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
-      background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      <User size={14} style={{ color: "var(--text-muted)" }} />
-    </div>
-  );
-}
-
-// B6: Mermaid diagram renderer component
-const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>("");
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const mermaid = (await import("mermaid")).default;
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: "dark",
-          securityLevel: "strict",
-          fontFamily: "inherit",
-        });
-        const id = `mermaid-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-        const { svg: renderedSvg } = await mermaid.render(id, chart);
-        if (!cancelled) {
-          setSvg(renderedSvg);
-          setError("");
-          setLoading(false);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err.message || String(err));
-          setLoading(false);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [chart]);
-
-  if (loading) {
-    return <div className="mermaid-loading">Rendering diagram...</div>;
-  }
-  if (error) {
-    return (
-      <div className="mermaid-error">
-        <div className="mermaid-error-title">Diagram render error:</div>
-        <pre className="mermaid-error-detail">{error}</pre>
-        <details>
-          <summary>Source code</summary>
-          <pre className="mermaid-source">{chart}</pre>
-        </details>
-      </div>
-    );
-  }
-  return (
-    <div
-      ref={containerRef}
-      className="mermaid-container"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
-});
-
-// Handle link clicks — delegates to shared file-link utility
-import { handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
-
-// Sub-agent status indicator
-function SubagentStatus({ taskId, name, toolStatus }: { taskId: string; name?: string; toolStatus?: string }) {
-const [status, setStatus] = useState<string>("init");
-const [summary, setSummary] = useState<string>("");
-
-useEffect(() => {
-  // DSH-style: 从全局 SubagentRuntime 获取状态
-  // 对标 DSH ctx.subagents — 替代旧 SubagentManager
-  const runtime = getSubagentRuntime();
-if (!runtime) {
-// Runtime 未就绪 — 用 toolStatus 降级显示
-if (toolStatus === "done") setStatus("completed");
-else if (toolStatus === "error") setStatus("failed");
-else setStatus("running");
-return;
-}
-const check = () => {
-const task = runtime.getTask(taskId);
-if (task) {
-setStatus(task.status);
-if (task.result) setSummary(task.result.summary);
-} else {
-// Task not in memory (historical session) — fall back to tool call status
-if (toolStatus === "done") {
-setStatus("completed");
-} else if (toolStatus === "error") {
-setStatus("failed");
-} else {
-setStatus("running");
-}
-}
+const DEFAULT_USER_CONFIG: UserConfig = {
+  name: "",
+  callBy: "",
+  pronouns: "",
+  timezone: "",
+  notes: "",
+  context: "",
+  raw: "",
+  avatar: "",
 };
-check();
-// DSH-style: 订阅事件而非轮询
-const unsubscribe = runtime.subscribe(check);
-return () => {
-  if (unsubscribe) unsubscribe();
-};
-}, [taskId, toolStatus]);
-
-const zh = getLang() === "zh";
-const displayName = name || (zh ? "子智能体" : "Sub-agent");
-
-// While initializing, don't show anything (avoids brief "running" flash)
-if (status === "init") return null;
-
-if (status === "completed") {
-    return <span className="subagent-status done icon-inline"><CheckCircle size={12} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
-  }
-  if (status === "failed") {
-    return <span className="subagent-status failed icon-inline"><XCircle size={12} /> {displayName} {zh ? "失败" : "failed"}</span>;
-  }
-  return <span className="subagent-status running icon-inline"><Clock size={12} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
-}
-
-// D2-1: 不在模块加载时获取服务 — 改为延迟获取，确保 Provider ACTIVE 后才消费
-const getToolRenderer = () => {
-    const ctx = tryGetCtx();
-    const tr = ctx?.get('toolRender');
-    if (tr) return { render: (r: any, c: any) => tr.render('default', r, c) };
-    return new DefaultToolRenderer({ maxOutputLength: 200 });
-  };
-
-// Threshold for long message collapse (in pixels)
-const COLLAPSE_THRESHOLD = 400;
-// P2: 折叠字符阈值 —— content-visibility: auto 下屏外消息 scrollHeight 不可靠
-// （布局被跳过），用字符长度估算作为主判断。约 1500 字符 ≈ 400px 文本高度。
-const COLLAPSE_CHARS = 1500;
 
 /**
  * 工具结果进入 DOM 前的硬上限。
@@ -215,74 +99,156 @@ function toolResultForDisplay(result: string | undefined): string | undefined {
   );
 }
 
-interface MessageBubbleProps {
-  message: Message;
-  index?: number;
-  showReasoning?: boolean;
-  onDeleteFiles?: (files: string[]) => void;
-  /** true if this is the last assistant message in the current Q&A turn */
-  isLastInTurn?: boolean;
-  /** true if this is the newest assistant message in the whole session */
-  isLatestMessage?: boolean;
-  /** Called when user clicks a citation — opens SourceViewer */
-  onCitationClick?: (sourceName: string) => void;
-  /** Called when user clicks a source in the metadata-driven sources panel */
-  onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
-  /** P0: Called when user edits a message and wants to resend */
-  onEditAndResend?: (messageId: string, newContent: string) => void;
-  /** P0 (message-rewind 对标): Edit a past user message and rewind — the edited
-   *  message is resent in a NEW forked session (original session untouched),
-   *  instead of destructive in-place resend. */
-  onEditAndRewind?: (messageId: string, newContent: string) => void;
-  /** P0 (dsh-navbar 精选 pin 对标): assistant 消息精选到右侧导航条 */
-  pinned?: boolean;
-  onTogglePin?: (messageId: string) => void;
-  /** P0: Called when user wants to restore a message to the input box */
-  onReEdit?: (content: string) => void;
-  /** P0: Session ID for DB persistence (feedback) */
-  sessionId?: string;
-  /** P0: Whether editing is allowed (e.g. disabled during streaming) */
-  canEdit?: boolean;
+/** 桌面代码高亮器：共享代码块外壳 + 桌面 Shiki（移动端不需要背 WASM） */
+const renderShikiCode = (code: string, language: string) => (
+  <ShikiCodeBlock code={code} language={language} />
+);
+
+/** 共享气泡要的文案集（全部来自桌面 i18n 真源 `S`） */
+function bubbleStrings(lang: Lang): BubbleStrings {
+  return {
+    copyMessage: S.bubble.copyMessage[lang],
+    copied: S.bubble.copied[lang],
+    editAndResend: S.bubble.editAndResend[lang],
+    editAndRewind: S.bubble.editAndRewind[lang],
+    reEdit: S.bubble.reEdit[lang],
+    pinToNav: S.bubble.pinToNav[lang],
+    unpinFromNav: S.bubble.unpinFromNav[lang],
+    expand: S.bubble.expand[lang],
+    collapse: S.bubble.collapse[lang],
+    cleanFiles: S.bubble.cleanFiles[lang],
+    delete: S.bubble.delete[lang],
+    cancel: S.bubble.cancel[lang],
+    readAloud: S.voice.readAloud[lang],
+    stopReading: S.voice.stopReading[lang],
+    delegatedTaskLabel:
+      lang === "zh" ? "委派任务（来自其它会话）" : "Delegated task (from another session)",
+    systemNoticeTitle: lang === "zh" ? "系统提醒" : "System notice",
+    midRunGuidanceLabel: lang === "zh" ? "运行中追加" : "Mid-run guidance",
+    sourcesLabel: lang === "zh" ? "来源:" : "Sources:",
+  };
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, isLatestMessage, onCitationClick, onSourceClick, onEditAndResend, onEditAndRewind, onReEdit, sessionId, canEdit = true, pinned, onTogglePin }: MessageBubbleProps) {
-const lang = useLang();
-  const displayMode = useAppStore((s) => s.displayMode);
-  const isStreaming = message.status === "streaming";
-  // Historical messages (not streaming) default to collapsed reasoning.
-  // Streaming messages start expanded — the streaming effect will keep it open.
-  const [expanded, setExpanded] = useState(isStreaming ? true : (displayMode === "unified"));
-  const [toolsExpanded, setToolsExpanded] = useState(displayMode !== "unified");
-  const [showAttachment, setShowAttachment] = useState<string | null>(null);
+/**
+ * 消息语义 + 展示正文的唯一判定（原 `MessageBubble` 内联逻辑，原样搬出）。
+ *
+ * 这里刻意**不**放进共享层：`isMachineInjectedMessage` / `isDelegatedTaskMessage`
+ * 的口径属于桌面存储层（`core/storage/session.ts`），
+ * 共享层只消费结果，避免两边各写一份判定。
+ */
+function describeMessage(message: MessageLike): MessageDescription {
+  const m = message as unknown as Message;
+  const machineInjected = isMachineInjectedMessage(m);
+  const isUser = m.role === "user" && !machineInjected;
+  const delegatedTask = isDelegatedTaskMessage(m);
+  /** 机器注入的提醒按「系统说明」渲染（居中、无用户头衔、无编辑入口），但仍显示正文 */
+  const isSystem = m.role === "system" || (machineInjected && !delegatedTask);
   /**
-   * ## 附件正文的**读取路径**（第 92 轮修的真缺陷）
-   *
-   * 现场（隔离钻取，装机版 1.16.138 实测）：给一条消息挂上真附件后，界面上**能看到**
-   * 「文件名 + 大小」（元数据走域镜像），但**点开是空的** ——
-   * 因为这里原来只读 `att.content`，而**读路径**上的消息（重启后 / 从镜像读）
-   * 按设计**不带正文**（`attachmentsFromMirror`：正文可能几十 MB，一律留空、按需取）。
-   *
-   * 于是"点开附件能看到正文"这件事，只在**刚上传那一刻**（正文还在内存缓存里）成立；
-   * 重启之后点开永远是空的，而且**没有任何提示**说她为什么是空的。
-   *
-   * 现在：点开时走 `getAttachmentContent(id)`（同步缓存 → 命中即显示；未命中会触发一次
-   * 异步预取），并用**有界重试**（4 次、退避 400/800/1200/1600ms）等预取落地；
-   * 一直读不到就**如实说**"暂时读不到、再点一次可重试"，不再给一个永远空的框。
+   * 运行中追加（mid-turn guidance）的消息：落库内容是「附件内联块 + 注入模板」，
+   * 但**用户要看的是他自己写的那句话**，不是模板里那句 "Runtime guidance from the user"。
    */
+  const midTurnGuidance = isUser && isMidTurnGuidance(m);
+  const rawContent = isUser
+    ? (midTurnGuidance
+        ? guidanceDisplayMessage(m)
+        : m.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim())
+    : m.content;
+  // P1-2: Process citations — convert [Source N: name] to clickable markdown links
+  // + Auto-link: bare file paths → Markdown links (rendering-layer safety net)
+  const displayContent = isUser
+    ? rawContent
+    : autoLinkFilePaths(rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")'));
+
+  return {
+    isUser,
+    isSystem,
+    isDelegatedTask: delegatedTask,
+    isMachineInjected: machineInjected,
+    midTurnGuidance,
+    displayContent,
+    rawContent,
+  };
+}
+
+/** 正文渲染器：助手走 RichContent（KaTeX/GFM/流式揭示），用户走共享 Markdown */
+function DesktopBody({
+  message,
+  content,
+  isUser,
+  streaming,
+  lang,
+  onCitationClick,
+}: {
+  message: MessageLike;
+  content: string;
+  isUser: boolean;
+  streaming: boolean;
+  lang: Lang;
+  onCitationClick?: (sourceName: string) => void;
+}) {
+  // P1: Stream reveal — compute reveal count for animation
+  const revealCount = useMemo(() => {
+    if (!streaming || !content) return 0;
+    const graphemes = splitGraphemes(content);
+    return Math.min(graphemes.length, 15);
+  }, [streaming, content]);
+  const revealRevision = useMemo(() => content.length, [content.length]);
+
+  // 方案 B：从本轮工具调用记录构建 file-mention resolver，
+  // 让 LLM 在结束语中以 `filename` 反引号提及的文件变成可点击链接。
+  // 仅在非流式（已结束）时生效，避免中途文件列表不完整导致误解析。
+  const fileMentions = useMemo(() => {
+    if (isUser || streaming || !message.toolCalls?.length) return null;
+    return createFileMentions(message.toolCalls as never, (path) => void openFileLink(path));
+  }, [isUser, streaming, message.toolCalls]);
+
+  if (!isUser) {
+    return (
+      <RichContent
+        content={content}
+        streaming={streaming}
+        revealCount={revealCount}
+        revealRevision={revealRevision}
+        className=""
+        fileMentions={fileMentions}
+      />
+    );
+  }
+  return (
+    <MessageMarkdown
+      content={content}
+      copyLabel={S.bubble.copy[lang]}
+      renderHighlight={renderShikiCode}
+      onCitationClick={onCitationClick}
+      onLinkClick={handleFileLinkClick}
+      onLinkContextMenu={handleFileLinkContextMenu}
+    />
+  );
+}
+
+/**
+ * 附件区（文件卡 / 图片画廊 / 视频）——桌面读正文与画廊转场都在这里。
+ *
+ * ## 附件正文的**读取路径**（第 92 轮修的真缺陷）
+ *
+ * 现场（隔离钻取，装机版 1.16.138 实测）：给一条消息挂上真附件后，界面上**能看到**
+ * 「文件名 + 大小」（元数据走域镜像），但**点开是空的** ——
+ * 因为这里原来只读 `att.content`，而**读路径**上的消息（重启后 / 从镜像读）
+ * 按设计**不带正文**（`attachmentsFromMirror`：正文可能几十 MB，一律留空、按需取）。
+ *
+ * 现在：点开时走 `getAttachmentContent(id)`（同步缓存 → 命中即显示；未命中会触发一次
+ * 异步预取），并用**有界重试**（4 次、退避 400/800/1200/1600ms）等预取落地；
+ * 一直读不到就**如实说**"暂时读不到、再点一次可重试"，不再给一个永远空的框。
+ */
+function DesktopAttachments({ message }: { message: MessageLike }) {
+  const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [attachmentText, setAttachmentText] = useState<Record<string, string | undefined>>({});
   const [attachmentHint, setAttachmentHint] = useState<Record<string, string | undefined>>({});
   const [pendingAttachment, setPendingAttachment] = useState<{ id: string; tries: number } | null>(null);
-  const [showFilesConfirm, setShowFilesConfirm] = useState(false);
-  const [contentCollapsed, setContentCollapsed] = useState(false);
-  const [systemExpanded, setSystemExpanded] = useState(false);
-const [copied, setCopied] = useState(false);
-const [isEditing, setIsEditing] = useState(false);
-const [isEditingRewind, setIsEditingRewind] = useState(false);
-const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
-const [galleryIndex, setGalleryIndex] = useState(0);
-/* 共享元素转场名：与缩略图上的 view-transition-name 成对（判据 VIEWTRANS-*） */
-const [galleryTransitionName, setGalleryTransitionName] = useState<string | undefined>(undefined);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  /* 共享元素转场名：与缩略图上的 view-transition-name 成对（判据 VIEWTRANS-*） */
+  const [galleryTransitionName, setGalleryTransitionName] = useState<string | undefined>(undefined);
 
   /**
    * 附件正文的**有界重试**：`getAttachmentContent` 是同步的（未命中就返回 undefined
@@ -314,13 +280,314 @@ const [galleryTransitionName, setGalleryTransitionName] = useState<string | unde
     }, 400 * (tries + 1));
     return () => clearTimeout(timer);
   }, [pendingAttachment]);
+
+  return (
+    <>
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="message-attachments">
+          {message.attachments.map((att) => (
+            <div
+              key={att.id}
+              className="message-attachment"
+              onClick={() => {
+                const closing = showAttachment === att.id;
+                setShowAttachment(closing ? null : att.id);
+                if (closing) return;
+                /**
+                 * 展开时**按需取正文**（见上面那段注释）：内存里有（刚上传）直接用；
+                 * 没有就走 `getAttachmentContent` + 有界重试 —— 读路径上的消息正文不在镜像里。
+                 */
+                if (att.content || att.type === "image") return;
+                if (attachmentText[att.id] !== undefined) return;
+                const cached = getAttachmentContent(att.id);
+                if (cached !== undefined) {
+                  setAttachmentText((prev) => ({ ...prev, [att.id]: cached }));
+                  setAttachmentHint((prev) => ({ ...prev, [att.id]: undefined }));
+                } else {
+                  setPendingAttachment({ id: att.id, tries: 0 });
+                }
+              }}
+            >
+              {att.type === "image" && att.content ? (
+                <img
+                  src={att.content}
+                  alt={att.name}
+                  className="attachment-image"
+                  style={{
+                    // 画廊打开期间缩略图必须有名字，否则共享元素会"两个同名元素"失效
+                    viewTransitionName: galleryImages
+                      ? "none"
+                      : `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const imgs = message.attachments?.filter(a => a.type === "image" && a.content).map(a => a.content!) || [];
+                    const name = `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                    runViewTransition(() => {
+                      flushSync(() => {
+                        setGalleryImages(imgs);
+                        setGalleryIndex(imgs.indexOf(att.content || ""));
+                        setGalleryTransitionName(name);
+                      });
+                    });
+                  }}
+                />
+              ) : (
+                <div className="attachment-file">
+                  <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={16} /> : <FileText size={16} />}</span>
+                  <span className="attachment-name">{att.name}</span>
+                  {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
+                </div>
+              )}
+              {showAttachment === att.id && att.type !== "image" && (
+                <>
+                  {(attachmentText[att.id] ?? att.content) ? (
+                    <pre className="attachment-preview">{attachmentText[att.id] ?? att.content}</pre>
+                  ) : (
+                    /**
+                     * 读不到就**如实说**（而不是给一个永远空的框）：
+                     * 读路径上的正文不在镜像里，第一次点开可能还在预取；说清"再点一次"。
+                     */
+                    <div className="attachment-preview attachment-preview--pending">
+                      {attachmentHint[att.id] ??
+                        (getLang() === "zh" ? "正在读取正文…" : "Loading content…")}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* P3: Image gallery lightbox */}
+      {galleryImages && galleryImages.length > 0 && (
+        <ImageGallery
+          images={galleryImages}
+          initialIndex={galleryIndex}
+          transitionName={galleryTransitionName}
+          onClose={() => {
+            setGalleryImages(null);
+            setGalleryTransitionName(undefined);
+          }}
+        />
+      )}
+
+      {/* P3: Video player for video attachments */}
+      {message.attachments?.filter(a => a.type === "video" && a.content).map(att => (
+        <VideoPlayer
+          key={`video-${att.id}`}
+          src={att.content!}
+          title={att.name}
+        />
+      ))}
+    </>
+  );
+}
+
+/** 子智能体状态行（桌面全局 SubagentRuntime） */
+function SubagentStatus({ taskId, name, toolStatus }: { taskId: string; name?: string; toolStatus?: string }) {
+  const [status, setStatus] = useState<string>("init");
+  const [summary, setSummary] = useState<string>("");
+
+  useEffect(() => {
+    // DSH-style: 从全局 SubagentRuntime 获取状态
+    // 对标 DSH ctx.subagents — 替代旧 SubagentManager
+    const runtime = getSubagentRuntime();
+    if (!runtime) {
+      // Runtime 未就绪 — 用 toolStatus 降级显示
+      if (toolStatus === "done") setStatus("completed");
+      else if (toolStatus === "error") setStatus("failed");
+      else setStatus("running");
+      return;
+    }
+    const check = () => {
+      const task = runtime.getTask(taskId);
+      if (task) {
+        setStatus(task.status);
+        if (task.result) setSummary(task.result.summary);
+      } else {
+        // Task not in memory (historical session) — fall back to tool call status
+        if (toolStatus === "done") {
+          setStatus("completed");
+        } else if (toolStatus === "error") {
+          setStatus("failed");
+        } else {
+          setStatus("running");
+        }
+      }
+    };
+    check();
+    // DSH-style: 订阅事件而非轮询
+    const unsubscribe = runtime.subscribe(check);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [taskId, toolStatus]);
+
+  const zh = getLang() === "zh";
+  const displayName = name || (zh ? "子智能体" : "Sub-agent");
+
+  // While initializing, don't show anything (avoids brief "running" flash)
+  if (status === "init") return null;
+
+  if (status === "completed") {
+    return <span className="subagent-status done icon-inline"><CheckCircle size={12} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
+  }
+  if (status === "failed") {
+    return <span className="subagent-status failed icon-inline"><XCircle size={12} /> {displayName} {zh ? "失败" : "failed"}</span>;
+  }
+  return <span className="subagent-status running icon-inline"><Clock size={12} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
+}
+
+/** 工具区：笔记操作提示 + 插件槽（fallback 连续工具组）+ 子智能体状态行 */
+function DesktopToolSection({ message, initialExpanded }: { message: MessageLike; initialExpanded: boolean }) {
+  const lang = useLang();
+  const [toolsExpanded] = useState(initialExpanded);
+  const toolCalls = message.toolCalls ?? [];
+  // B9: Detect note operation tools for prominent display
+  const noteOps = toolCalls.filter(tc =>
+    ['create_note', 'edit_note', 'link_notes', 'delete_note'].includes(tc.tool)
+  );
+  const hasNoteOps = noteOps.length > 0;
+
+  return (
+    <div className="tool-calls">
+      {/* B9: Note operation notifications — always visible */}
+      {hasNoteOps && (
+        <div className="note-op-notifications">
+          {noteOps.map((tc) => {
+            const isDone = tc.status === 'done';
+            const isError = tc.status === 'error';
+            const zh = getLang() === 'zh';
+            const opLabel = tc.tool === 'create_note'
+              ? (zh ? '创建笔记' : 'Created note')
+              : tc.tool === 'edit_note'
+              ? (zh ? '编辑笔记' : 'Edited note')
+              : tc.tool === 'delete_note'
+              ? (zh ? '删除笔记' : 'Deleted note')
+              : (zh ? '链接笔记' : 'Linked notes');
+            const title = tc.args?.title || tc.args?.targetTitle || '';
+            return (
+              <div
+                key={tc.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 10px',
+                  background: isError
+                    ? 'color-mix(in srgb, var(--error) 10%, transparent)'
+                    : isDone
+                    ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
+                    : 'color-mix(in srgb, var(--warning) 10%, transparent)',
+                  border: `1px solid ${
+                    isError ? 'color-mix(in srgb, var(--error) 30%, transparent)'
+                    : isDone ? 'color-mix(in srgb, var(--accent) 30%, transparent)'
+                    : 'color-mix(in srgb, var(--warning) 30%, transparent)'
+                  }`,
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--text-secondary, #a0a0a8)',
+                }}
+              >
+                <span>{isError ? <XCircle size={12} /> : isDone ? <FileText size={12} /> : <Clock size={12} />}</span>
+                <span style={{ fontWeight: 500 }}>
+                  {opLabel}{title ? `: "${title}"` : ''}
+                </span>
+                {isDone && tc.result && (
+                  <span style={{ opacity: 0.6, fontSize: 'var(--fs-xs)' }}><Check size={10} /></span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* SlotBridge 消费 conversation.node.tool slot — fallback 到 ToolCallGroup */}
+      <SlotBridge
+        name="conversation.node.tool"
+        fallback={ToolCallGroup}
+        items={toolCalls.map((tc): ToolCallCardProps => {
+          // 支持新旧工具名
+          const isSubagent = tc.tool === "spawn_subagent" || tc.tool === "subagent";
+          let agentName = isSubagent ? (tc.args?.name || tc.args?.description) as string : null;
+          if (!agentName && isSubagent && tc.result && tc.result.length < 200_000) {
+            const nameMatch = tc.result.match(/(?:子智能体|Sub-agent|后台子智能体)\s*([^\.\s,]+)/);
+            if (nameMatch) agentName = nameMatch[1];
+          }
+          const displayName = isSubagent
+            ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")}`
+            : tc.tool;
+          const rawSummary = tc.args
+            ? (tc.args.query || tc.args.file || tc.args.path || tc.args.title || tc.args.command || tc.args.prompt || tc.args.description || "")
+            : "";
+          return {
+            toolName: displayName,
+            toolArgs: tc.args ? JSON.stringify(tc.args, null, 2) : undefined,
+            toolResult: toolResultForDisplay(tc.result),
+            status: tc.status as "running" | "done" | "error",
+            duration: (tc.metadata as any)?.duration,
+            argsSummary: typeof rawSummary === "string" && rawSummary ? rawSummary : undefined,
+            metadata: tc.metadata as Record<string, any> | undefined,
+          };
+        })}
+        title={`${toolCalls.length} ${S.bubble.toolCalls[lang]}`}
+        defaultExpanded={toolsExpanded}
+      />
+      {/* Subagent status polling — 支持 spawn_subagent (旧) 和 subagent (新) */}
+      <div className="subagent-status-row">
+      {toolCalls.filter(tc => {
+        // 旧格式: tool=spawn_subagent, result 以 SUBAGENT_TASK_ID: 开头
+        if (tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")) return true;
+        // 新格式: tool=subagent, metadata.subagentId 存在
+        if (tc.tool === "subagent" && (tc.metadata as any)?.subagentId) return true;
+        // 新格式（前台模式）: tool=subagent, 有 result 但无 subagentId（一次性同步等待）
+        return false;
+      }).map((tc) => {
+        // 提取 taskId — 兼容新旧格式
+        let taskId: string;
+        let agentName: string | undefined;
+        if (tc.tool === "spawn_subagent") {
+          taskId = tc.result!.split("\n")[0].replace("SUBAGENT_TASK_ID:", "");
+          agentName = tc.args?.name as string;
+        } else {
+          taskId = (tc.metadata as any)?.subagentId as string;
+          agentName = tc.args?.description as string;
+        }
+        return (
+          <SubagentStatus
+            key={`sub-${tc.id}`}
+            taskId={taskId}
+            name={agentName || undefined}
+            toolStatus={tc.status}
+          />
+        );
+      })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 桌面平台实例。
+ *
+ * 依赖（语言 / 显示模式 / 头像 / TTS 状态）变化时才产生新对象；
+ * 气泡本身是 `memo()` 的，父级无变化的重渲染不会改变这个引用
+ * （`chat-streaming-suffix` 钉住的浅比较防线仍然有效）。
+ */
+function useDesktopChatPlatform(): ChatPlatform {
+  const lang = useLang();
+  const displayMode = useAppStore((s) => s.displayMode);
+  // 与原来的 `UserAvatar` 一致：每次渲染读一次设置（改头像后下一次渲染即生效）
+  const avatarSrc = getSettingJSON<UserConfig>("codem-user", DEFAULT_USER_CONFIG).avatar || "";
+
   // P3-26: TTS — text-to-speech for message content
   const { isSpeaking, isSupported: ttsSupported, speak: ttsSpeak, cancel: ttsCancel } = useSpeechSynthesis();
   const [isTtsLoading, setIsTtsLoading] = useState(false);
   const [ttsMessageId, setTtsMessageId] = useState<string | null>(null);
 
   // Handle read aloud button click
-  const handleReadAloud = useCallback(async () => {
+  const handleReadAloud = useCallback(async (message: MessageLike) => {
     if (!message.content?.trim()) return;
 
     // If currently speaking for this message, stop
@@ -371,859 +638,122 @@ const [galleryTransitionName, setGalleryTransitionName] = useState<string | unde
       // Use browser built-in TTS
       ttsSpeak(plainText);
     }
-  }, [message.id, message.content, isSpeaking, ttsMessageId, ttsCancel, ttsSpeak]);
+  }, [isSpeaking, ttsMessageId, ttsCancel, ttsSpeak]);
 
-  /**
-   * 「这是不是**用户自己打的那句话**」（第 198 波）。
-   *
-   * 只看 `role === "user"` 是不够的：引擎会把**系统提醒**（`verify-nudge-…` 等，见
-   * `storage/session.ts` 的 `SYSTEM_INJECTED_MESSAGE_ID_PREFIXES`）以 user 角色写进对话，
-   * 重开会话时它们会被渲染成"用户说的话"（用户真机直报：右侧气泡、用户头衔、
-   * 还带着"编辑并重发"——点下去会把提醒当成用户提问重发）。
-   */
-  const machineInjected = isMachineInjectedMessage(message);
-  const isUser = message.role === "user" && !machineInjected;
-  /** 机器注入的提醒按「系统说明」渲染（居中、无用户头衔、无编辑入口），但仍显示正文 */
-  const isSystem = message.role === "system" || (machineInjected && !isDelegatedTaskMessage(message));
-  /**
-   * 别的会话委派进来的任务记录（第 194 波，GAP-LIST O-56）。
-   * 判据取 **id 前缀**（唯一写入点 `session/executor.ts`；见 `storage/session.ts` 的长注释）。
-   */
-  const delegatedTask = isDelegatedTaskMessage(message);
-  const isError = message.status === "error";
+  const strings = useMemo(() => bubbleStrings(lang), [lang]);
 
-  // For user messages: strip <attachment> blocks from displayed content.
-  // Attachment content is inlined into message.content for the LLM (with data-isolation
-  // markers), but the UI should only show the user's actual text — attachments are
-  // already rendered as separate cards above. Without this, uploaded file content
-  // (e.g. another AI's system prompt) would be fully displayed in the chat bubble.
-  /**
-   * 运行中追加（mid-turn guidance）的消息：落库内容是「附件内联块 + 注入模板」，
-   * 但**用户要看的是他自己写的那句话**，不是模板里那句 "Runtime guidance from the user"。
-   * 原文存在 `metadata.guidanceRaw`（见 agentic-loop 的消费点）。
-   * 判据 `GUIDE-VIS-5`。
-   */
-  const midTurnGuidance = isUser && isMidTurnGuidance(message);
-  const rawContent = isUser
-    ? (midTurnGuidance
-        ? guidanceDisplayMessage(message)
-        : message.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim())
-    : message.content;
-
-  // P1-2: Process citations — convert [Source N: name] to clickable markdown links
-  // This is a fallback for models that embed citations in text.
-  // Primary citation rendering is via structured metadata (see SourcesPanel below).
-  // + Auto-link: bare file paths → Markdown links (rendering-layer safety net)
-  const displayContent = isUser
-    ? rawContent
-    : autoLinkFilePaths(rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")'));
-
-  // Extract source citations from both:
-  // 1. message.retrievedSources — auto-retrieved from notebook RAG (metadata-driven, not prompt-based)
-  // 2. search_notebook tool metadata — when LLM explicitly calls the search tool
-  const citationSources = useMemo(() => {
-    if (isUser) return [];
-    const sources: Array<{ index: number; sourceId: string; sourceName: string; chunkIndex: number; snippet: string }> = [];
-    // 1. Auto-retrieved sources from notebook knowledge context
-    for (const src of message.retrievedSources || []) {
-      if (!sources.find(s => s.sourceId === src.sourceId)) {
-        sources.push({
-          index: sources.length + 1,
-          sourceId: src.sourceId,
-          sourceName: src.sourceName,
-          chunkIndex: src.chunkIndex,
-          snippet: src.snippet,
-        });
-      }
-    }
-    // 2. Tool-call-based sources (search_notebook)
-    for (const tc of message.toolCalls || []) {
-      if (tc.tool === 'search_notebook' && tc.metadata?.sources && tc.status === 'done') {
-        for (const src of tc.metadata.sources) {
-          // Deduplicate by sourceId — keep the first occurrence
-          if (!sources.find(s => s.sourceId === src.sourceId)) {
-            sources.push(src);
-          }
-        }
-      }
-    }
-    return sources;
-  }, [message.retrievedSources, message.toolCalls, isUser]);
-
-  // Memoize ReactMarkdown components config to prevent re-creation on every render
-  const markdownComponents = useMemo(() => ({
-    code({ className, children, ...props }: any) {
-      const match = /language-(\w+)/.exec(className || "");
-      const codeStr = String(children).replace(/\n$/, "");
-      if (match) {
-        // B6: Render mermaid diagrams inline
-        if (match[1] === "mermaid") {
-          return <MermaidDiagram chart={codeStr} />;
-        }
-        return (
-          <div className="code-block">
-            <div className="code-header">
-              <span>{match[1]}</span>
-              <button
-                className="copy-btn"
-                onClick={() => navigator.clipboard.writeText(codeStr)}
-              >
-                {S.bubble.copy[lang]}
-              </button>
-            </div>
-            <ShikiCodeBlock
-              code={codeStr}
-              language={match[1]}
-            />
-          </div>
-        );
-      }
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      );
+  return useMemo<ChatPlatform>(() => ({
+    lang,
+    displayMode,
+    strings,
+    avatarSrc,
+    describe: describeMessage,
+    renderBody: ({ message, content, isUser, streaming, onCitationClick }) => (
+      <DesktopBody
+        message={message}
+        content={content}
+        isUser={isUser}
+        streaming={streaming}
+        lang={lang}
+        onCitationClick={onCitationClick}
+      />
+    ),
+    renderAttachments: (message) => <DesktopAttachments message={message} />,
+    renderTools: ({ message }) => (
+      <DesktopToolSection message={message} initialExpanded={displayMode !== "unified"} />
+    ),
+    renderFeedback: ({ message, sessionId, inline }) => (
+      <SlotBridge
+        name="app.message-feedback"
+        fallback={FeedbackButtons}
+        message={message as unknown as Message}
+        sessionId={sessionId}
+        inline={inline}
+      />
+    ),
+    renderReasoning: ({ message, running }) => (
+      <ReasoningRow text={message.reasoning || ""} running={running} />
+    ),
+    renderError: ({ message, lang: errorLang }) => (
+      <ErrorCard
+        title={errorLang === "zh" ? "执行出错" : "Execution Error"}
+        message={message.content || (errorLang === "zh" ? "未知错误" : "Unknown error")}
+        details={message.reasoning || undefined}
+        retryable={false}
+      />
+    ),
+    renderEditor: ({ initialContent, onSave, onCancel }) => (
+      <InlineMessageEdit
+        initialContent={initialContent}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
+    ),
+    renderStats: (message) => <StatsLine message={message as unknown as Message} />,
+    renderTurnStatus: (message) => (
+      <TurnStatus {...((message.metadata?.turnStatus ?? {}) as any)} />
+    ),
+    renderSourceReferences: ({ sources, onSourceClick }) => (
+      <SourceReferences
+        sources={sources.map((s) => ({
+          sourceId: s.sourceId,
+          sourceName: s.sourceName,
+          chunkIndex: s.chunkIndex,
+          snippet: s.snippet,
+          score: s.score ?? 0,
+        }))}
+        onSourceClick={onSourceClick}
+      />
+    ),
+    renderTip: ({ label, children }) => (
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    ),
+    readAloud: {
+      supported: ttsSupported,
+      isSpeaking: (messageId: string) => isSpeaking && ttsMessageId === messageId,
+      // 与原实现一致：云端 TTS 请求期间所有朗读按钮都禁用（加载态是全局的）
+      isLoading: () => isTtsLoading,
+      toggle: (message: MessageLike) => {
+        void handleReadAloud(message);
+      },
     },
-    // Also detect file paths in inline code for user messages
-    // (assistant messages use RichContent which has its own file path detection)
-    a({ href, children, ...props }: any) {
-      // P1-2: Handle citation links
-      if (href && href.startsWith('#cite-')) {
-        const sourceName = props.title || '';
-        return (
-          <sup
-            className="nb-citation-link"
-            title={sourceName}
-            onClick={(e) => {
-              e.preventDefault();
-              if (onCitationClick) {
-                onCitationClick(sourceName);
-              } else {
-                // Fallback: toggle a visual indicator
-                const el = e.currentTarget;
-                el.classList.toggle('active');
-              }
-            }}
-            style={{ cursor: 'pointer' }}
-          >
-            {children}
-          </sup>
-        );
-      }
-      return (
-        <a
-          {...props}
-          href={href}
-          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => handleFileLinkClick(e, href || "")}
-          onContextMenu={(e: React.MouseEvent<HTMLAnchorElement>) => handleFileLinkContextMenu(e, href || "")}
-          style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
-        >
-          {children}
-        </a>
-      );
+    fileLinks: {
+      open: (path: string) => {
+        void openFileLink(path);
+      },
+      click: handleFileLinkClick,
+      contextMenu: handleFileLinkContextMenu,
     },
-    img({ src, alt, ...props }: any) {
-      return (
-        <img
-          src={src}
-          alt={alt || ""}
-          {...props}
-          style={{ maxWidth: "100%", borderRadius: "var(--radius)", marginTop: 8, marginBottom: 8 }}
-          onError={(e) => {
-            console.error("[Image render error]", alt, src?.substring(0, 50));
-          }}
-        />
-      );
-    },
-  }), [lang, onCitationClick]);
+  }), [
+    lang,
+    displayMode,
+    strings,
+    avatarSrc,
+    ttsSupported,
+    isSpeaking,
+    ttsMessageId,
+    isTtsLoading,
+    handleReadAloud,
+  ]);
+}
 
-  // 方案 B：从本轮工具调用记录构建 file-mention resolver，
-  // 让 LLM 在结束语中以 `filename` 反引号提及的文件变成可点击链接。
-  // 仅在非流式（已结束）时生效，避免中途文件列表不完整导致误解析。
-  const fileMentions = useMemo(() => {
-    if (isUser || isStreaming || !message.toolCalls?.length) return null;
-    return createFileMentions(message.toolCalls, (path) => void openFileLink(path));
-  }, [isUser, isStreaming, message.toolCalls]);
-
-  // Track whether this message was ever streamed (i.e. it's the "latest" answer,
-  // not a historical message loaded from DB). Historical messages default to
-  // collapsed; streamed messages stay expanded even after streaming ends.
-  const wasStreamedRef = useRef(false);
-  if (isStreaming) wasStreamedRef.current = true;
-
-  // Check if content should be collapsible (after render, not during streaming)
-  useEffect(() => {
-    if (isStreaming) {
-      setContentCollapsed(false);
-      return;
-    }
-    // Only auto-collapse historical messages (never streamed).
-    // The latest answer that just finished streaming should stay expanded
-    // so the user can read it immediately. 重开会话时“最新一条”同样不折叠。
-    if (wasStreamedRef.current || isLatestMessage) return;
-    // P2: content-visibility: auto 下屏外消息不布局，scrollHeight 不可靠。
-    // 用字符长度估算为主（稳定、不依赖布局），scrollHeight 作为补充测量。
-    const estimatedTall = displayContent.length > COLLAPSE_CHARS;
-    const measured = contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD;
-    if (estimatedTall || measured) {
-      setContentCollapsed(true);
-    }
-  }, [isStreaming, displayContent, isLatestMessage]);
-
-  // Reasoning collapse logic:
-  // - During streaming: keep expanded (user sees reasoning in real-time)
-  // - After streaming ends: keep expanded (user just received this answer, wants to read it)
-  // - Historical messages (loaded from DB, never streamed): default collapsed
-  const reasoningAutoCollapsedRef = useRef(false);
-  const hasStreamedRef = useRef(false);
-  useEffect(() => {
-    if (isStreaming && message.reasoning) {
-      setExpanded(true);
-      hasStreamedRef.current = true;
-      reasoningAutoCollapsedRef.current = false;
-    }
-    // When streaming ends, do NOT auto-collapse — the user just watched this answer
-    // being generated and wants to read the reasoning. Only historical messages
-    // (which were never in streaming state) should be collapsed by default.
-  }, [isStreaming, message.reasoning]);
-
-  // P1: Stream reveal — compute reveal count for animation
-  const revealCount = useMemo(() => {
-    if (!isStreaming || !displayContent) return 0;
-    const graphemes = splitGraphemes(displayContent);
-    return Math.min(graphemes.length, 15);
-  }, [isStreaming, displayContent]);
-  const revealRevision = useMemo(() => displayContent.length, [displayContent.length]);
-
-const handleCopyMessage = useCallback(() => {
-navigator.clipboard.writeText(rawContent).then(() => {
-setCopied(true);
-setTimeout(() => setCopied(false), 2000);
-});
-}, [rawContent]);
-
-  /*
-   * 机器注入的 [SYSTEM] 提醒是给模型的上下文，不是用户消息。
-   * 不隐藏它（SYSINJ 要求提醒内容仍可取证），但压成一行状态；
-   * 原始大段只在点开后显示，避免它抢走整轮对话的视觉主体。
-   */
-  if (isSystem && machineInjected && !delegatedTask) {
-    const noticeText = displayContent.replace(/^\[SYSTEM\]\s*/, "").replace(/\*\*/g, "");
-    const noticeSummary = noticeText.split("\n")[0]?.slice(0, 160) || noticeText.slice(0, 160);
-    return (
-      <div
-        className="message message-bubble system system-status"
-        data-message-id={message.id}
-        data-message-kind="system"
-      >
-        <button
-          className="system-status-head"
-          aria-expanded={systemExpanded}
-          onClick={() => setSystemExpanded((v) => !v)}
-        >
-          <AlertTriangle className="icon-sm system-status-icon" />
-          <span className="system-status-title">{lang === "zh" ? "系统提醒" : "System notice"}</span>
-          <span className="system-status-summary">{noticeSummary}</span>
-          {systemExpanded ? <ChevronUp className="icon-xs" /> : <ChevronDown className="icon-xs" />}
-        </button>
-        {systemExpanded && (
-          <div className="system-status-body">{noticeText}</div>
-        )}
-      </div>
-    );
-  }
-
+/**
+ * 桌面消息气泡（对外导出兼容的入口）。
+ *
+ * 组件本体在 `packages/ui/src/message-bubble.tsx`；这里只负责注入桌面平台。
+ * 仍用 `memo()` 保持与第 233 轮相同的浅比较防线（`chat-streaming-suffix` 钉住它）。
+ */
+export const MessageBubble = memo(function MessageBubble(props: MessageBubbleProps) {
+  const platform = useDesktopChatPlatform();
   return (
-    <div 
-      className={`message message-bubble ${isUser ? "user" : isSystem ? "system" : "assistant"} ${delegatedTask ? "delegated-task" : ""} ${displayMode === "unified" ? "unified-mode" : ""}`}
-      data-message-id={message.id}
-      data-message-kind={delegatedTask ? "delegated-task" : isUser ? "user" : isSystem ? "system" : "assistant"}
-    >
-      {isUser && !delegatedTask && <UserAvatar />}
-      <div className="message-body">
-        {/*
-          ## 委派任务记录：**不能长得像用户自己说的话**（第 194 波，GAP-LIST O-56）
-          
-          真机现场：别的会话委派进来的任务（正文是一份完整交接），在界面上就是一条**普通用户气泡** ——
-          用户看到"最新一条是交接记录、我后面聊的变成历史"时，无法判断这是**别人派进来的任务**
-          还是**自己刚说的话**。这里给它一条明确的抬头 + 独立的类名（`delegated-task`），
-          正文照旧渲染（它确实是给这一轮用的指令），只是**身份**不再含糊。
-        */}
-        {delegatedTask && (
-          <div className="delegated-task-header">
-            {/* 不加图标：`ICON-1` 棘轮钉住"TSX 里的字面图标尺寸只许降"，这处没有既有尺寸常量可复用 */}
-            <span className="delegated-task-label">
-              {lang === "zh" ? "委派任务（来自其它会话）" : "Delegated task (from another session)"}
-            </span>
-          </div>
-        )}
-        {/* AI message inline header — replaces avatar (aligned with wecode/frakio) */}
-        {!isUser && !isSystem && (
-          <div className="ai-msg-header">
-            <Bot size={16} />
-            <span className="ai-msg-name">Codem</span>
-            {message.timestamp > 0 && (
-              <span className="ai-msg-time">
-                {new Date(message.timestamp).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            )}
-          </div>
-        )}
-        {/* 思考块：DSH 单行，放在正文之前；计算顺序是“思考 → 正文 → 工具回执”。 */}
-        {!isUser && !isSystem && message.reasoning && showReasoning && (
-          <ReasoningRow text={message.reasoning} running={isStreaming} />
-        )}
-
-        {/* 运行中追加的标记（区别于"回合结束后才说的话"） */}
-        {midTurnGuidance && (
-          <div className="midturn-guidance-header">
-            <Zap className="icon-xs" />
-            <span className="midturn-guidance-label">
-              {lang === "zh" ? "运行中追加" : "Mid-run guidance"}
-            </span>
-          </div>
-        )}
-        {/* Attachments */}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="message-attachments">
-            {message.attachments.map((att) => (
-              <div
-                key={att.id}
-                className="message-attachment"
-                onClick={() => {
-                  const closing = showAttachment === att.id;
-                  setShowAttachment(closing ? null : att.id);
-                  if (closing) return;
-                  /**
-                   * 展开时**按需取正文**（见上面那段注释）：内存里有（刚上传）直接用；
-                   * 没有就走 `getAttachmentContent` + 有界重试 —— 读路径上的消息正文不在镜像里。
-                   */
-                  if (att.content || att.type === "image") return;
-                  if (attachmentText[att.id] !== undefined) return;
-                  const cached = getAttachmentContent(att.id);
-                  if (cached !== undefined) {
-                    setAttachmentText((prev) => ({ ...prev, [att.id]: cached }));
-                    setAttachmentHint((prev) => ({ ...prev, [att.id]: undefined }));
-                  } else {
-                    setPendingAttachment({ id: att.id, tries: 0 });
-                  }
-                }}
-              >
-                {att.type === "image" && att.content ? (
-                  <img
-                    src={att.content}
-                    alt={att.name}
-                    className="attachment-image"
-                    style={{
-                      // 画廊打开期间缩略图必须有名字，否则共享元素会"两个同名元素"失效
-                      viewTransitionName: galleryImages
-                        ? "none"
-                        : `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const imgs = message.attachments?.filter(a => a.type === "image" && a.content).map(a => a.content!) || [];
-                      const name = `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-                      runViewTransition(() => {
-                        flushSync(() => {
-                          setGalleryImages(imgs);
-                          setGalleryIndex(imgs.indexOf(att.content || ""));
-                          setGalleryTransitionName(name);
-                        });
-                      });
-                    }}
-                  />
-                ) : (
-                  <div className="attachment-file">
-                    <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={16} /> : <FileText size={16} />}</span>
-                    <span className="attachment-name">{att.name}</span>
-                    {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
-                  </div>
-                )}
-                {showAttachment === att.id && att.type !== "image" && (
-                  <>
-                    {(attachmentText[att.id] ?? att.content) ? (
-                      <pre className="attachment-preview">{attachmentText[att.id] ?? att.content}</pre>
-                    ) : (
-                      /**
-                       * 读不到就**如实说**（而不是给一个永远空的框）：
-                       * 读路径上的正文不在镜像里，第一次点开可能还在预取；说清"再点一次"。
-                       */
-                      <div className="attachment-preview attachment-preview--pending">
-                        {attachmentHint[att.id] ??
-                          (getLang() === "zh" ? "正在读取正文…" : "Loading content…")}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* P3: Image gallery lightbox */}
-        {galleryImages && galleryImages.length > 0 && (
-          <ImageGallery
-            images={galleryImages}
-            initialIndex={galleryIndex}
-            transitionName={galleryTransitionName}
-            onClose={() => {
-              setGalleryImages(null);
-              setGalleryTransitionName(undefined);
-            }}
-          />
-        )}
-
-        {/* P3: Video player for video attachments */}
-        {message.attachments?.filter(a => a.type === "video" && a.content).map(att => (
-          <VideoPlayer
-            key={`video-${att.id}`}
-            src={att.content!}
-            title={att.name}
-          />
-        ))}
-
-        {/*
-          P1 #20: Error card for error messages
-          第 47 轮补（UI/UX 审计 P1）：这里原来写的是 `retryable` +
-          `onRetry={() => { /* retry handled by parent via onEditAndResend *\/ }}` ——
-          也就是**画了一个"可重试"的按钮，点了什么都不发生**。
-          注释说"由父组件通过 onEditAndResend 处理"，但 `onEditAndResend` 的语义是
-          "编辑并重发**用户消息**"，而这张卡片挂在**助手**的错误行上：
-          这条路径上根本不存在重试入口。
-
-          印一个按不动的按钮比不印更糟（用户会以为自己没点到）。这里改成**如实**：
-          不声称可重试，而是告诉用户怎么重来（重新发送上一条，或用助手消息上的
-          「重新生成」——那是由 ChatPanel 在回合级别提供的）。
-        */}
-        {isError && !isUser && (
-          <ErrorCard
-            title={lang === "zh" ? "执行出错" : "Execution Error"}
-            message={message.content || (lang === "zh" ? "未知错误" : "Unknown error")}
-            details={message.reasoning || undefined}
-            retryable={false}
-          />
-        )}
-
-        {/* Long message collapse wrapper (#3) */}
-        <div
-          className={`message-content-wrapper ${contentCollapsed && !isStreaming ? "collapsed" : ""}`}
-        >
-          {isEditing && isUser ? (
-            <InlineMessageEdit
-              initialContent={rawContent}
-              onSave={(newContent) => {
-                setIsEditing(false);
-                const rewind = isEditingRewind;
-                setIsEditingRewind(false);
-                if (rewind) {
-                  onEditAndRewind?.(message.id, newContent);
-                } else {
-                  onEditAndResend?.(message.id, newContent);
-                }
-              }}
-              onCancel={() => { setIsEditing(false); setIsEditingRewind(false); }}
-            />
-          ) : (
-          <div className="message-content" ref={contentRef}>
-            {!isUser && !isEditing ? (
-              <RichContent
-                content={displayContent}
-                streaming={isStreaming}
-                revealCount={revealCount}
-                revealRevision={revealRevision}
-                className=""
-                fileMentions={fileMentions}
-              />
-            ) : (
-              <ReactMarkdown
-                urlTransform={(url) => {
-                  if (url.startsWith("file://")) return url;
-                  const colon = url.indexOf(":");
-                  if (colon === -1) return url;
-                  const proto = url.slice(0, colon);
-                  if (/^(https?|ircs?|mailto|xmpp)$/i.test(proto)) return url;
-                  return "";
-                }}
-                components={{
-                  ...markdownComponents,
-                  hr: () => <div className="unified-separator" />,
-                }}
-              >
-                {displayContent}
-              </ReactMarkdown>
-            )}
-          </div>
-          )}
-          {/* Collapse overlay with expand button */}
-          {!isEditing && contentCollapsed && !isStreaming && (
-            <div className="collapse-overlay" onClick={() => setContentCollapsed(false)}>
-              <span className="collapse-btn">{S.bubble.expand[lang]} ▼</span>
-            </div>
-          )}
-        </div>
-
-        {/* Collapsed indicator (when collapsed, show a small expand hint) */}
-        {!isEditing && contentCollapsed && !isStreaming && (
-          <button className="content-collapsed-hint" onClick={() => setContentCollapsed(false)}>
-            {S.bubble.expand[lang]} · {contentRef.current?.scrollHeight ?? 0}px →
-          </button>
-        )}
-
-        {/* Sources panel — structured metadata-driven citations (对标 NotebookLM) */}
-        {!isUser && citationSources.length > 0 && !isStreaming && (
-          <div className="nb-msg-sources">
-            <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.5, alignSelf: 'center' }}>
-              {lang === 'zh' ? '来源:' : 'Sources:'}
-            </span>
-            {citationSources.map((src) => (
-              <button
-                key={src.sourceId}
-                className="nb-msg-source-chip"
-                onClick={() => onSourceClick?.(src.sourceId, src.chunkIndex)}
-                title={src.snippet}
-                style={{
-                  fontSize: 'var(--fs-xs)',
-                  padding: '2px 8px',
-                  background: 'var(--bg-tertiary, #25252b)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: "var(--radius-md)",
-                  color: 'var(--text-secondary, #a0a0a8)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--accent)';
-                  e.currentTarget.style.color = 'var(--accent)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-primary)';
-                  e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
-                }}
-              >
-                <BookOpen size={14} className="icon-inline" /> {src.sourceName}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {message.toolCalls && message.toolCalls.length > 0 && (() => {
-// B9: Detect note operation tools for prominent display
-const noteOps = message.toolCalls!.filter(tc =>
-['create_note', 'edit_note', 'link_notes', 'delete_note'].includes(tc.tool)
-);
-          const hasNoteOps = noteOps.length > 0;
-          return (
-          <div className="tool-calls">
-            {/* B9: Note operation notifications — always visible */}
-            {hasNoteOps && (
-              <div className="note-op-notifications">
-                {noteOps.map((tc) => {
-                  const isDone = tc.status === 'done';
-                  const isError = tc.status === 'error';
-                  const zh = getLang() === 'zh';
-const opLabel = tc.tool === 'create_note'
-? (zh ? '创建笔记' : 'Created note')
-: tc.tool === 'edit_note'
-? (zh ? '编辑笔记' : 'Edited note')
-: tc.tool === 'delete_note'
-? (zh ? '删除笔记' : 'Deleted note')
-: (zh ? '链接笔记' : 'Linked notes');
-                  const title = tc.args?.title || tc.args?.targetTitle || '';
-                  return (
-                    <div
-                      key={tc.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '4px 10px',
-                        background: isError
-                          ? 'color-mix(in srgb, var(--error) 10%, transparent)'
-                          : isDone
-                          ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
-                          : 'color-mix(in srgb, var(--warning) 10%, transparent)',
-                        border: `1px solid ${
-                          isError ? 'color-mix(in srgb, var(--error) 30%, transparent)'
-                          : isDone ? 'color-mix(in srgb, var(--accent) 30%, transparent)'
-                          : 'color-mix(in srgb, var(--warning) 30%, transparent)'
-                        }`,
-                        borderRadius: "var(--radius-sm)",
-                        fontSize: 'var(--fs-sm)',
-                        color: 'var(--text-secondary, #a0a0a8)',
-                      }}
-                    >
-                      <span>{isError ? <XCircle size={12} /> : isDone ? <FileText size={12} /> : <Clock size={12} />}</span>
-                      <span style={{ fontWeight: 500 }}>
-                        {opLabel}{title ? `: "${title}"` : ''}
-                      </span>
-                      {isDone && tc.result && (
-                        <span style={{ opacity: 0.6, fontSize: 'var(--fs-xs)' }}><Check size={10} /></span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {/* SlotBridge 消费 conversation.node.tool slot — fallback 到 ToolCallGroup */}
-            <SlotBridge
-              name="conversation.node.tool"
-              fallback={ToolCallGroup}
-              items={message.toolCalls.map((tc): ToolCallCardProps => {
-                // 支持新旧工具名
-                const isSubagent = tc.tool === "spawn_subagent" || tc.tool === "subagent";
-                const agentId = isSubagent ? (tc.args?.agentId || tc.args?.description) as string : null;
-                let agentName = isSubagent ? (tc.args?.name || tc.args?.description) as string : null;
-                if (!agentName && isSubagent && tc.result && tc.result.length < 200_000) {
-                  const nameMatch = tc.result.match(/(?:子智能体|Sub-agent|后台子智能体)\s*([^\.\s,]+)/);
-                  if (nameMatch) agentName = nameMatch[1];
-                }
-                const displayName = isSubagent
-                  ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")}`
-                  : tc.tool;
-                const rawSummary = tc.args
-                  ? (tc.args.query || tc.args.file || tc.args.path || tc.args.title || tc.args.command || tc.args.prompt || tc.args.description || "")
-                  : "";
-                return {
-                  toolName: displayName,
-                  toolArgs: tc.args ? JSON.stringify(tc.args, null, 2) : undefined,
-                  toolResult: toolResultForDisplay(tc.result),
-                  status: tc.status as "running" | "done" | "error",
-                  duration: (tc.metadata as any)?.duration,
-                  argsSummary: typeof rawSummary === "string" && rawSummary ? rawSummary : undefined,
-                  metadata: tc.metadata as Record<string, any> | undefined,
-                };
-              })}
-              title={`${message.toolCalls.length} ${S.bubble.toolCalls[lang]}`}
-              defaultExpanded={toolsExpanded}
-            />
-            {/* Subagent status polling — 支持 spawn_subagent (旧) 和 subagent (新) */}
-            <div className="subagent-status-row">
-            {message.toolCalls.filter(tc => {
-              // 旧格式: tool=spawn_subagent, result 以 SUBAGENT_TASK_ID: 开头
-              if (tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")) return true;
-              // 新格式: tool=subagent, metadata.subagentId 存在
-              if (tc.tool === "subagent" && (tc.metadata as any)?.subagentId) return true;
-              // 新格式（前台模式）: tool=subagent, 有 result 但无 subagentId（一次性同步等待）
-              return false;
-            }).map((tc) => {
-              // 提取 taskId — 兼容新旧格式
-              let taskId: string;
-              let agentName: string | undefined;
-              if (tc.tool === "spawn_subagent") {
-                taskId = tc.result!.split("\n")[0].replace("SUBAGENT_TASK_ID:", "");
-                agentName = tc.args?.name as string;
-              } else {
-                taskId = (tc.metadata as any)?.subagentId as string;
-                agentName = tc.args?.description as string;
-              }
-              return (
-                <SubagentStatus
-                  key={`sub-${tc.id}`}
-                  taskId={taskId}
-                  name={agentName || undefined}
-                  toolStatus={tc.status}
-                />
-              );
-            })}
-            </div>
-          </div>
-        );
-        })()}
-
-        {message.generatedFiles && message.generatedFiles.length > 0 && (
-          <div className="generated-files">
-            {!showFilesConfirm ? (
-              <button
-                className="files-cleanup-btn"
-                onClick={() => setShowFilesConfirm(true)}
-              >
-                {/* 第 46 波：文案里的 emoji 换成与项目一致的线性图标 */}
-                <Trash2 size={14} className="icon-inline" />
-                <span>{S.bubble.cleanFiles[lang]} ({message.generatedFiles.length})</span>
-              </button>
-            ) : (
-              <div className="files-confirm">
-                <div className="files-list">
-                  {message.generatedFiles.map((file, i) => (
-                    <div key={i} className="file-item">{file}</div>
-                  ))}
-                </div>
-                <div className="files-actions">
-                  <button
-                    className="files-delete-btn"
-                    onClick={() => {
-                      onDeleteFiles?.(message.generatedFiles!);
-                      setShowFilesConfirm(false);
-                    }}
-                  >
-                    {S.bubble.delete[lang]}
-                  </button>
-                  <button
-                    className="files-cancel-btn"
-                    onClick={() => setShowFilesConfirm(false)}
-                  >
-                    {S.bubble.cancel[lang]}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* #2: Floating toolbar — shown on hover, not during streaming */}
-        {!isStreaming && !isSystem && message.content && !isEditing && (
-          <div className="message-toolbar message-actions-bar">
-            {isUser && canEdit && onEditAndResend && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" aria-label={S.bubble.editAndResend[lang]} onClick={() => { setIsEditing(true); setIsEditingRewind(false); }}>
-                    <Pencil size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.editAndResend[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {isUser && canEdit && onEditAndRewind && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" aria-label={S.bubble.editAndRewind[lang]} onClick={() => { setIsEditing(true); setIsEditingRewind(true); }}>
-                    <Undo2 size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.editAndRewind[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {isUser && canEdit && onReEdit && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  {/*
-                    ⚠️ 第 63 轮（UI 走查抓到）：这一组工具栏按钮里，只有这三个**没有可访问名**
-                    （既无 `aria-label` 也无 `title`，里面只有一个 `<svg>`），而左右相邻的按钮都有。
-                    后果不是"看不见"而是"说不出来"：读屏软件只念"按钮"，键盘/自动化也拿不到名字
-                    —— 真机走查里它们就是那三个 `label: ""` 的条目。
-                  */}
-                  <button className="toolbar-btn" aria-label={S.bubble.reEdit[lang]} onClick={() => onReEdit(rawContent)}>
-                    <PencilLine size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.reEdit[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="toolbar-btn"
-                  aria-label={copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}
-                  onClick={handleCopyMessage}
-                >
-                  {copied ? <Check size={14} /> : <Clipboard size={14} />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}</TooltipContent>
-            </Tooltip>
-            {/* P0 (dsh-navbar 精选 pin 对标): assistant 消息精选到右侧导航条 */}
-            {!isUser && !isSystem && onTogglePin && sessionId && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`toolbar-btn ${pinned ? "pin-active" : ""}`}
-                    aria-label={pinned ? S.bubble.unpinFromNav[lang] : S.bubble.pinToNav[lang]}
-                    onClick={() => onTogglePin(message.id)}
-                  >
-                    {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{pinned ? S.bubble.unpinFromNav[lang] : S.bubble.pinToNav[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {/* P3-26: Read aloud (TTS) — only for assistant messages */}
-            {!isUser && !isSystem && ttsSupported && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className="toolbar-btn"
-                    aria-label={
-                      isSpeaking && ttsMessageId === message.id
-                        ? S.voice.stopReading[lang]
-                        : S.voice.readAloud[lang]
-                    }
-                    onClick={handleReadAloud}
-                    disabled={isTtsLoading}
-                    style={isTtsLoading ? { opacity: 0.5 } : {}}
-                  >
-                    {isSpeaking && ttsMessageId === message.id
-                      ? <StopIcon size={14} fill="currentColor" />
-                      : isTtsLoading
-                      ? <Clock size={14} />
-                      : <Volume2 size={14} />
-                    }
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isSpeaking && ttsMessageId === message.id
-                    ? S.voice.stopReading[lang]
-                    : S.voice.readAloud[lang]
-                  }
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {contentCollapsed && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" aria-label={S.bubble.expand[lang]} onClick={() => setContentCollapsed(false)}>
-                    <BookOpen size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.expand[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {!contentCollapsed && (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD || displayContent.length > COLLAPSE_CHARS) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" aria-label={S.bubble.collapse[lang]} onClick={() => setContentCollapsed(true)}>
-                    <BookX size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.collapse[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {/* Feedback buttons inline in toolbar — same row as copy/collapse */}
-            {!isUser && !isSystem && !isStreaming && message.content && (
-              <SlotBridge name="app.message-feedback" fallback={FeedbackButtons} message={message} sessionId={sessionId} inline />
-            )}
-          </div>
-        )}
-
-        {/* P0: Feedback buttons removed from here — now inline in toolbar above */}
-
-        {/* StatsLine — 对标 DSH 助手消息统计行：turn 耗时/token/吞吐量 */}
-        {!isUser && !isSystem && !isStreaming && message.content && (
-          <StatsLine message={message} />
-        )}
-
-        {/* TurnStatus — 对标 DSH 持久化 turn 级状态行（error/max-tokens/retry） */}
-        {!isUser && !isSystem && message.metadata?.turnStatus && (
-          <TurnStatus {...(message.metadata.turnStatus as any)} />
-        )}
-
-        {/* P2: Source references for RAG-based messages */}
-        {!isUser && !isSystem && message.metadata?.sources && (message.metadata.sources as any[]).length > 0 && (
-          <SourceReferences
-            sources={(message.metadata.sources as any[]).map(s => ({
-              sourceId: s.sourceId || s.id || "",
-              sourceName: s.sourceName || s.name || "",
-              chunkIndex: s.chunkIndex || 0,
-              snippet: s.snippet || s.content || "",
-              score: s.score || 0,
-            }))}
-            onSourceClick={(sourceId, chunkIndex) => onSourceClick?.(sourceId, chunkIndex)}
-          />
-        )}
-      </div>
-    </div>
+    <ChatPlatformProvider value={platform}>
+      <SharedMessageBubble {...props} />
+    </ChatPlatformProvider>
   );
 });
 
-
+export type { MessageBubbleProps };
 

@@ -1455,39 +1455,45 @@ describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
   });
 
   // ===== E4: MessageBubble 按钮显示条件 =====
+  //
+  // 第 2 步之后气泡本体在 `packages/ui/src/message-bubble.tsx`（共享唯一实现），
+  // 桌面入口 `src/components/MessageBubble.tsx` 只剩平台注入。
+  // 判据钉**实现**，所以路径跟着实现走。
   describe("E4: MessageBubble 按钮显示条件", () => {
+    const sharedBubble = () =>
+      fs.readFileSync(path.resolve(__dirname, "../../packages/ui/src/message-bubble.tsx"), "utf-8");
+    const desktopPlatform = () =>
+      fs.readFileSync(path.resolve(__dirname, "../components/MessageBubble.tsx"), "utf-8");
+    const entry = () =>
+      fs.readFileSync(path.resolve(__dirname, "../components/MessageBubble.tsx"), "utf-8");
+
     it("MessageBubble 不再包含 fork 按钮（已移到轮次容器）", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubble() + entry() + desktopPlatform();
       expect(src).not.toContain('onFork');
     });
 
     it("MessageBubble 不再包含 regenerate 按钮（已移到轮次容器）", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubble() + entry() + desktopPlatform();
       expect(src).not.toContain('onRegenerate');
     });
 
     it("MessageBubble 接口包含 isLastInTurn prop", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
-      expect(src).toContain("isLastInTurn?: boolean");
+      expect(sharedBubble()).toContain("isLastInTurn?: boolean");
     });
 
     it("MessageBubble 保留复制、折叠、删除文件按钮", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubble();
       expect(src).toContain('handleCopyMessage');
       expect(src).toContain('contentCollapsed');
       expect(src).toContain('onDeleteFiles');
+    });
+
+    it("气泡入口只做平台注入，不许再渲染第二份气泡", () => {
+      const src = entry();
+      expect(src, "必须复用共享气泡").toContain("SharedMessageBubble");
+      expect(src, "必须注入桌面平台").toContain("useDesktopChatPlatform");
+      expect(src, "入口里不许再出现气泡骨架/DOM").not.toContain("message-bubble ${");
+      expect(src).not.toContain('className="message-body"');
     });
   });
 
@@ -1762,38 +1768,29 @@ expect(appSrc).toMatch(/if \(!session \|\| isStreaming\) return/);
 
   // ===== E10: 消息反馈（toolbar 其他按钮不受影响） =====
   describe("E10: 消息反馈工具栏不受影响", () => {
+    const sharedBubbleSrc = () =>
+      fs.readFileSync(path.resolve(__dirname, "../../packages/ui/src/message-bubble.tsx"), "utf-8");
+
     it("复制按钮仍在所有非流式消息上显示", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubbleSrc();
       expect(src).toContain("handleCopyMessage");
       // UI refactor: 📋 emoji replaced with lucide-react Clipboard icon
       expect(src).toContain("Clipboard");
     });
 
     it("折叠/展开按钮不受 isLastInTurn 影响", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubbleSrc();
       expect(src).toContain("contentCollapsed");
       expect(src).toContain("COLLAPSE_THRESHOLD");
     });
 
     it("工具栏整体显示条件不变（!isStreaming && !isSystem && content）", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubbleSrc();
       expect(src).toContain("!isStreaming && !isSystem && message.content");
     });
 
     it("删除文件按钮不受影响", () => {
-      const src = fs.readFileSync(
-        path.resolve(__dirname, "../components/MessageBubble.tsx"),
-        "utf-8"
-      );
+      const src = sharedBubbleSrc();
       expect(src).toContain("onDeleteFiles");
       expect(src).toContain("showFilesConfirm");
     });
@@ -1808,6 +1805,7 @@ describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => 
   const fs = require("fs");
   const path = require("path");
   const appSrc = fs.readFileSync(path.resolve(__dirname, "../App.tsx"), "utf-8");
+  // SubagentStatus 在第 2 步之后属于桌面平台适配器（气泡本体共享）
   const msgBubbleSrc = fs.readFileSync(path.resolve(__dirname, "../components/MessageBubble.tsx"), "utf-8");
   const sidebarSrc = fs.readFileSync(path.resolve(__dirname, "../components/Sidebar.tsx"), "utf-8");
   const sessionStorageSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/session.ts"), "utf-8");

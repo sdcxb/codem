@@ -6,7 +6,7 @@
  *
  * 修 O-46 时发现同一个反查（`sessions.project_id` → `projects.path`）在**三处**各写了一遍：
  * `core/llm/index.ts`（记忆归属）、`core/session/executor.ts`（安全模式）、
- * `core/phone-link/phone-link.ts`（`cwdForSession` 的"没有 worktree 时用项目根"那一支）。
+ * `core/remote/desktop-engine.ts`（`cwdForSession` 的"没有 worktree 时用项目根"那一支）。
  * 前两处问的是**同一个问题**（这个会话属于哪个项目），第三处问的是"该在哪个目录跑"
  * （所以它刻意先取 `worktreePath`，只把"没有 worktree ⇒ 用项目根"这一支并过来）。
  *

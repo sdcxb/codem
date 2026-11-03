@@ -60,6 +60,14 @@
     "src/core/slots/declarations.ts",
 
     /*
+     * 第 2 步（桌面气泡切换共享实现）：`MessageActions.tsx` 从「只 import 未渲染」变成完全无引用，
+     * knip 因此报「未使用文件」。这里逐条登记而不是删文件 —— 文件头的 `@unwired` 与
+     * `tools/audit/reachability-allowlist.json` 的条目已经写明「保留是为了不删历史实现，
+     * 清理留给下一里程碑」。接线（或删除）时必须同时删掉 knip.json 这条与可达性白名单那条。
+     */
+    "src/components/MessageActions.tsx",
+
+    /*
      * 第 105 轮：**外部/搬进来的代码**按目录登记（它们有自己完整的 API 面，我们只用其中一部分）。
      * 逐条"删掉没用的导出"等于改别人的库 —— 那不是清理死代码，是给自己造维护债。
      * 判据：①`src/core/cordis/**` 是从 DSH 搬来的插件框架（文件头就是上游原文）；

@@ -733,6 +733,7 @@ function scanZIndex(rel, src, isCss, styleRanges) {
  */
 const BASE_STYLE_FILES = [
   "src/styles.css",
+  "packages/ui/src/ui.css",
   "src/styles/codem-ui.css",
   "src/styles/notebook-workspace.css",
   "src/styles/task-center.css",
@@ -954,6 +955,16 @@ const value = (name) => {
 };
 
 const files = SCAN_DIRS.flatMap((d) => (existsSync(join(ROOT, d)) ? listFiles(join(ROOT, d)) : []));
+/*
+ * 共享组件样式表（桌面与手机同一份）也必须进**违规扫描范围**：它承载气泡/工具卡/审批卡等
+ * 全部共享外观，漏扫等于把「共享层也有字面量/未定义令牌/死类名」这些规则关掉一半。
+ * 只加这一份 CSS 文件（不把 `packages/ui/src` 整个并进 SCAN_DIRS）：共享包 TSX 的内联样式
+ * / 硬编码色审计是另一件事，不借这一步偷偷扩范围。
+ */
+{
+  const sharedUiCss = join(ROOT, "packages", "ui", "src", "ui.css");
+  if (existsSync(sharedUiCss)) files.push(sharedUiCss);
+}
 
 // 内联样式密度阈值可按命令行调整：`--dense-threshold=60` 能看到"还没超标但已经很密"的文件
 // （排队时用），`--inline-counts` 直接列出全部文件的属性数。
@@ -1113,6 +1124,17 @@ function readClassCorpus() {
     }
   };
   walkAll(join(ROOT, "src"));
+  /*
+   * 第 1 步共享展示层（MessageBubble 的 Markdown 渲染搬进 `packages/ui`）之后，
+   * 「类名使用证据」必须也看共享包：`.unified-separator` 等类名现在只出现在
+   * `packages/ui/src/message-markdown.tsx`，而**样式仍由桌面 `src/styles.css` 提供**。
+   * 只看 `src` 会把它们误报成死类名（规则是只降不升的棘轮，一误报就红）。
+   *
+   * 注意：这里只扩"使用证据"语料，**不扩违规扫描范围**（`SCAN_DIRS` 仍是 `src`）。
+   * 共享包的内联样式/字面量审计是另一件事，不借这一步偷偷放宽/收紧门禁。
+   */
+  const uiPackageSrc = join(ROOT, "packages", "ui", "src");
+  if (existsSync(uiPackageSrc)) walkAll(uiPackageSrc);
   return out.join("\n");
 }
 

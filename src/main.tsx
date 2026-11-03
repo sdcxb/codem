@@ -12,6 +12,9 @@ import AppErrorBoundary from "./components/AppErrorBoundary";
 import { applyAppearanceAttributes } from "./core/theme/appearance-modes";
 import { startWithMaterialHint } from "./core/boot/material-hint";
 import "./styles.css";
+// 共享组件样式（桌面与手机同一份）。顺序是硬的：必须排在皮肤之前 ——
+// 皮肤用 `.message-content` / `.user .message-content` 覆盖基础层，放到后面会把两套皮肤的覆盖压掉。
+import "../packages/ui/src/ui.css";
 import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
 import "./styles/codem-ui.css";
@@ -91,6 +94,7 @@ async function bootstrap(): Promise<void> {
      不然会先按默认档渲染一帧再跳（DB 的真值由 TitleBar 在 dbReady 后再校正一次）。 */
   applyAppearanceAttributes();
   await startWithMaterialHint({ probe: applyNativeMaterialHint, render: renderApp });
+  // PC 远程只有桌面网关（ADR-0005 M4）：它由用户在设置里手动启动，桌面不再拉起 Host sidecar。
 }
 
 void bootstrap();

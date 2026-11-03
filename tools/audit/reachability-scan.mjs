@@ -62,8 +62,34 @@ function listSourceFiles(root) {
       .split("\n")
       .map((s) => s.trim())
       .filter((s) => /\.(ts|tsx)$/.test(s))
-      .map(rel);
-    return { files: [...new Set(files)], via: "git ls-files（只算已跟踪文件）" };
+      .map(rel)
+      // 已删除但尚未暂存的文件仍会出现在 `git ls-files` 里；它们不是源码，
+      // 读它会 ENOENT，也会让"可达/不可达"结论失真。
+      .filter((f) => fs.existsSync(path.join(root, f)));
+    /*
+     * 未跟踪的新文件也参与**解析**（否则"新文件 import 了一个已跟踪文件"这条边
+     * 在提交前不存在，已跟踪的被导入方会被误报成不可达）。但它们**不参与不可达
+     * 报告**——测试运行期间往 src/ 里写的临时文件仍是未跟踪的，不该让门禁偶发假红。
+     */
+    const untracked = spawnSync(
+      "git",
+      ["ls-files", "--others", "--exclude-standard", "src"],
+      { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+    );
+    const extra =
+      untracked.status === 0
+        ? untracked.stdout
+            .split("\n")
+            .map((s) => s.trim())
+            .filter((s) => /\.(ts|tsx)$/.test(s))
+            .map(rel)
+            .filter((f) => fs.existsSync(path.join(root, f)))
+        : [];
+    return {
+      files: [...new Set(files)],
+      allFiles: [...new Set([...files, ...extra])],
+      via: "git ls-files（已跟踪 + 未跟踪仅参与解析）",
+    };
   }
   const out = [];
   const walkDir = (dir) => {
@@ -76,17 +102,21 @@ function listSourceFiles(root) {
     }
   };
   walkDir(path.join(root, "src"));
-  return { files: out.map((f) => rel(path.relative(root, f))), via: "fs 扫盘（git 不可用）" };
+  const files = out.map((f) => rel(path.relative(root, f)));
+  return { files, allFiles: files, via: "fs 扫盘（git 不可用）" };
 }
 
 /** 从入口出发做可达性分析；返回结论 + 自检结果 */
 export function scanReachability(root = process.cwd(), entries = ["src/main.tsx", "src/pet-main.tsx"]) {
   const listed = listSourceFiles(root);
-  const allFiles = listed.files;
+  const allFiles = listed.allFiles ?? listed.files;
+  const tracked = new Set(listed.files);
   const isTest = (f) => f.startsWith("src/test/") || /\.test\.(ts|tsx)$/.test(f);
   const prod = allFiles.filter((f) => !isTest(f));
   const tests = allFiles.filter(isTest);
   const prodSet = new Set(prod);
+  /** 只有已跟踪文件才进入"不可达"报告；未跟踪的新文件在提交后自然会被纳入。 */
+  const trackedProd = new Set([...tracked].filter((f) => !isTest(f)));
 
   /** 说明符 → 真实文件（解析不到返回 null） */
   const resolveSpecifier = (importer, spec) => {
@@ -154,7 +184,7 @@ export function scanReachability(root = process.cwd(), entries = ["src/main.tsx"
     }
   }
 
-  const unreachable = prod.filter((f) => !reached.has(f));
+  const unreachable = prod.filter((f) => trackedProd.has(f) && !reached.has(f));
   const onlyTests = unreachable.filter((f) => testImports.has(f) || dynamicTargets.has(f));
   const orphans = unreachable.filter((f) => !(testImports.has(f) || dynamicTargets.has(f)));
 

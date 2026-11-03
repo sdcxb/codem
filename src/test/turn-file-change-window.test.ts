@@ -175,13 +175,18 @@ describe("TFC-1 真机形态：表 **远超**镜像上限时，该域读**不得
      * 真机形态：**5001 行**（原来就是这一个数字把整域打成"拒绝镜像"✗）。
      * turn_index 递增 ⇒ "最近 200 行"就是 turn_index 4801..5000 ✓（可精确断言 ✓）。
      */
-    const rows = Array.from({ length: 5001 }, (_, i) => row({ id: `r${i}`, turn_index: i }));
+    /**
+     * `created_at` 必须**跟着 turn_index 递增**：第 270 波起一屏以 `created_at` 为主序
+     * （`turn_index` 每个 prompt 从 1 重开，不能当"哪条更晚"的键）。若夹具让所有行
+     * 同一毫秒，引擎侧 `ORDER BY created_at DESC LIMIT 200` 取到哪 200 行就不确定了。
+     */
+    const rows = Array.from({ length: 5001 }, (_, i) => row({ id: `r${i}`, turn_index: i, created_at: i }));
     const { calls } = await withPort({ [TABLE]: rows });
 
     const list = await FileChangeStorage.loadBySession("s1");
 
     expect(list.length, "一屏就是 200 行（有界 ✓）").toBe(TURN_FILE_CHANGE_WINDOW_ROWS);
-    expect(list[0].turn_index, "必须是**最新**那一端（turn_index DESC ✓）").toBe(5000);
+    expect(list[0].turn_index, "必须是**最新**那一端（created_at DESC ✓）").toBe(5000);
     expect(list[list.length - 1].turn_index).toBe(5001 - TURN_FILE_CHANGE_WINDOW_ROWS);
     expect(
       list.some((r) => r.patch),
@@ -205,8 +210,10 @@ describe("TFC-1 真机形态：表 **远超**镜像上限时，该域读**不得
     const { FileChangeStorage } = await freshStorage();
     await withPort({
       [TABLE]: [
-        ...Array.from({ length: 5001 }, (_, i) => row({ id: `r${i}`, session_id: "s1", turn_index: i })),
-        row({ id: "other", session_id: "s2", turn_index: 7 }),
+        ...Array.from({ length: 5001 }, (_, i) =>
+          row({ id: `r${i}`, session_id: "s1", turn_index: i, created_at: i }),
+        ),
+        row({ id: "other", session_id: "s2", turn_index: 7, created_at: 7 }),
       ],
     });
 
@@ -216,7 +223,7 @@ describe("TFC-1 真机形态：表 **远超**镜像上限时，该域读**不得
 });
 
 describe("TFC-2 反向对照：正常规模时行为**逐字不变**", () => {
-  it("TFC-2: 3 行的会话按 `turn_index` DESC 读出 3 行，字段一个不少", async () => {
+  it("TFC-2: 3 行的会话按 `created_at` DESC（并列时 turn_index DESC）读出 3 行，字段一个不少", async () => {
     const { FileChangeStorage } = await freshStorage();
     await withPort({
       [TABLE]: [
@@ -227,7 +234,7 @@ describe("TFC-2 反向对照：正常规模时行为**逐字不变**", () => {
     });
 
     const list = await FileChangeStorage.loadBySession("s1");
-    expect(list.map((r) => r.id), "turn_index DESC").toEqual(["b", "c", "a"]);
+    expect(list.map((r) => r.id), "created_at 并列时按 turn_index DESC").toEqual(["b", "c", "a"]);
     expect(FileChangeStorage.parseChangedFiles(list[2]), "`changed_files` 必须能解析").toEqual([
       { path: "a.ts", status: "M" },
     ]);
@@ -243,7 +250,7 @@ describe("TFC-2 反向对照：正常规模时行为**逐字不变**", () => {
 // ========== 查询参数与投影 ==========
 
 describe("TFC-3 一屏查询的**参数**（投影 + 排序 + 有界）", () => {
-  it("TFC-3: 必须带投影列、`order_by: turn_index` + `desc` + 有界 `limit`，且列里没有 `patch`", async () => {
+  it("TFC-3: 必须带投影列、`order_by: created_at` + `desc` + 有界 `limit`，且列里没有 `patch`", async () => {
     const { FileChangeStorage, TURN_FILE_CHANGE_WINDOW_COLUMNS, TURN_FILE_CHANGE_WINDOW_ROWS } = await freshStorage();
     const { calls } = await withPort({ [TABLE]: [row({ id: "a", turn_index: 1 })] });
 
@@ -252,7 +259,14 @@ describe("TFC-3 一屏查询的**参数**（投影 + 排序 + 有界）", () => 
     const q = calls.find((c) => c.command === "crud.list" && c.params.table === TABLE);
     expect(q, "必须真的发出按需查询").toBeDefined();
     expect(q!.params.where, "按会话精确取").toEqual({ session_id: "s1" });
-    expect(q!.params.order_by, "排序必须在**引擎侧**（不是把整表拉回来自己排）").toBe("turn_index");
+    /**
+     * 第 270 波：主序改成 `created_at`。
+     *
+     * 原来的 `order_by: turn_index` 有一个真实缺陷：`turn_index` 每个 prompt 从 1 重开，
+     * 一个跑了很多迭代的旧 prompt 会永久压住刚发生的新 prompt。`created_at` 才是
+     * "哪条更晚发生"的事实；`turn_index` 只当标签（TFC-3c 钉这个形态）。
+     */
+    expect(q!.params.order_by, "排序必须在**引擎侧**（不是把整表拉回来自己排）").toBe("created_at");
     expect(q!.params.desc, "要的是**最新**那一端").toBe(true);
     expect(q!.params.limit, "必须有界").toBe(TURN_FILE_CHANGE_WINDOW_ROWS);
     const cols = q!.params.columns as string[];
@@ -272,6 +286,27 @@ describe("TFC-3 一屏查询的**参数**（投影 + 排序 + 有界）", () => 
     expect(q!.params.where).toEqual({ id: "a" });
     expect(q!.params.limit).toBe(1);
     expect(q!.params.columns as string[]).not.toContain("patch");
+  });
+
+  /**
+   * ★ TFC-3c（第 270 波）：**`turn_index` 会重开，不能当"最新"的键**。
+   *
+   * 形态：旧 prompt 跑了 300 个迭代（turn_index 1..300），随后用户又发了一句，
+   * 新 prompt 只跑 1 个有改动的迭代（turn_index = 1）。若按 `turn_index DESC`，
+   * "最近一轮"会显示**旧 prompt 的第 300 轮**，刚发生的记录永远看不见。
+   * 正确口径是 `created_at DESC`：新记录（created_at 更大）必须排第一。
+   */
+  it("TFC-3c: 新 prompt 的 turn_index 更小，但仍必须排在最前（按 created_at）", async () => {
+    const { FileChangeStorage } = await freshStorage();
+    const oldRows = Array.from({ length: 300 }, (_, i) =>
+      row({ id: `old-${i}`, turn_index: i + 1, created_at: 1_000 + i }),
+    );
+    const newRow = row({ id: "new-prompt", turn_index: 1, created_at: 9_999_999 });
+    await withPort({ [TABLE]: [...oldRows, newRow] });
+
+    const list = await FileChangeStorage.loadBySession("s1");
+    expect(list[0].id, "刚发生的记录必须排第一（turn_index 会重开）").toBe("new-prompt");
+    expect(list[0].turn_index).toBe(1);
   });
 });
 

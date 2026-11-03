@@ -16,6 +16,11 @@
 //!   codem-db-cli --db <path> invoke <command> -        # 参数从 stdin 读（绕开 shell 引号规则）
 //!   codem-db-cli --db <path> batch '<[{"command":"…","params":{…}}]>'
 //!   codem-db-cli --db <path> commands
+//!   codem-db-cli --db <path> serve                     # 常驻：stdin 一行一条请求、stdout 一行一条应答
+//!
+//! `serve` 的请求/响应形状见 `codem_db::serve` 模块头（与 Tauri 的 `StorageReply` 逐字段对齐，
+//! 多带一个 `id`）。它存在的理由是**单写者**：常驻进程里只有一条连接，而 `invoke` 每次
+//! 都要重开一次库。
 //!
 //! 约定：**stdout 只输出一行 JSON**（结果或错误），退出码 0=成功、1=错误。
 //!
@@ -48,7 +53,7 @@ use codem_db::{capabilities, dispatch, DbError, Engine};
 use serde_json::{json, Value};
 
 fn usage() -> &'static str {
-    "codem-db-cli --db <path> <init|health|integrity|checkpoint|counts|commands|invoke|batch> [args]"
+    "codem-db-cli --db <path> <init|health|integrity|checkpoint|counts|commands|invoke|batch|serve> [args]"
 }
 
 fn print_json(v: &Value) {
@@ -327,6 +332,17 @@ fn main() -> ExitCode {
              `--db` 是**读写**打开的，这次调用可能已经改动了这个文件。\
              要只读读旧库，请用 `--db <新库> invoke legacy.read_table -`（参数里传 legacy_path）。"
         );
+    }
+
+    // `serve` 是**长驻**模式：一个进程、一个 Engine、stdin 逐行进、stdout 逐行出。
+    // 必须放在 `run()` 之前 —— `run()` 的语义是"执行一条命令就退出"，
+    // 把循环塞进去会让退出码/错误体形状都跟其它子命令打架。
+    if rest.first().map(|s| s.as_str()) == Some("serve") {
+        if let Err(e) = codem_db::serve::run_stdio(&engine) {
+            eprintln!("[codem-db-cli] serve 结束：{e}");
+            return ExitCode::from(1);
+        }
+        return ExitCode::SUCCESS;
     }
 
     // 统一的成功包装：**每条成功响应都带 `ok:true`**。

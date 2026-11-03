@@ -83,11 +83,12 @@ export const DeliverableFiles = memo(function DeliverableFiles({
   /**
    * 获取最新一轮的文件变更。
    *
-   * ⚠️ 第 269 波**顺手修了一个真缺陷** ✗→✓：原来是 `records[records.length - 1]` ✗，
-   * 而接口契约（以及本波之前的镜像实现 ✓）都是 **`turn_index` DESC** ✓
-   * ⇒ 最后一个元素是**最旧**的一轮 ✗ ⇒ 这个"交付文件"块显示的从来不是最新一轮 ✗
-   * （在按需读下这个错误会更明显：一屏有界，取错那一端更容易看出来 ✓）。
-   * 与 `FileChangesList` 的遍历顺序现在也一致了 ✓（两处都按 DESC ✓）。
+   * ⚠️ 第 269 波**顺手修了一个真缺陷** ✗→✓：原来是 `records[records.length - 1]` ✗
+   * ⇒ 最后一个元素是**最旧**的一轮 ✗ ⇒ 这个"交付文件"块显示的从来不是最新一轮 ✗。
+   *
+   * 第 270 波：一屏顺序改成 **`created_at` DESC**（`turn_index` 每个 prompt 从 1 重开，
+   * 不能当"哪条更晚"的键）⇒ `records[0]` 仍是**真正最新**的那一条，与
+   * `FileChangesList` / Host `session.changes` 的口径一致。
    */
   const latestRecord = records[0]
   const changedFiles: ChangedFile[] = latestRecord ? FileChangeStorage.parseChangedFiles(latestRecord) : []

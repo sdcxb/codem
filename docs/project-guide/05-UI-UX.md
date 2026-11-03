@@ -1,7 +1,7 @@
 # 05 · UI/UX：外壳、导航、对话区、设计系统
 
-> 基线：1.16.330 ｜ 2026-10-26
-> 代码坐标：`src/App.tsx`（6251 行，外壳/视图状态）、`src/styles.css`（21547 行，令牌/默认皮肤）、`src/components/*`、`src/core/theme/*`、`src/core/ui/*`。
+> 基线：1.17.0（待发布）｜ 2026-11-03（原 2026-10-26，本轮更新远程入口与行数）
+> 代码坐标：`src/App.tsx`（6432 行，外壳/视图状态）、`src/styles.css`（21507 行，令牌/默认皮肤）、`src/components/*`、`src/core/theme/*`、`src/core/ui/*`。
 > 设计口径：`docs/UI-DESIGN-SYSTEM.md`（877 行，历史较全但部分计数过时）、`docs/ui-spec.md`（4 KB，当前令牌/交互常数唯一口径）。
 
 ---
@@ -115,7 +115,7 @@ TooltipProvider
 | 13 | 人设 persona | 人设卡/激活 |
 | 14 | 电脑操作 computer | 读屏/鼠标键盘 |
 | 15 | 微信 wechat | ClawBot 登录/开关 |
-| 16 | 连接手机 phone | LAN 配对/设备/中继 |
+| 16 | 连接手机 phone | 桌面远程网关（启动/停止、一次性配对码、已配对设备数）/ AA 登录 |
 | 17 | 代码图谱 codegraph | CodeGraph 开关/启动器 |
 | 18 | 宠物 pet | 宠物安装/大小/位置/气泡 |
 | 19 | 用量统计 usage | token/成本/今日/会话 |

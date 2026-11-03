@@ -1130,144 +1130,8 @@
 
 /* ========== 7. Tool Call Card / Group — Pill Style (aligned with wecode) ========== */
 
-/* Tool Call Pill */
-.tool-call-card-wrap {
-  display: inline-block;
-  margin-bottom: var(--space-2);
-  margin-right: var(--space-2);
-}
-
-.tool-call-pill {
-  animation: none !important;
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-  transform: none !important;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  font-size: var(--fs-sm);
-  vertical-align: top;
-  position: relative;
-}
-
-/* 第 38 波：运行态此前只有"图标在转"一个信号，整行扫过去和完成态几乎一样。
-   现在运行中的 pill 左侧有一条 accent 竖条 —— 一眼看出哪个工具还在跑。
-   父子关系已用 .preview-shot/verify-has.mjs 对过 TSX（ToolCallCard 的 icon-frame 里）。 */
-.tool-call-pill:has(.tool-pill-icon-spin)::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 2px;
-  border-start-start-radius: var(--radius-md);
-  border-end-start-radius: var(--radius-md);
-  background: var(--accent);
-}
-
-.tool-call-pill.error {
-  background: color-mix(in srgb, var(--error) 6%, transparent);
-  border-color: var(--error-surface-strong);
-}
-
-.tool-call-pill.expandable {
-  cursor: pointer;
-}
-
-.tool-call-pill.expandable:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  border-color: var(--text-muted);
-}
-
-/* Icon frame — small box with border like wecode */
-.tool-pill-icon-frame {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
-.tool-pill-icon { color: var(--text-muted); }
-.tool-pill-icon-spin { color: var(--accent); animation: tool-spin var(--spin-duration) linear infinite; }
-.tool-pill-icon-error { color: var(--error); }
-
-@keyframes tool-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.tool-pill-text {
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 300px;
-}
-
-.tool-pill-preview {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.tool-pill-duration {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.tool-pill-chevron {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* Expanded detail */
-.tool-pill-detail {
-  margin-top: var(--space-2);
-  margin-left: var(--space-10);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  overflow: hidden;
-}
-
-.tool-pill-detail-section {
-  padding: var(--space-4) var(--space-6);
-}
-/**
- * ⚠️ 第 67 轮：这里原本有一条 `.tool-pill-detail-section + .tool-pill-detail-section { border-top: … }`
- * （"详情段之间"的分隔线），我一度把它也算进"过程条目线条"，改成两端渐隐的 `::before`。
- * **但它永远匹配不到元素**：`.tool-pill-detail-section` 只由 `WebSearchResultCard` 渲染
- * （`ToolCallCard.tsx` 的两条 return 分支各一处），而 `WebSearchResultCard` 永远是**一块**，
- * 一个 `.tool-pill-detail` 里不可能出现**相邻的两个 section** ⇒ 相邻选择器恒不成立。
- *
- * 所以这条规则（以及我加在它上面的 `::before`）**都已删除**：留着的唯一效果是让人以为
- * "详情段之间有分隔线"，而实际渲染里根本没有。这是本轮第四次遇到"看起来生效、其实匹配不到"——
- * 前三次分别是不存在的类名（`.tool-item`）、子串假绿（`sidebar-tool-item`）、Orphan 的 `:is()` 悬停规则。
- * 判定方式：把组件里渲染 `tool-pill-detail-section` 的地方全查一遍（grep 只有 2 处、同一个组件、同一分支）。
- */
-.tool-pill-detail-label {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  display: block;
-  margin-bottom: var(--space-2);
-}
-.tool-pill-detail-code {
-  margin: 0;
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-  overflow-x: auto;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
+/* 胶囊行本体（`.tool-call-pill` / `.tool-pill-*` / IN-OUT 明细）已迁到共享样式
+ * `packages/ui/src/ui.css` §5：桌面与手机同一份实现。这里只剩"连续合并"的宿主布局。 */
 
 /* Tool Call Group — inline, no outer border */
 .tool-call-group-inline {
@@ -1336,6 +1200,10 @@
 }
 
 /* ========== 8. Decision Tray ========== */
+/*
+ * 卡的**外观**（边框/底色/圆角/投影）在共享 `packages/ui/src/ui.css`；
+ * 这里只留"它在桌面上挂在哪"：底部浮动托盘。手机端卡是行内流，不加载本文件。
+ */
 .decision-tray {
   position: fixed;
   bottom: 80px;
@@ -1343,175 +1211,21 @@
   transform: translateX(-50%);
   width: min(680px, calc(100vw - 32px));
   z-index: var(--z-context-menu);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--shadow-raise-3);
   animation: slideUp 0.2s ease;
 }
-.decision-tray-header {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-7);
-}
-.decision-tray-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-.decision-tray-toggle:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-}
-.decision-tray-toggle .rotated {
-  transform: rotate(-90deg);
-}
-.decision-tray-icon.approval { color: var(--warning); }
-.decision-tray-icon.clarification { color: var(--info); }
-.decision-tray-title-area {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1;
-}
-.decision-tray-title-area strong {
-  font-size: var(--fs-base);
-  color: var(--text-primary);
-}
-.decision-tray-title-area span {
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-.decision-tray-body {
-  padding: 0 var(--space-7) var(--space-7);
-}
-.decision-tray-args pre {
-  margin: 0 0 var(--space-5);
-  padding: var(--space-5);
-  background: var(--rich-code-bg);
-  border: 1px solid var(--rich-code-border);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-  overflow-x: auto;
-  overflow-y: auto;
-  max-height: 240px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-secondary);
-}
-.decision-tray-reject-input {
-  width: 100%;
-  margin-bottom: var(--space-5);
-  padding: var(--space-4) var(--space-5);
-  background: var(--input-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-}
-.decision-tray-reject-input:focus {
-  border-color: var(--accent);
-}
-.decision-tray-actions {
-  display: flex;
-  gap: var(--space-4);
-  align-items: center;
-}
-.decision-tray-btn {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-8);
-  border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-size: var(--fs-base);
-  font-weight: 500;
-  transition: var(--transition-color);
-}
-.decision-tray-btn.approve {
-  background: var(--success);
-  color: var(--text-on-status);
-}
-.decision-tray-btn.approve:is(:hover, :focus-visible) {
-  background: var(--success-hover);
-}
-.decision-tray-btn.reject {
-  background: var(--surface-2);
-  color: var(--text-primary);
-}
-.decision-tray-btn.reject:is(:hover, :focus-visible) {
-  background: var(--error);
-  color: var(--text-on-status);
-}
-.decision-tray-btn.submit {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-.decision-tray-btn.submit:is(:hover, :focus-visible) {
-  background: var(--accent-hover);
-}
-.decision-tray-btn.submit:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
-}
-.decision-tray-question {
-  margin-bottom: var(--space-5);
-}
-.decision-tray-question label {
-  display: block;
-  font-size: var(--fs-base);
-  color: var(--text-primary);
-  margin-bottom: var(--space-3);
-}
-.decision-tray-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.decision-tray-option {
-  padding: var(--space-2) var(--space-6);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  transition: var(--transition-color);
-  white-space: nowrap;
-}
-.decision-tray-option:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-}
-.decision-tray-option.selected {
-  background: var(--accent-muted);
-  border-color: var(--accent-strong);
-  color: var(--accent-strong);
-}
-.decision-tray-answer-input {
-  width: 100%;
-  padding: var(--space-4) var(--space-5);
-  background: var(--input-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-}
-.decision-tray-answer-input:focus {
-  border-color: var(--accent);
+/*
+ * 第 3 步：权限确认弹窗（`.permission-overlay`）与前台托盘**共用同一张卡**。
+ * 定位属于外壳，不属于卡：托盘是底部浮层，而遮罩是整屏 centering flex ——
+ * 所以进遮罩时把托盘的 fixed 定位收回来，否则卡会飘到遮罩右下、离开用户视线中心。
+ * （这里只有两条类名，`css-contract` 的"单类生效取值"快照不受影响。）
+ */
+.permission-overlay .decision-tray {
+  position: static;
+  transform: none;
+  width: min(680px, calc(100vw - 32px));
+  animation: none;
 }
 
 /* ========== 9. Composer ========== */
@@ -3570,91 +3284,6 @@ background: var(--bg-secondary);
 .tool-card-pre--tight { padding: var(--space-2) var(--space-4); }
 .tool-card-pre--plain { max-height: none; overflow: visible; }
 
-/* diff 行：颜色与淡底由行首字符决定（+ / -） */
-.diff-line { color: var(--text-secondary); }
-.diff-line--add { color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
-.diff-line--del { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
-
-/* 统一 / 分屏两种视图（2026-10-18）。行号列用 tabular-nums 保证不抖动；
-   分屏是 4 列网格（旧号 / 旧文 / 新号 / 新文），窄容器下由 @container 收紧行号列 */
-.diff-view-mode-bar {
-  display: flex;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--border-primary);
-}
-
-.diff-view-mode-btn {
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--fs-2xs);
-  padding: var(--space-1) var(--space-4);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-swift), background-color var(--duration-fast) var(--ease-swift);
-}
-
-.diff-view-mode-btn.is-active {
-  color: var(--text-primary);
-  /* 用派生令牌而不是就地 color-mix：颜色角色门禁要求底色能解析成**单个令牌**，
-     就地 color-mix 会被记成"解析不了的底"（预算 +1）。 */
-  background: var(--bg-tertiary);
-  border-color: var(--accent-border-strong);
-}
-
-.diff-unified .diff-line {
-  display: grid;
-  grid-template-columns: 44px 44px minmax(0, 1fr);
-  align-items: start;
-}
-
-.diff-lnum {
-  color: var(--text-muted);
-  text-align: right;
-  padding-right: var(--space-2);
-  user-select: none;
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-2xs);
-}
-
-.diff-line-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff-lnum--old { color: var(--text-muted); }
-.diff-lnum--new { color: var(--text-secondary); }
-/* kind 修饰类（组件按 `diff-line--${kind}` / `diff-split-row--${kind}` / `diff-cell--${kind}` 拼接） */
-.diff-line--ctx { color: var(--text-secondary); }
-.diff-split-row--ctx .diff-cell { color: var(--text-secondary); }
-.diff-split-row--change { background: color-mix(in srgb, var(--bg-tertiary) 30%, transparent); }
-.diff-cell--ctx { color: var(--text-secondary); }
-
-
-.diff-split-grid { display: flex; flex-direction: column; }
-
-.diff-split-row {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px minmax(0, 1fr);
-  align-items: stretch;
-}
-
-.diff-cell {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  padding: 0 var(--space-3);
-  min-width: 0;
-}
-
-.diff-cell--del { background: color-mix(in srgb, var(--error) 10%, transparent); }
-.diff-cell--add { background: color-mix(in srgb, var(--success) 10%, transparent); }
-.diff-cell--empty { background: var(--bg-tertiary); }
-
-@container toolcard (max-width: 480px) {
-  .diff-lnum { padding-right: var(--space-1); }
-  .diff-unified .diff-line { grid-template-columns: 32px 32px minmax(0, 1fr); }
-  .diff-split-row { grid-template-columns: 32px minmax(0, 1fr) 32px minmax(0, 1fr); }
-}
-
 .line-num {
   min-width: 24px;
   color: var(--text-muted);
@@ -3716,67 +3345,8 @@ background: var(--bg-secondary);
 }
 .websearch-source { font-size: var(--fs-xs); color: var(--text-muted); }
 
-/* IN/OUT 通用卡片 */
-.tool-io-card {
-  overflow: hidden;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
-}
-.tool-io-card--stacked { margin-top: var(--space-2); }
-.tool-io-section { display: flex; gap: var(--space-4); }
-.tool-io-section--bordered { position: relative; }
-.tool-io-section--bordered::after { content: ""; position: absolute; left: var(--space-2); right: var(--space-2); bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent); }
-.tool-io-label {
-  flex-shrink: 0;
-  min-width: 28px;
-  padding: var(--space-2) var(--space-4);
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: var(--weight-medium);
-  text-align: center;
-}
-.tool-io-label--icon { display: flex; align-items: center; }
-.tool-io-text {
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  /* 长路径 / JSON / base64 没有空格可断 ⇒ 不加这条会横向溢出（旧形态被 .tool-card 的
-     overflow:hidden 裁掉，看着像"内容就这么多"）。判据 NARROW-3。 */
-  overflow-wrap: anywhere;
-}
-.tool-io-text[data-error] { color: var(--error); }
-.tool-io-paths {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-4);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-}
-.tool-io-file-link {
-  color: var(--accent);
-  line-height: var(--lh-ui);
-  text-decoration: underline;
-  text-decoration-style: dashed;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.tool-pill-detail--inset { margin-left: var(--space-8); }
-.tool-pill-title { font-weight: 600; }
-.tool-pill-file {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-}
 .tool-pill-detail-label--flush { margin: 0; }
 .icon-shrink-none { flex-shrink: 0; }
-.tool-pill-icon-warning { color: var(--warning); }
 
 /* 卡片变体钩子：此前 tsx 里写了 `terminal-block` / `diff-block` / `read-block` / `search-block`
  * 四个类，但 CSS 里一个都没定义（外观全由内联样式撑着，所以 `css-class-undefined` 看不见）。

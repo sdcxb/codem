@@ -18,6 +18,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock agent registry so evaluatePermission returns "ask" — this lets custom rules be checked
+// 为什么必须 mock：默认 `build` agent 的权限就是 `{ tool: "*", action: "allow" }`
+// （`agent.ts`），而 `evaluate()` 在规则表**之前**就 return 了 ⇒ 不 mock 的话
+// 下面的规则表一条也走不到（这是"规则表整体成了死代码"的现状，不是随手 mock）。
 vi.mock("../core/agent/agent", () => ({
   getAgentRegistry: () => ({
     evaluatePermission: () => "ask",

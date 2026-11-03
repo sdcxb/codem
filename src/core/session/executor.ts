@@ -53,6 +53,14 @@ export interface ExecuteSessionTurnParams {
   abortSignal?: AbortSignal;
   /** 权限请求回调（后台执行时由 UI 层提供） */
   onPermissionRequest?: (request: import("../permission/permission").PermissionRequest) => Promise<import("../permission/permission").PermissionResult>;
+  /**
+   * 循环事件**观察者**（M2 网关事件流；不传 = 不观察）。
+   *
+   * 只读语义：本函数不消费返回值、不因它改变任何分支；异常也只在观察者一侧被
+   * 吞掉并留一行 warn（观测设施不该影响任务本身）。消息/事件日志仍由下面的
+   * 既有分支写 —— 观察者不是第二个写入者。
+   */
+  onEvent?: (event: LoopEvent) => void;
 }
 
 export interface ExecuteSessionTurnResult {
@@ -151,7 +159,7 @@ function estimateEventTokens(event: any): string | undefined {
  * - 完成后通知 DelegationOrchestrator
  */
 export async function executeSessionTurn(params: ExecuteSessionTurnParams): Promise<ExecuteSessionTurnResult> {
-  const { sessionId, message, cwd, engine, delegationTaskId, abortSignal, onPermissionRequest } = params;
+  const { sessionId, message, cwd, engine, delegationTaskId, abortSignal, onPermissionRequest, onEvent } = params;
   const zh = getLang() === "zh";
   const bus = getSessionMessageBus();
   const orchestrator = getDelegationOrchestrator();
@@ -575,9 +583,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       onPermissionRequest: onPermissionRequest || ((_req) => {
         // 默认策略：后台执行时若用户模式为 full 则放行；否则自动拒绝需要权限的操作
         if (effectiveSecurityMode === "full") {
-          return Promise.resolve({ requestId: _req?.id || "", action: "allow", alwaysAllow: false } as any);
+          return Promise.resolve({ requestId: _req?.id || "", action: "allow", alwaysAllow: false });
         }
-        return Promise.resolve({ requestId: _req?.id || "", action: "deny", reason: "Background execution: auto-deny" } as any);
+        return Promise.resolve({ requestId: _req?.id || "", action: "deny", reason: "Background execution: auto-deny" });
       }),
       securityMode: effectiveSecurityMode,
     })) {
@@ -596,6 +604,21 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       // 第 65 波修正：预算必须把**工具输入/输出**也算进去 —— 只统计模型吐出的文本
       // 会严重低估（真正吃上下文的是工具结果），于是预算形同虚设。
       noteActivity(estimateEventTokens(event as any));
+
+      /**
+       * 观察者（M2 网关事件流）：只读投影，**在写库之前**看到同一份事件。
+       *
+       * 放在这里而不是 switch 里：switch 只覆盖一部分事件，而观察者要的是
+       * "循环产生的每一条"（含 tool_error 等）。异常按观测设施的纪律吞掉并留痕，
+       * 不让手机端的事件桥把桌面回合搞挂。
+       */
+      if (onEvent) {
+        try {
+          onEvent(event);
+        } catch (e) {
+          console.warn("[SessionExecutor] onEvent observer failed:", e);
+        }
+      }
 
       switch (event.type) {
         case "reasoning_delta":

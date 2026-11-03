@@ -207,3 +207,22 @@ src-tauri/codem-db/tests/wire-fixtures.verified.json
 # CDP 评测用的浏览器配置目录（第 233 轮：本地跑真机取证时生成，纯本地垃圾，不进仓库）
 .edge-ref-profile*/
 .edge-shot/
+
+# Host 构建产物（esbuild 单文件 bundle；发版时由构建生成）
+packages/host/dist/
+
+# 共享 UI 的浏览器构建物（由 host:build:ui 生成；ui.css 由同一次 esbuild 产出）
+packages/host/web/ui.js
+packages/host/web/ui.css
+
+# Android 外壳的手写构建产物与调试签名（不进 git）
+android-shell/build/
+android-shell/debug.keystore
+
+# 阶段 3 的本机构建输入（rootfs / node / proot / 交叉编译产物）
+.android-proot/
+.linux-target/
+
+# 桌面网关共享 UI 由 tools/build/stage-host-sidecar.mjs stage（不进 git）；
+# 桌面 Host sidecar 已退役，这里不再有 host.mjs / codem-db-cli.exe
+src-tauri/resources/host/

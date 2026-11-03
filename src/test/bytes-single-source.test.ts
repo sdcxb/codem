@@ -182,6 +182,7 @@ describe("BYTES-SINGLE-SOURCE：字节数的人读形态只许有一份实现", 
     // 七个消费方必须走唯一实现（改回本地实现 ⇒ BYTES-1 会红）
     const mustUseShared = [
       "src/components/InputArea.tsx",
+      // 第 2 步之后附件的字节数展示在桌面平台适配器里（气泡本体已共享）
       "src/components/MessageBubble.tsx",
       "src/core/storage/maintenance.ts",
       "src/components/NotebookWorkspace.tsx",

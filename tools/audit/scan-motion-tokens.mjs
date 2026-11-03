@@ -9,6 +9,8 @@
  *
  * - 令牌定义：`src/styles.css` 里 `--ease-*: cubic-bezier(...)`（允许）
  * - 其它任何 CSS 规则里出现裸 `cubic-bezier(...)`（不允许，基线为 0）
+ * - 共享组件样式表 `packages/ui/src/ui.css` 同样在扫描范围内（手机只加载这一份；
+ *   把规则从 `codem-ui.css` 搬过去不能顺手逃掉动效棘轮）
  *
  * 用法：
  *   node tools/audit/scan-motion-tokens.mjs          # 校验（超基线即红）
@@ -22,6 +24,8 @@ import { pathToFileURL } from "node:url";
 const ROOT = process.cwd();
 const BASELINE = path.join(ROOT, "tools", "audit", "motion-baseline.json");
 const CSS_ROOT = path.join(ROOT, "src");
+/** 共享组件样式（桌面 import + 手机壳加载同一份）：动效棘轮必须一起覆盖 */
+const SHARED_CSS_ROOT = path.join(ROOT, "packages", "ui", "src");
 const TOKEN_LINE_RE = /^\s*--ease-[a-z0-9-]+\s*:/i;
 
 function collectCssFiles(dir) {
@@ -39,7 +43,9 @@ function collectCssFiles(dir) {
 }
 
 export function scanMotion() {
-  const files = collectCssFiles(CSS_ROOT);
+  const files = [CSS_ROOT, SHARED_CSS_ROOT].flatMap((root) =>
+    fs.existsSync(root) ? collectCssFiles(root) : [],
+  );
   const violations = [];
   let rawCount = 0;
   for (const file of files) {

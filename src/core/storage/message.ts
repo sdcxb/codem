@@ -485,6 +485,22 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
      * 若镜像把行删掉，下一次整会话加载就会与引擎不一致 —— 镜像比引擎"更狠"是缺陷的来源。
      */
     port.applyMessageTrim?.(sessionId, deletable);
+    /**
+     * 日志镜像同步：把被裁的行标成 hidden=1 + trimmed=1（与引擎同一口径）。
+     *
+     * 2026-11 语义定稿后，默认列表按 trimmed 过滤、完整历史（listTimelineMessages）才展示；
+     * 若镜像不同步，合并会把「索引里已裁剪」的行从日志镜像再读回来（SLOG-8 的 8 条就是这么来的）。
+     */
+    const trimMirror = cachedLogMessages.get(sessionId);
+    if (trimMirror) {
+      const cut = new Set(deletable.map(String));
+      cachedLogMessages.set(
+        sessionId,
+        trimMirror.map((m) =>
+          cut.has(String(m.id)) ? ({ ...m, hidden: 1, trimmed: 1 } as (typeof trimMirror)[number]) : m,
+        ),
+      );
+    }
     out.deletedMessages += deletable.length;
     console.log(
       `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；软删除 hidden=1；均在 JSONL 中；附件消息已跳过）`,
@@ -584,8 +600,17 @@ function applyContextProjection<T extends Message>(sessionId: string, messages: 
 }
 
 interface ListMessagesOptions {
-  /** 含旧压缩 hidden / 索引裁剪 trimmed 行（完整时间线） */
+  /** 含旧压缩 hidden 行（完整时间线） */
   includeHidden?: boolean;
+  /**
+   * 含被**索引裁剪**（hidden=1, trimmed=1）的行。
+   *
+   * 语义（2026-11 定稿，见 ADR-0001 D-1）：
+   * - 默认列表**不显示**被裁行（用户视角"这些旧消息已经被裁掉了"）；
+   * - 「完整历史」视图显式传 true 才显示（数据没丢，只是默认不铺开）。
+   * 压缩 hidden（trimmed≠1）不受这个开关影响：它永远只在 includeHidden 下可见。
+   */
+  includeTrimmed?: boolean;
   /** 是否应用上下文检查点 cutoff（模型视图） */
   applyCheckpoint?: boolean;
 }
@@ -596,6 +621,7 @@ function listMessagesMergedInternal(
   options: ListMessagesOptions = {},
 ): Message[] {
   const includeHidden = options.includeHidden === true;
+  const includeTrimmed = includeHidden || options.includeTrimmed === true;
   const applyCheckpoint = options.applyCheckpoint !== false;
   /**
    * P5 第 10 段：工具调用**从缓存补上**（与 `getMessage` 同一来源）。
@@ -700,7 +726,9 @@ function listMessagesMergedInternal(
      */
     if (
       (rec as any).deleted === true ||
-      (!includeHidden && (isCompressedHidden(rec) || hiddenIds.has(rec.id)))
+      (!includeHidden && (isCompressedHidden(rec) || hiddenIds.has(rec.id))) ||
+      // 被索引裁剪的行：默认不铺开（完整历史视图显式 includeTrimmed）
+      (!includeTrimmed && trimmedFlagOf(rec) !== 0)
     ) {
       merged.delete(rec.id);
       continue;
@@ -917,6 +945,26 @@ function hiddenMessageIds(sessionId: string): Set<string> {
  * **会话**墓碑过滤日志；本函数只负责"删除后不再常驻"，不改变日志文件本身。）
  */
 const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
+
+/**
+ * 写穿日志镜像：本进程新写/更新的行必须立刻出现在镜像里。
+ *
+ * 2026-11 语义定稿（ADR-0001 D-1）后这条不再影响「被裁历史」的可见性
+ * （默认列表按 trimmed 过滤、完整历史显式 listTimelineMessages），
+ * 但仍然是「本回合刚写的 assistant/tool 行能不能被下一次上下文重建读到」的前提。
+ */
+function noteLogMirrorWrite(sessionId: string, message: Record<string, unknown>): void {
+  const mirror = cachedLogMessages.get(sessionId);
+  if (!mirror) return;
+  const idx = mirror.findIndex((m) => String(m.id) === String(message.id));
+  if (idx < 0) {
+    cachedLogMessages.set(sessionId, [...mirror, message as never]);
+    return;
+  }
+  const next = mirror.slice();
+  next[idx] = { ...mirror[idx], ...message } as never;
+  cachedLogMessages.set(sessionId, next);
+}
 
 /** 第 91 波：索引不可用只提示一次（数据库致命时否则每次读都刷一行） */
 
@@ -1722,6 +1770,8 @@ export function createMessage(message: Message, sessionId: string): void {
   }
   // ① 权威日志：追加即持久，不碰索引、不做整库导出
   void appendSessionMessage(sessionId, message);
+  // ①b 写穿日志镜像（本回合后续重建上下文时立刻可见）
+  noteLogMirrorWrite(sessionId, { ...(message as unknown as Record<string, unknown>), sessionId, v: 1 });
 
   // ② 索引：尽力而为。索引崩了不影响上面那条已经落盘的记录。
   //
@@ -2988,6 +3038,7 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     if (base) {
       snapshot = { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message;
       void appendSessionMessage(sessionId, snapshot);
+      noteLogMirrorWrite(sessionId, { ...(snapshot as unknown as Record<string, unknown>), sessionId, v: 1 });
     } else {
       void appendUpdatedMessageToLog(id);
     }

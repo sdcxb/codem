@@ -23,7 +23,7 @@ const read = (p: string) => readFileSync(p, "utf8");
 const ACCOUNT = "src-tauri/src/phone/aa_account.rs";
 const MOD = "src-tauri/src/phone/mod.rs";
 const UI = "src/components/AaRemoteSection.tsx";
-const PANEL = "src/components/PhoneLinkSettings.tsx";
+const PANEL = "src/components/RemoteAccessSettings.tsx";
 
 describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
   it("N-1: 默认服务器是它的云（与 DSH 默认一致）", () => {
@@ -129,7 +129,7 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     expect(body).not.toMatch(/device:\s*prev\.as_ref\(\)\.and_then\(\|p\| p\.device\.clone\(\)\)/);
   });
 
-  it("N-7: 界面接线（服务器选择 / 账号 / 三个动作），且自研中继不默认启用", () => {
+  it("N-7: 界面接线（服务器选择 / 账号 / 三个动作）", () => {
     const ui = read(UI);
     for (const t of ['data-testid="aa-remote"', 'data-testid="aa-email"', 'data-testid="aa-password"',
                      'data-testid="aa-login"', 'data-testid="aa-register"', 'data-testid="aa-connect"',
@@ -141,40 +141,12 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     expect(ui).toContain("data-connected=");
     // 服务端返回的错误要**原样显示**（它比我们编的准确）
     expect(ui).toContain('data-testid="aa-login-error"');
-    // 已挂进设置面板
-    expect(read(PANEL)).toContain("<AaRemoteSection");
-    /**
-     * 自研中继**不默认启用**：界面里不许出现"自动启动中继"这类逻辑，
-     * 它只能靠用户显式点（`relay-start`）。
-     */
+    // 已挂进设置面板；设置卡不得再出现旧 LAN 配对/中继命令
     const panel = read(PANEL);
-    expect(panel).not.toMatch(/phone_relay_start"\s*\)/); // 不许无参调用（那等于自动启动）
-    expect(panel).toContain('tauriInvoke("phone_relay_start"');
-  });
-
-  it("N-8: 自研中继收进「高级」折叠区，不摆在主路径上", () => {
-    const panel = read(PANEL);
-    /**
-     * 用户口径是"不要太复杂、不要让用户面对看不懂的机制"。
-     * 中继是我们自研的第二套传输 —— 它**不该和主路径并排摆着**，
-     * 否则用户要在两条他都不懂的机制之间选。
-     */
-    expect(panel, "中继必须收进 details").toMatch(/<details[^>]*data-testid="advanced-relay"/);
-    // 折叠区要有说明它"默认不用"
-    expect(panel).toMatch(/高级：自研中继/);
-    expect(panel).toMatch(/默认不用/);
-    // 中继块必须在 details **内部**（在开标签之后、闭标签之前）
-    const open = panel.indexOf('data-testid="advanced-relay"');
-    const relayCard = panel.indexOf('className="setting-group relay-card"');
-    const close = panel.indexOf("</details>", open);
-    expect(open).toBeGreaterThan(0);
-    expect(relayCard, "relay-card 应当被 details 包住").toBeGreaterThan(open);
-    expect(close, "details 应当在 relay-card 之后闭合").toBeGreaterThan(relayCard);
-    // 主路径（AA 登录入口）必须在 details **之前**（先看到主路径）
-    const aaSection = panel.indexOf("<AaRemoteSection");
-    expect(aaSection, "主路径应当在「高级」之前").toBeLessThan(open);
-    // 且 details 默认**不展开**（不许写 open）
-    expect(panel.slice(open - 60, open + 90)).not.toMatch(/<details[^>]*\sopen[\s>]/);
+    expect(panel).toContain("<AaRemoteSection");
+    expect(panel, "设置卡只保留桌面网关 + AA").not.toMatch(
+      /phone_start|phone_stop|phone_decide|phone_unpair|phone_ca_|phone_relay_start|pair_url|qrcode/i,
+    );
   });
 
   it("N-9: 注册必填项必须都有入口（displayName 那次事故）", () => {

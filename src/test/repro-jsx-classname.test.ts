@@ -12,6 +12,10 @@ function read(name: string): string {
   return readFileSync(`src/components/${name}`, "utf8");
 }
 
+function readRepo(rel: string): string {
+  return readFileSync(rel, "utf8");
+}
+
 describe("JSX className 运算符优先级（无裸拼接比较）", () => {
   it("UI-001: 各组件不再包含 `+ X === Y ?` 裸模式", () => {
     const files = [
@@ -41,16 +45,21 @@ describe("JSX className 运算符优先级（无裸拼接比较）", () => {
     expect(tp).toContain('"terminal-tab" + (s.id === activeId ? " active" : "")');
   });
 
-  it("UI-003: FileChangesList 状态类名用括号包裹三元", () => {
-    const fcl = read("FileChangesList.tsx");
-    // 不应再有 git-status- 前缀 + 裸比较（这正是本条判据要防的优先级 bug）
-    expect(fcl).not.toContain('git-status-" + file.status');
+  it("UI-003: 变更列表的状态类名由一个函数产出（桌面与手机同一份）", () => {
     /*
-     * 第 233 轮：那处三目被抽成了**一个函数**（`gitStatusClass`）—— JSX 里不再拼字符串，
-     * 上面那条"不许裸比较拼接"的意图因此更强；这里钉住新形态的接线。
+     * 第 270 波：展示层从 `src/components/FileChangesList.tsx` 抽到共享
+     * `packages/ui/src/changes-list.tsx`（桌面只剩数据适配器）。判据目标随之移动，
+     * 但钉的仍是同一件事：**不许在 JSX 里拼"前缀 + 裸比较"**。
      */
-    expect(fcl, "状态类必须由一个函数产出（不许在 JSX 里拼）").toContain("function gitStatusClass(");
-    expect(fcl, "两处 status 类都必须走这个函数").toContain("className={gitStatusClass(file.status)}");
-    expect(fcl).toContain('isReverted ? "turn-change-group reverted" : "turn-change-group"');
+    const model = readRepo("packages/ui/src/changes-model.ts");
+    const list = readRepo("packages/ui/src/changes-list.tsx");
+    const desktop = read("FileChangesList.tsx");
+
+    expect(model, "状态类必须由一个函数产出（不许在 JSX 里拼）").toContain("export function fileStatusClass(");
+    expect(list, "文件行的 status 类必须走这个函数").toContain("className={fileStatusClass(file.status)}");
+    expect(list).toContain('isReverted ? "turn-change-group reverted" : "turn-change-group"');
+    // 桌面适配器不许再自带第二套状态类实现 / 裸拼接
+    expect(desktop).not.toContain('git-status-" + file.status');
+    expect(desktop).not.toContain("function gitStatusClass(");
   });
 });

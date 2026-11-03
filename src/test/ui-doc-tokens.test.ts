@@ -36,7 +36,10 @@ describe("UIDOC 文档 ↔ 实现", () => {
     // 契约快照是"派生视图"：少数复合选择器里的修饰类（如 `.guidance-item.pending` 的 pending）
     // 与个别压缩样式表里的类不会出现在 key 里。真相源是 CSS 文本本身，所以这里做两级判定：
     // 先在契约里找，找不到再到所有 CSS 文本里找 `.class`（仍是机器可判，不靠人眼）。
-    const cssText = ["src/styles.css", "src/styles/codem-ui.css"]
+    // `packages/ui/src/ui.css` 是共享组件样式（桌面与手机同一份）—— 图表里的共享类
+    // （气泡/工具卡/审批卡/Markdown）现在只在那里定义，漏了它这条判据会假绿。
+    const cssText = ["src/styles.css", "packages/ui/src/ui.css", "src/styles/codem-ui.css"]
+      .filter((f) => fs.existsSync(path.join(ROOT, f)))
       .map((f) => fs.readFileSync(path.join(ROOT, f), "utf8"))
       .join("\n");
 

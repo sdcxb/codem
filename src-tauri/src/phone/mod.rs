@@ -1,61 +1,52 @@
 // ============================================================
-// phone/mod.rs — @codem/phone-link 传输层（①手机连接，dsh-phone 对标）
+// phone/mod.rs — 桌面引擎桥（AA 用）+ AA connector 命令
 //
-// Codem 桌面 bundle 无 HTTP server 宿主（host-webserver 等被禁用），
-// 引擎又活在 WebView TS——本模块补齐"手机可访问的 UI + API"地基。
+// ## 旧 LAN 配对已删除
 //
-// ## 第 122 轮阶段 1 之后的拓扑（安全对齐）
+// 旧的 LAN 扫码配对/二维码/批准/设备列表/自签 CA/中继（`phone_link`）已经整块
+// 删除；这里**不再有任何** `pairing` / `cookie` / `devices.json` / `0.0.0.0`
+// 监听。手机远程按数据归属分成两类，互不重叠：
+//   - **PC 桌面数据**：桌面网关的 6 位一次性配对码（`gateway` 子模块，
+//     ADR-0005 M4 后是 PC 远程唯一入口）；
+//   - **手机本机数据**：Android 自己的 `packages/host`（由设备侧前台服务拉起，
+//     不在这台电脑的设置里配置）。
+// 旧的桌面 `host_cmd` sidecar 已随 M4 退役。
+// AA bridge 本身没有配对：它只认本次运行的内部 token。
 //
-//   手机浏览器 ──HTTPS(LAN, 自签 CA)──▶ [TLS 边缘 0.0.0.0]
-//                                          │ Host 白名单 + 拒跨站 + 注入边缘标记
-//                                          ▼
-//                                    [上游 HTTP 127.0.0.1]  ← 只认带标记的请求
-//                                          │ event
-//                                          ▼
-//                                    [WebView TS phone-link]（会话/消息/chat）
+// ## 保留的回环桥
 //
-// **局域网上没有明文监听**：上游只绑回环，唯一入口是 TLS 边缘。
-// 这一条是这一阶段的全部意义 —— 不是"HTTP 也开着、HTTPS 也开着"。
+//   AA 服务端 ──WS──▶ [AA connector] ──HTTP──▶ [127.0.0.1 bridge] ──event──▶ [WebView TS]
+//                                                   ▲
+//                                     每次运行随机 token（只在本进程内存）
 //
-// 配对模型对标 EAC phone-bridge.ts：
-//   - 桌面 start → 边缘绑 0.0.0.0:0（OS 随机端口）+ 准备自签 CA/叶子证书
-//     ⇒ 生成 HTTPS 配对 URL（token 随机，5min TTL）
-//   - 手机首次访问会看到自签证书警告；**用户必须核对桌面显示的 CA 指纹**
-//     （自签方案里唯一能挡中间人的一步），见 PhoneLinkSettings
-//   - 手机开 /pair?token → 等待页轮询 /api/pair-state
-//   - 桌面 decide(approve) → 生成会话 secret → pair-state 返回 Set-Cookie
-//     codem_phone=<secret>; HttpOnly; Secure; SameSite=Strict; Max-Age=30天
-//   - 之后 /api/* 全部带 cookie，secret 以 sha256 落盘 devices.json（重启保配对）
+// bridge 只绑 127.0.0.1；AA connector 从 `PhoneState` 拿到端口与 token，别的本机
+// 进程即使知道端口也拿不到 token。没有 cookie、没有设备身份、没有静态手机页。
+//
+// ## 另有 PC 远程网关（子模块 `gateway`，ADR-0005）
+//
+// 手机远程访问**桌面数据**走 `gateway`：独立回环监听 + 独立端口，但**复用**这里
+// 的 `forward_to_renderer`（`remote-request` → `remote_respond`）—— 事件名、
+// 应答命令、在途表只有一份，不建第二条桥。
 //
 // 诚实标注：本模块不编造数据——所有会话/消息/回复来自 WebView 引擎侧；
-// 引擎不在时 /api/* 返回 502。
-//
-// **仍然没做的**（阶段 3 范围内）：跨网络可达（现在只覆盖同一局域网）。
-// 证书是自签的 ⇒ 手机上一次"信任"是必须的，且**没有**公共 CA 兜底；
-// 因此"核对指纹"不是可选项。
+// 引擎不在时 /api/* 返回 504。
 // ============================================================
 
 pub mod aa_account;
 pub mod aa_connector;
 pub mod aa_protocol;
-pub mod connector;
+pub mod gateway;
 pub mod guard;
 pub mod http;
-pub mod lan;
-pub mod tls;
 
 #[cfg(test)]
 mod aa_live_test;
 #[cfg(test)]
 mod aa_mock_test;
-#[cfg(test)]
-mod edge_test;
 
 use crate::phone::http::{
-    parse_cookies, split_request, Request as HttpRequest, Response as HttpResponse,
+    split_request, Request as HttpRequest, Response as HttpResponse,
 };
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -66,93 +57,33 @@ use tokio::time::{timeout, Duration};
 
 // ---- 常量 ----
 
-const PAIR_TTL_MS: i64 = 5 * 60 * 1000;
-const MAX_DEVICES: usize = 8;
-const COOKIE_NAME: &str = "codem_phone";
-/// 会话 cookie 寿命（秒）。第 122 轮阶段 1：**从 31536000（1 年）收到 30 天**。
-///
-/// 为什么收：这是一条"能读你全部会话、还能让 agent 干活"的凭据，
-/// 而手机丢在抽屉里、借给别人看、卖掉都是常态。1 年不失效等于
-/// "配过一次就永久有效"。30 天足够日常使用，且让"设备丢了"这件事
-/// 有一个自然的失效上限（用户也可以随时在桌面取消配对）。
-const COOKIE_MAX_AGE_SECS: i64 = 30 * 24 * 3600;
 const PHONE_DIR: &str = "phone";
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const PROXY_TIMEOUT: Duration = Duration::from_secs(15);
-
-const APP_HTML: &str = include_str!("ui/app.html");
-const PAIR_HTML: &str = include_str!("ui/pair.html");
+/// 单条连接的总时限（读请求 + 等渲染层 + 写响应）。网关监听复用同一个值。
+pub(crate) const CONN_TIMEOUT: Duration = Duration::from_secs(25);
 
 // ---- 状态 ----
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Device {
-    pub id: String,
-    /// sha256(secret) hex（不落明文 secret）。
-    pub secret_hash: String,
-    #[serde(default)]
-    pub ip: String,
-    pub paired_at_ms: i64,
-    #[serde(default)]
-    pub last_seen_ms: i64,
-}
-
-#[derive(Clone, Debug)]
-pub struct Pairing {
-    pub token: String,
-    pub expires_at_ms: i64,
-    pub decided: Option<bool>,
-    pub device_created: bool,
-    /// 批准后生成的会话 secret（明文仅驻留配对 TTL 内，用于 pair-state
-    /// 重复轮询重放 Set-Cookie——弱网下首条响应丢失时手机不致永久 401）。
-    pub approved_secret: Option<String>,
-    pub remote_ip: String,
-    pub waiting_at_ms: Option<i64>,
-}
-
 pub struct PhoneInner {
     pub running: bool,
-    pub port: u16,
-    pub lan_ip: String,
-    pub pairing: Option<Pairing>,
-    pub devices: Vec<Device>,
-    pub devices_loaded: bool,
+    /// 回环 bridge 端口（只绑 127.0.0.1）。
+    pub bridge_port: u16,
+    /// 每次 start 重新随机的内部 token（只存在于进程内存）。
+    pub bridge_token: String,
     /// 代理到 TS 的在途请求（reqId → 应答通道）。
     pub pending: HashMap<String, oneshot::Sender<HttpResponse>>,
     pub server_handle: Option<tauri::async_runtime::JoinHandle<()>>,
-    // ---- 第 122 轮阶段 1：TLS 边缘 ----
-    /// 上游（明文 HTTP）端口，**只绑 127.0.0.1**。
-    pub upstream_port: u16,
-    /// 边缘（HTTPS）端口，绑 0.0.0.0 —— 手机连的是这个。
-    pub tls_port: u16,
-    /// 边缘注入的标记（每次 start 重新随机；只存在于进程内存）。
-    pub edge_token: String,
-    /// CA 指纹（大写 hex，冒号分隔）——给桌面显示，供用户**带外**核对，
-    /// 这是自签方案里唯一能抗中间人的一步。
-    pub ca_fingerprint: String,
-    /// CA 证书 PEM（供手机安装；它是公开信息，不是密钥）。
-    pub ca_pem: String,
-    /// TLS 边缘的监听句柄。
-    pub tls_handle: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 impl Default for PhoneInner {
     fn default() -> Self {
         PhoneInner {
             running: false,
-            port: 0,
-            lan_ip: String::new(),
-            pairing: None,
-            devices: Vec::new(),
-            devices_loaded: false,
+            bridge_port: 0,
+            bridge_token: String::new(),
             pending: HashMap::new(),
             server_handle: None,
-            upstream_port: 0,
-            tls_port: 0,
-            edge_token: String::new(),
-            ca_fingerprint: String::new(),
-            ca_pem: String::new(),
-            tls_handle: None,
         }
     }
 }
@@ -183,31 +114,10 @@ pub fn random_hex(bytes: usize) -> String {
     for b in buf.iter_mut() {
         *b = rand::random();
     }
-    hex_encode(&buf)
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-pub fn hex_encode(data: &[u8]) -> String {
-    let mut s = String::with_capacity(data.len() * 2);
-    for b in data {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s
-}
-
-pub fn sha256_hex(s: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(s.as_bytes());
-    hex_encode(&h.finalize())
-}
-
-/// 常数时间字符串比较。
-///
-/// 第 122 轮阶段 1 修正：原来在长度不等时**提前返回 false** ——
-/// 那会通过响应时间泄露"长度对不对"。对固定的随机 hex（32 字符）这条在实践中
-/// 触发不了，但提前返回本身是没必要的，去掉它让这个原语**在任何输入下**都成立。
-///
-/// 现在的形状：以较长者为迭代长度（短的一侧越界读 0），全程累积 XOR，
-/// 最后把"长度是否相等"一并折进结果。
+/// 常数时间字符串比较（bridge token 用）。
 pub fn timing_safe_eq(a: &str, b: &str) -> bool {
     let (ab, bb) = (a.as_bytes(), b.as_bytes());
     let mut diff: u8 = 0;
@@ -217,385 +127,24 @@ pub fn timing_safe_eq(a: &str, b: &str) -> bool {
         let y = *bb.get(i).unwrap_or(&0);
         diff |= x ^ y;
     }
-    // ⚠️ 括号必须留着：Rust 里 `==` 的优先级**高于** `|`。
     let len_eq = (ab.len() == bb.len()) as u8;
     (diff | (len_eq ^ 1)) == 0
 }
 
-fn rotate_pairing(now: i64) -> Pairing {
-    Pairing {
-        token: random_hex(16),
-        expires_at_ms: now + PAIR_TTL_MS,
-        decided: None,
-        device_created: false,
-        approved_secret: None,
-        remote_ip: String::new(),
-        waiting_at_ms: None,
-    }
-}
+// ---- 持久化（只给 AA 账号态复用）----
 
-/// 配对 token 校验（纯逻辑，测试友好）。
-pub fn pair_token_status(pairing: &Option<Pairing>, token: &str, now: i64) -> PairTokenStatus {
-    match pairing {
-        None => PairTokenStatus::Invalid,
-        Some(p) => {
-            if !timing_safe_eq(&p.token, token) {
-                PairTokenStatus::Invalid
-            } else if now > p.expires_at_ms {
-                PairTokenStatus::Expired
-            } else if p.decided == Some(true) {
-                PairTokenStatus::Approved
-            } else if p.decided == Some(false) {
-                PairTokenStatus::Rejected
-            } else {
-                PairTokenStatus::Waiting
-            }
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PairTokenStatus {
-    Invalid,
-    Expired,
-    Waiting,
-    Approved,
-    Rejected,
-}
-
-/// 鉴权（纯逻辑，测试友好）：cookie secret 命中设备返回 device。
-///
-/// 第 122 轮阶段 1 修正（这条正是对标审计里点出的 `mod.rs:205` 普通 `==`）：
-///
-/// - 原来用 `devices.iter().find(|d| d.secret_hash == hash)` ——
-///   ① `String` 的 `==` 不是常数时间；② `find` 在**第一个命中处就返回**，
-///   于是"第几个设备命中的"也变成了时间信息。
-/// - 现在对**所有**设备都做一次常数时间比较，全程不提前退出，取第一个命中。
-///
-/// 诚实标注风险等级：比对的双方都是 **SHA-256 摘要**（64 个 hex 字符），
-/// 攻击者能控制的是"原像"（cookie 明文）而不是摘要本身，所以即使有时间泄露，
-/// 也无法据此逐位收敛出正确 cookie（那需要摘要的部分原像）。
-/// 也就是说：**这条的实际可利用性很低**，改它是为了姿态正确、以及消除
-/// "鉴权路径上写着普通 `==`"这个会被反复误读的信号。
-pub fn auth_device<'a>(devices: &'a [Device], secret: Option<&str>) -> Option<&'a Device> {
-    let secret = secret?;
-    let hash = sha256_hex(secret);
-    let mut found: Option<&Device> = None;
-    for d in devices {
-        let hit = timing_safe_eq(&d.secret_hash, &hash);
-        // 不用 `break`：保持"遍历全部"的常数形状
-        if hit && found.is_none() {
-            found = Some(d);
-        }
-    }
-    found
-}
-
-// ---- 持久化 ----
-
-/*
- * 第 230 波：下面三个都走 `crate::app_data_dir_path`（应用数据目录的**唯一**入口）。
- * 原来它们各自 `app.path().app_data_dir()` 一次 —— 于是"隔离数据根"这个开关只要漏接一处，
- * 隔离钻取就仍然在写用户真目录（手机配对/TLS 证书）。本仓的纪律是同一件事只留一条路：
- * 现在全仓 `app_data_dir()` 的调用点只剩 `lib.rs::app_data_dir_path` 一处，
- * 判据 `ISO-4`（`src/test/data-home-isolation-switch.test.ts`）会读源码钉住这一点。
- */
-
-/// 手机连接的持久化目录（同步版，给需要在 setup 里取目录的地方用）。
+/// AA 账号/安装标识的持久化目录。目录名沿用 `phone/` 以避免破坏已登录用户的
+/// `aa-account.json`；这里**不再**写 devices.json / TLS 证书。
 pub fn phone_dir(app: &AppHandle) -> std::path::PathBuf {
     crate::app_data_dir_path(app)
         .map(|d| d.join(PHONE_DIR))
         .unwrap_or_else(|_| std::env::temp_dir().join(PHONE_DIR))
 }
 
-async fn data_dir(app: &AppHandle) -> std::path::PathBuf {
-    crate::app_data_dir_path(app)
-        .map(|d| d.join(PHONE_DIR))
-        .unwrap_or_else(|_| std::env::temp_dir().join(PHONE_DIR))
-}
-
-/// 应用数据根目录（**不带** `phone/` 前缀）。
-///
-/// 单独一个函数是因为 `tls::ensure` 自己会拼 `phone/tls` ——
-/// 复用 `data_dir` 会得到 `phone/phone/tls`（我第一次就是这么写的）。
-fn app_data_root(app: &AppHandle) -> std::path::PathBuf {
-    crate::app_data_dir_path(app).unwrap_or_else(|_| std::env::temp_dir())
-}
-
-async fn save_devices(app: &AppHandle, st: &Arc<PhoneState>) {
-    let dir = data_dir(app).await;
-    let devices = st.inner.lock().await.devices.clone();
-    if let Err(_) = std::fs::create_dir_all(&dir) {
-        return;
-    }
-    if let Ok(json) = serde_json::to_string(&devices) {
-        let _ = std::fs::write(dir.join("devices.json"), json);
-    }
-}
-
-async fn ensure_devices(app: &AppHandle, st: &Arc<PhoneState>) {
-    let mut g = st.inner.lock().await;
-    if g.devices_loaded {
-        return;
-    }
-    g.devices_loaded = true;
-    let dir = data_dir(app).await;
-    if let Ok(raw) = std::fs::read_to_string(dir.join("devices.json")) {
-        if let Ok(list) = serde_json::from_str::<Vec<Device>>(&raw) {
-            g.devices = list;
-        }
-    }
-}
-
-// ---- 事件 ----
-
-async fn emit_state(app: &AppHandle, st: &Arc<PhoneState>) {
-    let payload = status_snapshot(app, st).await;
-    let _ = app.emit("phone-state", payload);
-}
-
-async fn status_snapshot(app: &AppHandle, st: &Arc<PhoneState>) -> serde_json::Value {
-    ensure_devices(app, st).await;
-    let g = st.inner.lock().await;
-    // 阶段 1：局域网侧只有 HTTPS。`port` 一律是**边缘端口**，
-    // 上游端口（回环）不外传 —— 它不该出现在任何给用户看的字段里。
-    let base = format!("https://{}:{}/", g.lan_ip, g.tls_port);
-    let pair_url = g
-        .pairing
-        .as_ref()
-        .map(|p| format!("{}pair?token={}", base, p.token));
-    serde_json::json!({
-        "running": g.running,
-        "port": g.tls_port,
-        "lan_ip": g.lan_ip,
-        "url": if g.running { Some(base.clone()) } else { None },
-        "pair_url": pair_url,
-        // 阶段 1：让界面能显示"手机连的是 HTTPS"以及**要核对的指纹**
-        "https": true,
-        "ca_fingerprint": g.ca_fingerprint,
-        "ca_url": if g.running { Some(format!("{}ca.crt", base)) } else { None },
-        "pairing": g.pairing.as_ref().map(|p| serde_json::json!({
-            "active": now_ms() <= p.expires_at_ms,
-            "expires_at_ms": p.expires_at_ms,
-            "decided": p.decided,
-            "waiting": p.waiting_at_ms.is_some(),
-        })),
-        "devices": g.devices.iter().map(|d| serde_json::json!({
-            "id": d.id, "ip": d.ip, "paired_at_ms": d.paired_at_ms, "last_seen_ms": d.last_seen_ms,
-        })).collect::<Vec<_>>(),
-    })
-}
-
-// ---- HTTP 服务 ----
-
-/// 组成 `phone_start` 的返回体 —— **唯一一处**。
-///
-/// ## 为什么必须共用
-///
-/// 第一版在"已运行 ⇒ 提前返回"那条路径上手写了另一份 JSON，于是它一直报
-/// `http://` 且**不带 CA 指纹**。而应用启动时会 `autoStart`，
-/// 所以用户点到的每一次「开始配对 / 刷新配对二维码」走的**都是那条路径** ——
-/// 界面上那串"必须核对的指纹"等于**永远不会显示**。
-///
-/// 单元测试没抓到它：`start_server` 的提前返回分支需要"已运行"状态，
-/// 只有真机端到端才会走到。教训是**同一个响应不要在两处拼**。
-fn start_response(
-    lan_ip: &str,
-    tls_port: u16,
-    token: &str,
-    ca_fingerprint: &str,
-) -> serde_json::Value {
-    // 阶段 1：局域网侧只有 HTTPS，所以这里**只**可能拼出 https。
-    let url = format!("https://{}:{}/", lan_ip, tls_port);
-    serde_json::json!({
-        "url": url,
-        "port": tls_port,
-        "lan_ip": lan_ip,
-        "pair_url": format!("{}pair?token={}", url, token),
-        "https": true,
-        "ca_fingerprint": ca_fingerprint,
-    })
-}
-
-/// 启动监听（幂等）：未运行则起"回环上游 + TLS 边缘"；已运行按需轮换配对。
-async fn start_server(app: AppHandle, st: Arc<PhoneState>) -> Result<serde_json::Value, String> {
-    {
-        let mut g = st.inner.lock().await;
-        if g.running {
-            // 运行中：仅当无有效未决配对时轮换（对标 EAC 幂等重入语义）。
-            let need_rotate = match &g.pairing {
-                Some(p) => now_ms() > p.expires_at_ms || p.decided.is_some(),
-                None => true,
-            };
-            if need_rotate {
-                g.pairing = Some(rotate_pairing(now_ms()));
-            }
-            let token = g
-                .pairing
-                .as_ref()
-                .map(|p| p.token.clone())
-                .unwrap_or_default();
-            // ⚠️ 这条路径**也要**带 https 与指纹，否则用户在界面上看不到要核对的东西
-            return Ok(start_response(
-                &g.lan_ip,
-                g.tls_port,
-                &token,
-                &g.ca_fingerprint,
-            ));
-        }
-        g.lan_ip = lan::lan_ip();
-    }
-
-    // ---- 上游：**只绑回环**（第 122 轮阶段 1）----
-    //
-    // 原来是 `0.0.0.0:0` —— 手机连的就是它，明文、且对局域网任意主机可达。
-    // 现在它只服务 127.0.0.1，**唯一入口是下面的 TLS 边缘**。
-    // 这一条是"LAN HTTPS"能成立的前提：不是"HTTP 也开着、HTTPS 也开着"，
-    // 而是**局域网上根本没有明文监听**。
-    let upstream_listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| format!("绑定上游失败: {}", e))?;
-    let upstream_port = upstream_listener
-        .local_addr()
-        .map_err(|e| format!("取上游端口失败: {}", e))?
-        .port();
-
-    let lan_ip = lan::lan_ip();
-
-    // ---- 证书：CA 尽量复用（手机只需信任一次），叶子按需轮换 ----
-    let material = match tls::ensure(
-        &app_data_root(&app),
-        &[lan_ip.clone(), "127.0.0.1".to_string()],
-    ) {
-        Ok(m) => m,
-        Err(e) => {
-            // **fail-closed**：证书搞不出来就不启动 LAN 服务。
-            // 绝不能"退化成明文" —— 那正是这一阶段要消除的东西。
-            return Err(format!(
-                "无法准备 TLS 证书（已拒绝启动局域网服务，绝不退化为明文）: {}",
-                e
-            ));
-        }
-    };
-    let tls_config = match tls::server_config(&material) {
-        Ok(c) => c,
-        Err(e) => {
-            return Err(format!("无法构造 TLS 配置（已拒绝启动局域网服务）: {}", e));
-        }
-    };
-
-    // ---- 边缘：绑 0.0.0.0 的 HTTPS ----
-    //
-    // 端口**先绑再记**：绑失败就不启动（同样 fail-closed）。
-    let edge_listener = match TcpListener::bind("0.0.0.0:0").await {
-        Ok(l) => l,
-        Err(e) => return Err(format!("绑定 HTTPS 边缘失败: {}", e)),
-    };
-    let tls_port = edge_listener
-        .local_addr()
-        .map_err(|e| format!("取边缘端口失败: {}", e))?
-        .port();
-
-    // 每次 start 重新随机的边缘标记（不落盘、不出进程）
-    let edge_token = random_hex(32);
-
-    {
-        let mut g = st.inner.lock().await;
-        if g.running {
-            // 并发竞态：两次 start 交错，另一个已生效 → 丢弃本次监听并返回现有状态。
-            drop(upstream_listener);
-            drop(edge_listener);
-            let url = format!("https://{}:{}/", g.lan_ip, g.tls_port);
-            let pair_url = g
-                .pairing
-                .as_ref()
-                .map(|p| format!("{}pair?token={}", url, p.token))
-                .unwrap_or_default();
-            return Ok(serde_json::json!({
-                "url": url, "port": g.tls_port, "lan_ip": g.lan_ip, "pair_url": pair_url,
-                "https": true,
-                "ca_fingerprint": g.ca_fingerprint,
-            }));
-        }
-        g.port = tls_port;
-        g.tls_port = tls_port;
-        g.upstream_port = upstream_port;
-        g.edge_token = edge_token.clone();
-        g.ca_fingerprint = material.ca_fingerprint.clone();
-        g.ca_pem = material.ca_pem.clone();
-        g.lan_ip = lan_ip.clone();
-        g.pairing = Some(rotate_pairing(now_ms()));
-        g.running = true;
-    }
-
-    let upstream_handle = {
-        let st2 = st.clone();
-        let app2 = app.clone();
-        tauri::async_runtime::spawn(async move {
-            loop {
-                match upstream_listener.accept().await {
-                    Ok((stream, _peer)) => {
-                        let st3 = st2.clone();
-                        let app3 = app2.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = handle_conn(app3, st3, stream).await;
-                        });
-                    }
-                    Err(_) => break,
-                }
-            }
-        })
-    };
-
-    let edge_handle = {
-        let acceptor = tokio_rustls::TlsAcceptor::from(tls_config);
-        let allowed = Arc::new(guard::allowed_hosts(&lan_ip, tls_port));
-        let token = Arc::new(edge_token);
-        tauri::async_runtime::spawn(async move {
-            loop {
-                match edge_listener.accept().await {
-                    Ok((stream, _peer)) => {
-                        let acc = acceptor.clone();
-                        let al = allowed.clone();
-                        let tk = token.clone();
-                        tauri::async_runtime::spawn(async move {
-                            handle_edge_conn(acc, stream, upstream_port, al, tk).await;
-                        });
-                    }
-                    Err(_) => break,
-                }
-            }
-        })
-    };
-    {
-        let mut g = st.inner.lock().await;
-        g.server_handle = Some(upstream_handle);
-        g.tls_handle = Some(edge_handle);
-    }
-
-    emit_state(&app, &st).await;
-    // 与"已运行"那条路径**共用同一个函数**：这个响应只有一种形状。
-    let token = {
-        let g = st.inner.lock().await;
-        g.pairing
-            .as_ref()
-            .map(|p| p.token.clone())
-            .unwrap_or_default()
-    };
-    Ok(start_response(
-        &lan_ip,
-        tls_port,
-        &token,
-        &material.ca_fingerprint,
-    ))
-}
+// ---- HTTP bridge ----
 
 /// 从任意异步流里读一个完整 HTTP 请求（头 + Content-Length 指定的 body）。
-///
-/// 抽出来是因为它现在有**两个**调用方：TLS 边缘（读手机发来的请求）与
-/// 上游（读边缘转来的请求）。两处各写一遍迟早分叉 —— 而"两处解析不一致"
-/// 正是请求走私类问题的经典成因。
-async fn read_http_request<S>(stream: &mut S) -> Result<(String, Vec<u8>), ()>
+pub(crate) async fn read_http_request<S>(stream: &mut S) -> Result<(String, Vec<u8>), ()>
 where
     S: tokio::io::AsyncRead + Unpin,
 {
@@ -626,7 +175,7 @@ where
     }
 }
 
-/// 在流上写一个 4xx/5xx 的纯文本响应（边缘自己产生的错误，不经过上游）。
+/// 在流上写一个 4xx/5xx 的纯文本响应（bridge 自己产生的错误）。
 async fn write_simple<S>(stream: &mut S, status: u16, reason: &str, msg: &str) -> Result<(), ()>
 where
     S: tokio::io::AsyncWrite + Unpin,
@@ -644,131 +193,32 @@ where
     Ok(())
 }
 
-/// TLS 边缘：终止 TLS → **准入判定** → 转给只绑回环的上游。
-///
-/// 准入在**边缘**做（而不是上游），因为这里是不可信流量进来的地方：
-/// 【Host 白名单】挡 DNS rebinding，【拒跨站】挡恶意网页的 CSRF，
-/// 之后注入只有边缘知道的标记，上游凭标记确认"你是从边缘进来的"。
-async fn handle_edge_conn(
-    acceptor: tokio_rustls::TlsAcceptor,
-    stream: TcpStream,
-    upstream_port: u16,
-    allowed: Arc<std::collections::HashSet<String>>,
-    edge_token: Arc<String>,
-) {
-    let _ = timeout(Duration::from_secs(30), async move {
-        let mut tls = match acceptor.accept(stream).await {
-            Ok(s) => s,
-            // 握手失败是**常态**（公网扫描、协议探测、证书不匹配的旧手机），
-            // 静默丢弃即可 —— 不要往日志里灌噪音。
-            Err(_) => return,
-        };
-        let (head, body) = match read_http_request(&mut tls).await {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-
-        // ---- 准入：Host 白名单 + 拒跨站 ----
-        let host = http::header_value(&head, "host");
-        let sfs = http::header_value(&head, "sec-fetch-site");
-        let origin = http::header_value(&head, "origin");
-        match guard::edge_verdict(host.as_deref(), sfs.as_deref(), origin.as_deref(), &allowed) {
-            guard::EdgeVerdict::Allow => {}
-            guard::EdgeVerdict::BadHost => {
-                // 如实说清拒绝原因：这条最常见的成因就是"域名指向了我们的 IP"，
-                // 用户/我们自己排查时看到这句话能立刻明白。
-                let _ = write_simple(
-                    &mut tls,
-                    421,
-                    "Misdirected Request",
-                    "这个地址不是本机宣告的访问地址。请用桌面端显示的地址访问。",
-                )
-                .await;
-                return;
-            }
-            guard::EdgeVerdict::CrossSite => {
-                let _ = write_simple(
-                    &mut tls,
-                    403,
-                    "Forbidden",
-                    "拒绝跨站请求。",
-                )
-                .await;
-                return;
-            }
-        }
-
-        // ---- 转发到上游（回环）：注入标记，客户端自带的同名头被删掉 ----
-        let forwarded = guard::inject_edge_header(&head, &edge_token);
-        let up = match TcpStream::connect(("127.0.0.1", upstream_port)).await {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = write_simple(&mut tls, 502, "Bad Gateway", "本机服务不可用。").await;
-                return;
-            }
-        };
-        let (mut rd, mut wr) = up.into_split();
-        if wr.write_all(forwarded.as_bytes()).await.is_err() {
-            return;
-        }
-        if wr.write_all(b"\r\n\r\n").await.is_err() {
-            return;
-        }
-        if !body.is_empty() && wr.write_all(&body).await.is_err() {
-            return;
-        }
-        let _ = wr.flush().await;
-        // 上游是"一请求一响应、Connection: close"，读到 EOF 即为响应结束
-        let mut resp = Vec::new();
-        let mut chunk = [0u8; 8192];
-        loop {
-            match rd.read(&mut chunk).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    resp.extend_from_slice(&chunk[..n]);
-                    if resp.len() > MAX_REQUEST_BYTES {
-                        break;
-                    }
-                }
-            }
-        }
-        let _ = tls.write_all(&resp).await;
-        let _ = tls.flush().await;
-        let _ = tls.shutdown().await;
-    })
-    .await;
-}
-
 async fn handle_conn(app: AppHandle, st: Arc<PhoneState>, mut stream: TcpStream) -> Result<(), ()> {
-    let result = timeout(Duration::from_secs(25), async {
+    let result = timeout(CONN_TIMEOUT, async {
         let (head, body) = read_http_request(&mut stream).await?;
 
-        // ---- 上游准入：必须带本次运行的边缘标记 ----
-        // 上游只绑 127.0.0.1，所以能到这里的就是本机进程；这一跳保证
-        // **本机别的进程也不能绕过边缘的 Host 校验**直连上来。
-        let edge_token = {
+        // 只接受带本次运行 token 的请求。bridge 只绑回环，这一跳保证
+        // 本机其它进程即使知道端口也不能直接调用引擎。
+        let bridge_token = {
             let g = st.inner.lock().await;
-            g.edge_token.clone()
+            g.bridge_token.clone()
         };
-        if !upstream_admit(&head, &edge_token) {
+        if !guard::bridge_allowed(
+            http::header_value(&head, guard::BRIDGE_HEADER).as_deref(),
+            &bridge_token,
+        ) {
             let _ = write_simple(
                 &mut stream,
                 403,
                 "Forbidden",
-                "必须经本机 TLS 边缘访问。",
+                "必须带本次运行的桌面引擎 bridge token。",
             )
             .await;
-            // 显式标注返回类型：这个 async 块里其它路径靠 `?` 推断错误类型，
-            // 只有这里需要写清楚（否则 E0282/E0283）。
             return Ok::<(), ()>(());
         }
 
         let req = http::parse(&head, body).map_err(|_| ())?;
-        let peer_ip = stream
-            .peer_addr()
-            .map(|a| a.ip().to_string())
-            .unwrap_or_default();
-        let resp = route(&app, &st, req, peer_ip).await;
+        let resp = route(&app, &st, req).await;
         let bytes = resp.to_bytes();
         stream.write_all(&bytes).await.map_err(|_| ())?;
         Ok(())
@@ -778,221 +228,26 @@ async fn handle_conn(app: AppHandle, st: Arc<PhoneState>, mut stream: TcpStream)
     Ok(())
 }
 
-/// 上游准入判定（**纯函数**，便于直接钉住）。
+/// 只代理 `/api/*`；没有 `/`、`/pair`、`/ca.crt`、`/api/pair-state`。
+async fn route(app: &AppHandle, st: &Arc<PhoneState>, req: HttpRequest) -> HttpResponse {
+    if req.path.starts_with("/api/") {
+        proxy_to_ts(app, st, req).await
+    } else {
+        HttpResponse::json(404, serde_json::json!({ "error": "not_found" }))
+    }
+}
+
+/// 代理到 WebView TS：事件 remote-request → 等 remote_respond。
 ///
-/// `expected` 为空表示"边缘标记机制未启用"（例如只在测试里直接跑上游）——
-/// 那时不做这一跳检查。生产路径上 `phone_start` 一定会填它。
-pub fn upstream_admit(head: &str, expected: &str) -> bool {
-    if expected.is_empty() {
-        return true;
-    }
-    guard::upstream_allowed(http::header_value(head, guard::EDGE_HEADER).as_deref(), expected)
-}
-
-/// 路由分派（主逻辑）。peer_ip = 手机侧 IP（配对等待/记录用）。
-async fn route(
+/// 这是**唯一**的事件桥：AA bridge（`proxy_to_ts`）与 PC 网关
+/// （`phone::gateway`）都从这里发事件。不要为第二条监听另发事件名 ——
+/// 那样渲染层就会有两条应答路径，谁答的、答给谁都说不清。
+pub(crate) async fn forward_to_renderer(
     app: &AppHandle,
     st: &Arc<PhoneState>,
     req: HttpRequest,
-    peer_ip: String,
 ) -> HttpResponse {
-    let now = now_ms();
-    match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => HttpResponse::html(200, APP_HTML),
-        // 阶段 1：CA 证书下载（**故意不鉴权**）。
-        //
-        // 为什么必须不鉴权：手机要在**配对之前**才能装上证书，否则连不上 HTTPS
-        // 就没法配对 —— 这是先有鸡还是先有蛋。
-        //
-        // 为什么公开它不构成漏洞：证书是**公开信息**（不是私钥）。
-        // 真正的防线是"用户拿桌面上显示的**指纹**带外核对" ——
-        // 中间人可以把这张 CA 换成自己的，但换不掉桌面上那串指纹。
-        // 所以这一步的意义是：**用户必须核对指纹**，而不是"证书能下载就安全"。
-        ("GET", "/ca.crt") => {
-            let pem = {
-                let g = st.inner.lock().await;
-                g.ca_pem.clone()
-            };
-            if pem.is_empty() {
-                HttpResponse::text(404, "text/plain; charset=utf-8", "CA 尚未就绪")
-            } else {
-                let mut r =
-                    HttpResponse::text(200, "application/x-x509-ca-cert", &pem);
-                r.headers.push((
-                    "Content-Disposition".into(),
-                    "attachment; filename=codem-ca.crt".into(),
-                ));
-                r
-            }
-        }
-        ("GET", "/pair") => {
-            let token = req.query.get("token").cloned().unwrap_or_default();
-            let status = {
-                let g = st.inner.lock().await;
-                pair_token_status(&g.pairing, &token, now)
-            };
-            match status {
-                PairTokenStatus::Waiting => {
-                    {
-                        let mut g = st.inner.lock().await;
-                        if let Some(p) = &mut g.pairing {
-                            p.remote_ip = peer_ip.clone();
-                            if p.waiting_at_ms.is_none() {
-                                p.waiting_at_ms = Some(now);
-                            }
-                        }
-                    }
-                    emit_state(app, st).await;
-                    HttpResponse::html(200, PAIR_HTML)
-                }
-                PairTokenStatus::Approved | PairTokenStatus::Rejected => {
-                    // 已决：手机应已拿到 cookie；直接回应用户友好提示。
-                    HttpResponse::html(200, PAIR_HTML)
-                }
-                PairTokenStatus::Expired => HttpResponse::html(410, PAIR_HTML),
-                PairTokenStatus::Invalid => HttpResponse::html(403, PAIR_HTML),
-            }
-        }
-        ("GET", "/api/pair-state") => {
-            let token = req.query.get("token").cloned().unwrap_or_default();
-            ensure_devices(app, st).await; // 先加载设备（避免锁内二次加锁）
-            let (status, cookie, new_device_id) = {
-                let mut g = st.inner.lock().await;
-                let s = pair_token_status(&g.pairing, &token, now);
-                let mut cookie = None;
-                let mut new_device_id = None;
-                let mut to_push: Option<Device> = None;
-                if s == PairTokenStatus::Approved {
-                    // 注意：经 MutexGuard 的 Deref 借用无法字段拆分——先只动 pairing，
-                    // devices 写入放到借用结束之后。
-                    if let Some(p) = &mut g.pairing {
-                        if !p.device_created {
-                            p.device_created = true;
-                            if p.remote_ip.is_empty() {
-                                p.remote_ip = peer_ip.clone();
-                            }
-                            let secret = random_hex(16);
-                            let dev = Device {
-                                id: format!("dev-{}", random_hex(6)),
-                                secret_hash: sha256_hex(&secret),
-                                ip: p.remote_ip.clone(),
-                                paired_at_ms: now,
-                                last_seen_ms: now,
-                            };
-                            new_device_id = Some(dev.id.clone());
-                            // 明文 secret 仅驻留配对 TTL 内，供重复轮询重放 Set-Cookie
-                            //（弱网下首条 approved 响应丢失时手机不致永久 401）。
-                            p.approved_secret = Some(secret.clone());
-                            cookie = Some(secret);
-                            to_push = Some(dev);
-                        } else {
-                            // 已建设备：重放同一 secret（幂等）
-                            cookie = p.approved_secret.clone();
-                        }
-                    }
-                }
-                if let Some(dev) = to_push {
-                    g.devices.retain(|d| d.id != dev.id);
-                    if g.devices.len() >= MAX_DEVICES {
-                        g.devices.remove(0);
-                    }
-                    g.devices.push(dev);
-                }
-                (s, cookie, new_device_id)
-            };
-            if let Some(did) = new_device_id {
-                let _ = app.emit("phone-paired", serde_json::json!({ "device_id": did }));
-            }
-            match status {
-                PairTokenStatus::Waiting => {
-                    emit_state(app, st).await;
-                    HttpResponse::json(200, serde_json::json!({ "state": "waiting" }))
-                }
-                PairTokenStatus::Approved => {
-                    save_devices(app, st).await;
-                    emit_state(app, st).await;
-                    let mut resp = HttpResponse::json(200, serde_json::json!({ "state": "approved" }));
-                    if let Some(secret) = cookie {
-                        // `Secure` 要按**客户端那一侧的真实协议**决定，不能一律加：
-                        // LAN 边缘永远是 HTTPS（该加）；但中继那一跳的协议由中继决定，
-                        // 中继是明文时浏览器会**直接丢弃**带 Secure 的 cookie ⇒
-                        // 手机永远 401，而现象只是"一直登不上"，极难定位。
-                        // connector 会用 `X-Forwarded-Proto` 如实告诉我们（反向代理同一惯例）；
-                        // 没有这个头 = 来自 LAN 边缘 = HTTPS，所以默认加。
-                        let secure = req
-                            .headers
-                            .get("x-forwarded-proto")
-                            .map(|v| v.trim().eq_ignore_ascii_case("https"))
-                            .unwrap_or(true);
-                        resp.headers.push((
-                            "Set-Cookie".into(),
-                            format!(
-                                "{}={}; Path=/; HttpOnly;{} SameSite=Strict; Max-Age={}",
-                                COOKIE_NAME,
-                                secret,
-                                if secure { " Secure;" } else { "" },
-                                COOKIE_MAX_AGE_SECS
-                            ),
-                        ));
-                    }
-                    resp
-                }
-                PairTokenStatus::Rejected => {
-                    HttpResponse::json(200, serde_json::json!({ "state": "rejected" }))
-                }
-                PairTokenStatus::Expired => {
-                    HttpResponse::json(410, serde_json::json!({ "state": "expired" }))
-                }
-                PairTokenStatus::Invalid => {
-                    HttpResponse::json(403, serde_json::json!({ "state": "invalid" }))
-                }
-            }
-        }
-        _ if req.path.starts_with("/api/") => {
-            // cookie 鉴权门卫
-            ensure_devices(app, st).await;
-            let device = {
-                let g = st.inner.lock().await;
-                let cookie = req.headers.get("cookie").map(|c| c.as_str());
-                let cookies = parse_cookies(cookie);
-                let secret = cookies.get(COOKIE_NAME).cloned();
-                auth_device(&g.devices, secret.as_deref()).cloned()
-            };
-            let Some(device) = device else {
-                return HttpResponse::json(401, serde_json::json!({ "error": "unauthorized" }));
-            };
-            // 更新 last_seen
-            {
-                let mut g = st.inner.lock().await;
-                if let Some(d) = g.devices.iter_mut().find(|d| d.id == device.id) {
-                    d.last_seen_ms = now;
-                }
-            }
-            // 第 122 轮阶段 4：把**设备身份**一并转给渲染进程。
-            //
-            // 之前只转 reqId/method/path/query/body —— 渲染侧因此不知道
-            // "这次请求是哪台已配对设备发的"。而"多端在场感知"（谁正在看、
-            // 谁正在答）必须要它，否则只能显示一个匿名的"有远端在线"。
-            //
-            // 注意：这是**已经过 cookie 鉴权**的设备（上面 `auth_device` 查出来的），
-            // 不是客户端自称的 —— 不许由客户端在请求体里带自己的 id 来冒充。
-            proxy_to_ts(app, st, req, Some((device.id.clone(), device.ip.clone()))).await
-        }
-        _ => HttpResponse::json(404, serde_json::json!({ "error": "not_found" })),
-    }
-}
-
-/// 代理到 WebView TS：事件 phone-request → 等 phone_respond。
-async fn proxy_to_ts(
-    app: &AppHandle,
-    st: &Arc<PhoneState>,
-    req: HttpRequest,
-    device: Option<(String, String)>,
-) -> HttpResponse {
-    if !st.inner.lock().await.running {
-        return HttpResponse::json(502, serde_json::json!({ "error": "server stopped" }));
-    }
-    let req_id = format!("pr-{}", uuid::Uuid::new_v4());
+    let req_id = format!("rr-{}", uuid::Uuid::new_v4());
     let (tx, rx) = oneshot::channel::<HttpResponse>();
     {
         let mut g = st.inner.lock().await;
@@ -1010,11 +265,8 @@ async fn proxy_to_ts(
         "path": req.path,
         "query": query,
         "body": body,
-        // 阶段 4：已鉴权的设备身份（缺省 = 非 /api 路径，没有设备概念）
-        "deviceId": device.as_ref().map(|d| d.0.clone()),
-        "deviceIp": device.as_ref().map(|d| d.1.clone()),
     });
-    let _ = app.emit("phone-request", payload);
+    let _ = app.emit("remote-request", payload);
 
     match timeout(PROXY_TIMEOUT, rx).await {
         Ok(Ok(resp)) => resp,
@@ -1029,18 +281,52 @@ async fn proxy_to_ts(
     }
 }
 
-// ============================================================
-// tauri commands
-// ============================================================
-
-#[tauri::command]
-pub async fn phone_start(
-    app: AppHandle,
-    state: State<'_, Arc<PhoneState>>,
-) -> Result<serde_json::Value, String> {
-    start_server(app, state.inner().clone()).await
+/// AA 的 `/api/*` 代理：bridge 没在跑就快速失败（网关不走这里，它有自己的生命周期）。
+async fn proxy_to_ts(app: &AppHandle, st: &Arc<PhoneState>, req: HttpRequest) -> HttpResponse {
+    if !st.inner.lock().await.running {
+        return HttpResponse::json(502, serde_json::json!({ "error": "bridge stopped" }));
+    }
+    forward_to_renderer(app, st, req).await
 }
 
+/// 启动回环 bridge（幂等）。应用 setup 时调用；不对局域网开放。
+pub async fn start_bridge(app: AppHandle, st: Arc<PhoneState>) -> Result<u16, String> {
+    let mut g = st.inner.lock().await;
+    if g.running {
+        return Ok(g.bridge_port);
+    }
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("绑定回环 bridge 失败: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("取 bridge 端口失败: {}", e))?
+        .port();
+    let bridge_token = random_hex(32);
+    g.running = true;
+    g.bridge_port = port;
+    g.bridge_token = bridge_token;
+    drop(g);
+
+    let st2 = st.clone();
+    let app2 = app.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, _peer)) => {
+                    let st3 = st2.clone();
+                    let app3 = app2.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = handle_conn(app3, st3, stream).await;
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    st.inner.lock().await.server_handle = Some(handle);
+    Ok(port)
+}
 // ============================================================
 // 阶段 R6（接线）：把 AA connector 做成可用的命令
 //
@@ -1323,110 +609,9 @@ fn hostname_or_default() -> String {
         .unwrap_or_else(|| "Codem".to_string())
 }
 
+/// TS 侧应答 bridge 请求（reqId 对应 remote-request 事件）。
 #[tauri::command]
-pub async fn phone_stop(
-    app: AppHandle,
-    state: State<'_, Arc<PhoneState>>,
-) -> Result<(), String> {    let st: Arc<PhoneState> = state.inner().clone();
-    {
-        let mut g = st.inner.lock().await;
-        g.running = false;
-        g.pairing = None;
-        if let Some(h) = g.server_handle.take() {
-            h.abort();
-        }
-        // 阶段 1：边缘也必须一起停 —— 只停上游会留下一个"能握手但没人应答"的
-        // HTTPS 端口，比彻底关掉更难排查。
-        if let Some(h) = g.tls_handle.take() {
-            h.abort();
-        }
-        // 边缘标记一并作废（下次 start 会重新随机）
-        g.edge_token.clear();
-        let senders: Vec<_> = g.pending.drain().map(|(_, tx)| tx).collect();
-        drop(g);
-        for tx in senders {
-            let _ = tx.send(HttpResponse::json(
-                503,
-                serde_json::json!({ "error": "server stopped" }),
-            ));
-        }
-    }
-    emit_state(&app, &st).await;
-    Ok(())
-}
-
-/// 取 CA 证书 PEM（阶段 1：供桌面端"保存/安装证书"用）。
-///
-/// 为什么不复用 `/ca.crt` HTTP 路由：那条路要手机连着才走得到，
-/// 而"我还没连上、想先把证书装到手机里"正是最常见的顺序。
-/// 桌面直接把它存成文件最顺手。
-#[tauri::command]
-pub async fn phone_ca_pem(state: State<'_, Arc<PhoneState>>) -> Result<String, String> {
-    let st: Arc<PhoneState> = state.inner().clone();
-    let g = st.inner.lock().await;
-    Ok(g.ca_pem.clone())
-}
-
-/// 取 CA 指纹（大写 hex，冒号分隔）。
-#[tauri::command]
-pub async fn phone_ca_fingerprint(state: State<'_, Arc<PhoneState>>) -> Result<String, String> {
-    let st: Arc<PhoneState> = state.inner().clone();
-    let g = st.inner.lock().await;
-    Ok(g.ca_fingerprint.clone())
-}
-
-#[tauri::command]
-pub async fn phone_status(
-    app: AppHandle,
-    state: State<'_, Arc<PhoneState>>,
-) -> Result<serde_json::Value, String> {
-    let st: Arc<PhoneState> = state.inner().clone();
-    Ok(status_snapshot(&app, &st).await)
-}
-
-#[tauri::command]
-pub async fn phone_decide(
-    app: AppHandle,
-    approved: bool,
-    state: State<'_, Arc<PhoneState>>,
-) -> Result<(), String> {
-    let st: Arc<PhoneState> = state.inner().clone();
-    {
-        let mut g = st.inner.lock().await;
-        let valid = match &g.pairing {
-            Some(p) => now_ms() <= p.expires_at_ms && p.decided.is_none(),
-            None => false,
-        };
-        if !valid {
-            return Err("没有待确认的配对请求（可能已过期）".into());
-        }
-        if let Some(p) = &mut g.pairing {
-            p.decided = Some(approved);
-        }
-    }
-    emit_state(&app, &st).await;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn phone_unpair(
-    app: AppHandle,
-    device_id: String,
-    state: State<'_, Arc<PhoneState>>,
-) -> Result<(), String> {
-    let st: Arc<PhoneState> = state.inner().clone();
-    {
-        let mut g = st.inner.lock().await;
-        g.devices.retain(|d| d.id != device_id);
-    }
-    save_devices(&app, &st).await;
-    emit_state(&app, &st).await;
-    Ok(())
-}
-
-/// TS 侧应答代理请求（reqId 对应 phone-request 事件）。
-#[tauri::command]
-pub async fn phone_respond(
+pub async fn remote_respond(
     req_id: String,
     status: u16,
     body: String,
@@ -1455,56 +640,11 @@ mod tests {
     }
 
     #[test]
-    fn sha256_and_hex() {
-        let h = sha256_hex("hello");
-        assert_eq!(h.len(), 64);
-        assert_eq!(h, sha256_hex("hello"));
-        assert_ne!(h, sha256_hex("hello!"));
-        assert_eq!(hex_encode(&[0xAB, 0x0F]), "ab0f");
-    }
-
-    #[test]
-    fn pair_token_lifecycle() {
-        let now = 1_000_000_000_000i64;
-        let none: Option<Pairing> = None;
-        assert_eq!(pair_token_status(&none, "x", now), PairTokenStatus::Invalid);
-
-        let mut p = rotate_pairing(now);
-        // 错 token → Invalid
-        assert_eq!(pair_token_status(&Some(p.clone()), "wrong", now), PairTokenStatus::Invalid);
-        // 对 token → Waiting
-        assert_eq!(pair_token_status(&Some(p.clone()), &p.token, now), PairTokenStatus::Waiting);
-        // 过期 → Expired
-        p.expires_at_ms = now - 1;
-        assert_eq!(pair_token_status(&Some(p.clone()), &p.token, now), PairTokenStatus::Expired);
-        // 批准/拒绝
-        p.expires_at_ms = now + 1000;
-        p.decided = Some(true);
-        assert_eq!(pair_token_status(&Some(p.clone()), &p.token, now), PairTokenStatus::Approved);
-        p.decided = Some(false);
-        assert_eq!(pair_token_status(&Some(p.clone()), &p.token, now), PairTokenStatus::Rejected);
-    }
-
-    #[test]
-    fn auth_device_matches_secret_hash() {
-        let devs = vec![Device {
-            id: "d1".into(),
-            secret_hash: sha256_hex("secret-a"),
-            ip: String::new(),
-            paired_at_ms: 1,
-            last_seen_ms: 1,
-        }];
-        assert!(auth_device(&devs, Some("secret-a")).is_some());
-        assert!(auth_device(&devs, Some("secret-b")).is_none());
-        assert!(auth_device(&devs, None).is_none());
-    }
-
-    #[test]
-    fn rotate_generates_unique() {
-        let a = rotate_pairing(1);
-        let b = rotate_pairing(1);
-        assert_ne!(a.token, b.token);
-        assert_eq!(a.expires_at_ms, 1 + PAIR_TTL_MS);
-        assert_eq!(a.decided, None);
+    fn random_hex_has_expected_shape() {
+        let a = random_hex(32);
+        let b = random_hex(32);
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
     }
 }

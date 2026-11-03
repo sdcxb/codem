@@ -14,12 +14,15 @@ import { join } from 'node:path'
 const ROOT = join(__dirname, '..', '..')
 const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
 const codemUi = readFileSync(join(ROOT, 'src/styles/codem-ui.css'), 'utf8')
+/** 共享组件样式（桌面与手机同一份）：气泡正文、工具卡、审批卡在 `packages/ui/src/ui.css` */
+const sharedUi = readFileSync(join(ROOT, 'packages/ui/src/ui.css'), 'utf8')
 const dream = readFileSync(join(ROOT, 'src/styles/skin-dream.css'), 'utf8')
 const hub = readFileSync(join(ROOT, 'src/styles/skin-hub.css'), 'utf8')
 const settings = readFileSync(join(ROOT, 'src/components/SettingsPanel.tsx'), 'utf8')
 const tooltip = readFileSync(join(ROOT, 'src/components/ui/tooltip.tsx'), 'utf8')
 const reasoning = readFileSync(join(ROOT, 'src/components/ReasoningRow.tsx'), 'utf8')
-const bubble = readFileSync(join(ROOT, 'src/components/MessageBubble.tsx'), 'utf8')
+// 第 2 步之后气泡本体是共享唯一实现；这里钉的是"推理块在正文之前"的结构顺序
+const bubble = readFileSync(join(ROOT, 'packages/ui/src/message-bubble.tsx'), 'utf8')
 
 function block(source: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -71,10 +74,12 @@ describe('UI 对标施工合同', () => {
   })
 
   it('P0-6：Markdown 标题 16/15/14/13，不抢正文', () => {
-    expect(block(css, '.message-content h1')).toContain('font-size: var(--fs-lg)')
-    expect(block(css, '.message-content h2')).toContain('font-size: calc(var(--fs-lg) - 1px)')
-    expect(block(css, '.message-content h3')).toContain('font-size: var(--fs-md)')
-    expect(css).toMatch(/\.message-content h4,\s*\.message-content h5,\s*\.message-content h6\s*\{\s*font-size:\s*var\(--fs-base\)/)
+    // 正文标题分级随气泡本体一起搬进了共享样式（`packages/ui/src/ui.css`），两处一起看
+    const bubbleCss = `${css}\n${sharedUi}`
+    expect(block(bubbleCss, '.message-content h1')).toContain('font-size: var(--fs-lg)')
+    expect(block(bubbleCss, '.message-content h2')).toContain('font-size: calc(var(--fs-lg) - 1px)')
+    expect(block(bubbleCss, '.message-content h3')).toContain('font-size: var(--fs-md)')
+    expect(bubbleCss).toMatch(/\.message-content h4,\s*\.message-content h5,\s*\.message-content h6\s*\{\s*font-size:\s*var\(--fs-base\)/)
   })
 
   it('P0-7：Dream 六个语义 token 齐备，设置搜索索引含记忆体检', () => {
@@ -225,9 +230,10 @@ describe('UI 对标施工合同', () => {
   })
 
   it('P1-3（安全子集）：文件树 26px，Git 状态只留单字母不画药丸', () => {
-    expect(block(css, '.file-entry')).toContain('height: 26px')
-    expect(block(css, '.git-status-badge')).toContain('background: transparent')
-    expect(css).toContain('.file-entry .git-status-badge')
+    // 文件树随组件迁到共享样式（桌面与手机同一份）⇒ 这三条改读 `ui.css`。
+    expect(block(sharedUi, '.file-entry')).toContain('height: 26px')
+    expect(block(sharedUi, '.git-status-badge')).toContain('background: transparent')
+    expect(sharedUi).toContain('.file-entry .git-status-badge')
     // 导航/会话行高与内边距继续由 RHYTHM-1/2 守，不在这一轮硬改
   })
 

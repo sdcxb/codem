@@ -208,8 +208,11 @@ describe("交叉影响：组件引用完整性 lint", () => {
     expect(src).toContain("onFileClick");
     expect(src).toContain("refreshKey");
     expect(src).toContain("dirCache");
-    expect(src).toContain("file-entry-icon");
-    expect(src).toContain("file-name");
+    // 行 DOM 已随组件搬进共享包（桌面适配器与手机文件浏览同一份）：
+    // 图标与文件名的类名在 `packages/ui/src/file-tree-view.tsx`。
+    const sharedRows = readFileSync("packages/ui/src/file-tree-view.tsx", "utf-8");
+    expect(sharedRows).toContain("file-entry-icon");
+    expect(sharedRows).toContain("file-name");
   });
 
   it("PanelSidebar 不再含智能体 tab（已收敛至对话顶部「智能体与团队」按钮 AgentPanel）", () => {
@@ -251,7 +254,10 @@ describe("交叉影响：Rust + CSS lint", () => {
   });
 
   it("styles.css — 终端 + 文件树 + Git 徽章 + NeedsYou + PTY Tab", () => {
-    const src = readFileSync("src/styles.css", "utf-8");
+    // 文件树/Git 徽章的样式随组件迁到 `packages/ui/src/ui.css` §3b（桌面与手机同一份），
+    // 其余仍由 `styles.css` 负责 ⇒ 两条基础样式表合起来看，判据语义不变。
+    const src =
+      readFileSync("src/styles.css", "utf-8") + readFileSync("packages/ui/src/ui.css", "utf-8");
     // 终端
     expect(src).toContain(".terminal-container");
     // 文件树

@@ -26,12 +26,12 @@ export default {
       why: "DIFFVIEW-3：同一处修改被拆成两行、左右不共享行号 ⇒ 分屏失去对齐语义",
       patches: [
         {
-          file: "src/core/ui/diff-view.ts",
+          file: "packages/ui/src/patch-diff.ts",
           from: "    const pairs = Math.max(dels.length, adds.length);",
           to: "    const pairs = dels.length + adds.length;",
         },
         {
-          file: "src/core/ui/diff-view.ts",
+          file: "packages/ui/src/patch-diff.ts",
           from: "      const del = dels[k];\n      const add = adds[k];",
           to: "      const del = dels[Math.min(k, dels.length - 1)];\n      const add = adds[Math.min(k, adds.length - 1)];",
         },
@@ -109,7 +109,7 @@ export default {
       why: "MOTION-1：动效曲线绕过令牌（同类交互手感开始漂移）",
       patches: [
         {
-          file: "src/styles/codem-ui.css",
+          file: "packages/ui/src/ui.css",
           from: ".diff-view-mode-btn.is-active {",
           to: ".diff-view-mode-btn.is-active { transition-timing-function: cubic-bezier(0.1, 0.2, 0.3, 0.4);",
         },

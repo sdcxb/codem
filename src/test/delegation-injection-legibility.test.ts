@@ -48,12 +48,16 @@ describe("第 194 波 · 委派注入的可辨认性（O-56）", () => {
   });
 
   it("DELEG-LEG-3：界面**必须认得它**（不许再当普通用户气泡渲染）", () => {
-    const bubble = readFileSync("src/components/MessageBubble.tsx", "utf8");
-    expect(bubble, "MessageBubble 必须用同一个判定（否则又变成'没有任何组件认它'）").toContain("isDelegatedTaskMessage");
+    // 第 2 步之后：判定在桌面平台适配器里（口径仍来自 storage/session.ts），
+    // 共享气泡消费 `delegatedTask` 结果并负责类名/标识。
+    const platform = readFileSync("src/components/MessageBubble.tsx", "utf8");
+    const bubble = readFileSync("packages/ui/src/message-bubble.tsx", "utf8");
+    expect(platform, "适配器必须用同一个判定（否则又变成'没有任何组件认它'）").toContain("isDelegatedTaskMessage");
+    expect(bubble, "共享气泡必须消费该判定结果").toContain("desc.isDelegatedTask");
     expect(bubble, "要有独立的类名/标识，判据与样式都据此分辨").toContain("delegated-task");
     expect(bubble, "判据要能按 kind 断言（真机/组件判据都靠它）").toContain("data-message-kind");
     // 反向对照：用户自己的消息仍走原来的 user 分支（头像 + user 类名）
-    expect(bubble, "用户消息的渲染不许被动过").toMatch(/isUser && !delegatedTask && <UserAvatar \/>/);
+    expect(bubble, "用户消息的渲染不许被动过").toMatch(/isUser && !delegatedTask && <UserAvatar src=\{platform\.avatarSrc\} \/>/);
   });
 
   it("DELEG-LEG-4：注入点的 id 由**委派任务 id** 决定（同一条委派不可能再追加第二条记录）", () => {

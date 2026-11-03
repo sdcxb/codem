@@ -33,6 +33,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(__dirname, "..", "..");
+/**
+ * 第 2 步之后附件渲染在桌面平台适配器里（`src/components/MessageBubble.tsx` 现在是
+ * 「平台适配 + 入口」，气泡骨架在 `packages/ui`）。判据仍然钉"读路径"。
+ */
 const SRC = readFileSync(join(ROOT, "src", "components", "MessageBubble.tsx"), "utf8");
 
 /** 只取附件那一段（避免把别处的 getLang/useEffect 当成判据） */
@@ -43,8 +47,15 @@ const attachmentBlock = (() => {
 })();
 
 describe("附件正文的读取路径（第 92 轮）", () => {
+  it("ATT-READ-0 附件渲染只有一份：共享气泡提供槽位，桌面适配器实现读路径", () => {
+    const shared = readFileSync(join(ROOT, "packages", "ui", "src", "message-bubble.tsx"), "utf8");
+    expect(shared, "共享气泡必须按槽位渲染附件").toContain("platform.renderAttachments(message)");
+    expect(shared, "共享气泡不许自带附件读路径").not.toContain("message-attachments");
+    expect(shared, "共享气泡不许直接读附件正文").not.toContain("getAttachmentContent");
+  });
+
   it("ATT-READ-1 点开附件必须走 getAttachmentContent（只读 att.content 就是那个老缺陷）", () => {
-    expect(SRC, "必须导入 getAttachmentContent").toMatch(/import\s*\{[^}]*getAttachmentContent[^}]*\}\s*from\s*"\.\.\/core\/storage\/message"/);
+    expect(SRC, "必须导入 getAttachmentContent").toMatch(/import\s*\{[^}]*getAttachmentContent[^}]*\}\s*from\s*"[^"]*core\/storage\/message"/);
     expect(attachmentBlock, "点开时必须调用它").toContain("getAttachmentContent(att.id)");
     // ⚠️ 老写法：`showAttachment === att.id && att.content` —— 读路径上 content 为空 ⇒ 永远不展开内容
     expect(

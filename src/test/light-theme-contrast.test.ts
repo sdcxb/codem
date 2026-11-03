@@ -66,6 +66,12 @@ const contrast = (a: [number, number, number, number], b: [number, number, numbe
 /* ---------------- 抽出亮色档令牌块 ---------------- */
 const styles = read("src/styles.css");
 const codemUi = read("src/styles/codem-ui.css");
+/**
+ * 共享组件样式（桌面与手机同一份）：气泡本体、工具卡、审批卡都在这里。
+ * 第 4 步把这批规则从 `styles.css` 搬走后，任何"规则还在不在"的判据都必须**两处一起看**，
+ * 否则判据会因为"搬家"而假红（它查的位置已经变成皮肤/外壳，不再是组件本体）。
+ */
+const sharedUi = read("packages/ui/src/ui.css");
 const lightBlock = /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
 const codemUiLight = /\/\* Light theme glass tokens[\s\S]*?\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(codemUi)?.[1] ?? "";
 
@@ -299,16 +305,34 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     // ⚠️ 语料**必须排除测试目录**：否则下面这份类名清单会把自己写进语料，
     // `rendered.has("随便乱写的名字")` 恒为真 —— 变异测试（把清单里换成 `tool-card-headZZZ`）
     // 当场证明过：不排除时断言永远绿，等于什么都没守。
-    const tsCorpus = (function walk(dir: string, acc: string[] = []): string[] {
-      for (const n of readdirSync(dir)) {
-        const p = join(dir, n);
-        if (statSync(p).isDirectory()) {
-          if (n === "test" || n === "__snapshots__") continue;
-          walk(p, acc);
-        } else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) acc.push(readFileSync(p, "utf8"));
-      }
-      return acc;
-    })(join(ROOT, "src")).join("\n");
+    const tsCorpus = [
+      ...(function walk(dir: string, acc: string[] = []): string[] {
+        for (const n of readdirSync(dir)) {
+          const p = join(dir, n);
+          if (statSync(p).isDirectory()) {
+            if (n === "test" || n === "__snapshots__") continue;
+            walk(p, acc);
+          } else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) acc.push(readFileSync(p, "utf8"));
+        }
+        return acc;
+      })(join(ROOT, "src")),
+      /*
+       * 第 2 步之后「通用工具卡 / 消息气泡骨架」也搬进了共享包（真的会渲染），
+       * 语料必须同时看 `packages/ui/src` —— 否则 `.tool-io-section--bordered`
+       * 会因为没有"整词出现"被误判成"给不存在的类写样式"。
+       * 仍然排除 `test` 目录（理由同上：清单会把自己写进语料 ⇒ 断言恒真）。
+       */
+      ...(function walk(dir: string, acc: string[] = []): string[] {
+        for (const n of readdirSync(dir)) {
+          const p = join(dir, n);
+          if (statSync(p).isDirectory()) {
+            if (n === "test" || n === "__snapshots__") continue;
+            walk(p, acc);
+          } else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) acc.push(readFileSync(p, "utf8"));
+        }
+        return acc;
+      })(join(ROOT, "packages", "ui", "src")),
+    ].join("\n");
     const rendered = new Set(tsCorpus.match(/[A-Za-z_][\w-]*/g) ?? []);
 
     // 这几条是"过程条目/卡内行/详情段"真正会被渲染的类（`ToolCallCard.tsx` / `ToolCallGroup.tsx`）
@@ -469,13 +493,17 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     expect(defined.length, "亮色档令牌数明显偏少，解析可能坏了").toBeGreaterThan(50);
 
     const files: string[] = [];
-    (function walk(dir: string) {
+    const walk = (dir: string) => {
       for (const n of readdirSync(dir)) {
         const p = join(dir, n);
         if (statSync(p).isDirectory()) walk(p);
         else if (/\.(css|ts|tsx)$/.test(n)) files.push(p);
       }
-    })(join(ROOT, "src"));
+    };
+    walk(join(ROOT, "src"));
+    // 共享组件样式的消费方必须一起算：`--message-bubble-user*` / `--system-bg` / `--shadow-bubble`
+    // 这些令牌的 `var()` 消费点现在在 packages/ui/src/ui.css（搬家后只扫 src 会误报成"死令牌"）。
+    walk(join(ROOT, "packages", "ui", "src"));
     const texts = files.filter((f) => !/\.test\./.test(f)).map((f) => readFileSync(f, "utf8"));
 
     const dead = defined.filter((tok) => !texts.some((t) => new RegExp(`var\\(\\s*${tok}\\s*[,)]`).test(t)));
@@ -487,7 +515,7 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
    * 三套皮肤（默认/hub/dream）都要给色，否则某个皮肤下气泡会掉回默认档或直接没有边框。
    */
   it("LIGHT-UI-6：用户气泡走 --message-bubble-user(+border)，两档与三套皮肤都给色", () => {
-    const rule = /\.user\s+\.message-content\s*\{([^}]*)\}/.exec(styles)?.[1] ?? "";
+    const rule = /\.user\s+\.message-content\s*\{([^}]*)\}/.exec(`${styles}\n${sharedUi}`)?.[1] ?? "";
     expect(rule, "找不到 `.user .message-content` 规则").toBeTruthy();
     expect(rule, "用户气泡必须用 --message-bubble-user（第 65 轮：改动前用 --bg-tertiary，是一块深灰）").toMatch(/background:\s*var\(--message-bubble-user\)/);
     expect(rule, "用户气泡边框必须走 --message-bubble-user-border").toMatch(/border:\s*1px solid var\(--message-bubble-user-border\)/);

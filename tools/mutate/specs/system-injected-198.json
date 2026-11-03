@@ -7,8 +7,13 @@
       "patches": [
         {
           "file": "src/components/MessageBubble.tsx",
-          "from": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\" && !machineInjected;",
-          "to": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\";"
+          "from": "  const isUser = m.role === \"user\" && !machineInjected;",
+          "to": "  const isUser = m.role === \"user\";"
+        },
+        {
+          "file": "src/components/MessageBubble.tsx",
+          "from": "  const isSystem = m.role === \"system\" || (machineInjected && !delegatedTask);",
+          "to": "  const isSystem = m.role === \"system\";"
         }
       ],
       "tests": ["src/test/system-injected-message.test.ts"],

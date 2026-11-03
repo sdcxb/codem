@@ -46,35 +46,42 @@ describe("DEAD：印出来的控件必须真的能用", () => {
     expect(src, 'Ctrl+S 必须触发前往技能').toMatch(/lower === "s"[\s\S]{0,120}onOpenSkills\(\)/);
   });
 
-  it("DEAD-2: DecisionTray 的两步拒绝真的会被触发（输入框不再是死代码）", () => {
-    const src = readCode("src/components/DecisionTray.tsx");
+  it("DEAD-2: 两步拒绝真的会被触发（输入框不再是死代码）", () => {
+    // 第 3 步之后两步拒绝在共享审批卡里（桌面托盘与手机共用同一份实现）
+    const src = readCode("packages/ui/src/approval-card.tsx");
 
     // 界面部分本来就在（输入框 + 文案随状态切换）
     expect(src).toContain("decision-tray-reject-input");
-    expect(src, "按钮文案会随状态切成「确认拒绝」").toMatch(/showRejectInput \? "确认拒绝"/);
+    expect(src, "按钮文案会随状态切成「确认拒绝」").toMatch(/rejectArmed \? text\.confirmReject/);
 
     // 关键：必须有把它设为 true 的那一步（改前全仓 0 处）
     expect(
       src,
-      "必须有 setShowRejectInput(true) —— 否则理由输入框永不出现、rejectReason 永远是空串",
-    ).toMatch(/setShowRejectInput\(true\)/);
-    expect(src, "而且要先点在第一次、提交在第二次").toMatch(/if \(!showRejectInput\)[\s\S]{0,80}setShowRejectInput\(true\)/);
-    expect(src, "提交时必须把理由带下去").toMatch(/onReject\(request\.id, rejectReason \|\| undefined\)/);
+      "必须有 setRejectArmed(true) —— 否则理由输入框永不出现、理由永远是空串",
+    ).toMatch(/setRejectArmed\(true\)/);
+    expect(src, "而且要先点在第一次、提交在第二次").toMatch(/if \(!rejectArmed\)[\s\S]{0,80}setRejectArmed\(true\)/);
+    expect(src, "提交时必须把理由带下去").toMatch(/reason \? \{ kind: "deny", reason \}/);
   });
 
   it("DEAD-3: 错误卡片不再画一个按不动的「重试」按钮", () => {
-    const src = readCode("src/components/MessageBubble.tsx");
+    // 第 2 步之后错误行由共享气泡判定、由桌面平台适配器如实渲染
+    const bubble = readCode("packages/ui/src/message-bubble.tsx");
+    const platform = readCode("src/components/MessageBubble.tsx");
     // ErrorCard 只在 retryable && onRetry 同时成立时才画按钮
     const card = readCode("src/components/ErrorCard.tsx");
     expect(card, "前提：按钮受 retryable && onRetry 双重门控").toMatch(/retryable && onRetry/);
 
     // 助手错误行没有可用的重试回调 → 不许声称可重试
     expect(
-      src,
-      "助手错误行必须 retryable={false}（原来写着 retryable 且 onRetry 是空函数）",
-    ).toMatch(/isError && !isUser[\s\S]{0,400}retryable=\{false\}/);
+      bubble,
+      "助手错误行必须把错误交给平台槽位（isError && !isUser 才渲染）",
+    ).toMatch(/isError && !isUser[\s\S]{0,200}renderError/);
     expect(
-      /onRetry=\{\(\) => \{[\s\S]{0,80}\}\}/.test(src),
+      platform,
+      "助手错误行必须 retryable={false}（原来写着 retryable 且 onRetry 是空函数）",
+    ).toMatch(/retryable=\{false\}/);
+    expect(
+      /onRetry=\{\(\) => \{[\s\S]{0,80}\}\}/.test(bubble + platform),
       "不许再留空的重试回调（那会画出可点但没反应的按钮）",
     ).toBe(false);
   });

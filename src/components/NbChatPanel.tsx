@@ -8,6 +8,7 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
+/* 第 2 步：气泡骨架已切到共享实现（`packages/ui/src/message-bubble.tsx`），本文件与主面板同一条路径 */
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
 import { useAppStore, type Message } from "../store";

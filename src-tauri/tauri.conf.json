@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
   "productName": "Codem",
-  "version": "1.16.334",
+  "version": "1.17.0",
   "identifier": "com.codem.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run host:build:ui && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run host:build:ui && npm run stage:host",
     "frontendDist": "../dist"
   },
   "app": {
@@ -37,6 +37,7 @@
     "targets": "all",
     "resources": [
       "resources/ofm/**/*",
+      "resources/host/web/**/*",
       "resources/node/**/*"
     ],
     "icon": [

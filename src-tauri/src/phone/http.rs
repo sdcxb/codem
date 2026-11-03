@@ -3,7 +3,7 @@
 //
 // 只支持本项目自用客户端的子集：
 //   GET/POST；请求行 + 头 + Content-Length body；Connection: close 每次一请求一响应。
-// 不实现 keep-alive/chunked/升级——手机端页面全部 fetch 短连接，足够。
+// 不实现 keep-alive/chunked/升级——AA connector 的本地调用都是短连接，足够。
 // ============================================================
 
 use std::collections::HashMap;
@@ -16,8 +16,6 @@ pub struct Request {
     pub path: String,
     /// query 参数（已解码）。
     pub query: HashMap<String, String>,
-    /// 小写头名 → 值（trim）。
-    pub headers: HashMap<String, String>,
     /// POST body（原始字节；上限 2MB）。
     pub body: Vec<u8>,
 }
@@ -74,8 +72,7 @@ fn parse_query(qs: &str) -> HashMap<String, String> {
 
 /// 从"头部原始文本 + body 字节"构建 Request。
 pub fn parse(head: &str, body: Vec<u8>) -> Result<Request, ParseError> {
-    let mut lines = head.split("\r\n");
-    let request_line = lines.next().unwrap_or("").trim_end();
+    let request_line = head.split("\r\n").next().unwrap_or("").trim_end();
     let mut parts = request_line.split_whitespace();
     let method = parts.next().ok_or(ParseError::Malformed("no method"))?.to_string();
     let target = parts.next().ok_or(ParseError::Malformed("no target"))?.to_string();
@@ -87,22 +84,11 @@ pub fn parse(head: &str, body: Vec<u8>) -> Result<Request, ParseError> {
     };
     let path = percent_decode(&raw_path);
 
-    let mut headers = HashMap::new();
-    for line in lines {
-        let line = line.trim_end();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            headers.insert(name.trim().to_lowercase(), value.trim().to_string());
-        }
-    }
-
+    // 头只在需要时用 `header_value(&head, name)` 取；Request 不再保留整张头表。
     Ok(Request {
         method,
         path,
         query: parse_query(&query),
-        headers,
         body,
     })
 }
@@ -138,23 +124,6 @@ pub fn header_value(head: &str, name: &str) -> Option<String> {
     None
 }
 
-/// 解析 Cookie 头 → key→value。
-pub fn parse_cookies(cookie_header: Option<&str>) -> HashMap<String, String> {
-    let mut m = HashMap::new();
-    if let Some(c) = cookie_header {
-        for kv in c.split(';') {
-            let kv = kv.trim();
-            if kv.is_empty() {
-                continue;
-            }
-            if let Some((k, v)) = kv.split_once('=') {
-                m.insert(k.trim().to_string(), percent_decode(v.trim()));
-            }
-        }
-    }
-    m
-}
-
 /// 简易响应组装。
 pub struct Response {
     pub status: u16,
@@ -181,9 +150,6 @@ impl Response {
             body: text.as_bytes().to_vec(),
         }
     }
-    pub fn html(status: u16, html: &str) -> Response {
-        Response::text(status, "text/html; charset=utf-8", html)
-    }
     /// 写为 HTTP 原始字节。
     pub fn to_bytes(&self) -> Vec<u8> {
         let reason = match self.status {
@@ -200,6 +166,7 @@ impl Response {
             413 => "Payload Too Large",
             500 => "Internal Server Error",
             502 => "Bad Gateway",
+            503 => "Service Unavailable",
             504 => "Gateway Timeout",
             _ => "OK",
         };
@@ -222,13 +189,11 @@ mod tests {
 
     #[test]
     fn parse_get_with_query() {
-        let head = "GET /api/sessions/abc%40def/messages?limit=20 HTTP/1.1\r\nHost: x\r\nCookie: a=1; codem_phone=secret%2Bvalue\r\n\r\n";
+        let head = "GET /api/sessions/abc%40def/messages?limit=20 HTTP/1.1\r\nHost: x\r\n\r\n";
         let req = parse(head, vec![]).unwrap();
         assert_eq!(req.method, "GET");
         assert_eq!(req.path, "/api/sessions/abc@def/messages");
         assert_eq!(req.query.get("limit").map(|s| s.as_str()), Some("20"));
-        let cookies = parse_cookies(req.headers.get("cookie").map(|s| s.as_str()));
-        assert_eq!(cookies.get("codem_phone").map(|s| s.as_str()), Some("secret+value"));
     }
 
     #[test]
@@ -264,12 +229,5 @@ mod tests {
         assert!(s.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(s.contains("Content-Type: application/json; charset=utf-8"));
         assert!(s.ends_with("{\"ok\":true}"));
-    }
-
-    #[test]
-    fn cookie_parse_multiple() {
-        let m = parse_cookies(Some("a=1; codem_phone=xyz; path=/"));
-        assert_eq!(m.get("codem_phone").map(|s| s.as_str()), Some("xyz"));
-        assert_eq!(m.len(), 3);
     }
 }

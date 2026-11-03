@@ -1,7 +1,7 @@
 # 04 · 功能模块全清单（按域）
 
-> 基线：1.16.330 ｜ 2026-10-26
-> 本文是**当前状态**的功能目录，不是逐条宣传语。功能叶子库见 `docs/CODEM-FEATURES.md`（2779 条，2026-09-09/10-22 生成）；本文在其上做“域 → 关键功能 → 入口 → 证据 → 成熟度”的重编，并补 10 月新增项。
+> 基线：1.17.0（待发布）｜ 2026-11-03
+> 本文是**当前状态**的功能目录，不是逐条宣传语。功能叶子库见 `docs/CODEM-FEATURES.md`（2779 条，2026-09-09/10-22 生成）；本文在其上做“域 → 关键功能 → 入口 → 证据 → 成熟度”的重编，并补 10 月/11 月新增项。
 >
 > 成熟度：**稳定** = 有判据 + 真机使用；**可用** = 有入口/判据但边界明确；**受限** = 依赖外部条件；**占位/不可达** = 代码在但当前无入口或未接线。
 
@@ -253,18 +253,23 @@
 
 ---
 
-## 12. 连接与远程（slice14）
+## 12. 连接与远程（1.17 起：桌面网关 + Android 本机）
+
+> **PC 远程只有一条入口**：桌面远程网关。**Host 只服务 Android 本机模式**（手机自己的数据/项目）。
+> 桌面 Host sidecar 与旧 LAN/TLS/二维码配对都已删除；不要再把 Host 写成 “PC 远程入口”。
 
 | 功能 | 入口 | 证据 | 状态 |
 |---|---|---|---|
-| Phone Link（LAN 扫码配对/TLS/审批） | 设置 → 连接手机 | `phone-link/`、`src-tauri/src/phone/` | 可用（网络环境依赖） |
-| 手机端页面（app.html/pair.html） | 手机浏览器 | `src-tauri/src/phone/ui/` | 可用 |
-| 出站中继 connector | 设置/自动 | `phone/connector.rs` | 可用 |
+| 桌面远程网关（PC 远程唯一入口） | 设置 → 连接手机 | `RemoteGatewaySection.tsx`、`src/core/remote/gateway-*.ts`、`src-tauri/src/phone/gateway/` | 可用（手动启动；发消息/流式/审批/取消、文件树/预览/diff/变更） |
+| 远程访问设置（唯一入口） | 设置 → 连接手机 | `RemoteAccessSettings.tsx`、`SettingsPanel.tsx` | 可用（启动/停止、一次性配对码、已配对设备数） |
+| Android 本机模式 | 手机 App（本机模式） | `packages/host/`、`android-shell/`、共享 UI | 可用（独立 Host/数据/项目；本机模型 Keystore；随机端口 + 本地鉴权） |
+| 手机端共享 UI | 手机/平板 | `src/components/`（Markdown/工具卡/审批卡/文件树/diff/变更/附件） | 可用（只读/可写由能力表决定；暂不支持手机新建会话或上传附件） |
+| Agents Anywhere（AA 账号远程） | 设置 → 连接手机 | `AaRemoteSection.tsx`、`aa_account.rs`、`aa_connector.rs` | 实验/受限（需账号） |
+| 桌面引擎桥（AA 数据面） | 内部回环 | `desktop-engine.ts`、`src-tauri/src/phone/mod.rs` | 可用（只绑 127.0.0.1） |
 | 微信 ClawBot（iLink 登录/收发） | 设置 → 微信 | `wechat-bridge.ts`、`ilink/` | 可用（需扫码登录） |
 | Computer Use（读屏/鼠标键盘） | 设置 → 电脑操作 | `computer-use.ts` | 可用（权限敏感） |
 | 浏览器自动化（Playwright） | `browser_automate` | `browser-automate.ts` | 可用（需启用） |
 | 内嵌浏览器窗口 | 右侧栏 Browser | `create_browser_window` | 可用 |
-| 远程控制/AA 账号 | 设置 → 连接手机 | `aa_account`、`aa_connector` | 实验/受限 |
 
 ---
 
@@ -322,10 +327,11 @@
 
 ---
 
-## 16. 10 月新增 / 变化（旧叶子库未覆盖）
+## 16. 近两月新增 / 变化（旧叶子库未覆盖）
 
 | 版本 | 变化 | 位置 |
 |---|---|---|
+| 1.17.0 | 桌面远程网关（PC 远程唯一入口，6 位一次性配对码/HttpOnly cookie/设备撤销/敏感文件读审批）+ Android 本机模式（独立 Host/数据/项目、Keystore 本机模型、随机端口 + 本地鉴权）；共享 UI 与能力表、平板双列/三列、diff 统一、附件与文件变更列表；移除旧 LAN/TLS/二维码配对与桌面 Host sidecar | `src/core/remote/gateway-*.ts`、`src-tauri/src/phone/gateway/`、`packages/host/`、`android-shell/` |
 | 1.16.330 | 外部 DSH 插件检查更新/一键升级；统一插件详情页；免费模型面板收进详情 | `external-dsh-plugins.ts`、`PluginManager.tsx` |
 | 1.16.330 | 删除运行中会话立即杀命令进程树 + 事件墓碑短路 | `session-abort-registry.ts`、`session-tombstones.ts` |
 | 1.16.329 | 旧工具参数折叠（write/edit/multi_edit 只留 path） | `agentic-loop.ts` 折叠段 |

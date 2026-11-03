@@ -1343,7 +1343,17 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
    */
   it("COND-1：空态提示只有一个共享实现（.empty-hint + 四个修饰），且几何走令牌", () => {
     const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"];
-    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    /* 第 5 步（文件/差异组件共享）：`.empty-hint` 原语随共享文件树迁到
+       `packages/ui/src/ui.css`（手机不加载 styles.css，空态必须两端同一份）⇒
+       规则从两份基础样式表合起来找；下面的 `files`（旧类回归 + 自定 padding 棘轮）
+       仍只扫桌面样式表，口径不变。 */
+    const css = [
+      "src/styles.css",
+      "packages/ui/src/ui.css",
+    ]
+      .map((rel) => readFileSync(path.join(ROOT, rel), "utf8"))
+      .join("\n")
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
     const rule = (sel: string) => {
       const bodies: string[] = [];
       const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
@@ -1406,14 +1416,18 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     expect(back, "这些空态类又回来了（第二套实现会长草）：" + back.join(" / ")).toEqual([]);
 
     /* ③ 修饰必须有真实消费者 */
+    /* 第 5 步：共享组件（`packages/ui/src`）里的消费同样是消费者 ——
+       否则"某个空态从桌面迁进共享组件"会被误判成"有人把这一处撤了"。 */
     const tsx: string[] = [];
-    (function walk(dir: string) {
+    const collectTsx = (dir: string): void => {
       for (const n of readdirSync(dir)) {
         const p = path.join(dir, n);
-        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) collectTsx(p); continue; }
         if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) tsx.push(readFileSync(p, "utf8"));
       }
-    })(path.join(ROOT, "src"));
+    };
+    collectTsx(path.join(ROOT, "src"));
+    collectTsx(path.join(ROOT, "packages", "ui", "src"));
     const all = tsx.join("\n");
     const count = (needle: string) => (all.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length;
     /**

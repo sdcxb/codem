@@ -128,6 +128,7 @@ function checkEmptyBodies(rel: string, css: string): string[] {
 function cssFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {
+    if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (!["node_modules", "dist", "target", ".git"].includes(entry.name)) walk(join(dir, entry.name));
@@ -137,6 +138,11 @@ function cssFiles(): string[] {
     }
   };
   walk(join(ROOT, "src"));
+  /*
+   * 共享组件样式表（桌面与手机同一份）：结构 / postcss 语法 / 空规则体三关必须也覆盖它。
+   * 它是 `src/main.tsx` 直接 import 的真样式表，语法坏了 `npm run build` 同样会失败。
+   */
+  walk(join(ROOT, "packages", "ui", "src"));
   return out;
 }
 

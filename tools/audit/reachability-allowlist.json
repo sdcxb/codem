@@ -1,6 +1,7 @@
 {
  "_note": "可达性白名单（第 109 轮）：这些文件从入口 src/main.tsx / src/pet-main.tsx **静态不可达**，但每一条都已定性。判据（tools/audit/reachability-scan.mjs --check + src/test/reachability-gate.test.ts）：①不可达集合必须 ⊆ 本白名单；②本白名单不许有过期条目（文件变可达了就要删掉）；③工具自检（MessageBubble 可达 / sync-engine 不可达）必须通过，否则结论不可信、门禁直接失败。",
  "entries": {
+  "src/components/MessageActions.tsx": "**未接线（已定性）**：旧的消息操作栏组件 —— 第 2 步之前 `MessageBubble` 只 import、从未渲染；气泡工具栏现在由共享 `packages/ui/src/message-bubble.tsx` 唯一实现，本文件没有任何生产调用方（保留文件是为了不删历史实现，清理留给下一里程碑）",
   "src/components/RegenerateModelPopover.tsx": "**未接线（已定性）**：重新生成时选模型的浮层 —— `onRegenerate` 是活的，但缺「选模型」的宿主（O-22）",
   "src/components/ui/dropdown-menu.tsx": "组件原语（第 105 轮按「外部/生成式代码」登记：每个文件导出一整套子组件，我们只用一部分）",
   "src/components/ui/popover.tsx": "组件原语（第 105 轮按「外部/生成式代码」登记：每个文件导出一整套子组件，我们只用一部分）",

@@ -1,0 +1,16 @@
+{
+  "spike": "android-real-model",
+  "base": "http://10.0.2.2:18999/v1",
+  "model": "mock-model",
+  "hasKey": true,
+  "checks": {
+    "REAL1_runSucceeded": true,
+    "REAL2_realAnswer": true,
+    "REAL3_uiRealAnswer": true,
+    "REAL4_screenshot": true
+  },
+  "hostId": "host-64617461",
+  "runState": "succeeded",
+  "assistantPreview": "北京",
+  "ok": true
+}

@@ -1269,3 +1269,25 @@ export function renderStructuredHistorySummary(
   return `（共 ${messages.length} 条消息，正文字符合计 ${bodyChars}）\n\n${summary}`;
 }
 
+
+
+/**
+ * 连压熔断的**按效果**判定（BRK-1/2）：
+ * - 压缩后压力已低于阈值 ⇒ 清零（回到正常）；
+ * - 压力确实下降（默认 ≥2 个百分点）⇒ 清零（这次压缩有效，长任务不该被次数误杀）；
+ * - 否则 ⇒ 累加（压完不降才是"压缩无效"）。
+ *
+ * 为什么不能按"压缩次数"：一个持续高水位但每次都在减重的长任务，
+ * 会在第 3 次被误判成"压缩救不了"而强行结束 —— 与"一直执行、一直压"相反。
+ */
+export function nextConsecutiveCompactions(
+  prev: number,
+  before: number,
+  after: number,
+  threshold: number,
+  minDrop = 0.02,
+): number {
+  if (after < threshold) return 0;
+  if (after <= before - minDrop) return 0;
+  return prev + 1;
+}

@@ -10,7 +10,7 @@
 ```text
 codem.exe
  └─ tauri::run()
-     ├─ 注册 117 个命令（lib.rs generate_handler!）
+     ├─ 注册 114 个命令注解（lib.rs generate_handler!）
      ├─ 创建主窗（1200×800，decorations:false，transparent）
      ├─ 托盘 / 宠物窗 / 运行时日志 / 崩溃标记 / Mica 材质
      └─ WebView2 加载 index.html → dist/assets/main-*.js

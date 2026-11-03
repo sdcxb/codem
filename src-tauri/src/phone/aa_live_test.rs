@@ -123,8 +123,8 @@ async fn live_connector_authenticates_and_answers_runtime_discover() {
         // 真机上这里是渲染进程的回环上游端口。这条判据只走 Inline 方法
         // （`runtime.discover`），不需要上游 —— 所以留 0，
         // 顺带验证"上游没起来时不会把 Inline 也一起拒掉"。
-        g.upstream_port = 0;
-        g.edge_token = "live-test".to_string();
+        g.bridge_port = 0;
+        g.bridge_token = "live-test".to_string();
     }
     let cs = aa_connector::AaConnectorState::new();
 

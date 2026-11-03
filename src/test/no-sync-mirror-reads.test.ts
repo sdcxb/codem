@@ -95,7 +95,7 @@ const BASELINE: Record<string, number> = {
   "src/core/storage/agent-profile-storage.ts": 3,
   "src/App.tsx": 2,
   "src/core/llm/time-context.ts": 2,
-  "src/core/phone-link/phone-link.ts": 2,
+  "src/core/remote/desktop-engine.ts": 1,
   "src/core/provider/session-persistence-sqlite-provider.ts": 2,
   "src/core/agent/preset-discovery.ts": 1,
   "src/core/llm/compaction-control.ts": 1,

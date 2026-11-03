@@ -75,6 +75,7 @@ describe('可达性门禁：写了但没接线的代码必须被拦住（第 109
      */
     const unwired = entries.filter(([, reason]) => reason.includes('未接线')).map(([f]) => f)
     expect(unwired.sort()).toEqual([
+      'src/components/MessageActions.tsx',
       'src/components/RegenerateModelPopover.tsx',
       'src/core/environment/file-edit-capture.ts',
       'src/core/storage/sync-engine.ts',

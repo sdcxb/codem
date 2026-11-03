@@ -32,7 +32,7 @@
  * | 环节 | 做法 |
  * |---|---|
  * | 载入 | **不预取** ✗、**不进镜像** ✗ —— `DOMAIN_QUERY_ONLY_TABLES` 结构性挡掉 ✓ |
- * | 读 | **按需查询** ✓：`crud.list` + `where{会话}` + `order_by turn_index` + 有界 `limit` ✓ |
+ * | 读 | **按需查询** ✓：`crud.list` + `where{会话}` + `order_by created_at DESC` + 有界 `limit` ✓ |
  * | 投影 | `patch` 正文（单行上限 500,000 字符 ✗）**不进一屏** ✓ —— 回滚时按 id 单独取 ✓ |
  * | 驻留 | 有界 LRU ✓（≤ `WINDOW_SESSIONS` 个会话 × `WINDOW_ROWS` 行 ✓），**只在按需读之后**才有 ✓ |
  * | 同步读 | **只读那份有界投影** ✓（`listBySession` ✓）；没读过就返回 `[]`（不假装 ✓） |
@@ -48,6 +48,7 @@
 import { reportPersistFailure } from "./persist-failure";
 import { domainDelete, domainWrite } from "./domain-store";
 import { getStoragePort } from "./port";
+import type { ChangedFileView, TurnChangesView } from "../../../packages/protocol/src/index";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -179,6 +180,18 @@ function recordToWire(r: TurnFileChangeRecord): Record<string, unknown> {
  * 没有它才退回 `execute`（两者是同一 dispatch，只是返回值整形不同 ✓）。
  */
 async function queryRows(params: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
+  return (await queryPageRows(params)).items;
+}
+
+/**
+ * 发一条 `crud.list` 并拿回**结构化一页**（`items` + 引擎给的 `has_more`）。
+ *
+ * `has_more` 必须来自引擎（`crud.rs` 用 `LIMIT limit+1` 算），**不许**用
+ * `items.length === limit` 猜 —— 那在"最后一页恰好填满"时会谎报还有下一页。
+ */
+async function queryPageRows(
+  params: Record<string, unknown>,
+): Promise<{ items: Array<Record<string, unknown>>; hasMore: boolean }> {
   /**
    * ⚠️ **端口没注册 ⇒ 抛** ✗→✓（第 269 波**撤销**了第一版的 `return []` ✗）。
    *
@@ -194,11 +207,12 @@ async function queryRows(params: Record<string, unknown>): Promise<Array<Record<
     command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
   };
   const res = probe.command
-    ? await probe.command<{ items?: Array<Record<string, unknown>> }>("crud.list", params)
+    ? await probe.command<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>("crud.list", params)
     : ((await port.data.execute("crud.list", params)) as unknown as {
         items?: Array<Record<string, unknown>>;
+        has_more?: boolean;
       });
-  return res?.items ?? [];
+  return { items: res?.items ?? [], hasMore: res?.has_more === true };
 }
 
 /**
@@ -257,12 +271,26 @@ function putWindow(sessionId: string, rows: TurnFileChangeRecord[]): void {
   }
 }
 
-/** 按 `turn_index` DESC（并列时 `created_at` DESC ⇒ 稳定 ✓）排序一屏 ✓ */
+/**
+ * 按 `created_at` DESC 排序一屏 ✓（并列时 `turn_index` DESC，再并列时 `id` DESC）。
+ *
+ * ## 为什么不再以 `turn_index` 为**主**序（第 270 波）
+ *
+ * `turn_index` 是**每个 prompt 从 1 重开**的迭代号（`agentic-loop.ts` 每个 prompt
+ * `new AgenticLoop`）。以它为主序时，一个跑了很多轮迭代的旧 prompt 会永久压住
+ * 刚发生的、只跑了一轮的新 prompt —— 用户看到的"最近一轮"其实是更早那次对话的最后一条。
+ * 时间戳（`created_at`）才是"哪条更晚发生"的唯一事实；`turn_index` 只当标签。
+ *
+ * 并列（同一毫秒）时用 `turn_index` 与 `id` 决出确定顺序：判据不许依赖 SQLite 的
+ * 并列顺序（`crud.rs` 的 `ORDER BY` 只保证单列，并列不保证稳定）。
+ */
 function sortWindow(rows: TurnFileChangeRecord[]): TurnFileChangeRecord[] {
   return [...rows].sort((a, b) => {
-    const t = (b.turn_index ?? 0) - (a.turn_index ?? 0);
+    const t = (b.created_at ?? 0) - (a.created_at ?? 0);
     if (t !== 0) return t;
-    return (b.created_at ?? 0) - (a.created_at ?? 0);
+    const i = (b.turn_index ?? 0) - (a.turn_index ?? 0);
+    if (i !== 0) return i;
+    return String(b.id ?? "").localeCompare(String(a.id ?? ""));
   });
 }
 
@@ -277,6 +305,122 @@ export function __resetFileChangeWindow(): void {
 /** 测试用：当前驻留了几个会话的一屏（"驻留必须有界"要能被断言 ✓） */
 export function __windowSessionCount(): number {
   return windowCache.size;
+}
+
+/** 单页上限（协议的 `session.changes` 自己再收窄到 50；这里是**存储原语**的上限） */
+const TURN_FILE_CHANGE_PAGE_MAX = 200;
+
+export interface TurnFileChangesPage {
+  items: TurnFileChangeRecord[];
+  hasMore: boolean;
+}
+
+/**
+ * **分页原语**：按会话取一页（`created_at` DESC），`hasMore` 来自引擎。
+ *
+ * 为什么单独导出（第 270 波）：Host 的 `session.changes` 需要 `offset/limit` 分页，
+ * 而桌面面板需要"最近 200 行"的有界一屏。两者**必须共用同一份查询实现** ——
+ * 再抄一份 `crud.list` 参数就是两份列契约（`TFC-3/TFC-7` 会红），
+ * 而且列的投影清单一旦分叉，`patch` 正文就会从某个调用点漏进内存。
+ *
+ * ⚠️ Host **不要**用 `loadBySession()`：它带一个 ≤3 会话 × ≤200 行的 LRU，
+ * 长驻服务里那等于把用户浏览过的历史钉在内存里；Host 只要"查一页、返回、丢掉"。
+ */
+export async function queryChangesPage(
+  sessionId: string,
+  offset = 0,
+  limit = TURN_FILE_CHANGE_WINDOW_ROWS,
+): Promise<TurnFileChangesPage> {
+  if (!sessionId) return { items: [], hasMore: false };
+  const take = Math.max(1, Math.min(TURN_FILE_CHANGE_PAGE_MAX, Math.trunc(limit) || TURN_FILE_CHANGE_WINDOW_ROWS));
+  const skip = Math.max(0, Math.trunc(offset) || 0);
+  const page = await queryPageRows({
+    table: TABLE,
+    columns: [...TURN_FILE_CHANGE_WINDOW_COLUMNS],
+    where: { session_id: sessionId },
+    order_by: "created_at",
+    desc: true,
+    offset: skip,
+    limit: take,
+  });
+  return { items: sortWindow(page.items.map(rowToRecord)), hasMore: page.hasMore };
+}
+
+/**
+ * `changed_files` 的**三态解析**：`[]` + `parseError=false`（真的没有文件）、
+ * 有行、或 `parseError=true`（JSON 坏了）。
+ *
+ * 旧实现 `parseChangedFiles()` 把坏 JSON 吞成 `[]` —— 界面于是把"记录损坏"
+ * 显示成"没有改动"。这里把两种情形分开，协议层用 `filesParseError` 下发。
+ */
+export function parseChangedFilesResult(record: TurnFileChangeRecord): {
+  files: ChangedFile[];
+  parseError: boolean;
+} {
+  if (!record.changed_files) return { files: [], parseError: false };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(record.changed_files);
+  } catch {
+    return { files: [], parseError: true };
+  }
+  if (!Array.isArray(raw)) return { files: [], parseError: true };
+  const files: ChangedFile[] = [];
+  let parseError = false;
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      parseError = true;
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    if (typeof row.path !== "string" || row.path.length === 0) {
+      parseError = true;
+      continue;
+    }
+    files.push({
+      path: row.path,
+      status: typeof row.status === "string" && row.status ? row.status : "M",
+      ...(typeof row.additions === "number" && Number.isFinite(row.additions) ? { additions: row.additions } : {}),
+      ...(typeof row.deletions === "number" && Number.isFinite(row.deletions) ? { deletions: row.deletions } : {}),
+    });
+  }
+  return { files, parseError };
+}
+
+/**
+ * 一条存储记录 → 协议里的 `TurnChangesView`。
+ *
+ * **只读展示**所需字段：不携带 `before_tree` / `after_tree` / `patch`（理由见协议注释）。
+ * `additions/deletions` 缺失时**不下发该键**（不是 0）；`totals` 只在至少一个文件
+ * 有 numstat 时出现（否则界面显示 `+— −—`，不把"不知道"画成 `+0 −0`）。
+ */
+export function toTurnChangesView(record: TurnFileChangeRecord): TurnChangesView {
+  const parsed = parseChangedFilesResult(record);
+  const files: ChangedFileView[] = parsed.files.map((f) => ({
+    path: f.path.split("\\").join("/"),
+    status: f.status,
+    ...(typeof f.additions === "number" ? { additions: f.additions } : {}),
+    ...(typeof f.deletions === "number" ? { deletions: f.deletions } : {}),
+  }));
+  const withStats = files.filter((f) => typeof f.additions === "number" || typeof f.deletions === "number");
+  const totals = withStats.length
+    ? {
+        additions: withStats.reduce((n, f) => n + (f.additions ?? 0), 0),
+        deletions: withStats.reduce((n, f) => n + (f.deletions ?? 0), 0),
+      }
+    : undefined;
+  return {
+    changeId: record.id,
+    messageId: record.message_id,
+    turnIndex: Number(record.turn_index ?? 0),
+    createdAt: Number(record.created_at ?? 0),
+    status: String(record.status ?? "completed"),
+    ...(record.current_brief ? { brief: record.current_brief } : {}),
+    treesAvailable: Boolean(record.before_tree && record.after_tree),
+    files,
+    ...(parsed.parseError ? { filesParseError: true as const } : {}),
+    ...(totals ? { totals } : {}),
+  };
 }
 
 export const FileChangeStorage = {
@@ -319,7 +463,7 @@ export const FileChangeStorage = {
   /**
    * **按需查询一个会话的一屏文件变更** ✓（唯一的真实来源 ✓）。
    *
-   * @returns 该会话**最新** `TURN_FILE_CHANGE_WINDOW_ROWS` 行（`turn_index` DESC ✓）。
+   * @returns 该会话**最新** `TURN_FILE_CHANGE_WINDOW_ROWS` 行（`created_at` DESC ✓）。
    *   `[]` 是**诚实**的空结果 ✓（"这个会话确实没有记录"✓），
    *   而"没读到"由**抛出的错误**表达 ✓（绝不把失败说成空 ✗ —— 那正是这张表以前的形态 ✗）。
    */
@@ -328,17 +472,9 @@ export const FileChangeStorage = {
     const pending = inFlightLoads.get(sessionId);
     if (pending) return pending;
     const job = (async () => {
-      const items = await queryRows({
-        table: TABLE,
-        columns: [...TURN_FILE_CHANGE_WINDOW_COLUMNS],
-        where: { session_id: sessionId },
-        order_by: "turn_index",
-        desc: true,
-        limit: TURN_FILE_CHANGE_WINDOW_ROWS,
-      });
-      const rows = sortWindow(items.map(rowToRecord));
-      putWindow(sessionId, rows);
-      return rows;
+      const page = await queryChangesPage(sessionId, 0, TURN_FILE_CHANGE_WINDOW_ROWS);
+      putWindow(sessionId, page.items);
+      return page.items;
     })();
     inFlightLoads.set(sessionId, job);
     try {
@@ -389,7 +525,7 @@ export const FileChangeStorage = {
    * 契约（三条都要记清，否则很容易把它当成"整会话读"✗）：
    * 1. **只返回**已经按需读过的那个会话的一屏 ✓；没读过 ⇒ `[]` ✓
    *    （不假装、不触发同步 IPC ✗）；
-   * 2. 顺序是 `turn_index` DESC ✓（与 `loadBySession()` 一致 ✓）；
+   * 2. 顺序是 `created_at` DESC ✓（与 `loadBySession()` / Host 分页一致 ✓）；
    * 3. 它是**便利接口** ✓，不是真相来源 ✗ —— 真相来源是 `loadBySession()` ✓。
    */
   listBySession(sessionId: string): TurnFileChangeRecord[] {
@@ -481,12 +617,11 @@ export const FileChangeStorage = {
     );
   },
 
+  /**
+   * 兼容入口：坏 JSON ⇒ `[]`（旧行为）。需要区分"损坏"与"没有改动"的调用方
+   * 用 `parseChangedFilesResult()`（协议层就是这么做的）。
+   */
   parseChangedFiles(record: TurnFileChangeRecord): ChangedFile[] {
-    if (!record.changed_files) return [];
-    try {
-      return JSON.parse(record.changed_files);
-    } catch {
-      return [];
-    }
+    return parseChangedFilesResult(record).files;
   },
 };

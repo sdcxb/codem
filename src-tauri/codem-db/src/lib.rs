@@ -20,6 +20,11 @@ pub mod error;
 pub mod migrate;
 pub mod repo;
 pub mod schema;
+/// 常驻 stdio 行协议（`codem-db serve`）：给 `codem-host` 这类长驻进程用。
+///
+/// 与 `codem-db-cli` 的**一次一进程**相对：serve 里只有一条连接、一个 Engine，
+/// 这就是"单写者"在跨进程边界上的落点（见模块头注释）。
+pub mod serve;
 
 pub use engine::{Engine, Health, Integrity, MAX_BYTES_PER_QUERY, MAX_ROWS_PER_QUERY};
 pub use error::{DbError, DbResult, ErrorCode};

@@ -180,7 +180,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
             <span className="session-recovery-error-text">{actionError}</span>
           </div>
         )}
-        <div className="session-list">
+        <div className="session-recovery-list">
           {loading && sessions.length === 0 && (
             <div className="empty-hint"><Spinner size="sm" label="" /> 加载中...</div>
           )}

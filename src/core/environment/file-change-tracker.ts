@@ -22,7 +22,8 @@
  */
 
 import { FileChangeStorage, type ChangedFile } from "../storage/file-change-storage";
-import { buildGitCommand, psQuote } from "../utils/ps-command";
+import { psQuote } from "../utils/ps-command";
+import { GIT_BATCH_SENTINEL, parseGitBatchOutput, runGitBatchCommands, runGitCommand } from "../command-api";
 import { getStoragePort, hasStoragePort } from "../storage/port";
 import { reportActionFailure, reportPersistFailure } from "../storage/persist-failure";
 
@@ -124,19 +125,24 @@ async function fetchPatchById(artifactId: string): Promise<PatchFetchResult> {
   }
 }
 
+/**
+ * 跑一条 git —— **经显式命令通道**（`command-api.ts`）。
+ *
+ * ## 为什么不再直接 `invoke("execute_command", …)`（第 270 波）
+ *
+ * 原来这里读 `window.__TAURI__` 并把 argv 拼成一条 PowerShell 命令串。桌面成立，
+ * 但 Host 没有 `execute_command` ⇒ `isGitRepo()` 恒 false ⇒ 变更记录**结构性为空**。
+ * 现在桌面（默认 Tauri 实现）与 Host（`spawn` argv 实现）共用**同一条**
+ * `runGit(cwd, args)`，差异只在注入的传输层，不在业务语义。
+ *
+ * `core.quotepath=false` 由 `command-api` 统一加（非 ASCII 路径不再被转义成 `"\346…"`）。
+ */
 async function runGit(cwd: string, args: string[]): Promise<string> {
   try {
-    const { invoke } = (window as any).__TAURI__.core;
-    const result = await invoke("execute_command", {
-      command: buildGitCommand(cwd, args),
-      cwd,
-      // git 命令有界超时；Rust 侧超时会杀进程树（对标 dsh）
-      timeout_ms: GIT_TIMEOUT_MS,
-    });
-    // execute_command returns { stdout, stderr, exitCode }
+    const result = await runGitCommand(cwd, args, { timeoutMs: GIT_TIMEOUT_MS });
     const stdout = result.stdout || "";
     const stderr = result.stderr || "";
-    const exitCode = result.exitCode ?? 0;
+    const exitCode = result.exitCode ?? -1;
     if (exitCode !== 0 && !stdout) {
       throw new Error(stderr || `git exited with code ${exitCode}`);
     }
@@ -147,86 +153,19 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * ★★★ 第 46 波：**把 N 条 git 命令塞进一次 PowerShell 调用** ✓（目标② 的实测着力点 ✓）。
+ * 批量化执行（第 46 波）—— 实现已收口到 `command-api.ts` 的 `runGitBatchCommands`。
  *
- * ## 为什么（**真机实测 ✓**）
+ * 桌面传输用一次 PowerShell（哨兵带出每条退出码，省的是进程数）；Host 传输逐条
+ * `spawn`（argv、无 shell、无哨兵）。**业务调用点只有这一处**，不存在第二套批处理。
  *
- * 应用里每条 git 命令都经 `execute_command` ⇒ **一个 PowerShell 进程** ✓，
- * 而 PowerShell 起进程的固定开销是**大头** ✗。在同一台机器、同一个评测工作区上实测（`PowerShell` 直接计时 ✓）：
- * ```
- *   git rev-parse 'HEAD^{tree}'（直接 ✓）                          52 ms
- *   powershell -NoProfile -Command "git rev-parse 'HEAD^{tree}'"  289 ms   ← ★ 每次多付 ~240 ms ✗
- *   6 × 独立 powershell -Command                                  1 648 ms
- *   1 × powershell 里跑 6 条 git（批量化 ✓）                        638 ms   ← ★ 省 ~1 s ✓
- * ```
- * 而 `snapshotWorkingTree` 一轮就要 **3 条** ✓（`stash create` / `rev-parse` / `ls-files` ✓）+
- * `finalize()` 的 diff 再有几条 ✓ ⇒ ★ 真机侧车里"工具结果回来 → `Iteration N completed`"
- * 之间稳定 **~2 s 且一行日志都没有** ✗ —— 就是这里 ✓（`finalize()` **每轮都会调用** ✓）。
- *
- * ## 口径（**为什么要哨兵 + 退出码** ✓）
- *
- * `stdout` 里必须能**逐条**拆出来，而且**每条自己的退出码不能丢** ✗
- * （丢了的话"命令失败"会被读成"输出为空" ✓ —— 那正好是 `stash create` 干净工作区的**正常**输出 ✗ 会混淆）。
- * 于是每条的写法是：`<cmd>; Write-Output "<哨兵>$LASTEXITCODE"` ✓ —— 也就是
- * **哨兵行挂在每条命令后面、并带上它自己的退出码** ✓。
- *
- * 拆法（`n` 条命令 ⇒ `split(哨兵)` 得到 `n+1` 段 ✓）：
- * ```
- * 段[0]        = 第 0 条的输出
- * 段[i] (1≤i≤n-1) = "第 i-1 条的退出码\n" + 第 i 条的输出
- * 段[n]        = 第 n-1 条的退出码
- * ```
- * ⚠️ 哨兵必须挑**git 输出里不可能出现的字符串** ✓（纯函数 `parseGitBatchOutput` 可单测 ✓）。
+ * `GIT_BATCH_SENTINEL` / `parseGitBatchOutput` 从 `command-api` re-export，
+ * 保持既有判据（`GB-1..7` 从本文件 import）的入口不变。
  */
-/**
- * ★ 哨兵：**必须包含 Windows 文件名里非法的字符** ✓（`< > | ? *` ✓）。
- *
- * 为什么（**先怀疑自己的改动** ✓）：`ls-files --others` 的输出就是**文件名清单** ✓ ——
- * 若哨兵是一个合法文件名 ✗，那么仓库里恰好存在同名文件时 `split(哨兵)` 就会**错位** ✓
- * ⇒ 解析出来的 diff/清单是**静默错**的 ✗（最坏的一种 ✓：不报错、但内容是别人的 ✓）。
- * 而 Windows 路径里不可能出现 `< > | ? *` ✓ ⇒ 文件名永远撞不上哨兵 ✓（本应用只跑 Windows ✓）。
- * 判据 `GB-6` 钉住这一点 ✓。
- */
-export const GIT_BATCH_SENTINEL = "@@CODEM<>GIT|BATCH?SEP*@@";
+export { GIT_BATCH_SENTINEL, parseGitBatchOutput };
 
-/**
- * 纯解析 ✓（不碰 Tauri ⇒ 可单测/可变异 ✓）。
- *
- * @param out 批量化命令的完整 stdout
- * @param count 命令条数（`split` 的段数应当是 `count + 1` ✓）
- */
-export function parseGitBatchOutput(out: string, count: number): Array<{ stdout: string; exitCode: number }> {
-  const parts = String(out ?? "").split(GIT_BATCH_SENTINEL);
-  const firstLine = (s: string) => {
-    const nl = s.indexOf("\n");
-    return (nl >= 0 ? s.slice(0, nl) : s).trim();
-  };
-  const restAfterFirstLine = (s: string) => {
-    const nl = s.indexOf("\n");
-    return nl >= 0 ? s.slice(nl + 1).trim() : "";
-  };
-  const res: Array<{ stdout: string; exitCode: number }> = [];
-  for (let i = 0; i < count; i++) {
-    const stdout = i === 0 ? (parts[0] ?? "").trim() : restAfterFirstLine(parts[i] ?? "");
-    const codeText = i === count - 1 ? firstLine(parts[count] ?? "") : firstLine(parts[i + 1] ?? "");
-    const code = Number(codeText || "0");
-    res.push({ stdout, exitCode: Number.isFinite(code) ? code : 0 });
-  }
-  return res;
-}
-
-/** 批量化执行 ✓（薄层：只负责拼命令 + 调一次 `execute_command` ✓） */
 async function runGitBatch(cwd: string, commands: string[][]): Promise<Array<{ stdout: string; exitCode: number }>> {
-  const body = commands
-    .map((args) => `${buildGitCommand(cwd, args)}; Write-Output "${GIT_BATCH_SENTINEL}$LASTEXITCODE"`)
-    .join("; ");
-  const { invoke } = (window as any).__TAURI__.core;
-  const result = await invoke("execute_command", {
-    command: body,
-    cwd,
-    timeout_ms: GIT_TIMEOUT_MS,
-  });
-  return parseGitBatchOutput(String(result.stdout ?? ""), commands.length);
+  const results = await runGitBatchCommands(cwd, commands, { timeoutMs: GIT_TIMEOUT_MS });
+  return results.map((r) => ({ stdout: r.stdout, exitCode: r.exitCode ?? -1 }));
 }
 
 async function isGitRepo(cwd: string): Promise<boolean> {
@@ -524,10 +463,12 @@ export class FileChangeTracker {
        * 收益口径：每省一条 git 就省一个 PowerShell 进程 ✓（实测 ~240ms/条 ✗）。
        */
       const [nameStatusRes, statRes, numstatRes] = await runGitBatch(this.workspace, [
-        ["diff", "--name-status", this.beforeTree, afterTree],
-        ["diff", "--stat", this.beforeTree, afterTree],
+        // `-M` 必须与下面取 patch 的 `--find-renames` 一致：否则列表把 rename 显示成 A+D，
+        // 而 patch 是 R —— 两处对"改了哪几个文件"的说法不同（第 270 波顺带修正）。
+        ["diff", "-M", "--name-status", this.beforeTree, afterTree],
+        ["diff", "-M", "--stat", this.beforeTree, afterTree],
         // 第 233 轮（Phase C 数据前置）：每文件 +/− 逐行统计，供 Inspector 的 "path +N −M"
-        ["diff", "--numstat", this.beforeTree, afterTree],
+        ["diff", "-M", "--numstat", this.beforeTree, afterTree],
       ]);
       const nameStatus = nameStatusRes?.stdout ?? "";
       /** path → {additions, deletions}；二进制文件在 numstat 里是 "-\t-\tpath" ⇒ 跳过 */

@@ -264,7 +264,7 @@ listContextMessages(sessionId): Message[]
 | Agent `buildMessages` / 水位 / 压缩规划 | ContextView | 模型只看压缩后 |
 | 记忆提取 / 标题生成 / 子代理 / 跨会话委派 / `query_session_result` | ContextView | 不把完整历史喂给模型 |
 | fork | 两边都要 | 复制完整时间线 + epoch；子会话 ContextView 保留 cutoff |
-| phone-link / 插件 `sessionPersistence.listMessages` | ContextView | 兼容现有语义；另提供 timeline API |
+| desktop-engine / 插件 `sessionPersistence.listMessages` | ContextView | 兼容现有语义；另提供 timeline API |
 | 事件投影 / 不变量检查 | 明确按用途 | 事件侧与消息侧分开，不混用 |
 
 ### 6.3 旧 hidden 与 fail-open

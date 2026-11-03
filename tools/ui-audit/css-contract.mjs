@@ -29,9 +29,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
 const SNAPSHOT = join(HERE, "css-contract.json");
 
-/** 与应用 main.tsx 相同的加载顺序（后加载者胜） */
+/**
+ * 与应用 main.tsx 相同的加载顺序（后加载者胜）。
+ *
+ * `packages/ui/src/ui.css` 是**桌面与手机同一份**共享组件样式，`src/main.tsx` 里
+ * 紧跟在 `styles.css` 之后、皮肤之前 import —— 这里必须同序，否则快照算的是
+ * 一份运行时不存在的层叠顺序（"快照绿、真机红"）。
+ */
 const BASE_FILES = [
   "src/styles.css",
+  "packages/ui/src/ui.css",
   "src/styles/codem-ui.css",
   "src/styles/notebook-workspace.css",
   "src/styles/task-center.css",

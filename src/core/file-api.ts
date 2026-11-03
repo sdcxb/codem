@@ -24,10 +24,40 @@
  */
 import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "./sandbox/sandbox-acl";
 
-const isTauri = () => !!(window as any).__TAURI__;
+/**
+ * 文件层传输（FileTransport）：显式注入点。
+ *
+ * 为什么要有：这一层原来**硬编码**读 `window.__TAURI__.core.invoke`（21 个调用点收口于此），
+ * 于是任何非 Tauri 宿主（codem-host / 测试 / 未来的 Android 壳）都得先伪造一个 `__TAURI__`，
+ * 而伪造出来的 `window` 会把「有没有传输」这件事藏起来 —— 失败信息变成 "window is not defined"。
+ *
+ * 现在：有注册的传输就用它；没有才回落到 Tauri（桌面默认路径不变）。
+ * 判据：`src/test/host-file-transport.test.ts`（FT-*）。
+ */
+export interface FileInvoker {
+  invoke(command: string, args?: Record<string, unknown>): Promise<any>;
+}
+
+let fileInvoker: FileInvoker | null = null;
+
+/** 注册/清除文件层传输（传 null 恢复 Tauri 默认）。 */
+export function setFileInvoker(invoker: FileInvoker | null): void {
+  fileInvoker = invoker;
+}
+
+/** 当前是否已有可用传输（Host/测试注入之后为 true）。 */
+export function hasFileInvoker(): boolean {
+  return fileInvoker !== null;
+}
+
+const isTauri = () => fileInvoker !== null || !!(globalThis as any).__TAURI__;
 
 async function tauriInvoke(command: string, args?: Record<string, unknown>): Promise<any> {
-  const { invoke } = (window as any).__TAURI__.core;
+  if (fileInvoker) return fileInvoker.invoke(command, args);
+  const invoke = (globalThis as any).__TAURI__?.core?.invoke;
+  if (typeof invoke !== "function") {
+    throw new Error(`没有文件层传输：未注册 FileTransport，且没有 Tauri 运行时（命令 ${command}）`);
+  }
   return invoke(command, args);
 }
 

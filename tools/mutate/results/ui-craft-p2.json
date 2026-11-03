@@ -1,17 +1,17 @@
 {
   "wave": "ui-craft-p2",
   "description": "UI 工艺 P2：EDGEFADE（触边归零）/ DIFFVIEW（分屏行配对）/ VIEWTRANS（转场降级）/ UIDOC（文档令牌与组件目录）/ ROVING（RTL 镜像）/ SOUND（默认关）/ MOTION（裸曲线棘轮）。8 条变异各自对红",
-  "runAt": "2026-10-18T01:14:34.499Z",
-  "specFingerprint": "242b44474a4e48d8dcf6c7153b5703d7f396c1ad",
+  "runAt": "2026-11-01T12:51:11.272Z",
+  "specFingerprint": "c13bd3e84a14cfe749120bfc925557e446f11c1c",
   "files": [
     "src/core/ui/edge-fade.ts",
-    "src/core/ui/diff-view.ts",
+    "packages/ui/src/patch-diff.ts",
     "src/core/ui/view-transition.ts",
     "docs/ui-spec.md",
     "docs/component-gallery.html",
     "src/core/ui/roving-focus.ts",
     "src/core/ui/sound-cues.ts",
-    "src/styles/codem-ui.css"
+    "packages/ui/src/ui.css"
   ],
   "tests": [
     "src/test/edge-fade.test.ts",
@@ -42,19 +42,19 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2136
+      "ms": 2181
     },
     {
       "id": "MUT-2 分屏不再配对删除/新增（各自单独成行）",
       "why": "DIFFVIEW-3：同一处修改被拆成两行、左右不共享行号 ⇒ 分屏失去对齐语义",
       "patches": [
         {
-          "file": "src/core/ui/diff-view.ts",
+          "file": "packages/ui/src/patch-diff.ts",
           "from": "    const pairs = Math.max(dels.length, adds.length);",
           "to": "    const pairs = dels.length + adds.length;"
         },
         {
-          "file": "src/core/ui/diff-view.ts",
+          "file": "packages/ui/src/patch-diff.ts",
           "from": "      const del = dels[k];\n      const add = adds[k];",
           "to": "      const del = dels[Math.min(k, dels.length - 1)];\n      const add = adds[Math.min(k, adds.length - 1)];"
         }
@@ -67,7 +67,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2421
+      "ms": 2546
     },
     {
       "id": "MUT-3 共享元素转场退化为普通更新",
@@ -87,7 +87,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2181
+      "ms": 2195
     },
     {
       "id": "MUT-4 文档引用一个不存在的令牌",
@@ -107,7 +107,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2201
+      "ms": 2501
     },
     {
       "id": "MUT-5 组件目录写一个不存在的类",
@@ -127,7 +127,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2241
+      "ms": 2292
     },
     {
       "id": "MUT-6 roving focus 去掉 RTL 镜像",
@@ -147,7 +147,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2234
+      "ms": 2248
     },
     {
       "id": "MUT-7 提示音默认打开",
@@ -167,14 +167,14 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2242
+      "ms": 2235
     },
     {
       "id": "MUT-8 在规则里写裸 cubic-bezier",
       "why": "MOTION-1：动效曲线绕过令牌（同类交互手感开始漂移）",
       "patches": [
         {
-          "file": "src/styles/codem-ui.css",
+          "file": "packages/ui/src/ui.css",
           "from": ".diff-view-mode-btn.is-active {",
           "to": ".diff-view-mode-btn.is-active { transition-timing-function: cubic-bezier(0.1, 0.2, 0.3, 0.4);"
         }
@@ -187,7 +187,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2236
+      "ms": 2192
     }
   ]
 }

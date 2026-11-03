@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Codem Remote</title>
+    <!--
+      共享组件样式：`packages/ui/src/ui.css`（构建产物 `web/ui.css`，由 `npm run host:build:ui` 生成）。
+      **必须放在内联 <style> 之前**：下面的外壳规则（布局 / 裸元素 / 触摸尺寸）要靠"后写者胜"覆盖共享层。
+    -->
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      /*
+       * 手机壳 = **外壳**，不是组件样式。归属线（与 `packages/ui/src/ui.css` 文件头一致）：
+       *   这里只留：调色板与令牌桥 / 布局骨架 / 裸元素规则 / 触摸尺寸；
+       *   共享组件（气泡、工具卡、审批卡、Markdown、文件浏览、连接信息、附件）的类规则全在 ui.css。
+       */
+      :root {
+        --bg: #0f1115;
+        --panel: #171a21;
+        --line: #262b36;
+        --text: #e6e9ef;
+        --muted: #98a2b3;
+        --accent: #4f8cff;
+        --ok: #38b26a;
+        --warn: #e0a32e;
+        --bad: #e05252;
+
+        /* ===== 令牌桥：共享 ui.css 消费的是桌面令牌名，这里映射到上面的移动端调色板 =====
+           新增 ui.css 的 var(--x) 时，这里必须有对应取值（手机不加载桌面 styles.css）。 */
+        --bg-primary: var(--bg);
+        --bg-secondary: var(--panel);
+        --bg-tertiary: #1d222c;
+        --bg-hover: #232936;
+        --surface-2: #1d222c;
+        --surface-hover: #232936;
+        --text-primary: var(--text);
+        --text-secondary: #c3cad6;
+        --text-muted: var(--muted);
+        --text-on-accent: #ffffff;
+        --text-on-status: #ffffff;
+        --border-primary: var(--line);
+        --border-secondary: #20252f;
+        --border-separator: #2a3040;
+        --accent-hover: #6b9dff;
+        --accent-strong: #7fb0ff;
+        --accent-border-strong: color-mix(in srgb, var(--accent) 45%, transparent);
+        --success: var(--ok);
+        --success-hover: #45c47a;
+        --success-surface-strong: color-mix(in srgb, var(--success) 20%, transparent);
+        --success-content: var(--success);
+        --warning-surface-strong: color-mix(in srgb, var(--warning) 20%, transparent);
+        --warning-content: var(--warning);
+        --info-surface-strong: color-mix(in srgb, var(--info) 20%, transparent);
+        --info-content: var(--info);
+        --error: var(--bad);
+        --error-hover: #e56a6a;
+        --error-content: #f08a8a;
+        --error-surface-strong: #7a2f2f;
+        --warning: var(--warn);
+        --info: #4f8cff;
+        --system-bg: #1b2029;
+        --input-bg: var(--panel);
+        --rich-code-bg: rgba(0, 0, 0, 0.35);
+        --rich-code-border: var(--line);
+        --glass-bg: var(--panel);
+        --glass-border: var(--line);
+        --shadow-raise-3: 0 8px 24px rgba(0, 0, 0, 0.45);
+        --shadow-bubble: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --message-bubble-user: rgba(79, 140, 255, 0.16);
+        --message-bubble-user-border: rgba(79, 140, 255, 0.35);
+        --opacity-disabled: 0.45;
+        /* 变更列表的 diff 浮层（共享 ui.css 用桌面令牌名；手机必须给对应取值） */
+        --overlay-backdrop: rgba(0, 0, 0, 0.55);
+        --z-modal: 1000;
+        --radius: 10px;
+        --radius-xs: 4px;
+        --radius-sm: 8px;
+        --radius-md: 10px;
+        --radius-full: 999px;
+        --radius-message-user: 14px;
+        --radius-message-assistant: 10px;
+        --space-1: 2px;
+        --space-2: 4px;
+        --space-3: 6px;
+        --space-4: 8px;
+        --space-5: 10px;
+        --space-6: 12px;
+        --space-7: 14px;
+        --space-8: 16px;
+        --space-9: 20px;
+        --space-10: 24px;
+        --space-12: 32px;
+        --space-13: 36px;
+        --fs-2xs: 10px;
+        --fs-xs: 11px;
+        --fs-sm: 13px;
+        --fs-base: 14px;
+        --fs-md: 15px;
+        --fs-lg: 17px;
+        --lh-ui: 1.3;
+        --lh-base: 1.5;
+        --lh-reading: 1.65;
+        --lh-bubble: 1.55;
+        --weight-medium: 500;
+        --weight-semibold: 600;
+        --weight-bold: 700;
+        --weight-heavy: 700;
+        --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+        --icon-xs: 12px;
+        --icon-sm: 14px;
+        --icon-md: 16px;
+        --icon-lg: 20px;
+        --transition-color: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+        --transition-transform: transform 0.15s ease;
+        --transition-shadow: box-shadow 0.15s ease;
+        --transition-fade: opacity 0.15s ease;
+        --duration-fast: 0.12s;
+        --duration-normal: 0.18s;
+        --duration-press: 120ms;
+        --ease-out: ease-out;
+        --ease-swift: cubic-bezier(0.16, 1, 0.3, 1);
+        --spin-duration: 1s;
+        --shadow-color-soft: rgba(0, 0, 0, 0.45);
+        --focus-ring-width: 2px;
+        --focus-ring-color: color-mix(in srgb, var(--accent) 75%, transparent);
+        /* 空态原语 `.empty-hint`（共享 ui.css §3a）的几何令牌，桌面在 styles.css 定义 */
+        --empty-hint-pad: var(--space-10);
+        --empty-hint-pad-compact: var(--space-4) var(--space-3);
+        --empty-hint-gap: var(--space-4);
+      }
+
+      /* ===== 裸元素与页面骨架（外壳） ===== */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 14px; border-bottom: 1px solid var(--line);
+        position: sticky; top: 0; background: var(--bg); z-index: 2;
+      }
+      header .title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      main { flex: 1; overflow-y: auto; padding: 12px 14px 16px; -webkit-overflow-scrolling: touch; }
+      button {
+        background: var(--panel); color: var(--text); border: 1px solid var(--line);
+        border-radius: 10px; padding: 9px 12px; font-size: 14px;
+      }
+      button:disabled { opacity: .45; }
+      footer { border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+      textarea {
+        flex: 1; resize: none; min-height: 44px; max-height: 120px; border-radius: 10px;
+        background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 10px;
+        font: inherit;
+      }
+      #root { height: 100%; display: flex; flex-direction: column; }
+      .layout { display: flex; flex: 1; min-height: 0; }
+      .sidebar { width: 280px; flex: 0 0 280px; border-right: 1px solid var(--line); overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+      .chat-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .pick-session { color: var(--text-muted); padding: 24px; }
+      /* 平板/宽屏：会话列表可收起。按钮只在选中会话时由 Header 渲染；折叠规则只写在
+         ≥600 里 ⇒ 手机窄屏（<600）结构上完全不受影响（599 规则从不引用 sidebar-collapsed）。 */
+      .sidebar-collapse-toggle { display: none; }
+      @media (min-width: 600px) {
+        .sidebar-collapse-toggle { display: inline-block; }
+        .layout.in-session.sidebar-collapsed .sidebar { display: none; }
+      }
+      /* 文件树是共享组件（ui.css §3b）：根节点在桌面侧栏里铺满高度，
+         在手机文件浏览里是 `.file-browser` 的一个 flex 子项（列表与预览互斥出现）⇒
+         高度交给 flex，别用 100%（否则会顶出面板内边距）。 */
+      .file-browser .file-explorer { height: auto; flex: 1; min-height: 0; }
+      .detail-pane { display: none; }
+      @media (min-width: 1000px) {
+        /* 第三列纵向排布：页签条 + 面板（`.detail-pane` 的宽度/边框仍归外壳） */
+        .detail-pane { display: flex; width: 320px; flex: 0 0 320px; border-left: 1px solid var(--line); min-height: 0; flex-direction: column; }
+        .file-browser.inline { position: static; padding: 8px; inset: auto; z-index: auto; background: transparent; }
+        /* 面板包装盒已是 flex 列：内联文件浏览/差异面板要吃掉剩下的高度（否则高度塌成内容高） */
+        .detail-body > .file-browser.inline { flex: 1; min-height: 0; }
+      }
+      @media (max-width: 599.98px) {
+        .layout { display: block; }
+        .layout .sidebar { display: none; width: auto; border-right: 0; flex: none; }
+        .layout:not(.in-session) .sidebar { display: flex; }
+        .layout:not(.in-session) .chat-pane { display: none; }
+        .layout.in-session .back-button { display: inline-block; }
+      }
+      @media (pointer: coarse) {
+        button, .session, .file-entry { min-height: 44px; }
+        textarea, input { font-size: 16px; }
+      }
+      footer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+    </style>
+  </head>
+  <body>
+    <!-- 共享 UI 挂载点：DOM 结构由 packages/ui 的 React 组件渲染（阶段 2） -->
+    <div id="app"></div>
+    <script src="ui.js"></script>
+  </body>
+</html>

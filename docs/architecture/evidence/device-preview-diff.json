@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "cases": [
+    {
+      "id": "PD-1",
+      "title": "预览「Diff」走到共享 patch 视图",
+      "ok": true,
+      "detail": "{\"kind\":\"patch\",\"rows\":6,\"add\":2,\"del\":1,\"nums\":[\"1/1\",\"2/\",\"/2\"],\"plusMinusPrefix\":0,\"text\":\"11line one\\n2old line two\\n2new line two\\n33line three\\n44context line\\n5added line\"}"
+    },
+    {
+      "id": "PD-2",
+      "title": "预览 patch 有增删行 + 真实行号",
+      "ok": true,
+      "detail": "rows=6 add=2 del=1 nums=[\"1/1\",\"2/\",\"/2\"]"
+    },
+    {
+      "id": "PD-3",
+      "title": "预览 patch 不再用 +/- 字符当行前缀（共享视图=行号+底色）",
+      "ok": true,
+      "detail": "prefix=0"
+    },
+    {
+      "id": "TD-1",
+      "title": "第三列「差异」走共享 patch 视图",
+      "ok": true,
+      "detail": "{\"kind\":\"patch\",\"rows\":6,\"text\":\"11line one\\n2old line two\\n2new line two\\n33line three\\n44context line\\n5added line\"}"
+    }
+  ]
+}

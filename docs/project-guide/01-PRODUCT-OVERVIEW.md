@@ -1,6 +1,6 @@
 # 01 · 产品总览：Codem 是什么、能做什么、边界在哪
 
-> 基线：**1.16.334**（2026-10-31 发布）｜ 2026-10-26 重编
+> 基线：**1.17.0**（2026-11-03 待发布；上一稳定版 1.16.334）｜ 2026-10-26 重编，2026-11-03 更新远程模型
 > 本文回答“产品层”的问题；实现细节见 `02`–`08`，当前状态见 `09`。
 
 ---
@@ -33,7 +33,7 @@
 | 长会话上下文不够 | 水位监测 → 工具输出/参数折叠 → 70% 自动压缩（最近 3 轮不切断）→ 90% 才提示 |
 | 同时推进 3–8 个任务 | 项目工作台：协调者会话 + 并行 thread + 独立 git worktree + `project_report` 证据 |
 | 把重复工作自动化 | 任务中心：定时/文件监听触发器、Issues、看板、收件箱、团队模板 |
-| 在手机/微信上继续 | Phone Link（LAN 扫码配对）或微信 ClawBot 桥，把消息接回本机会话 |
+| 在手机/微信上继续 | **桌面远程网关**（6 位一次性配对码）：手机直接看/操作桌面自己的项目、会话与历史，数据仍由桌面拥有；Android 手机也可用**本机模式**跑自己的 Host 与数据；Agents Anywhere（登录后在它的应用里操作桌面会话）；微信走 ClawBot 桥 |
 | 让 AI 用外部能力 | MCP 服务器、技能（SKILL.md）、插件（Cordis/YAML 装配）、CodeGraph、语义检索 |
 | 做演示/文档 | 内置 PPT 生成与编辑器、知识笔记本（NotebookLM 风格）、富内容渲染 |
 | 摸鱼 | 桌面宠物（独立窗口、精灵动画、市场）、三套皮肤、内置大富翁 |
@@ -76,7 +76,7 @@
 | 9 | 项目工作台 | 协调者、thread、worktree、`project_report`、gate 重验、Overview、审批、项目记忆/指令、PR/CI 只读 | 可用（MVP）；真实模型 3 并发未证明 |
 | 10 | Git / 工作树 / CI-CD | Git 面板、分支、worktree 创建/合并/冲突选边、回合级文件变更、Actions 只读/重跑 | 可用；合并冲突无逐文件 UI |
 | 11 | 安全与权限 | 三档安全模式（ask/auto/full）、审批、受保护路径、沙箱 ACL、DSH 风格 `dsh1:` 凭据封存、导出脱敏 | 可用；命令执行与写文件是两套边界 |
-| 12 | 连接与远程 | Phone Link（LAN/TLS/扫码）、微信 ClawBot（iLink）、Computer Use、浏览器自动化 | 可用但环境依赖强 |
+| 12 | 连接与远程 | **桌面远程网关**（PC 远程唯一入口：6 位配对码、共享 UI、只读/可写由能力表决定）、**Android 本机模式**（手机自己的 Host/数据/项目、本机模型 Keystore 加密）、Agents Anywhere（AA 账号）、微信 ClawBot（iLink）、Computer Use、浏览器自动化；旧 LAN 扫码配对与桌面 Host sidecar 已删除 | 可用但环境依赖强 |
 | 13 | UI/UX 与个性化 | 三皮肤（default/hub/dream）、23 个设置分区、命令面板、@提及、/命令、Diff、图片画廊、边缘渐隐、提示音、桌面宠物 | 稳定 |
 | 14 | 内容生产 | PPT 生成/编辑/放映、PDF/DOCX/XLSX/图片/视频查看、Mermaid/KaTeX/Shiki 渲染 | 可用 |
 | 15 | 可观测与运维 | 用量/成本、遥测、轨迹、性能面板、恢复、心跳、重试、日志、崩溃取证、更新器 | 可用 |
@@ -93,37 +93,40 @@
 │ WebView2 / React 18                                                 │
 │  main.tsx → App.tsx（外壳：TitleBar / Sidebar / ChatPanel / 面板）    │
 │    ├─ Zustand：useAppStore（消息/流式/工具）、useProjectStore（项目/会话）│
-│    ├─ components/：152 顶层 + task-center / ui / ppt / rich-content…  │
-│    └─ core/：60 个子域（LLM 引擎、存储、记忆、技能、插件、MCP、UI…）    │
+│    ├─ components/：160 顶层 + task-center / ui / ppt / rich-content…  │
+│    └─ core/：61 个子域（LLM 引擎、存储、记忆、技能、插件、MCP、UI…）    │
 │         └─ storage/rust-port.ts ──invoke──┐                          │
 ├───────────────────────────────────────────┼──────────────────────────┤
-│ Tauri v2 / Rust                           │ 117 个命令（14 组）        │
+│ Tauri v2 / Rust                           │ 116 个命令注解（14 组）    │
 │  lib.rs：窗口/托盘/宠物/文件/命令/PTY/MCP/HTTP/沙箱                     │
 │  storage.rs → codem-db（WAL SQLite、单写者、authorizer、类型化仓储）    │
-│  phone/（LAN/TLS/中继）、ilink/（微信）、ofm/（免费模型 Node 进程）      │
+│  phone/（桌面网关 + 回环桥 + AA）、ilink/（微信）、ofm/（免费模型）      │
 │  secret.rs（DPAPI）、js_sandbox（boa）、runtime_log/crash_evidence      │
 └─────────────────────────────────────────────────────────────────────┘
         │ 权威追加日志                         │ 可重建索引
         ▼                                      ▼
   <数据根>/sessions/<sid>.jsonl          <数据根>/codem-db-rust.bin
-  <数据根>/attachments/、spill/          FTS5（中文 bigram）+ 39 张表
+  <数据根>/attachments/、spill/          FTS5（中文 bigram）+ 40 张表
+
+> Android 本机模式是**另一条**进程/数据链：`packages/host/`（Host 协议/工具/存储）+ `android-shell/`
+> （APK、PRoot 运行时、Keystore 本机模型设置），数据在手机自己身上，与桌面库无关。
 ```
 
 ---
 
 ## 6. 规模与版本
 
-| 指标 | 值（2026-10-26） |
+| 指标 | 值（2026-11-03 实测） |
 |---|---|
-| 版本 | 1.16.334（2026-10-31） |
-| 前端 | `src/` 约 44.4 万行；`core/` 799 文件 / 16.5 万行；`components/` 197 文件 / 5.6 万行；`test/` 808 文件 / 16.3 万行 |
-| Rust | `src-tauri/src` 28 文件 / 约 2.2 万行；`codem-db` 11 文件 / 约 1 万行 |
-| 核心单文件 | `App.tsx` 6251 行；`agentic-loop.ts` 6810 行；`lib.rs` 7784 行；`styles.css` 21547 行 |
-| 模块 | `core/` 60 个子域；`components/` 152 顶层组件 + 6 子目录；插件 3 个（monopoly-game / library-ops / shell-ops） |
-| 数据 | 39 张实表 + `session_fts` + `storage_audit`；43 索引；29 条迁移 ALTER |
-| 命令 | 118 个 `#[tauri::command]` 注解 / 117 个注册命令（`get_process_token_info` 平台双写） |
-| 插件装配 | `config/codem.base.yml` 171 条 + desktop 覆盖层 |
-| 测试 | 796 文件 / 8842 用例（8825 通过、17 跳过、0 失败） |
+| 版本 | 1.17.0（2026-11-03，待发布；上一稳定版 1.16.334） |
+| 前端 | `src/` 约 41.6 万行（1822 文件）；`core/` 628 文件 / 15.1 万行；`components/` 206 文件 / 5.6 万行；`test/` 865 文件 / 17.7 万行 |
+| Rust | `src-tauri/src` 29 文件 / 约 2.15 万行；`codem-db` 13 文件 / 约 1.06 万行 |
+| 核心单文件 | `App.tsx` 6432 行；`agentic-loop.ts` 7028 行；`lib.rs` 7883 行；`styles.css` 21507 行 |
+| 模块 | `core/` 61 个子域；`components/` 160 顶层组件 + 6 子目录；插件 3 个（monopoly-game / library-ops / shell-ops） |
+| 数据 | 40 张实表 + `session_fts` + `storage_audit`；43 索引；29 条迁移 ALTER |
+| 命令 | 116 个 `#[tauri::command]` 注解（以 `docs/project-guide/BASELINE.json` 实测为准） |
+| 插件装配 | `config/codem.base.yml` 170 条 + desktop 覆盖层 |
+| 测试 | 865 文件（用例数与通过数见 `09-CURRENT-STATE.md` §3） |
 | 工具链 | Node 24.19 / npm 11.17 / rustc 1.97.1 |
 
 **版本历程（只列结构性节点）**
@@ -137,6 +140,7 @@ v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 �
 → v1.10–v1.13 团队体系 / 插件市场 / 审计
 → v1.14–v1.15 UI 工艺 / 记忆 / 项目
 → v1.16.3xx 免费模型 / DeepSeek 搜索 / 项目工作台 / 压缩分档
+→ v1.17 桌面远程网关 + Android 本机模式（共享 UI / 能力表 / Keystore / 网关安全）
 ```
 
 ---
@@ -184,6 +188,9 @@ v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 �
 | **Memory / 记忆** | 平台/项目/会话三层持久事实；自动提取 + 审批 |
 | **Gate** | 项目验收命令；`project_report` 里的 passed gate 会被重跑 |
 | **OFM** | Our Free Model，内置免费模型插件（独立 Node 进程） |
+| **桌面远程网关** | PC 远程**唯一入口**：手机经 6 位一次性配对码访问桌面自己的项目/会话/历史；数据仍由桌面拥有（`src/core/remote/gateway-*.ts`、`src-tauri/src/phone/gateway/`） |
+| **Android 本机模式** | 手机上的独立 Host + 数据 + 项目，不依赖电脑；本机模型用 Android Keystore 加密（`packages/host/`、`android-shell/`） |
+| **Host** | 1.17 起只指 Android 本机模式的宿主；不再作为 PC 远程入口（桌面 Host sidecar 已退役） |
 | **DSH** | DeepSeek Harness，主要对标对象 |
 
 ---

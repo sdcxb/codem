@@ -1,0 +1,139 @@
+{
+  "raw": false,
+  "ok": true,
+  "finishedAt": "2026-11-02T23:07:41.510Z",
+  "cases": [
+    {
+      "id": "GWD-0",
+      "ok": true,
+      "skipped": false,
+      "detail": "adb reverse tcp:53097 → PC 网关（手机与 PC 同一 URL）"
+    },
+    {
+      "id": "GWD-1",
+      "ok": true,
+      "skipped": false,
+      "detail": "GET /health → 200 {\"ok\":true,\"service\":\"codem-gateway\"}"
+    },
+    {
+      "id": "GWD-2",
+      "ok": true,
+      "skipped": false,
+      "detail": "未配对访问 /events → 401（必须是 401）"
+    },
+    {
+      "id": "GWD-3",
+      "ok": true,
+      "skipped": false,
+      "detail": "pair.claim 成功（deviceId=dev-d0f9969c）"
+    },
+    {
+      "id": "GWD-4",
+      "ok": true,
+      "skipped": false,
+      "detail": "host.hello capabilities=13 条；写/审批四条齐全=true"
+    },
+    {
+      "id": "GWD-5",
+      "ok": true,
+      "skipped": false,
+      "detail": "session.get 返回 0 条消息，run=null"
+    },
+    {
+      "id": "GWD-6",
+      "ok": true,
+      "skipped": false,
+      "detail": "approval.list 形状正确（当前 0 条待批）"
+    },
+    {
+      "id": "GWD-12",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有真实会话，变更记录用例未执行"
+    },
+    {
+      "id": "GWD-13",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有真实会话，变更记录用例未执行"
+    },
+    {
+      "id": "GWD-14",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有真实会话，变更记录用例未执行"
+    },
+    {
+      "id": "GWD-15",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有真实会话，变更记录用例未执行"
+    },
+    {
+      "id": "GWD-P0",
+      "ok": true,
+      "skipped": false,
+      "detail": "已连上桌面 WebView CDP（127.0.0.1:9333），用真实命令发布探针事件"
+    },
+    {
+      "id": "GWD-P1",
+      "ok": true,
+      "skipped": false,
+      "detail": "SSE 收到探针正文（seq=1, runId=probe-1793660848570）"
+    },
+    {
+      "id": "GWD-P2",
+      "ok": true,
+      "skipped": false,
+      "detail": "SSE 收到终态（seq=2）"
+    },
+    {
+      "id": "GWD-P3",
+      "ok": true,
+      "skipped": false,
+      "detail": "Last-Event-ID=1 补发 2 条；重复 0；终态=true"
+    },
+    {
+      "id": "GWD-P4",
+      "ok": true,
+      "skipped": false,
+      "detail": "gateway.reset 由渲染层发布会被拒绝（正确）"
+    },
+    {
+      "id": "GWD-7",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有模型，真实回合用例未执行（管道由 GWD-P1..P4 验证）"
+    },
+    {
+      "id": "GWD-7b",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有模型，真实回合用例未执行（管道由 GWD-P1..P4 验证）"
+    },
+    {
+      "id": "GWD-8",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有模型，真实回合用例未执行（管道由 GWD-P1..P4 验证）"
+    },
+    {
+      "id": "GWD-9",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有模型，真实回合用例未执行（管道由 GWD-P1..P4 验证）"
+    },
+    {
+      "id": "GWD-10",
+      "ok": true,
+      "skipped": true,
+      "detail": "--probe：没有模型，真实回合用例未执行（管道由 GWD-P1..P4 验证）"
+    },
+    {
+      "id": "GWD-11",
+      "ok": true,
+      "skipped": false,
+      "detail": "Chrome 打开网关：title=\"Codem Remote\"；选中会话=true；发送框=true；只读横幅=false；新建会话入口=false；文件入口可见=true/可点开=true（0 条，错误=无）/关闭=true；变更入口可见=true/可点开=true（0 组，空态=此 Host 不记录文件变更\n当前工作区不是 git 仓库（或机器上没有 git）。变更记录只对 git 工作区生效；这不是「还没有改动」。）/关闭=true；只读标记=undefined"
+    }
+  ]
+}

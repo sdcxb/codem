@@ -220,8 +220,10 @@ async fn start_fake_upstream() -> (u16, tauri::async_runtime::JoinHandle<()>) {
                 }
             }
             let head = String::from_utf8_lossy(&buf).to_string();
-            // 断言边缘标记确实带上了（上游只认带标记的请求）
-            let has_marker = head.to_ascii_lowercase().contains("x-codem-edge:");
+            // 断言 bridge token 确实带上了（bridge 只认带本次运行 token 的请求）
+            let has_marker = head
+                .to_ascii_lowercase()
+                .contains("x-codem-bridge: bridge-token-for-test");
             let body = if has_marker {
                 serde_json::json!({ "ok": true, "sessions": [{ "id": "s1", "title": "真实会话" }] }).to_string()
             } else {
@@ -241,14 +243,14 @@ async fn start_fake_upstream() -> (u16, tauri::async_runtime::JoinHandle<()>) {
     (port, handle)
 }
 
-/// 准备一个"已经在运行"的手机状态（有上游端口与边缘标记）。
+/// 准备一个"已经在运行"的桌面桥状态（有回环端口与内部 token）。
 async fn phone_state_with_upstream(upstream_port: u16) -> Arc<PhoneState> {
     let st = PhoneState::new();
     {
         let mut g = st.inner.lock().await;
         g.running = true;
-        g.upstream_port = upstream_port;
-        g.edge_token = "edge-token-for-test".to_string();
+        g.bridge_port = upstream_port;
+        g.bridge_token = "bridge-token-for-test".to_string();
     }
     st
 }

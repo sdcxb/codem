@@ -243,16 +243,22 @@ function getToolLabel(toolName: string, content: string, totalLines: number, ori
  * @param llmMessages - The messages array returned by convertMessagesToLLM()
  * @returns A new messages array with old tool results replaced by placeholders
  */
-export function microCompact(llmMessages: any[]): MicroCompactResult {
+export function microCompact(llmMessages: any[], opts: { keepRecent?: number } = {}): MicroCompactResult {
+  /**
+   * 水位 ≥ 0.9 时把「最近 10 条不折」缩到 2 条（P2 阶梯 3）：
+   * 单个巨大工具结果卡在最近 10 条里，是 overBudget 最常见的来源。
+   * 只替换 tool 的 content（保留 role/配对），模型不会看到「调了工具没有结果」。
+   */
+  const keep = Math.max(2, Math.min(KEEP_RECENT_MESSAGES, Math.floor(opts.keepRecent ?? KEEP_RECENT_MESSAGES)));
   const totalMessages = llmMessages.length;
 
   // If the conversation is too short, don't bother
-  if (totalMessages <= KEEP_RECENT_MESSAGES) {
+  if (totalMessages <= keep) {
     return { compactedCount: 0, charsSaved: 0, messages: llmMessages };
   }
 
   // Find the cutoff index: messages before this index are "old"
-  const cutoffIndex = totalMessages - KEEP_RECENT_MESSAGES;
+  const cutoffIndex = totalMessages - keep;
 
   // We need to find tool results that belong to old assistant messages.
   // In the LLM message format:

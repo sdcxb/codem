@@ -64,7 +64,7 @@ function installFsStub(): void {
 }
 
 import { runDatabaseMaintenance } from "../core/storage/maintenance";
-import { createMessage, listMessages, listMessagesFromIndex, listMessagesMerged, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
+import { createMessage, listMessages, listMessagesFromIndex, listMessagesMerged, listTimelineMessages, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
 import { appendSessionMessage, readSessionMessages, durableMessageIds, backfillSessionLog, flushSessionLogWrites, sessionLogPath, __resetJsonlCache } from "../core/storage/session-jsonl";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
@@ -265,7 +265,9 @@ describe("追加日志（JSONL）", () => {
     expect(result.trimmedIndexMessages).toBe(5); // 裁掉 5 条（保留最新 3）
     // 索引被有界裁剪，但**读者仍然看到完整历史**（第 79 波审计修正：合并收进 listMessages）
     expect(listMessagesFromIndex(SESSION)).toHaveLength(3);
-    expect(listMessages(SESSION)).toHaveLength(8);
+    // 2026-11 语义定稿：默认列表不铺开被裁历史（与 FIXB-4a 同一口径）；完整历史显式走 listTimelineMessages
+    expect(listMessages(SESSION)).toHaveLength(3);
+    expect(listTimelineMessages(SESSION)).toHaveLength(8);
   });
   it("SLOG-9: 删除会留墓碑 —— 被删消息不会从权威日志里复活（本波自查发现的问题）", async () => {
     createMessage(makeMessage("keep1", 1000), SESSION);

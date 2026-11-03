@@ -1,0 +1,164 @@
+{
+  "spike": "android-device-cases",
+  "cases": [
+    {
+      "id": "DC-1",
+      "title": "安装后冷启动，设备内 Host 就绪（端口非 8787、随机）",
+      "ok": true,
+      "detail": "host-64617461 port=38603"
+    },
+    {
+      "id": "DC-2",
+      "title": "WebView 加载共享 UI（标题 + 新建会话入口）",
+      "ok": true,
+      "detail": "title=Codem Remote"
+    },
+    {
+      "id": "DC-3",
+      "title": "页面点「新建会话」→ Host 真的多一条会话",
+      "ok": true,
+      "detail": "count 1→2"
+    },
+    {
+      "id": "DC-4",
+      "title": "页面输入并发送 → 真跑一轮（工具卡 + 最终回答）",
+      "ok": true,
+      "detail": "含 DEVICE_DONE + glob"
+    },
+    {
+      "id": "DC-5a",
+      "title": "bash 工具触发审批卡（页面可见命令）",
+      "ok": true
+    },
+    {
+      "id": "DC-5b",
+      "title": "点「批准」→ 命令在设备工作区真的执行（exit 0）",
+      "ok": true
+    },
+    {
+      "id": "DC-5c",
+      "title": "审批卡在答复后消失",
+      "ok": true
+    },
+    {
+      "id": "DC-6a",
+      "title": "上一轮结束后出现「继续」",
+      "ok": true
+    },
+    {
+      "id": "DC-6b",
+      "title": "点「继续」才发下一轮（未自动续跑）",
+      "ok": true,
+      "detail": "run-1793596332903-5k92n4 → run-1793596334046-mxyso4"
+    },
+    {
+      "id": "DC-7",
+      "title": "深链打开指定会话（标题可见）",
+      "ok": true,
+      "detail": "新会话"
+    },
+    {
+      "id": "DC-8",
+      "title": "force-stop 重启后会话仍在（持久化）",
+      "ok": true,
+      "detail": "sessions=2"
+    },
+    {
+      "id": "DC-14",
+      "title": "附件上传→引用→模型收到→工作区落地",
+      "ok": true,
+      "detail": "att=att-mvysya82-530dlm"
+    },
+    {
+      "id": "DC-11",
+      "title": "文件浏览 + 只读预览（设备 UI）",
+      "ok": true
+    },
+    {
+      "id": "DC-12",
+      "title": "宽屏（900px）双列：侧栏与对话同时可见",
+      "ok": true,
+      "detail": "{\"sidebar\":\"flex\",\"chat\":\"flex\"}"
+    },
+    {
+      "id": "DC-15",
+      "title": "599px 窄屏行为不变：未选会话看列表、无折叠入口",
+      "ok": true,
+      "detail": "{\"sidebar\":\"flex\",\"chat\":\"none\",\"toggle\":\"absent\",\"inSession\":false}"
+    },
+    {
+      "id": "DC-16a",
+      "title": "900px 下出现「收起列表」按钮",
+      "ok": true,
+      "detail": "true 收起列表"
+    },
+    {
+      "id": "DC-16b",
+      "title": "收起后侧栏不可见（display:none）且列表仍在 DOM（不丢滚动/搜索）",
+      "ok": true,
+      "detail": "{\"sidebar\":\"none\",\"layout\":\"layout in-session sidebar-collapsed\",\"text\":\"列表\",\"listStillRendered\":true}"
+    },
+    {
+      "id": "DC-16c",
+      "title": "再点「列表」恢复侧栏（类名回退）",
+      "ok": true,
+      "detail": "{\"sidebar\":\"flex\",\"layout\":\"layout in-session\"}"
+    },
+    {
+      "id": "DC-16d",
+      "title": "599px 行内会话：折叠按钮不出现",
+      "ok": true,
+      "detail": "{\"toggle\":\"none\",\"inSession\":true}"
+    },
+    {
+      "id": "DC-13",
+      "title": "宽屏（1200px）三列：第三列文件预览可见且有内容，默认停在「文件」页签",
+      "ok": true,
+      "detail": "{\"detail\":\"flex\",\"rows\":2,\"tab\":\"文件\"}"
+    },
+    {
+      "id": "DC-17a",
+      "title": "切到「差异」：显示当前选中文件的 diff（或明确的非 git/无改动态）",
+      "ok": true,
+      "detail": "index.html :: index.html刷新\n此工作区不是 git 仓库，无法显示 diff"
+    },
+    {
+      "id": "DC-17b",
+      "title": "清空选择后「差异」给明确空态（不留上一次 diff）",
+      "ok": true,
+      "detail": "未选择文件\n先在「文件」里选一个文件\n去选择"
+    },
+    {
+      "id": "DC-17c",
+      "title": "空态「去选择」回到文件页签",
+      "ok": true,
+      "detail": "true"
+    },
+    {
+      "id": "DC-18",
+      "title": "「变更」页签只读：有内容/空态，且无回滚按钮",
+      "ok": true,
+      "detail": "{\"tab\":\"true\",\"panel\":\"只读变更记录 刷新\\n此 Host 不记录文件变更\\n此 Host 的工作区不是 git 仓库（或机器上没有 git）。变更记录只对 git 工作区生效；这不是「还没有改动」。\",\"revert\":false}"
+    },
+    {
+      "id": "DC-10",
+      "title": "按 HOME 后 Host 仍存活（前台服务常驻）",
+      "ok": true
+    },
+    {
+      "id": "DC-9",
+      "title": "全程无崩溃（crash buffer 为空）",
+      "ok": true,
+      "detail": "empty"
+    }
+  ],
+  "wide": "{\"sidebar\":\"flex\",\"chat\":\"flex\"}",
+  "narrow": "{\"sidebar\":\"flex\",\"chat\":\"none\",\"toggle\":\"absent\",\"inSession\":false}",
+  "folded": "{\"sidebar\":\"none\",\"layout\":\"layout in-session sidebar-collapsed\",\"text\":\"列表\",\"listStillRendered\":true}",
+  "unfolded": "{\"sidebar\":\"flex\",\"layout\":\"layout in-session\"}",
+  "narrowSession": "{\"toggle\":\"none\",\"inSession\":true}",
+  "third": "{\"detail\":\"flex\",\"rows\":2,\"tab\":\"文件\"}",
+  "diffPane": "{\"filesHidden\":true,\"path\":\"index.html\",\"text\":\"index.html刷新\\n此工作区不是 git 仓库，无法显示 diff\"}",
+  "ok": true,
+  "hello": true
+}

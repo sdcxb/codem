@@ -39,7 +39,12 @@ import type { MessageAttachment } from "../../store";
 import { getNeedsYouQueue } from "./needs-you-queue";
 import { tryGetCtx } from "../consumer/index.ts";
 import { AgentMessageQueue } from "./agent-message-queue";
-import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
+import {
+  getPermissionManager,
+  describeUserDenial,
+  type PermissionRequest,
+  type PermissionResult,
+} from "../permission/permission";
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
@@ -56,7 +61,7 @@ import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, messageCharSize,
+import { nextConsecutiveCompactions, planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, messageCharSize,
   messageCharSizeForEstimate,
   recentToolResultIds,
 } from "./compaction-budget";
@@ -310,6 +315,21 @@ export interface LoopConfig {
   compactionThreshold: number;
   enableReactiveCompaction: boolean;
   enablePermissions: boolean;
+  /**
+   * 改动前的自动快照（默认开启）。
+   *
+   * Host 在**共享桌面工作区**里关闭它：① Host 没有快照查看/回滚入口，这些 JSON 对它是纯负债，
+   * 却会把完整源码（以及被写入的敏感文件内容）落进用户 git 工作区；② 快照在工具执行**之前**
+   * 读目标文件，而 Host 的写审批在工具内部 ⇒ 快照会先于审批读盘，绕开敏感读取审批。
+   */
+  enableSnapshots?: boolean;
+  /**
+   * 命中 `read` 缓存时也要**跳过缓存**的路径判定（默认无）。
+   *
+   * Host 共享工作区把它设成"敏感路径"：一次读取批准只覆盖一次读取，
+   * 若第二次读取命中缓存，就不会再走工具、也不会再弹审批 —— "每次读取都要批准"会变成假话。
+   */
+  bypassReadCacheFor?: (path: string) => boolean;
   maxOutputTokens: number;
   temperature: number;
   model?: string;
@@ -324,6 +344,19 @@ export interface LoopConfig {
 
   /** (F1.2) Called after context compaction completes, for triggering memory extraction */
   onCompactionComplete?: () => void;
+  /**
+   * 工具结果**落库钩子**：在把 `tool_complete` 事件交给调用方**之前**同步调用。
+   *
+   * 为什么需要它：`buildMessages` 每轮从存储重建上下文，而调用方通常在处理
+   * `tool_complete` 事件时才落库 —— 那时下一轮请求的消息序列已经定稿，
+   * 模型看不到工具结果（Host/无人值守场景实测：重复调同一个工具直到空转）。
+   * 钩子给了落库方一个「在重建之前」的确定时机；实现必须是同步的（或自行排队）。
+   */
+  onToolResult?: (info: {
+    sessionId: string;
+    toolCall: { id: string; name: string; input?: unknown };
+    result: unknown;
+  }) => void;
 
   /** (F1.3) Called after each turn completes, for triggering memory extraction */
   onTurnComplete?: (usage: TokenUsage) => void;
@@ -1512,14 +1545,28 @@ private pipelineHost(): ToolPipelineHost {
         : typeof args.command === "string" ? args.command
         : undefined;
       const permissionManager = this.getPermissionManager();
-      let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource);
+      /**
+       * 「始终允许」是**会话级**记忆（`PermissionEvaluator.setAlwaysAllow` 的第 4 个参数），
+       * 所以判定必须带上本次调用所属的会话 —— 否则 A 会话里放行过的命令会在 B 会话被默认放行。
+       */
+      const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : undefined;
+      let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource, "build", sessionId);
+
+      /**
+       * ★ 权限语义兑现：`evaluate()` 返回的 `allow` **分不清**"用户点过『始终允许』"与
+       * "build agent 本来就全放行"，而下面的 bash 升级必须只覆盖后者 ——
+       * 用户明确放行过的命令再问一遍，那个按钮就等于没接线。所以这里显式查一次记忆。
+       */
+      const grantedAlways = resource
+        ? permissionManager.getEvaluator().getAlwaysAllow(toolName, resource, sessionId)
+        : undefined;
 
       // Bash deep security analysis — detect dangerous patterns
       if (toolName === "bash" && typeof args.command === "string") {
         try {
           const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
           const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
-          if (bashResult.action === "ask" && rawAction === "allow") {
+          if (bashResult.action === "ask" && rawAction === "allow" && grantedAlways !== "allow") {
             console.log(`[Pipeline] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
             rawAction = "ask";
           }
@@ -1544,7 +1591,13 @@ private pipelineHost(): ToolPipelineHost {
         const result = await this.config.onPermissionRequest(request);
 
         if (result.action === "deny") {
-          return { allowed: false, denyMessage: `Permission denied by user for tool "${toolName}"` };
+          // 用户理由必须进模型可见的工具结果；单行化/截断/空理由回落见 describeUserDenial()
+          return { allowed: false, denyMessage: describeUserDenial(toolName, result.reason) };
+        }
+
+        // 「始终允许」的唯一消费点：只记本会话 + 精确 (tool, resource)（通配/跨会话会盖过 S2 硬 deny）
+        if (result.action === "allow" && result.alwaysAllow === true && resource && sessionId) {
+          permissionManager.getEvaluator().setAlwaysAllow(toolName, resource, "allow", sessionId);
         }
       } else if (action === "deny") {
         return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
@@ -2710,7 +2763,16 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
           this.lastBuildReturnAt = Date.now();
           this.state.compactedThisIteration = true;
-          this.state.consecutiveCompactions++;
+          // BRK：按**效果**计数（压力降了就不算"无效压缩"），而不是按次数
+          {
+            const pressureAfter = this.estimateContextPressure(messagesForIteration);
+            this.state.consecutiveCompactions = nextConsecutiveCompactions(
+              this.state.consecutiveCompactions,
+              this.state.contextPressure,
+              pressureAfter,
+              this.config.compactionThreshold,
+            );
+          }
         }
       } else {
         // Reset consecutive compactions if no compaction needed
@@ -4938,7 +5000,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * ???????**???**????? before ?????????????
          * ??????????????????? `needsPreCallSnapshotForCall`?
          */
-        if (needsPreCallSnapshotForCall(name, callContract, args) && ctx.cwd) {
+        if (needsPreCallSnapshotForCall(name, callContract, args) && ctx.cwd && this.config.enableSnapshots !== false) {
           /**
            * ★ 第 46 波：告诉追踪器"**这个工具可能改工作区**" ✓ ⇒
            * 它下次 `finalize()` 才会去发 git ✓；否则（纯读的迭代 ✓）**一次 git 都不发** ✓。
@@ -5009,7 +5071,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const readLimit = typeof args.limit === "number" ? args.limit : 2000;
         /** 第 114 波：本次读取是否要行号（它**必须**进缓存键，见下面的注释） */
         const readLineNumbers = args.line_numbers === true;
-        if ((name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
+        /**
+         * 敏感路径**不进读缓存**（Host 共享工作区）：一次批准只覆盖一次读取，
+         * 命中缓存就等于绕过了下一次审批。判定由宿主注入（循环不认识业务规则）。
+         */
+        const readCacheEligible =
+          typeof this.config.bypassReadCacheFor === "function" ? !this.config.bypassReadCacheFor(filePath) : true;
+        if (readCacheEligible && (name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
           const cached = this.readCache.get(filePath)!;
           /**
            * 第 114 波：**行号开关也必须进缓存键**。
@@ -5366,7 +5434,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // ===== Update state after tool execution =====
         // Record read content for future cache hits (with the range it was read with,
         // so a later read of a different range does not reuse it)
-        if ((name === "read" || name === "read_file") && filePath && result.output) {
+        if (readCacheEligible && (name === "read" || name === "read_file") && filePath && result.output) {
           this.readCache.set(filePath, {
             offset: readOffset,
             limit: readLimit,
@@ -5520,7 +5588,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         break;
 
         case "tool_complete":
-          // Just yield - App.tsx handles persistence via useAppStore
+          // 落库钩子必须在 yield 之前：调用方在事件处理里落库时，下一轮请求已定稿
+          try {
+            this.config.onToolResult?.({
+              sessionId,
+              toolCall: {
+                id: String(event.toolCall?.id ?? ""),
+                name: String(event.toolCall?.name ?? ""),
+                input: event.toolCall?.input,
+              },
+              result: event.result,
+            });
+          } catch (e) {
+            reportPersistFailure("loop.onToolResult", e, "工具结果落库钩子失败（本轮可能看不到该结果）");
+          }
           yield event;
           this.state.consecutiveErrors = 0;
           // P1: Record trajectory — tool result
@@ -5807,7 +5888,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 没有可压的就返回 compactedCount=0。所以直接让它自己判断更准确，
          * 也去掉了这个语义错误的闸门。
          */
-        const microResult = microCompact(valid);
+        const microResult = microCompact(valid, {
+          keepRecent:
+            this.state.contextPressure >= 0.9 ? 2 : this.state.contextPressure >= 0.8 ? 5 : undefined,
+        });
         if (microResult.compactedCount > 0) {
           finalMessages = microResult.messages;
         }

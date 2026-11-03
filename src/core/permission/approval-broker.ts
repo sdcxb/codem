@@ -8,7 +8,7 @@
  * | 路径 | 谁来回答 | 代码 |
  * |---|---|---|
  * | 桌面前台 | 桌面 DecisionTray | `App.tsx:3291-3300` 把请求塞进 `pendingPermissions` |
- * | **手机** | **没有人** → 落到 `executor.ts:368-374` 的缺省：full 放行，否则**自动拒绝** | `phone-link.ts:223-280` 没传回调 |
+ * | **远端** | **没有人** → 落到 `executor.ts:368-374` 的缺省：full 放行，否则**自动拒绝** | `desktop-engine.ts` 没传回调 |
  * | **微信** | 同上的自动拒绝 | `wechat-bridge.ts:665` 注释自认：「full→放行；否则自动拒绝」 |
  *
  * 后果：手机/微信上发一句"帮我改一下这个文件"，如果那次编辑需要批准，
@@ -44,7 +44,7 @@
  *   「NO time-based timeout. The user may take as long as they need.」
  *   上一版实现过 5 分钟超时并因此被删掉。所以这里同样**不设超时**；
  *   悬空由**调用方**在回合收尾时 `closeSession()` 收口（手机路径本来就有
- *   `TURN_TIMEOUT_MS` + `cancelSessionExecution`，见 `phone-link.ts:251-257`）。
+ *   `TURN_TIMEOUT_MS` + `cancelSessionExecution`，见 `desktop-engine.ts`）。
  * - DSH 把审批经官方 `pending request` 回填给 Agent。我们是**自己 hold 住 Promise**，
  *   因为 `agentic-loop.ts:987-1002` 就是 `await onPermissionRequest(request)` 的形状，
  *   直接复用比再包一层适配器更少出错。

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Codem Android 外壳的 manifest（阶段 3 自包含形态）。
+
+  - INTERNET：Host 与 WebView 都在本机（127.0.0.1），仍需要网络权限；
+  - usesCleartextTraffic：本机 HTTP（生产远程会换 WSS/Tailscale，见 ADR-0003 §5）；
+  - extractNativeLibs：可执行文件放 lib/<abi>/lib*.so，安装时由系统解出并可执行；
+  - targetSdkVersion=28：Android 10+ 对 targetSdk≥29 禁止从可写目录 exec / ptrace 子进程，
+    PRoot 依赖这两件事（与 Termux 同一取舍；代价是不能上架 Play，本项目 sideload）。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.codem.remote"
+    android:versionCode="2"
+    android:versionName="0.2.0">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+      allowBackup=false / fullBackupContent=false：
+        应用数据里现在只有 **Keystore 加密后**的模型 Key（`shared_prefs/codem.xml` 的
+        `llm_key_enc`），但密文一旦被云备份带走，换机恢复后大概率解不开（Keystore 密钥不随备份走）
+        ⇒ 用户会看到"Key 解不开"而不是"没有 Key"。关掉备份既避免误导，也缩小落盘面。
+    -->
+    <application
+        android:label="Codem"
+        android:usesCleartextTraffic="true"
+        android:extractNativeLibs="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 常驻 Host：前台服务 + 唤醒锁（ADR-0002 §3.2） -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false" />
+    </application>
+</manifest>

@@ -45,7 +45,7 @@
       "why": "反向对照：不写 messageCount 时判据不许红",
       "patches": [
         {
-          "file": "src/core/phone-link/phone-link.ts",
+          "file": "src/core/remote/desktop-engine.ts",
           "from": "    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；",
           "to": "    // 反向对照：只改这一行注释，不写 messageCount 的行为逐字不变\n    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；"
         }

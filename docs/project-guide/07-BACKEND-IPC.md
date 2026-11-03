@@ -1,8 +1,8 @@
 # 07 · Rust 后端与 IPC 命令面
 
-> 基线：1.16.330 ｜ 2026-10-26
-> 代码：`src-tauri/src` 26 个 `.rs` / 约 2.2 万行；`src-tauri/codem-db/src` 11 个 / 约 1 万行。
-> 口径：`#[tauri::command]` 注解 **118**（`get_process_token_info` 在 Windows / 非 Windows 各一份）；不同命令名 **117**；`generate_handler!` 注册 **117**，与注解双向无差集。
+> 基线：1.17.0（待发布）｜ 2026-11-03
+> 代码：`src-tauri/src` 29 个 `.rs` / 约 2.15 万行；`src-tauri/codem-db/src` 13 个 / 约 1.06 万行。
+> 口径：`#[tauri::command]` 注解 **116**（`docs:sync` 递归实测；`BASELINE.json` 的 `tauriCommandAnnotations`）。分组表按职责近似；逐条以 `generate_handler!` 与 BASELINE 为准。
 
 ---
 
@@ -19,20 +19,21 @@
 | `src-tauri/src/js_sandbox.rs` | 870 / 35 KB | boa_engine 单发沙箱；2 命令 |
 | `src-tauri/src/js_sandbox_session.rs` | 1052 / 44 KB | 会话级 JS 沙箱；4 命令 |
 | `src-tauri/src/ilink/` | 5 文件 | 微信 iLink 传输层门面；5 命令 |
-| `src-tauri/src/phone/` | 13 文件 | Phone Link：TLS 边缘 + 回环上游 + 配对 + AA；19 命令 |
+| `src-tauri/src/phone/` | 14 文件 | 桌面引擎桥（只绑回环）+ AA connector + `gateway/`（桌面远程网关）；旧 LAN 配对/中继已删除 |
+| `src-tauri/src/phone/gateway/` | 6 文件 | 桌面远程网关：HTTP/配对/事件/工作区/静态资源；**PC 远程唯一入口** |
 | `src-tauri/src/main.rs` | 5 行 | 只调 `codem_lib::run()` |
 | `codem-db/src/migrate.rs` | 3500 / 169 KB | 旧库迁移 + 对账 |
 | `codem-db/src/repo.rs` | 2353 / 120 KB | 类型化仓储 |
 | `codem-db/src/engine.rs` | 1010 / 47 KB | 连接/WAL/事务/健康 |
 | `codem-db/src/crud.rs` | 877 / 38 KB | 通用表/列白名单 CRUD |
 | `codem-db/src/{lib,config,audit,schema,error,fts,authorizer}.rs` | — | 命令白名单/配置/删除审计/schema/错误码/FTS/SQL 白名单 |
-| `codem-db/sql/{schema.sql,tables.json,migrations.json,fts.json}` | 595 行 / 39 表 | 真源 |
+| `codem-db/sql/{schema.sql,tables.json,migrations.json,fts.json}` | 595 行 / 40 表 | 真源 |
 
-> 旧文档 `docs/HANDOVER-2026-10-17.md:41` 说“`#[tauri::command]` 全在 lib.rs”已不成立：118 个注解里只有 66 个在 lib.rs。
+> 旧文档 `docs/HANDOVER-2026-10-17.md:41` 说“`#[tauri::command]` 全在 lib.rs”已不成立：当前 116 个注解分布在 lib.rs、phone（含 gateway）、ofm、storage、secret、ilink、js_sandbox*、crash_evidence 等模块。
 
 ---
 
-## 2. 命令面（117 注册）
+## 2. 命令面（116 个注解）
 
 | 域 | 数 | 命令 |
 |---|---:|---|
@@ -46,13 +47,13 @@
 | 配置 / provider / 消息桩 | 8 | `get_providers` `add_provider` `remove_provider` `get_default_model` `set_default_model` `get_default_agent` `set_default_agent` `send_message` |
 | JS 沙箱 | 6 | `js_run_sandboxed` `jsvm_host_reply` `js_sandbox_open` `js_sandbox_eval` `js_sandbox_call_function` `js_sandbox_close` |
 | 微信 iLink | 5 | `ilink_status` `ilink_start_login` `ilink_login_submit_verify` `ilink_logout` `ilink_send_text` |
-| Phone Link | 19 | `phone_start` `phone_stop` `phone_status` `phone_decide` `phone_unpair` `phone_respond` `phone_ca_pem` `phone_ca_fingerprint` `aa_account_login` `aa_account_send_code` `aa_account_logout` `aa_account_status` `aa_connect` `aa_connector_start` `aa_connector_stop` `aa_connector_status` `phone_relay_start` `phone_relay_stop` `phone_relay_status` |
+| 桌面网关 / AA | 17 | `gateway_start` `gateway_stop` `gateway_status` `gateway_pair_start` `gateway_publish_event`（+ 网关 workspace 3 个）；`remote_respond` `aa_account_login` `aa_account_send_code` `aa_account_logout` `aa_account_status` `aa_connect` `aa_connector_start` `aa_connector_stop` `aa_connector_status` |
 | OFM | 9 | `ofm_extension_dir` `ofm_bundled_dir` `ofm_bundled_node` `ofm_stage_node` `ofm_start` `ofm_stop` `ofm_state` `ofm_kill_lock_holder` `ofm_log_tail` |
 | 日志 / 崩溃 | 3 | `log_renderer_event` `log_renderer_heartbeat` `take_renderer_crash_marker` |
 | 系统 / 安装 / 其它 | 3 | `get_system_info` `get_installer_default_lang` `codegraph_install` |
-| **合计** | **117** | |
+| **合计** | **116** | 以 `docs/project-guide/BASELINE.json` 的 `tauriCommandAnnotations` 为准（分组按职责近似） |
 
-**分发**：lib.rs 66、phone/mod.rs 16、ofm 9、storage 7、ilink 5、js_sandbox_session 4、crash_evidence 3、phone/connector 3、secret 3、js_sandbox 2。
+**分发**：lib.rs、phone（含 gateway）、ofm、storage、ilink、js_sandbox_session、crash_evidence、secret、js_sandbox；以 `docs:sync` 的实测计数为准。
 
 > **内存桩**：`send_message` 只 `emit` 后返回 `Ok(())`；`get_providers/add_provider/...` 的初始 `api_key` 是空串、默认模型硬编码 `gpt-4o`。不要据这些命令推断后端有 LLM 客户端。
 
@@ -168,17 +169,29 @@ storage_invoke(command, params)
 
 ---
 
-## 8. Phone Link / iLink
+## 8. 桌面远程网关 / 桌面引擎桥 / AA / iLink
 
-### 8.1 Phone Link（`phone/`）
+### 8.0 桌面远程网关（`phone/gateway/`）—— PC 远程唯一入口
 
-- 拓扑：TLS 边缘 `0.0.0.0:0` + 上游 `127.0.0.1:0`；
-- 准入：Host 白名单无通配；双跨站判据；每次运行随机 `x-codem-edge`；恒定时间比对；
-- 配对：5 分钟窗口、最多 8 设备、cookie 30 天、请求 4 MiB；只存 `sha256(secret)`；
-- 引擎缺席返回 502；
-- CA 指纹/PEM 各一命令；
-- 中继 connector：纯出站、不开 LAN 端口；tokio；心跳 20s / 重连 3s；字段对齐 AA；
-- 换环境即失效：自签 CA 无公共兜底，唯一防线是核对指纹。
+- 拓扑：手机浏览器 → 本机 HTTP（只绑 `127.0.0.1:0` 随机端口）→ `remote-request` → 桌面 WebView TS 回答；
+  **网关不建库**，读写的都是桌面现有项目/会话/历史；不开放公网端口（远程侧需 adb reverse 或外部通道）。
+- 生命周期：**不自动启动**；`gateway_start` / `gateway_stop` / `gateway_status`；停止会等监听任务真正结束
+  并清空配对状态（所有设备 cookie 随之下线）。
+- 配对：`gateway_pair_start` 生成 6 位一次性码（5 分钟有效、单次使用、sha256 摘要、设备上限 8）；
+  配对成功下发 HttpOnly 设备 cookie（`codem_gateway_device`）；**停止网关 = 撤销全部已配对设备**。
+- 准入：设备 cookie 鉴权 + 同源校验（带 `Origin` 必须与 `Host` 一致）；静态资源与 `/rpc`、`/events` 共用同一份配对状态。
+- 能力：发消息 / 流式事件 / 审批 / 取消 / 文件树 / 预览 / diff / 变更；**只读或可写由能力表决定**；
+  敏感文件读取走审批；手机端暂不支持新建会话或上传附件。
+- 安全边界：旧 LAN/TLS/二维码配对与**桌面 Host sidecar 已退役**；不要在这里加回第二套“连电脑”地址/配对码。
+
+### 8.1 桌面引擎桥（AA 数据面，`phone/mod.rs`）
+
+- 拓扑：只绑 `127.0.0.1:0` 的 bridge；**没有** LAN/TLS/0.0.0.0/静态手机页/配对 cookie；
+- 准入：每次 `start_bridge` 随机生成 32 字节内部 token（`x-codem-bridge`），只有 AA connector 拿得到；恒定时间比对；
+- 配对：旧 LAN 配对（二维码/批准/设备列表/自签 CA/中继）已**整块删除**；用户可见配对只剩桌面网关的 6 位一次性码；
+- 引擎缺席返回 504；`remote_respond` 是唯一回填命令；
+- AA connector 把 AA 服务端请求转给 bridge；账号/设备凭据落 `phone/aa-account.json`（目录名沿用，避免破坏已登录用户）；
+- 换环境即失效：AA 需要重新登录。**这条桥只是 AA 的数据面，不是 PC 远程入口**；Host 也不再承担 PC 远程。
 
 ### 8.2 iLink（`ilink/`）
 
@@ -220,8 +233,8 @@ storage_invoke(command, params)
 6. **宠物窗与主窗共用 capability**：自定义命令不受 ACL 约束 ⇒ pet 页面理论上可调全部命令（推断，未运行验证）。
 7. **PTY 无 TTL / 无每会话上限**；退出 no-wait kill ⇒ 可能孤儿 `cmd.exe`。
 8. **级联删除闸门只覆盖 5 张根表**；其它表只回报 `affected_rows`。
-9. **文档/版本漂移**：HANDOVER 说命令全在 lib.rs；AGENTS 写 1.16.323，实际 1.16.330。
-10. **换环境即失效两条**：DPAPI 密文换机/换账户解不开；手机自签 CA 无公共兜底。
+9. **文档/版本漂移**：HANDOVER 说命令全在 lib.rs；AGENTS 正文停在 1.16.323。当前命令面以 BASELINE 的 116 为准。
+10. **换环境即失效两条**：DPAPI 密文换机/换账户解不开；AA 账号/设备凭据换机后要重新登录。
 
 ---
 

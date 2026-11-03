@@ -151,7 +151,7 @@ if (args.includes("--md")) {
     "",
     "- 聚合阈值**挡不住**「某个文件掉到 0、总量被别处补回来」。按文件的 floors 是很自然的下一步；",
     "  现在只按目录（上面那几个 glob）设了地板，因为再细的数字需要一次专门的测量。",
-    "- 未覆盖的大块（`core/cicd` / `core/config` / `core/provider` / `core/phone-link` 等）",
+    "- 未覆盖的大块（`core/cicd` / `core/config` / `core/provider` / `core/remote` 等）",
     "  是**已知**的：它们要么依赖真机外部进程、要么只有 UI 接线 —— 数字低本身不是缺陷，",
     "  但「低且没人知道为什么低」是缺陷，所以这张表把它们逐区列出来。",
   );
