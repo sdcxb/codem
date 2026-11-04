@@ -8,7 +8,8 @@
  *
  * 1. 看进度（阶段 X/Y、当前阶段交付物、自动继续次数、重规划次数、用量）；
  * 2. 停止（立即暂停，可再继续；已完成阶段不会重跑）；
- * 3. 改目标（改意图 —— 只有用户能改契约；继续时会重新规划）。
+ * 3. 改目标（改意图 —— 只有用户能改契约；继续时会重新规划）；
+ * 4. 取消目标（结束、不可继续 —— 暂停后没有这个出口就会一直挂在目标条上，真机 bug）。
  *
  * ## 数据来源
  *
@@ -19,6 +20,7 @@ import { useState } from "react";
 
 import { useLang } from "../core/i18n/lang";
 import {
+  cancelSessionGoal,
   changeGoalContract,
   getGoalDetails,
   resumeSessionGoal,
@@ -262,6 +264,26 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
           <button type="button" className="guidance-action-btn" data-testid="goal-edit" onClick={startEdit}>
             {zh ? "改目标" : "Edit goal"}
           </button>
+          {/*
+           * 取消目标：paused/blocked 时**必须有**出口。
+           * 只有「继续目标」时，用户暂停后若不想继续（例如发现目标跑偏）就没有任何结束入口，
+           * 界面会一直停在目标条 + 引导输入（真机 bug：暂停后挂住）。
+           */}
+          {view.status !== "completed" && view.status !== "cancelled" ? (
+            <button
+              type="button"
+              className="guidance-action-btn"
+              data-testid="goal-cancel"
+              title={zh ? "结束该目标（不可继续）" : "End this goal (cannot resume)"}
+              onClick={() => {
+                const res = cancelSessionGoal(sessionId);
+                setNote(res.ok ? "" : `${zh ? "无法取消：" : "Cannot cancel: "}${res.reason ?? ""}`);
+                refreshGoalView(sessionId);
+              }}
+            >
+              {zh ? "取消目标" : "Cancel goal"}
+            </button>
+          ) : null}
         </div>
       </div>
 

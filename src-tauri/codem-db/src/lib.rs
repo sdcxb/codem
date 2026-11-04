@@ -14,6 +14,8 @@ pub mod audit;
 pub mod authorizer;
 pub mod config;
 pub mod crud;
+/// 项目级文档索引库（独立 SQLite；见 `docs/architecture/ADR-0008-PROJECT-DOCUMENT-INDEX.md`）
+pub mod docs;
 pub mod engine;
 pub mod fts;
 pub mod error;
@@ -123,6 +125,22 @@ pub const COMMANDS: &[&str] = &[
     "fts.search",
     "fts.upsert",
     "fts.remove",
+    // ===== 项目级文档索引（独立库 `documents/index.db`）=====
+    // 登记在这里是为了让渲染侧命令字面量与白名单**双向可对账**（`check-command-parity`）；
+    // 执行在宿主的文档引擎里（`StorageState::docs_engine()`），不在主库 dispatch。
+    "documents.upsert_document",
+    "documents.get",
+    "documents.list",
+    "documents.update_status",
+    "documents.write_batch",
+    "documents.search",
+    "documents.outline",
+    "documents.chunks",
+    "documents.pages",
+    "documents.delete",
+    "documents.stats",
+    "documents.reset",
+    "documents.health",
 ];
 
 /// 统一入口：命令名 + 结构化参数 → JSON 结果。
@@ -256,10 +274,41 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "fts.search" => migrate::fts_search(engine, params),
         "fts.upsert" => migrate::fts_upsert(engine, params),
         "fts.remove" => migrate::fts_remove(engine, params),
+        // ===== 项目级文档索引（独立库；由宿主进程的 `docs::invoke` 执行）=====
+        // 这些名字登记在白名单里是为了让渲染侧命令与 `COMMANDS` **双向可对账**
+        // （`check-command-parity`），实际执行不经过这里 —— 它们走
+        // `StorageState::docs_engine()` 打开的 `<dataRoot>/documents/index.db`。
+        //
+        // 逐条显式列出（而不是 `c if c.starts_with("documents.")`）的原因：
+        // 判据 `storage-command-parity` 的 DEPLOY-1 用**逐行** `"命令" =>` 解析 dispatch，
+        // 或模式（`"a" | "b" =>`）虽然运行时正确，却让"声明了但没接线"这条检查失效。
+        "documents.upsert_document" => documents_from_host(),
+        "documents.get" => documents_from_host(),
+        "documents.list" => documents_from_host(),
+        "documents.update_status" => documents_from_host(),
+        "documents.write_batch" => documents_from_host(),
+        "documents.search" => documents_from_host(),
+        "documents.outline" => documents_from_host(),
+        "documents.chunks" => documents_from_host(),
+        "documents.pages" => documents_from_host(),
+        "documents.delete" => documents_from_host(),
+        "documents.stats" => documents_from_host(),
+        "documents.reset" => documents_from_host(),
+        "documents.health" => documents_from_host(),
         other => Err(DbError::unsupported(format!(
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),
     }
+}
+
+/// 文档索引命令的**主库侧**回答：明确告诉调用方它该走宿主的文档引擎。
+///
+/// 为什么不是 `UNSUPPORTED`：那条错误会被调用方理解成"引擎版本太旧"，
+/// 而事实是"走错库了"。这两件事的处置完全不同（升级 vs 改调用路径）。
+fn documents_from_host() -> DbResult<Value> {
+    Err(DbError::other(
+        "文档索引命令必须经宿主进程的文档引擎执行（storage_invoke 会在到达主库前分流）",
+    ))
 }
 
 // ===== 删除审计（第 31 轮事故排查：让数据库自己记账，见 audit.rs）=====

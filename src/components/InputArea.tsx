@@ -23,6 +23,21 @@ import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
 import { getMultimodalSettings, transcribeAudioFile, getVoiceInputEngine, isSTTConfigured, type SpeechEngine, type MultimodalProviderConfig } from "../core/llm/multimodal";
 import { useProjectStore } from "../core/store";
+import {
+  cancelIngest,
+  collectionIdFor,
+  ingestFileBytes,
+  ingestPastedImage,
+  hasDocumentBackend,
+  type DocumentRecord,
+} from "../core/document/client";
+import {
+  refreshDocStatus,
+  resetDocStatus,
+  startDocProgressWatcher,
+  useDocStatus,
+} from "../core/document/status-store";
+import { docBadgeOf, docIndexSummary, docStageLabel } from "../core/document/status-labels";
 import { ContextBadgeList } from "./ContextBadgeList";
 import { MentionAutocomplete, type MentionItem } from "./MentionAutocomplete";
 import { MentionMenuPortal } from "./MentionMenuPortal";
@@ -52,23 +67,11 @@ const securityIconMap: Record<string, JSX.Element> = {
 /**
  * 模型是否**原生**支持视觉输入（附件区的"视觉能力"提示用）。
  *
- * 第 45 轮 D-8：这是从原内联表达式抽出来的纯函数，只为一件事：
- * 让"未知模型 = 保守判定为不支持"这条语义可以被单测钉住。判定口径**没有改动**
- * （前缀表与原实现逐字相同），改的是**取值来源**——原实现从 localStorage 读
- * `codem-settings`（那个键没有任何写入方，恒为空），现在读组件自己的 `model` prop。
+ * ⚠️ 唯一真源是 `core/llm/model-capabilities.ts`：这里曾经自带一份前缀表，
+ * 与 `capability-detector` / `vision-proxy` 各自漂移，导致 `deepseek-flash`
+ * 被误判为"不支持视觉"（真机 bug）。现在只做**转出口**，不再定义任何模型清单。
  */
-export function modelSupportsVision(modelId: string): boolean {
-  const m = (modelId || "").trim();
-  return (
-    m.startsWith("gpt-4o") ||
-    m.startsWith("claude-3") ||
-    m.startsWith("claude-4") ||
-    m.startsWith("gemini-1.5") ||
-    m.startsWith("gemini-2") ||
-    m.startsWith("o3") ||
-    m.startsWith("o4")
-  );
-}
+import { modelSupportsVision } from "../core/llm/model-capabilities";
 
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -612,6 +615,34 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const { currentProject, currentSession, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
 
+  /**
+   * 文档索引集合（ADR-0008）：项目优先，无项目退会话级。
+   * 输入区的状态条、附件徽标、四条入口的摄取都绑这同一个值。
+   */
+  const docCollectionId = collectionIdFor(currentProject?.id, currentSession?.id);
+  const docStatus = useDocStatus();
+
+  useEffect(() => {
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void (async () => {
+      if (cancelled) return;
+      await refreshDocStatus(docCollectionId);
+      const unwatch = await startDocProgressWatcher(docCollectionId);
+      if (cancelled) unwatch();
+      else stop = unwatch;
+    })();
+    return () => {
+      cancelled = true;
+      stop?.();
+      resetDocStatus();
+    };
+  }, [docCollectionId]);
+
+  /** 附件 id → 索引状态（用于徽标）。 */
+  const docForAttachment = (attachmentId: string): DocumentRecord | undefined =>
+    docStatus.documents.find((d) => d.source_ref === attachmentId);
+
   // === Bottom bar state (执行模式已移至顶部 TitleBar) ===
   const [showMoreActions, setShowMoreActions] = useState(false);
   // P0: IME composition state — prevents Enter from firing during Chinese/Japanese input
@@ -1143,23 +1174,59 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData.items);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
-    if (imageItems.length === 0) return;
+    /*
+     * 粘贴的文件（非图片）：clipboard 里可能是 `kind === "file"` 的项。
+     * 旧实现直接丢掉它们（ADR-0008 §3.3 的缺口），现在与上传走同一条 blob 管线。
+     */
+    const fileItems = items.filter((item) => item.kind === "file" && !item.type.startsWith("image/"));
+    if (imageItems.length === 0 && fileItems.length === 0) return;
     e.preventDefault();
+
     for (const item of imageItems) {
       const file = item.getAsFile();
       if (!file) continue;
       const ext = file.type.split("/")[1] || "png";
       const name = `clipboard-${Date.now()}.${ext}`;
+      const attachmentId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
         const attachment: MessageAttachment = {
-          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: attachmentId,
           name, type: "image", content: dataUrl, mimeType: file.type, size: file.size,
         };
         setPendingAttachments((prev) => [...prev, attachment]);
+        // 图片同样入索引（P0 只索引元数据 + needs_ocr；视觉转录在 P1）
+        if (!hasDocumentBackend()) return;
+        void ingestPastedImage({
+          collectionId: docCollectionId,
+          dataUrl,
+          name,
+          sourceRef: attachmentId,
+        }).catch((err) => console.warn("[InputArea] 粘贴图片入索引失败:", err));
       };
       reader.readAsDataURL(file);
+    }
+
+    for (const item of fileItems) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      const id = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const attachment: MessageAttachment = {
+        id,
+        name: file.name || `pasted-${Date.now()}`,
+        type: file.type.startsWith("image/") ? "image" : "file",
+        mimeType: file.type || undefined,
+        size: file.size,
+      };
+      setPendingAttachments((prev) => [...prev, attachment]);
+      if (!hasDocumentBackend()) continue;
+      void ingestFileBytes({
+        collectionId: docCollectionId,
+        file,
+        kind: "paste",
+        sourceRef: id,
+      }).catch((err) => console.warn("[InputArea] 粘贴文件入索引失败:", err));
     }
   };
 
@@ -1359,6 +1426,21 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             content: "", mimeType: f.type, size: f.size,
           }));
           setPendingAttachments(prev => [...prev, ...atts]);
+          /*
+           * 拖拽入口：旧实现生成 `content: ""` 的空壳附件（既没有字节也没有路径）。
+           * 现在有 `File` 对象 ⇒ 走同一套 4MB 分块 blob 通道入索引。
+           * （大文件仍建议用「上传」按钮：原生对话框能拿到真实路径，字节不进渲染进程。）
+           */
+          files.forEach((file, i) => {
+            const att = atts[i];
+            if (!att || !hasDocumentBackend()) return;
+            void ingestFileBytes({
+              collectionId: docCollectionId,
+              file,
+              kind: "drop",
+              sourceRef: att.id,
+            }).catch((err) => console.warn("[InputArea] 拖拽文件入索引失败:", err));
+          });
         }
       }}
     >
@@ -1384,34 +1466,90 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       {/* Composer badges — file refs, GitHub links, etc. */}
       <ComposerBadges badges={composerBadges} onRemove={removeBadge} />
 
+      {/* 文档索引状态条（ADR-0008 §P0c）：数量 + 进行中 + 需 OCR/引擎，可点开说明 */}
+      {docStatus.documents.length > 0 && (
+        <div className="doc-index-bar" role="status" aria-live="polite">
+          <span className="doc-index-bar-title">文档索引</span>
+          {docIndexSummary(docStatus.byStatus).map((item) => (
+            <span key={item.key} className={`doc-index-chip doc-index-${item.tone}`}>
+              {item.label} {item.count}
+            </span>
+          ))}
+          {docStatus.progress?.stage &&
+          docStatus.progress.stage !== "done" &&
+          docStatus.progress.stage !== "failed" ? (
+            <span className="doc-index-progress" title={docStatus.progress.name ?? ""}>
+              {docStageLabel(docStatus.progress.stage)}
+              {typeof docStatus.progress.percent === "number" && docStatus.progress.percent > 0
+                ? ` · ${Math.min(100, docStatus.progress.percent)}%`
+                : ""}
+              {typeof docStatus.progress.pages === "number" && docStatus.progress.pages > 0
+                ? ` · ${docStatus.progress.pages} 页`
+                : ""}
+            </span>
+          ) : null}
+          {docStatus.progress?.jobId &&
+          docStatus.progress.stage &&
+          !["done", "failed", "cancelled"].includes(docStatus.progress.stage) ? (
+            <button
+              type="button"
+              className="doc-index-cancel"
+              title="取消这次文档索引（已写入的内容保留）"
+              onClick={() => {
+                const jobId = docStatus.progress?.jobId;
+                if (jobId) void cancelIngest(jobId);
+              }}
+            >
+              取消
+            </button>
+          ) : null}
+          {docStatus.lastError ? (
+            <span className="doc-index-error" title={docStatus.lastError}>
+              状态读取失败
+            </span>
+          ) : null}
+        </div>
+      )}
+
       {/* Pending Attachments */}
       {pendingAttachments.length > 0 && (
-        <div className="pending-attachments">
-          {pendingAttachments.map((att) => (
-            <div key={att.id} className="pending-attachment">
-              <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}</span>
-              {att.type === "image" && att.content ? (
-                <img src={att.content} alt={att.name} className="pending-attachment-thumb" />
-              ) : null}
-              <span className="attachment-name">{att.name}</span>
-              {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
-              <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
-            </div>
-          ))}
+        <>
+          <div className="pending-attachments">
+            {pendingAttachments.map((att) => {
+              const doc = docForAttachment(att.id);
+              const docState = docBadgeOf(doc);
+              return (
+                <div key={att.id} className="pending-attachment" data-doc-status={doc?.status ?? "none"}>
+                  <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}</span>
+                  {att.type === "image" && att.content ? (
+                    <img src={att.content} alt={att.name} className="pending-attachment-thumb" />
+                  ) : null}
+                  <span className="attachment-name">{att.name}</span>
+                  {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
+                  {docState ? (
+                    <span
+                      className={`attachment-doc-badge attachment-doc-${docState.tone}`}
+                      title={doc?.error ?? docState.title}
+                    >
+                      {docState.label}
+                    </span>
+                  ) : null}
+                  <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
+                </div>
+              );
+            })}
+          </div>
+          {/*
+           * 视觉提示必须**独占一行**，不能当 `.pending-attachments` 的 flex 子项：
+           * 它和附件卡并排时会把卡片挤成窄条，长提示还会横向溢出到编辑区
+           * （用户截图：粘贴图片后左侧上下文把编辑区文字压到右边）。
+           */}
           {pendingAttachments.some((a) => a.type === "image") && (() => {
             const visionConfig = getMultimodalSettings().vision;
             /**
-             * 第 45 轮 D-8：当前模型必须取**活性来源**，不能再读 localStorage 的 `codem-settings`。
-             *
-             * 旧实现是 `JSON.parse(localStorage.getItem("codem-settings") || "{}")` ——
-             * 而 `codem-settings` 这个键在 localStorage 里**没有任何写入方**（全仓
-             * `setItem("codem-settings")` 0 次；真正的权威副本在 DB 里，`migration.ts` 当年
-             * 从 `mimo-settings` 迁到 localStorage 后还会把它删掉）。于是 `currentModel` 恒为 `""`、
-             * `supportsVision` 恒为 false：配了视觉代理时永远显示"将使用视觉代理描述图片"，
-             * 没配时 GPT-4o/Claude/Gemini 用户被告知"当前模型不支持视觉"。
-             * 顺带：渲染期裸 `JSON.parse` 遇到历史坏值会直接抛错。
-             *
-             * 现在直接用组件已有的 `model` prop（它就是当前生效的模型，CLI 模式下也对）。
+             * 模型是否支持视觉的判定**只有一处**：`core/llm/model-capabilities.ts`。
+             * 这里此前自带一份前缀表（只认 gpt/claude/gemini/o3/o4），于是
+             * `deepseek-flash` 这类已登记的多模态模型被误判成"不支持视觉"。
              */
             const supportsVision = modelSupportsVision(model || "");
             if (!supportsVision && !visionConfig?.enabled) {
@@ -1421,8 +1559,11 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             }
             return null;
           })()}
-        </div>
+        </>
       )}
+
+      {/* P4: Context badges —— 放在编辑行**之上**（独占一行），不参与和 textarea 抢宽度 */}
+      <ContextBadgeList badges={contextBadges} />
 
       {/* === P-UI: 两行结构 — textarea 上方独占，action row 下方 === */}
       <div className="input-wrapper">
@@ -1484,9 +1625,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               />
             </MentionMenuPortal>
           )}
-
-          {/* P4: Context badges showing active attachments and skills */}
-          <ContextBadgeList badges={contextBadges} />
 
           {/* DSH-aligned mirror backdrop: 仅在文本含 /xxx 模式时启用——
               此时 textarea 文字透明（caret 仍可见），backdrop 渲染文字与 pill 高亮；
@@ -1629,7 +1767,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             </div>
 
             {/* Hidden file upload input — SlotBridge 消费 app.attachment slot */}
-            <SlotBridge name="app.attachment" fallback={FileUpload} onUpload={handleUpload} hideButton />
+            <SlotBridge name="app.attachment" fallback={FileUpload} onUpload={handleUpload} hideButton collectionId={docCollectionId} />
 
             {/* Skill picker popup */}
             <div ref={skillPickerBtnRef} className="input-relative-anchor">
@@ -1911,4 +2049,3 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     </div>
   );
 }
-

@@ -2767,6 +2767,33 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         trailingTurnContext += (trailingTurnContext ? "\n" : "") + surfaceNotice;
       }
 
+      /**
+       * 文档 ledger（ADR-0008 §11）：本会话用过文档检索时，把「看过哪些文件、
+       * 读过哪些 chunk、确认了哪些带 citation 的事实」注入**尾部**。
+       *
+       * 三条约束（与目标模式上下文同源）：
+       * 1. 只进 `trailingTurnContext`，绝不进 system 前缀（否则前缀缓存每轮失效）；
+       * 2. ≤2,000 token（渲染函数自己截断）；
+       * 3. 没有文档用法 ⇒ 一个字都不写（不把普通对话变成永远带一段固定文本）。
+       */
+      try {
+        const [{ collectionIdForSession }, { hasDocumentLedger, renderDocumentLedger }] =
+          await Promise.all([
+            import("../document/session-collection"),
+            import("../document/ledger"),
+          ]);
+        const docCollection = collectionIdForSession(sessionId);
+        if (hasDocumentLedger(docCollection)) {
+          const ledgerText = renderDocumentLedger(docCollection, 2000);
+          if (ledgerText) {
+            trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + ledgerText;
+          }
+        }
+      } catch (e) {
+        // 观测/注入设施失败不该把这一轮搞挂；留痕即可
+        console.warn("[AgenticLoop] document ledger injection failed:", e);
+      }
+
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
       /** 第 184 波：**只量不猜** ✓ —— 打时间戳，段差由这些行与 `llm timing` 的 ctx/tail/prep 一起算出 ✓。 */
       debugLog("agent-loop", `prep打点 pressure t=${Date.now()}`);

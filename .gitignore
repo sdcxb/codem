@@ -188,6 +188,10 @@ src-tauri/resources/ofm/
 # 第 203 波（方案 A）：内置便携 Node（node.exe 约 88MB）。构建时由 tools/vendor/fetch-node.mjs
 # 按 tools/vendor/node/VENDOR.json 的固定版本拉取、并**按官方 SHASUMS256.txt 校验** sha256；不进仓库。
 src-tauri/resources/node/
+# 第 204 波（文档索引）：PDFium 动态库（Windows x64 约 10MB，PDF 文本提取用）。
+# 由 tools/vendor/fetch-pdfium.mjs 按 tools/vendor/pdfium/VENDOR.json 的固定版本拉取并校验 sha256；
+# 不进仓库。缺失时 .pdf 会如实降级为 needs_engine，不会假装索引成功。
+src-tauri/resources/pdfium/
 
 # 调研中间产物（子代理抓的网页与笔记，不进仓库）
 .trae-research/

@@ -276,6 +276,8 @@ export type GoalDecisionKind =
   | "goal_paused"
   | "goal_resumed"
   | "goal_stopped"
+  /** 用户主动取消（结束，不可继续） */
+  | "goal_cancelled"
   | "budget_capped"
   | "approval_required"
   | "approval_resolved"

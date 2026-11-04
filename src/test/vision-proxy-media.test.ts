@@ -804,7 +804,7 @@ describe("F. VisionProxy 核心逻辑", () => {
     const messages: LLMMessage[] = [
       { id: "m1", role: "user", content: "hello" },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(false);
     expect(result.messages).toBe(messages);
   });
@@ -836,7 +836,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(false);
     const blocks = result.messages[0].content as ContentBlock[];
     const textBlock = blocks.find(b => b.type === "text" && b.text.includes("未处理")) as any;
@@ -869,7 +869,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(true);
     expect(result.visionModel).toBe("gpt-4o-mini");
 
@@ -901,7 +901,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    await proxy.processMessages(messages, "deepseek-chat", "deepseek");
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(callBody.model).toBe("gpt-4o");
@@ -931,7 +931,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(true);
     // Both images should be replaced
     const blocks = result.messages[0].content as ContentBlock[];
@@ -979,7 +979,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(false);
     const blocks = result.messages[0].content as ContentBlock[];
     const unprocessed = blocks.find(b => b.text.includes("语音") && b.text.includes("未处理"));
@@ -1006,7 +1006,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(true);
     const blocks = result.messages[0].content as ContentBlock[];
     const errorBlock = blocks.find(b => b.text.includes("图片处理失败"));
@@ -1042,7 +1042,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(true);
 
     const blocks = result.messages[0].content as ContentBlock[];
@@ -1081,7 +1081,7 @@ describe("F. VisionProxy 核心逻辑", () => {
         ],
       },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     // vision not enabled → no config → mark unprocessed
     expect(result.visionUsed).toBe(false);
     const blocks = result.messages[0].content as ContentBlock[];
@@ -1190,7 +1190,7 @@ describe("H. 回归：历史功能不受影响", () => {
       { id: "m2", role: "assistant", content: "hi" },
       { id: "m3", role: "user", content: "how are you?" },
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(false);
     expect(result.messages).toBe(messages);
   });
@@ -1202,7 +1202,7 @@ describe("H. 回归：历史功能不受影响", () => {
       { id: "m2", role: "assistant", content: "calling list_files", tool_calls: [{ id: "tc1", type: "function", function: { name: "list_files", arguments: "{}" } }] } as any,
       { id: "m3", role: "tool", content: "file1.txt\nfile2.txt", toolCallId: "tc1" } as any,
     ];
-    const result = await proxy.processMessages(messages, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(messages, "deepseek-chat", "deepseek");
     expect(result.visionUsed).toBe(false);
     // All messages unchanged
     expect(result.messages[0].content).toBe("list files");
@@ -1460,7 +1460,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
       },
     });
@@ -1476,7 +1476,7 @@ describe("I. 全场景端到端链路测试", () => {
     mockVisionResponse("图中是一段代码截图，内容为 function hello() { return 'world'; }");
 
     const msgs = makeImageMessage("这段代码是什么？");
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-chat", "deepseek");
 
     expect(result.visionUsed).toBe(true);
     expect(result.visionModel).toBe("mimo-v2.5");
@@ -1569,7 +1569,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
       },
     });
@@ -1578,7 +1578,7 @@ describe("I. 全场景端到端链路测试", () => {
     mockVisionResponse("截图显示一个错误信息：TypeError: Cannot read property of undefined");
 
     const msgs = makeImageMessage("这个报错是什么意思？");
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-chat", "deepseek");
 
     expect(result.visionUsed).toBe(true);
     expect(result.visionModel).toBe("mimo-v2.5");
@@ -1610,7 +1610,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
       },
     });
@@ -1619,7 +1619,7 @@ describe("I. 全场景端到端链路测试", () => {
     mockVisionResponse("这是一张 UI 设计稿，包含一个登录表单和一个提交按钮");
 
     const msgs = makeImageMessage("实现这个UI");
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-chat", "deepseek");
 
     expect(result.visionUsed).toBe(true);
     expect(result.visionModel).toBe("gpt-4o-mini");
@@ -1679,7 +1679,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
       },
     });
@@ -1699,7 +1699,7 @@ describe("I. 全场景端到端链路测试", () => {
       ],
     }];
 
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-chat", "deepseek");
 
     expect(result.visionUsed).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -1748,7 +1748,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
       },
     });
@@ -1762,7 +1762,7 @@ describe("I. 全场景端到端链路测试", () => {
     });
 
     const msgs = makeImageMessage("看图");
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-chat", "deepseek");
 
     expect(result.visionUsed).toBe(true);
 
@@ -1801,7 +1801,7 @@ describe("I. 全场景端到端链路测试", () => {
       description: "test",
       enabled: true,
       slots: {
-        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        chat: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium" },
         vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
       },
     });
@@ -1819,7 +1819,7 @@ describe("I. 全场景端到端链路测试", () => {
     expect(blocks1.some(b => b.type === "image")).toBe(true);
 
     // Step 2: VisionProxy 处理
-    const proxyResult = await proxy.processMessages(llmMessages, "deepseek-v4-flash", "deepseek");
+    const proxyResult = await proxy.processMessages(llmMessages, "deepseek-chat", "deepseek");
     expect(proxyResult.visionUsed).toBe(true);
 
     // 验证图片被替换为文字
@@ -1840,7 +1840,7 @@ describe("I. 全场景端到端链路测试", () => {
     });
 
     await provider.complete({
-      model: "deepseek-v4-flash",
+      model: "deepseek-chat",
       messages: proxyResult.messages,
       stream: false,
     });

@@ -164,6 +164,13 @@ import { createWebSearchTool } from "./tools/web-search";
 // DeepSeek Fetch：抓取网页正文（Markdown）—— 受设置开关与「工具管理」禁用列表双重约束
 import { createWebFetchTool } from "./tools/deepseek-web";
 import { createReadAttachmentTool } from "./tools/read-attachment";
+import {
+  createDocOutlineTool,
+  createDocSearchTool,
+  createDocReadTool,
+  createDocStatusTool,
+  withDocOutputValue,
+} from "./tools/document-tools";
 import { createSearchNotebookTool } from "./tools/search-notebook";
 // P1-6: AI 跨笔记操作工具 (对标 NotebookLM 笔记操作)
 import { createNoteOperationTools } from "./tools/note-operations";
@@ -1422,6 +1429,38 @@ export function createReadFileTool(): ToolDef {
       // 是"同样任务 token 比 dsh 大数倍"的主因之一。50k 字符 ≈ 代码/英文 12k tokens。
       const MAX_CHARS = 50_000;
 
+      /*
+       * 文档索引（ADR-0008）：**二进制文档不按文本读**。
+       *
+       * 为什么必须在这里拦：`read` 走 UTF-8 行读，对 .docx/.pdf 只会得到
+       * 一串替换字符或「非 UTF-8 报错」——而模型会据此以为"文件坏了/是空的"。
+       * 正确动作是转向文档工具（outline → search → 定点 read），并把 collection
+       * 一起给出去，省掉一次瞎猜。
+       */
+      const docExt = (path.split(".").pop() || "").toLowerCase();
+      const BINARY_DOC_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf"]);
+      if (BINARY_DOC_EXTENSIONS.has(docExt)) {
+        let collectionHint = "";
+        try {
+          const { collectionIdForSession } = await import("../document/session-collection");
+          collectionHint = collectionIdForSession(ctx.sessionId);
+        } catch {
+          /* 集合推导失败不影响重定向本身 */
+        }
+        return {
+          title: `read: ${path}`,
+          output:
+            `[文档重定向] ${path} 是二进制文档（.${docExt}），不能按文本读取。\n` +
+            `请改用文档索引工具：\n` +
+            `1) doc_outline(collection_id: "${collectionHint}") 看有哪些文档/章节；\n` +
+            `2) doc_search(query, collection_id: "${collectionHint}") 找相关段落；\n` +
+            `3) doc_read(document_id, chunk_no) 读命中的块。\n` +
+            `如果 doc_outline 显示「还没索引」，请让用户上传该文件或在消息里给出路径（会自动入索引）。`,
+          isError: false,
+          metadata: { redirect: "document", documentExt: docExt, collectionId: collectionHint },
+        };
+      }
+
       try {
         let output: string = "";
 
@@ -2551,6 +2590,15 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(createWebFetchTool());
   // B5: read_attachment tool
   registry.register(createReadAttachmentTool());
+  // 项目级文档索引（ADR-0008）：doc_outline / doc_search / doc_read / doc_status
+  //
+  // 为什么常驻（而不是像 generate_ppt 那样延迟加载）：文档任务是本产品的**主路径**之一，
+  // 四个 schema 合计约 500 token；延迟加载会让模型先调 tool_search 才发现它们，
+  // 多一步且容易在文档任务里"看不见工具"。ADK 判据 DOCI-6/7 守住预算与重定向。
+  registry.register(withDocOutputValue(createDocOutlineTool()));
+  registry.register(withDocOutputValue(createDocSearchTool()));
+  registry.register(withDocOutputValue(createDocReadTool()));
+  registry.register(withDocOutputValue(createDocStatusTool()));
   // F5: search_notebook tool for knowledge base mode
   registry.register(createSearchNotebookTool());
   // P1-6: AI 跨笔记操作工具 (create_note / edit_note / link_notes)

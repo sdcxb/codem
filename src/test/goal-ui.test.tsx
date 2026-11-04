@@ -26,7 +26,7 @@ vi.mock("../core/goal/store", async (importOriginal) => {
 
 import { createMemoryGoalStore } from "../core/goal/store";
 import type { GoalStore } from "../core/goal/store";
-import { changeGoalContract, getGoalDetails } from "../core/goal/runtime";
+import { changeGoalContract, getGoalDetails, registerGoalRuntimeHost } from "../core/goal/runtime";
 import { refreshGoalView } from "../core/goal/state";
 import { planGoal } from "../core/goal/planner";
 import { GoalModeBar } from "../components/GoalModeBar";
@@ -112,6 +112,54 @@ describe("目标模式状态条（UI）", () => {
     expect(screen.getByTestId("goal-mode-bar").textContent).toContain("目标已暂停");
     expect(screen.getByTestId("goal-continue")).toBeTruthy();
     expect(screen.queryByTestId("goal-stop")).toBeNull();
+  });
+
+  it("paused：必须能「取消目标」——并中止会话回合（真机：暂停后挂住）", () => {
+    const store = mem.store as GoalStore;
+    const { goal } = seed(store);
+    store.updateGoal(goal.id, { status: "paused", blockedReason: "用户停止" });
+    refreshGoalView(SESSION);
+
+    const abortSession = vi.fn();
+    registerGoalRuntimeHost({
+      getEngine: () => null,
+      getCwd: () => "",
+      onPermissionRequest: async () => ({ behavior: "deny" } as any),
+      abortSession,
+    });
+
+    try {
+      render(<GoalModeBar sessionId={SESSION} />);
+      const cancel = screen.getByTestId("goal-cancel");
+      expect(cancel.textContent).toContain("取消目标");
+      fireEvent.click(cancel);
+
+      expect(abortSession, "取消必须把还在流的回合一起停掉").toHaveBeenCalledWith(SESSION);
+      expect(store.getGoal(goal.id)?.status).toBe("cancelled");
+      expect(screen.queryByTestId("goal-mode-bar"), "取消后目标条应消失").toBeNull();
+    } finally {
+      registerGoalRuntimeHost(null);
+    }
+  });
+
+  it("active：点「停止」也必须中止会话回合（不只是改目标状态）", () => {
+    const store = mem.store as GoalStore;
+    seed(store);
+    refreshGoalView(SESSION);
+    const abortSession = vi.fn();
+    registerGoalRuntimeHost({
+      getEngine: () => null,
+      getCwd: () => "",
+      onPermissionRequest: async () => ({ behavior: "deny" } as any),
+      abortSession,
+    });
+    try {
+      render(<GoalModeBar sessionId={SESSION} />);
+      fireEvent.click(screen.getByTestId("goal-stop"));
+      expect(abortSession).toHaveBeenCalledWith(SESSION);
+    } finally {
+      registerGoalRuntimeHost(null);
+    }
   });
 
   it("blocked：原因可见（不是一句「出错了」）", () => {

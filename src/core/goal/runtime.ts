@@ -479,6 +479,48 @@ export function stopGoalRun(reason = "用户停止"): boolean {
 }
 
 /**
+ * 用户**取消**目标（结束，不保留可恢复状态）。
+ *
+ * 与「停止」的区别：停止 = paused（还能继续）；取消 = cancelled（状态条消失、不能再继续）。
+ * 该入口会同时中止目标 controller 与会话当前回合（host.abortSession），
+ * 解决"暂停后回合还在流式、界面挂住"的真机问题。
+ */
+export function cancelGoalRun(sessionId: string): { ok: boolean; reason?: string } {
+  const store = getGoalStore();
+  const goal =
+    store.getLiveGoalForSession(sessionId) ?? store.getLatestGoalForSession(sessionId);
+  if (!goal) return { ok: false, reason: "该会话没有目标" };
+  if (goal.status === "completed" || goal.status === "cancelled") {
+    return { ok: false, reason: "目标已结束" };
+  }
+  const run = activeRun;
+  if (run && run.goalId === goal.id) {
+    run.controller.abort();
+  }
+  store.updateGoal(goal.id, {
+    status: "cancelled",
+    blockedReason: "用户取消",
+    completedAt: Date.now(),
+  });
+  store.addDecision({
+    id: `gd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    goalId: goal.id,
+    kind: "goal_cancelled",
+    reason: "用户取消目标",
+    createdAt: Date.now(),
+  });
+  emitGoalEvent({
+    type: "goal.status",
+    sessionId,
+    goalId: goal.id,
+    status: "cancelled",
+    reason: "用户取消",
+  });
+  refreshGoalView(sessionId);
+  return { ok: true };
+}
+
+/**
  * 继续一个 paused/blocked 的目标（用户点「继续目标」）。
  *
  * 语义边界：
@@ -654,6 +696,14 @@ export interface GoalRuntimeHost {
   getCwd: (sessionId: string) => string;
   /** 把审批请求交给 App 的权限对话框（由用户决定） */
   onPermissionRequest: (sessionId: string, request: PermissionRequest) => Promise<PermissionResult>;
+  /**
+   * 中止该会话**当前回合**（App 的 abortControllers）。
+   *
+   * 为什么目标运行时要碰它：用户暂停目标后，回合可能仍在流式（尤其目标已经 paused、
+   * `activeRun` 已清空时，只 abort 目标 controller 停不掉会话）。没有这个出口，
+   * 界面会一直停在"正在运行"且目标条又只给「继续」——用户被卡死（真机 bug）。
+   */
+  abortSession?: (sessionId: string) => void;
 }
 
 let runtimeHost: GoalRuntimeHost | null = null;
@@ -678,8 +728,29 @@ export function resumeSessionGoal(sessionId: string): { ok: boolean; reason?: st
 }
 
 /** 用户点「停止」/「暂停」（UI 入口） */
-export function stopSessionGoal(_sessionId: string): boolean {
+export function stopSessionGoal(sessionId: string): boolean {
+  // 先中止**会话回合**：目标 controller 可能已经清空（paused/阶段间隙），
+  // 只 abort 它会让流式回合继续跑，界面停在"正在运行"（真机 bug：暂停后挂住）。
+  abortSessionTurn(sessionId);
   return stopGoalRun("用户停止");
+}
+
+/**
+ * 用户点「取消目标」（UI 入口）：结束目标 + 中止会话当前回合。
+ * 先 abort 会话回合再改状态：避免回合在状态变更后又写回一条消息（界面闪一下又挂住）。
+ */
+export function cancelSessionGoal(sessionId: string): { ok: boolean; reason?: string } {
+  abortSessionTurn(sessionId);
+  return cancelGoalRun(sessionId);
+}
+
+/** 只中止回合、不动目标（暂停/取消共用；回合不属于目标时也有效）。 */
+export function abortSessionTurn(sessionId: string): void {
+  try {
+    runtimeHost?.abortSession?.(sessionId);
+  } catch (e) {
+    console.warn("[Goal] 中止会话回合失败:", e);
+  }
 }
 
 // ========== 事件 → 视图刷新（一次接线，全局生效） ==========

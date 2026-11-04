@@ -38,6 +38,8 @@ use crate::secret::{secret_backend_available, secret_seal, secret_unseal};
 /// 「免费模型插件」（dsh-our-free-model 的 standalone 本地服务）的独立进程生命周期。
 mod ofm;
 mod storage;
+/// 项目级文档索引：字节入口 / 提取 / 分块 / 后台摄取（ADR-0008）。
+mod documents;
 
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
@@ -4813,6 +4815,8 @@ pub fn run() {
     // 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
     // 引擎本体在首次调用时惰性打开。
     let storage_state = storage::init_state();
+    // 文档索引的落点与库同源（`<dataRoot>/documents/`）；在 move 进 manage 之前取出来
+    let documents_root = storage_state.data_root();
     let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
@@ -4825,6 +4829,8 @@ pub fn run() {
         .manage(gateway_state.clone())
         .manage(aa_connector_state)
         .manage(storage_state)
+        // 文档索引：任务取消表 + 数据根（引擎在首次命令时惰性打开）
+        .manage(documents::DocumentsState::new(documents_root))
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         // 第 103 波：Rust 侧 JS 沙箱的"等前端回复"表（run_code / workflow 的 sdk 调用走它）
         .manage(js_sandbox::PendingHostCalls::default())
@@ -4914,6 +4920,24 @@ path_exists,
                普通用户做不到。安全边界（只杀能证明是本插件的那个 pid）见 ofm.rs 的实现注释。 */
             ofm::ofm_kill_lock_holder,
             ofm::ofm_log_tail,
+            // ===== 项目级文档索引（ADR-0008）=====
+            // 索引库读写走 `storage_invoke`（`documents.*` 命令，宿主内分流到独立库）；
+            // 这里只暴露字节入口/摄取/取消/重建/正文读取。
+            documents::documents_blob_begin,
+            documents::documents_blob_append,
+            documents::documents_blob_finish,
+            documents::documents_blob_abort,
+            documents::documents_ingest,
+            documents::documents_cancel,
+            documents::documents_jobs,
+            documents::documents_rebuild,
+            documents::documents_read,
+            documents::documents_pdf_probe,
+            documents::documents_ocr_pending,
+            documents::documents_render_page,
+            documents::documents_ocr_write,
+            documents::documents_ocr_finish,
+            documents::documents_ocr_mark_failed,
             mcp_stdio_request,
             mcp_stdio_disconnect,
             glob_search,
@@ -4990,6 +5014,28 @@ path_exists,
             // 桌面引擎桥在应用启动时拉起（只绑 127.0.0.1；无旧 LAN 配对）。
             let phone_state_for_bridge = phone_state.clone();
             move |app| {
+            /*
+             * 第 204 波（项目级文档索引）：把随包 PDFium 目录告诉 `documents::pdf`。
+             *
+             * 为什么在这里而不是在 pdf.rs 里猜相对路径：Tauri 的资源目录在「开发」与
+             * 「安装后」两种形态不同（开发在 target/debug，安装后是 <install>/resources），
+             * 只有 `app.path().resource_dir()` 是权威来源。env 只在本进程内有效，
+             * 命令执行时读得到；显式设过 `CODEM_PDFIUM_DIR` 的环境（开发/验收）优先。
+             */
+            if std::env::var_os("CODEM_PDFIUM_DIR").is_none() {
+                if let Ok(res) = app.path().resource_dir() {
+                    for sub in ["pdfium/win32-x64", "pdfium/win64", "pdfium"] {
+                        let dir = res.join(sub);
+                        if dir.join("pdfium.dll").is_file()
+                            || dir.join("libpdfium.so").is_file()
+                            || dir.join("libpdfium.dylib").is_file()
+                        {
+                            std::env::set_var("CODEM_PDFIUM_DIR", &dir);
+                            break;
+                        }
+                    }
+                }
+            }
             {
                 let bridge_app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {

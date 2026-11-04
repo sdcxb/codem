@@ -7770,3 +7770,77 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 判据：`change-scope.test.ts`；`verification-guard-behavior.test.ts` 新增 VERIF-3（.docx）与 VERIF-4（python 生成文档），原 VERIF-1/2 仍绿。
 - 全量：879 文件 / 9547 用例 / 9530 通过 / 17 skipped / 0 失败（约 181s）；tsc 0。
 - 发布：v1.18.3 = Latest；7 资产 + latest.json；远端清单 7/7 通过。
+
+## 2026-11-04 20:50 — 真机两修（视觉能力误判 / 粘贴图片挤压编辑区）+ 文档索引 P0 收尾
+
+### 1. 选着 deepseek-flash 却提示「当前模型不支持视觉」
+
+- 根因：**同一件事三份实现**。`InputArea.modelSupportsVision`（前缀表，缺 deepseek-flash）、
+  `capability-detector.MODEL_CAPABILITY_DB`（有 deepseek-flash）、`vision-proxy` 私有前缀表（又缺）。
+  后果不只是提示错：图片还会被送去视觉代理描述（`deepseek-v4-flash` 同属多模态别名）。
+- 修复：新增 `core/llm/model-capabilities.ts` 作为**唯一真源**（精确→长前缀匹配），
+  InputArea / capability-detector / vision-proxy 全部改为读它；`mimo-v2.5-pro` 显式登记为不支持，
+  避免被 `mimo-v2.5` 前缀吃掉；补 `claude-4` / `claude-3` 命名变体兜底。
+- 判据：`src/test/model-vision-capability.test.ts`（能力结果 + 三处实现结构断言 +
+  deepseek-flash 图片原样放行、不调 fetch）。旧 `vision-proxy-media` 把
+  `deepseek-v4-flash` 当纯文本模型的夹具改为 `deepseek-chat`（该 id 是多模态别名，夹具本身过时）。
+
+### 2. 粘贴图片后左侧上下文把编辑区文字压到右边
+
+- 根因：`ContextBadgeList` 渲染在 `.input-textarea-row` 里，和 textarea 抢同一行；
+  视觉提示又是 `.pending-attachments` 的 flex 子项，长句横向溢出。
+- 修复：徽章行移到编辑行**之上**（独占一行）；提示移出附件 flex 行，改为块级；
+  CSS 给 `.context-badge-list` / `.attachment-hint` 加独占与间距。
+- 判据：`src/test/composer-attachment-layout.test.tsx`（deepseek-flash 不再提示、
+  徽章不在编辑行、提示不在附件行、textarea 仍是整行主体）。
+
+### 3. 文档索引 P0 收尾（此前「未完成」项）
+
+- **PDFium 真机验收**：`tools/vendor/fetch-pdfium.mjs` + `VENDOR.json`（chromium/8125，sha256 校验，
+  不进仓库；tauri resources 增加 `resources/pdfium/**/*`，启动时写 `CODEM_PDFIUM_DIR`）。
+  `#[ignore]` 用例用真实 DLL 解析手写两页 PDF 通过；期间抓到 **bind 只能一次** 的 bug
+  （probe 后再提取会全部降级 needs_engine），已改为进程级单次绑定 + 互斥。
+- **DOCI-B1 1GiB 基准**：670s / 1.5MiB/s / 409,880 块 / 索引 4,710MiB（debug）。
+  抓到并修掉：①FTS 按 UNINDEXED 列逐块删除 ⇒ O(n²)（改稳定 rowid）；
+  ②`push_text` 整段入缓冲击穿 800-token 目标（改为按预算切分）。
+- **长文件进度**：摄取期每 700ms 发 `document://progress`（bytes/percent），状态条显示百分比。
+- 文档：新增 `docs/architecture/DOC-INDEX-BENCH.md`；ADR / 判据状态同步。
+
+### 验证
+
+- 定向：视觉/布局/CSS/回归 7 文件 158 用例全绿；Rust documents 16 通过（2 ignored）。
+- 全量：888 文件 / 9608 用例 / 9591 通过 / 17 skipped / 0 失败（约 190s）；tsc 0。
+- Rust：主 crate 257 通过（4 ignored：2 基准/PDF 真机 + 2 既有）；codem-db 75 通过。
+
+## 2026-11-04 21:50 — 目标暂停后无取消出口（挂死）+ 视觉转录 P1 落地
+
+### 1. 目标 paused 后没有取消按钮、界面一直挂着（真机 bug）
+
+- 根因两层：
+  1. `GoalModeBar` 在 paused/blocked 只渲染「继续目标 / 改目标」——用户不想继续时**没有任何结束出口**；
+  2. 「停止」只 abort 目标 controller；目标已 paused / 处于阶段间隙时 `activeRun` 为空，
+     会话回合仍在流式，`isStreaming` 恒真 ⇒ 界面一直停在"正在运行"。
+- 修复：
+  - 新增 `cancelGoalRun` / `cancelSessionGoal`（cancelled 终态 + `goal_cancelled` 决策 + 事件）；
+    `GoalRuntimeHost` 增加 `abortSession`，App 注入 `abortControllers.get(sid)?.abort()`；
+  - `stopSessionGoal` **先中止会话回合**再暂停目标；
+  - paused/blocked 状态条新增「取消目标」（`goal-cancel`）。
+- 判据：`goal-ui.test.tsx` 新增「paused 必须能取消并中止会话回合」「active 点停止也中止会话回合」。
+
+### 2. 视觉转录（DOCI-14）落地
+
+- Rust：`documents_render_page`（PDFium 渲染 PNG；PNG/JPEG/WebP 直接读原图）、
+  `documents_ocr_pending`、`documents_ocr_write`（追加正文侧车 + 块/分块/FTS + 页 done）、
+  `documents_ocr_mark_failed`、`documents_ocr_finish`（全部 done ⇒ 文档 ready）。
+- 渲染侧：`core/document/ocr.ts`（主模型原生视觉优先，否则视觉代理；逐页串行、失败页可重试）；
+  `status-store` 在摄取 `done` 事件后自动对 `needs_ocr` 文档启动转录，状态条显示「视觉转录 N%」。
+- 判据：`doc-ocr.test.ts`（4）、`docs.rs::ocr_pages_are_written_and_document_becomes_ready`
+  （含 failed 重试）、`pdf.rs::renders_page_to_png_with_pdfium`（真实 DLL）。
+
+### 3. 其余收尾
+
+- **PDF 书签标题**：`doc.bookmarks()` 的标题/层级/目标页优先生成 heading 块，并作为后续正文标题路径。
+- **DOCI-B1 1GiB 复测（含 RSS）**：609.17s / 1.7MiB/s / 409,880 块 / 索引 4,710.8MiB /
+  **峰值 RSS 17.9MiB**；64MiB 35.8s / 25,617 块 / 峰值 32.8MiB。数据已写进 `DOC-INDEX-BENCH.md`。
+- 仍未做：按字节续跑、按字号推断 PDF 标题（见 ADR §0 诚实清单）。
+

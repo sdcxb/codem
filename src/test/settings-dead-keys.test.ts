@@ -291,9 +291,9 @@ describe("D-8 视觉提示读不到模型（localStorage 无写入方）", () =>
     ).not.toMatch(/localStorage\.getItem\(\s*["']codem-settings["']/);
     expect(src, "模型应取组件自己的 prop（活性来源）").toMatch(/modelSupportsVision\(model/);
 
-    const { modelSupportsVision } = await import("../components/InputArea");
+    const { modelSupportsVision } = await import("../core/llm/model-capabilities");
     // 值形状往返：模型 id（字符串）→ 判定结果
-    for (const id of ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet", "claude-4-opus", "gemini-2.5-pro", "o3", "o4-mini"]) {
+    for (const id of ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet", "claude-4-opus", "gemini-2.5-pro", "o3", "o4-mini", "deepseek-flash"]) {
       expect(modelSupportsVision(id), `${id} 应判定为支持视觉`).toBe(true);
     }
     for (const id of ["deepseek-v4-pro", "mimo-v2.5-pro", "", "  "]) {

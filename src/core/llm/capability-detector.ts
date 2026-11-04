@@ -12,6 +12,7 @@
  */
 
 import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from '../llm/model-profile';
+import { lookupModelCapabilities, type KnownModelCapabilities } from './model-capabilities';
 import { getSettingJSON } from '../storage/settings';
 
 // ========== 功能能力定义 ==========
@@ -49,110 +50,6 @@ const CAPABILITY_TO_SLOT: Record<FeatureCapability, TaskSlot> = {
   'embedding': 'embedding',
   'streaming': 'chat',
 };
-
-// ========== 已知模型能力数据库 ==========
-// 基于模型 ID 前缀匹配，不依赖网络请求
-
-interface KnownModelCapabilities {
-  supportsTools: boolean;
-  supportsVision: boolean;
-  supportsStreaming: boolean;
-  supportsTTS?: boolean;
-  supportsImageGen?: boolean;
-  supportsEmbedding?: boolean;
-}
-
-const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
-  // OpenAI
-  'gpt-4o': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gpt-4o-mini': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gpt-4-turbo': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gpt-4': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'gpt-3.5-turbo': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'o1': { supportsTools: true, supportsVision: true, supportsStreaming: false },
-  'o1-mini': { supportsTools: false, supportsVision: false, supportsStreaming: false },
-  'o1-preview': { supportsTools: false, supportsVision: false, supportsStreaming: false },
-  'o3': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'o3-mini': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'o4-mini': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  // OpenAI TTS
-  'tts-1': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsTTS: true },
-  'tts-1-hd': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsTTS: true },
-  // OpenAI Embedding
-  'text-embedding-3-small': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsEmbedding: true },
-  'text-embedding-3-large': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsEmbedding: true },
-  'text-embedding-ada-002': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsEmbedding: true },
-  // OpenAI Image
-  'dall-e-3': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsImageGen: true },
-  'dall-e-2': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsImageGen: true },
-  'gpt-image-1': { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsImageGen: true },
-
-  // Anthropic
-  'claude-opus-4': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-sonnet-4': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-5-sonnet': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-5-haiku': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-opus': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-sonnet': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'claude-3-haiku': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-
-  // Google
-  'gemini-2': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gemini-1.5-pro': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gemini-1.5-flash': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'gemini-1.0-pro': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-
-  // DeepSeek
-  'deepseek-chat': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'deepseek-coder': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'deepseek-reasoner': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'deepseek-v3': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  // V4.1-Flash（当前 id）原生多模态；旧 vision-exp 只是临时路由别名，已 retired
-  'deepseek-flash': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'deepseek-v4-flash': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'deepseek-v4-flash-vision-exp': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-
-  // MiMo
-  'mimo-v2': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'mimo-v2-flash': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'mimo-v2-pro': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-
-  // Qwen
-  'qwen-max': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'qwen-plus': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'qwen-turbo': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'qwen-vl': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-
-  // GLM
-  'glm-4': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'glm-4v': { supportsTools: true, supportsVision: true, supportsStreaming: true },
-  'glm-4-flash': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-
-  // Groq
-  'llama-3.3-70b': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'llama-3.1-70b': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'llama-3.1-8b': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'mixtral-8x7b': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-
-  // Ollama (local)
-  'llama3': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-  'llava': { supportsTools: false, supportsVision: true, supportsStreaming: true },
-  'qwen2.5': { supportsTools: true, supportsVision: false, supportsStreaming: true },
-};
-
-/**
- * 通过模型 ID 前缀匹配查找已知能力
- */
-function lookupModelCapabilities(modelId: string): KnownModelCapabilities | null {
-  const lower = modelId.toLowerCase();
-  // 先尝试精确匹配
-  if (MODEL_CAPABILITY_DB[lower]) return MODEL_CAPABILITY_DB[lower];
-  // 再尝试前缀匹配
-  for (const key of Object.keys(MODEL_CAPABILITY_DB)) {
-    if (lower.startsWith(key)) return MODEL_CAPABILITY_DB[key];
-  }
-  return null;
-}
 
 // ========== 核心检测逻辑 ==========
 

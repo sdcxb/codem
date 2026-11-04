@@ -80,6 +80,11 @@ pub struct StorageState {
     /// 库文件路径（惰性打开时使用；诊断与迁移工具也要读它）
     path: PathBuf,
     engine: Mutex<Option<Engine>>,
+    /// 项目级文档索引库（**独立文件** `<dataRoot>/documents/index.db`）。
+    ///
+    /// 为什么不并进主库：见 `codem-db/src/docs.rs` 模块头（1GB 文档的索引是缓存、
+    /// 可重建；主库是用户数据、不可重建）。两边各有自己的连接与单写者锁。
+    docs: Mutex<Option<codem_db::docs::DocsEngine>>,
     /// 本次进程里若发生过"损坏库自动重建"，这里是那份坏文件的备份路径
     ///
     /// 渲染侧必须知道这件事（写"索引需要重建"标记 + 提示用户）：
@@ -102,10 +107,44 @@ impl StorageState {
         Self {
             path,
             engine: Mutex::new(None),
+            docs: Mutex::new(None),
             recovered_from: Mutex::new(None),
             db_path_standard: true,
             db_path_reason: None,
         }
+    }
+
+    /// 数据根（文档索引/侧车/页图的落点）。
+    ///
+    /// 与库路径同源：`CODEM_DATA_HOME` 优先（它定义**整个**数据根），
+    /// 否则取库文件的父目录（标准位置下即 `%APPDATA%\com.codem.app`）。
+    /// 刻意**不**复制一份 `resolveDataRoot` 逻辑（那是渲染侧的 TS 实现）。
+    pub fn data_root(&self) -> PathBuf {
+        if let Some(root) = isolated_data_home() {
+            return root;
+        }
+        self.path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// 惰性打开文档索引库（幂等）。
+    ///
+    /// 引擎不可用时**不**降级成"空索引"：错误原样上抛，UI 显示可行动状态
+    /// （见 ADR-0008 §13「不伪装」）。
+    pub fn docs_engine(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<codem_db::docs::DocsEngine>>, DbError> {
+        let mut guard = self
+            .docs
+            .lock()
+            .map_err(|_| DbError::new(codem_db::ErrorCode::Unavailable, "文档索引状态锁已中毒"))?;
+        if guard.is_none() {
+            let path = self.data_root().join("documents").join("index.db");
+            *guard = Some(codem_db::docs::DocsEngine::open(path)?);
+        }
+        Ok(guard)
     }
 
     /// 惰性打开引擎（幂等；已打开则直接复用）
@@ -504,6 +543,16 @@ pub fn storage_invoke(
     params: Option<Value>,
 ) -> StorageReply {
     let params = params.unwrap_or_else(|| json!({}));
+    /*
+     * 文档索引命令**先分流**：它们用的是独立库，不依赖主库是否就绪。
+     *
+     * 为什么在宿主分流而不是放进 `codem_db::dispatch`：`dispatch` 绑定主库 `Engine`
+     * （一份 schema、一套 authorizer）；文档库是另一个文件、另一套 schema。
+     * 这样分流还让「主库损坏时文档检索仍可用」成为可能。
+     */
+    if command.starts_with("documents.") {
+        return reply(dispatch_documents(&state, &command, &params));
+    }
     let guard = match state.engine() {
         Ok(g) => g,
         Err(e) => return reply(Err(e)),
@@ -515,6 +564,22 @@ pub fn storage_invoke(
         )));
     };
     reply(dispatch(engine, &command, &params))
+}
+
+/// 文档索引命令的执行点（独立库）。
+fn dispatch_documents(
+    state: &State<'_, StorageState>,
+    command: &str,
+    params: &Value,
+) -> Result<Value, DbError> {
+    let guard = state.docs_engine()?;
+    let Some(engine) = guard.as_ref() else {
+        return Err(DbError::new(
+            codem_db::ErrorCode::Unavailable,
+            "文档索引引擎未就绪",
+        ));
+    };
+    codem_db::docs::invoke(engine, command, params)
 }
 
 /// 批量写：顺序执行、每步一个独立事务、失败即停并如实回报"已完成几步"。
@@ -540,7 +605,13 @@ pub fn storage_batch(
     let mut done: Vec<Value> = Vec::new();
     for item in &commands {
         let params = item.params.clone().unwrap_or_else(|| json!({}));
-        match dispatch(engine, &item.command, &params) {
+        // 文档索引命令同样分流（批里混用也不出错；见 storage_invoke 的说明）。
+        let result = if item.command.starts_with("documents.") {
+            dispatch_documents(&state, &item.command, &params)
+        } else {
+            dispatch(engine, &item.command, &params)
+        };
+        match result {
             Ok(v) => done.push(json!({ "command": item.command, "ok": true, "result": v })),
             Err(e) => {
                 /*

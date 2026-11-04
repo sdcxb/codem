@@ -2,8 +2,8 @@
   "_note": "由 tools/docs/update-project-guide.mjs --write 生成；发版时用于对齐文档基线。计数类信息只做警告，版本一致性是硬门禁。",
   "version": "1.18.5",
   "updatedAt": "2026-11-04",
-  "testFiles": 880,
-  "coreDirs": 61,
+  "testFiles": 889,
+  "coreDirs": 62,
   "sqliteTables": 45,
-  "tauriCommandAnnotations": 118
+  "tauriCommandAnnotations": 133
 }

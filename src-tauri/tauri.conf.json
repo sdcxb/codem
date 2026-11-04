@@ -38,7 +38,8 @@
     "resources": [
       "resources/ofm/**/*",
       "resources/host/web/**/*",
-      "resources/node/**/*"
+      "resources/node/**/*",
+      "resources/pdfium/**/*"
     ],
     "icon": [
       "icons/32x32.png",
@@ -76,6 +77,3 @@
     }
   }
 }
-
-
-

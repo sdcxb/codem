@@ -1,0 +1,13 @@
+{
+  "purpose": "PDFium 动态库（PDF 文本提取）。不进仓库：由 tools/vendor/fetch-pdfium.mjs 按这里的固定版本现拉并校验 sha256；构建/发布前必须先跑一次，否则 .pdf 会降级为 needs_engine。",
+  "tag": "chromium/8125",
+  "asset": "pdfium-win-x64.tgz",
+  "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8125/pdfium-win-x64.tgz",
+  "sha256": "9a964261760cff52570aabf038ab346d3a5034dd8b30d0d5fe8861235d356b8b",
+  "size": 3904987,
+  "platform": "win32-x64",
+  "dest": "src-tauri/resources/pdfium/win32-x64",
+  "dll": "pdfium.dll",
+  "upstream": "https://github.com/bblanchon/pdfium-binaries",
+  "license": "Apache-2.0 / BSD-3-Clause（PDFium 及其构建脚本的许可证，见上游仓库）"
+}

@@ -9,6 +9,7 @@
  */
 
 import { getMultimodalSettings, transcribeAudioBlob, type MultimodalProviderConfig } from "./multimodal";
+import { modelSupportsVision as modelHasNativeVision } from "./model-capabilities";
 import { getLLMEngine } from "./index";
 import type { LLMMessage, ContentBlock } from "../storage/message";
 import { redactSecrets } from "../utils/redact";
@@ -112,32 +113,15 @@ export class VisionProxy {
   }
 
   /**
-   * 检查模型是否支持 vision（基于 capability-detector 的能力数据库）
+   * 是否原生支持图片输入。
+   *
+   * 逻辑已收敛到 `model-capabilities.ts`（唯一真源）：此前这里自带一份前缀表，
+   * 缺 `deepseek-flash` ⇒ 多模态模型被误路由到视觉代理（真机 bug：选着 deepseek-flash
+   * 却提示"不支持视觉"，图片还被送去描述）。
+   * 方法保留只是为了不破坏既有判据对它的直接探测。
    */
-  private modelSupportsVision(model: string, provider: string): boolean {
-    // 使用与 capability-detector.ts 相同的前缀匹配逻辑
-    const modelLower = model.toLowerCase();
-
-    // OpenAI vision models
-    if (modelLower.startsWith("gpt-4o") && !modelLower.includes("mini")) return true;
-    if (modelLower.startsWith("gpt-4o-mini")) return true;
-    if (modelLower.startsWith("o3") && !modelLower.includes("mini")) return true;
-    if (modelLower.startsWith("o4-mini")) return true;
-
-    // Anthropic
-    if (modelLower.startsWith("claude-3") || modelLower.startsWith("claude-4") ||
-        modelLower.startsWith("claude-opus-4") || modelLower.startsWith("claude-sonnet-4")) return true;
-
-    // Gemini
-    if (modelLower.startsWith("gemini-1.5") || modelLower.startsWith("gemini-2")) return true;
-
-    // MiMo — 只有 mimo-v2.5 支持图片理解，mimo-v2.5-pro 不支持
-    if (modelLower === "mimo-v2.5") return true;
-
-    // DeepSeek 视觉实验模型（服务器 /models 不列它，但实测可正常调用并接受图片）
-    if (modelLower.startsWith("deepseek-v4-flash-vision")) return true;
-
-    return false;
+  private modelSupportsVision(model: string, _provider: string): boolean {
+    return modelHasNativeVision(model);
   }
 
   /**
@@ -309,6 +293,21 @@ export class VisionProxy {
    */
   getVisionConfig(): MultimodalProviderConfig | null {
     return this.resolveVisionConfig();
+  }
+
+  /**
+   * 用**显式给定的**视觉配置描述一张图（文档 OCR 用）。
+   *
+   * 与 `processMessages` 的区别：这里不猜"当前主模型是否支持视觉"，也不走代理路由；
+   * 调用方（文档 OCR）已经决定用哪个模型/哪把 key。
+   */
+  async describeImageWith(
+    config: MultimodalProviderConfig,
+    base64Data: string,
+    mediaType: string,
+    prompt?: string,
+  ): Promise<string> {
+    return this.describeImage(config, base64Data, mediaType, prompt);
   }
 
   /**

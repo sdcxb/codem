@@ -723,6 +723,28 @@
     "gap": "var(--space-2)",
     "padding": "var(--space-2) var(--space-1)"
   },
+  "attachment-doc-bad": {
+    "color": "var(--error-content)"
+  },
+  "attachment-doc-badge": {
+    "border": "1px solid currentColor",
+    "border-radius": "var(--radius-sm)",
+    "font-size": "var(--fs-xs)",
+    "padding": "0 var(--space-2)",
+    "white-space": "nowrap"
+  },
+  "attachment-doc-busy": {
+    "color": "var(--text-muted)"
+  },
+  "attachment-doc-muted": {
+    "color": "var(--text-muted)"
+  },
+  "attachment-doc-ok": {
+    "color": "var(--success-content)"
+  },
+  "attachment-doc-warn": {
+    "color": "var(--warning-content)"
+  },
   "attachment-file": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
@@ -736,8 +758,11 @@
   },
   "attachment-hint": {
     "color": "var(--text-muted)",
+    "display": "block",
     "font-size": "var(--fs-sm)",
-    "padding": "var(--space-2) 0"
+    "margin-bottom": "var(--space-2)",
+    "padding": "var(--space-2) 0",
+    "width": "100%"
   },
   "attachment-image": {
     "border": "1px solid var(--border-primary)",
@@ -2696,7 +2721,8 @@
     "display": "flex",
     "flex-wrap": "wrap",
     "gap": "var(--space-2)",
-    "padding": "var(--space-2) 0"
+    "margin-bottom": "var(--space-2)",
+    "padding": "var(--space-2) 0 0"
   },
   "context-balance-amount": {
     "color": "var(--success)",
@@ -3781,6 +3807,41 @@
     "gap": "var(--space-4)",
     "grid-template-columns": "max-content minmax(0, 1fr) max-content",
     "min-width": "0"
+  },
+  "doc-index-bar": {
+    "align-items": "center",
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-3)",
+    "margin-bottom": "var(--space-3)"
+  },
+  "doc-index-bar-title": {
+    "color": "var(--text-secondary)",
+    "font-weight": "600"
+  },
+  "doc-index-cancel": {
+    "background": "none",
+    "border": "none",
+    "color": "var(--text-muted)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-xs)",
+    "padding": "0",
+    "text-decoration": "underline"
+  },
+  "doc-index-chip": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-full)",
+    "padding": "1px var(--space-3)",
+    "white-space": "nowrap"
+  },
+  "doc-index-error": {
+    "color": "var(--warning-content)"
+  },
+  "doc-index-progress": {
+    "white-space": "nowrap"
   },
   "draft-actions": {
     "display": "flex",

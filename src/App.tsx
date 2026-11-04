@@ -2518,6 +2518,9 @@ flushStreamBuffer(); // flush all on unmount
                 return next;
               });
             }),
+          abortSession: (sid: string) => {
+            abortControllersRef.current.get(sid)?.abort();
+          },
         });
       })
       .catch((e) => console.warn("[App] 目标模式运行宿主注册失败（目标模式不可用，普通对话不受影响）:", e));
@@ -3707,6 +3710,32 @@ if (!session) {
      * （在屏时保留原行为：整份列表过一遍指纹去重后落库，供 loop 立刻读回。）
      */
     if (isSessionOnScreen(session.id)) saveMessages(session.id);
+
+    /*
+     * ===== 项目级文档索引（ADR-0008）：入口 3.2「消息里明确给出的路径」 =====
+     *
+     * 在本条用户消息落库之后、`runAgenticLoop` 之前触发，但**不 await**：
+     * 索引可能跑几十秒（大 PDF），用户不该等它；工具的「未就绪」状态会如实告诉模型
+     * 「正在索引」。只处理**本条消息**，且只登记「存在 + 文档扩展名 + 允许根内」的路径。
+     */
+    void (async () => {
+      try {
+        const { collectionIdFor } = await import("./core/document/client");
+        const { ingestDocumentPathsFromMessage } = await import("./core/document/ingest-from-message");
+        const { refreshDocStatus } = await import("./core/document/status-store");
+        const collectionId = collectionIdFor(session.projectId || currentProject?.id, session.id);
+        const cwd = currentProject?.path || (await getAppRoot());
+        const outcomes = await ingestDocumentPathsFromMessage({
+          message,
+          cwd,
+          collectionId,
+          allowedRoots: cwd ? [cwd] : [],
+        });
+        if (outcomes.length > 0) void refreshDocStatus(collectionId);
+      } catch (e) {
+        console.warn("[App] 文档路径入索引失败（不影响本轮对话）:", e);
+      }
+    })();
 
     /*
      * ===== 长程目标模式（ADR-0006）：多阶段任务在建目标后由 Goal Runner 推进 =====
