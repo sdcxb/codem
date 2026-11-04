@@ -1327,6 +1327,8 @@ export class AgenticLoop {
   private turnTouchedCode = false;
   private turnTouchedDocument = false;
   private turnTouchedUnknown = false;
+  /** 最近一次迭代的可见文本（只用于收尾时识别“文档交付物”，不参与完成门） */
+  private lastAssistantText = "";
   private turnRanVerification = false;
   /**
    * **第 140 波：最后一次编辑之后还没验证过** ✓。
@@ -2019,6 +2021,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.turnTouchedCode = false;
     this.turnTouchedDocument = false;
     this.turnTouchedUnknown = false;
+    this.lastAssistantText = "";
     this.turnRanVerification = false;
     this.turnEditsAfterVerification = false; // 第 140 波：时序判据 ✓
     this.verificationNudgeIssued = false;
@@ -3818,7 +3821,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             touchedCode: this.turnTouchedCode,
             touchedDocument: this.turnTouchedDocument,
             touchedUnknown: this.turnTouchedUnknown,
-            userMessage: this.lastUserMessage,
+            userMessage: `${this.lastUserMessage}\n${this.lastAssistantText}`,
           }) &&
           (this.turnEditsAfterVerification || (this.turnModifiedFiles && !this.turnRanVerification))
         ) {
@@ -5005,6 +5008,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     }, Date.now() - (this.state.turnStartTime ?? Date.now()));
     // P1: Record trajectory — assistant output (text content)
     if (currentText.trim()) {
+      this.lastAssistantText = currentText;
       this.recordTrajectory(sessionId, "assistant_output", { content: currentText.substring(0, 500), iteration: this.state.iteration });
     }
     yield { type: "usage", usage };
@@ -5483,10 +5487,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               else this.turnTouchedUnknown = true;
             } else if (textScope.document && !textScope.code) {
               this.turnTouchedDocument = true;
-            } else if (textScope.code && !textScope.document) {
-              this.turnTouchedCode = true;
             } else {
-              // 同时出现两类或完全识别不到：不猜，交给任务描述兜底。
+              /**
+               * bash 里看见 `.py` 不等于“产品代码改了”：它可能只是生成文档的脚本。
+               * 不在这里直接判 code，记为 unknown，收尾时再结合用户描述与最终文本判断；
+               * 明确 `write/edit` 到代码文件仍会走上面的 pathScope=code 分支。
+               */
               this.turnTouchedUnknown = true;
             }
           }

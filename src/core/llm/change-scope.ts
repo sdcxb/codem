@@ -35,6 +35,10 @@ const DOCUMENT_TEXT_RE =
 const CODE_TEXT_RE =
   /\.(?:ts|tsx|js|jsx|mjs|cjs|rs|py|pyi|go|java|kt|kts|swift|c|cc|cpp|cxx|h|hpp|cs|rb|php|scala|sh|bash|zsh|ps1|bat|cmd|sql|css|scss|sass|less|vue|svelte|astro|json|jsonc|ya?ml|toml|ini|cfg|conf|env|lock|gradle|cmake|dockerfile|makefile)(?=$|[\s"'`),;:])/i;
 
+/** 命令里出现这些工具/库，说明它在产出文档，而不是在改产品代码。 */
+const DOCUMENT_COMMAND_RE =
+  /(?:python-docx|docx|openpyxl|xlsxwriter|python-pptx|pptx|pandoc|soffice|libreoffice|winword|word[.\s]?application|wps|reportlab|markdown)/i;
+
 /** 无扩展名但明确是代码/配置的 basename（小写） */
 const CODE_BASENAMES = new Set([
   "dockerfile",
@@ -76,15 +80,15 @@ export interface ChangeTextScope {
 export function classifyChangeText(text: string): ChangeTextScope {
   const value = String(text ?? "");
   const code = CODE_TEXT_RE.test(value) || [...CODE_BASENAMES].some((name) => value.toLowerCase().includes(name));
-  const document = DOCUMENT_TEXT_RE.test(value);
+  const document = DOCUMENT_TEXT_RE.test(value) || DOCUMENT_COMMAND_RE.test(value);
   return { code, document };
 }
 
 const DOCUMENT_TASK_RE =
-  /(?:写|编写|撰写|编辑|生成|整理|重写|改写|润色|排版|校对|核对|合并|拆分|提取|更新)[^。\n]{0,20}(?:文档|文稿|报告|方案|申报书|标书|论文|手册|说明书|合同|术语表|章节|目录|表格|PPT|幻灯片)|\.(?:docx?|md|markdown|pptx?|xlsx?|pdf)\b|文档任务|写文档|写材料|文字工作/i;
+  /(?:写|编写|撰写|编辑|生成|整理|重写|改写|润色|排版|校对|核对|合并|拆分|提取|更新|续写|补充)[^。\n]{0,30}(?:文档|文稿|报告|方案|申报书|标书|论文|手册|说明书|合同|术语表|章节|目录|分册|材料|表格|PPT|幻灯片|Word)|\.(?:docx?|md|markdown|pptx?|xlsx?|pdf)\b|文档任务|写文档|写材料|文字工作|按[^。\n]{0,12}体例/i;
 
 const CODE_TASK_RE =
-  /(?:代码|源码|函数|接口|编译|构建|测试|缺陷|报错|异常|修复|修 bug|重构|实现|类型|部署|数据库|SQL|API|npm|pnpm|yarn|rust|typescript|react|python|git|commit|单元测试|集成测试|typecheck|vitest|cargo)/i;
+  /(?:代码|源码|函数|编译|构建|单元测试|集成测试|bug|修复|重构|部署|SQL|API|npm|pnpm|yarn|rust|typescript|react|git|commit|typecheck|vitest|cargo)/i;
 
 /** 只用于“没有具体改动路径”的兜底；明确路径永远优先。 */
 export function looksLikeDocumentTask(userMessage: string): boolean {

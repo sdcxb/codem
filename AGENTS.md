@@ -1,7 +1,7 @@
 # AGENTS.md —— 快速操作规程（**当前文档集：`docs/project-guide/README.md`**）
 
 > ★★ **2026-10-26 起，先读 `docs/project-guide/00-AGENT-HANDBOOK.md`** ✓ —— 这是给任何 AI / Agent 平台的接手手册（开工清单 / 硬规则 / 基线 / 坑 / 任务路由）。
-> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.4**。
+> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.5**。
 >
 > ★★ 旧入口（仍可参考）：**先读 `docs/PROJECT-GUIDE.md` 开头的「从这里开始」一节** ✓ —— 那是本项目的**历史核心文档**，
 
@@ -17,9 +17,9 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.18.4**（完成回合隐藏继续 + 继续条阅读列对齐 + 子代理/搜索长尾闸门；长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
-- 1.18.4 包含：1.18.0 的目标模式/手机端/零码网关；1.18.1 的长尾效率与完成态修复；1.18.2 的继续条 CSS/旧会话修复；1.18.3 的文档任务验证误报修复；1.18.4 的水位提示预热修复。
-- 测试规模：**880 个测试文件 / 9549 个用例**（9532 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
+- 当前版本：**1.18.5**（完成回合隐藏继续 + 继续条阅读列对齐 + 子代理/搜索长尾闸门；长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
+- 1.18.5 包含：1.18.0 的目标模式/手机端/零码网关；1.18.1 的长尾效率与完成态修复；1.18.2 的继续条 CSS/旧会话修复；1.18.3 的文档任务验证误报修复；1.18.4 的水位提示预热修复；1.18.5 的文档任务识别续修。
+- 测试规模：**880 个测试文件 / 9551 个用例**（9534 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -60,7 +60,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 3.2 分钟；880 文件 / 9549 用例）
+npx vitest run                          # 全量测试（约 3.2 分钟；880 文件 / 9551 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
@@ -116,7 +116,7 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 
 **未做 / 已知未修（别重复劳动，理由都记在交接里）**
 
-- **完整 12 任务配对评测**：1.18.0 只有单轮，1.18.1/1.18.4 未重跑；这是下一批重型任务的第一优先级。
+- **完整 12 任务配对评测**：1.18.0 只有单轮，1.18.1/1.18.5 未重跑；这是下一批重型任务的第一优先级。
 - **长尾因果**：候选两轮没有触发红判据停滞终态，不能把 token 降幅全部归因于新闸门。
 - **Android arm64 真机**：PRoot / WebView / 厂商保活未验证；APK 仍是 debug 签名预览包。
 - **项目工作台真实模型 3 并发**：未证明；自动压缩极端 80 万 token 会话仍是边界。
@@ -163,7 +163,7 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 
 ```powershell
 # 跑一批评测（示例；EVAL_ONLY 传用例 id，写错会大声报错）
-$env:EVAL_VERSION="1.18.4"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
+$env:EVAL_VERSION="1.18.5"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
 $env:EVAL_ONLY="repo-02-write-false-success,repo-06-llm-failure-not-completed"
 node .preview-shot\_codem-repo-eval.mjs run $env:EVAL_ONLY --register --run 1 --timeout-min 60
 node .preview-shot\_collect.mjs --apply --treatment .preview-shot/eval-records-codem-repo-vXX.jsonl

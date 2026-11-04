@@ -280,4 +280,49 @@ describe("「改了但没验证」守卫的行为判据（第 93 波补 §3.2）
     expect(text).not.toContain("没有验证");
     expect(text).not.toContain("未经证实");
   });
+
+  it("VERIF-5 文档任务里出现「接口/Word/验证」也不能被当成代码任务", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      toolIteration("b1", "bash", { command: "python -X utf8 .codem-cache/build_section4.py" }),
+      textIteration("第（4）项已按同体例单独出 Word。"),
+    ]);
+    const { registry } = buildRegistry();
+
+    const loop = new AgenticLoop(provider as any, registry, {
+      maxIterations: 10,
+      model: "verify-guard-model",
+      securityMode: "full",
+    });
+    const events = await drain(
+      loop,
+      "继续第（4）项接口与闭环，把检索结果按同体例单独出 Word，并在两个验证场景下核对",
+    );
+    const text = textOf(events);
+
+    expect(provider.requests.length, "文档交付物不该被推着跑测试/构建").toBe(2);
+    expect(text).not.toContain("没有验证");
+    expect(text).not.toContain("未经证实");
+  });
+
+  it("VERIF-6 用户只说“继续”，但最终文本列出 .docx/.md：仍按文档任务处理", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      toolIteration("b1", "bash", { command: "python -X utf8 .codem-cache/build_doc.py" }),
+      textIteration("已生成 任务三_实施方案.docx 和 分册_故障知识推送.md。"),
+    ]);
+    const { registry } = buildRegistry();
+
+    const loop = new AgenticLoop(provider as any, registry, {
+      maxIterations: 10,
+      model: "verify-guard-model",
+      securityMode: "full",
+    });
+    const events = await drain(loop, "继续");
+    const text = textOf(events);
+
+    expect(provider.requests.length, "最终文本已点明文档交付物，不该再催测试/构建").toBe(2);
+    expect(text).not.toContain("没有验证");
+    expect(text).not.toContain("未经证实");
+  });
 });
