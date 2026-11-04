@@ -1,15 +1,15 @@
 {
-  "version": "1.18.2",
-  "notes": "Codem v1.18.2：继续条与正文列对齐，已完成旧会话不再显示继续",
-  "pub_date": "2026-11-04T06:54:42Z",
+  "version": "1.18.3",
+  "notes": "Codem v1.18.3：修复写文档任务被误催测试/构建，代码验证门保持不变",
+  "pub_date": "2026-11-04T08:10:27Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1k2Qk96MmY0SnNzbXpnS1Z0eFg3L1ZzM0paZzF1bnRrWUZrdnJ1cmV0NEovcGM1OVhyVUlkUWxpTFdDd05OdkRTL0VuWDA4S0RXMndPVVJYVXdwL2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzc1MjU5CWZpbGU6Q29kZW1fMS4xOC4yX3g2NC1zZXR1cC5leGUKNjlBMjgwd0U4dFlCcnZtS3NmQW52V3JlTFNkM2JxR3M3V0R5ZDV4TFlZaStjOTQwWG1rRXhKSlNHK0NKWm1WSmxISmtOSG41a2ZtUGVTUnhVd3NaRHc9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.2/Codem_1.18.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R0S2QyNE05THJDYWpyYzllVFNDcDdETkJKSFBqU3lyb3Q3cy9QWXFaYkJGcjQxQ0lJYWF5NG9aN3pDY3ZSeXJ5U2tyZStESUJ5WFlna2FObWdmc0FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzc5ODAyCWZpbGU6Q29kZW1fMS4xOC4zX3g2NC1zZXR1cC5leGUKcWdyQjVpNFFKdW9XS2E2Sm1OK3AvUEgwYWQ2VmM1TGk0UWtwR2UvV2JMZy9XVEFENmFDNC9laVBpaFdnNW0vcXpNUHVzOVhsMGlkN2ZkVVhKNkU4QlE9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.3/Codem_1.18.3_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1k2Qk96MmY0SnNzbXpnS1Z0eFg3L1ZzM0paZzF1bnRrWUZrdnJ1cmV0NEovcGM1OVhyVUlkUWxpTFdDd05OdkRTL0VuWDA4S0RXMndPVVJYVXdwL2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzc1MjU5CWZpbGU6Q29kZW1fMS4xOC4yX3g2NC1zZXR1cC5leGUKNjlBMjgwd0U4dFlCcnZtS3NmQW52V3JlTFNkM2JxR3M3V0R5ZDV4TFlZaStjOTQwWG1rRXhKSlNHK0NKWm1WSmxISmtOSG41a2ZtUGVTUnhVd3NaRHc9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.2/Codem_1.18.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R0S2QyNE05THJDYWpyYzllVFNDcDdETkJKSFBqU3lyb3Q3cy9QWXFaYkJGcjQxQ0lJYWF5NG9aN3pDY3ZSeXJ5U2tyZStESUJ5WFlna2FObWdmc0FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzc5ODAyCWZpbGU6Q29kZW1fMS4xOC4zX3g2NC1zZXR1cC5leGUKcWdyQjVpNFFKdW9XS2E2Sm1OK3AvUEgwYWQ2VmM1TGk0UWtwR2UvV2JMZy9XVEFENmFDNC9laVBpaFdnNW0vcXpNUHVzOVhsMGlkN2ZkVVhKNkU4QlE9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.3/Codem_1.18.3_x64-setup.exe"
     }
   }
 }

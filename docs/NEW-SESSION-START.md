@@ -1,7 +1,7 @@
 # 新会话开工说明（Codem）—— 先读这一页，再读交接包
 
-> **基线**：2026-11-04 ｜ 版本 **1.18.2**（GitHub `Latest`）｜ `master` @ `git log -1`
-> ｜ 全量测试 **878 文件 / 9541 用例**（9524 通过 / 17 skipped / 0 失败）｜ `tsc` 0。
+> **基线**：2026-11-04 ｜ 版本 **1.18.3**（GitHub `Latest`）｜ `master` @ `git log -1`
+> ｜ 全量测试 **879 文件 / 9547 用例**（9530 通过 / 17 skipped / 0 失败）｜ `tsc` 0。
 >
 > **本文件只做入口，不承载全部事实。** 真正的交接包是
 > **`docs/project-guide/20-HEAVY-TASK-HANDOFF.md`**；
@@ -57,9 +57,9 @@ npx vitest run <相关判据>        # 先单跑；全量放最后
 
 | 项 | 值 |
 |---|---|
-| 版本/发布 | **1.18.2**，GitHub `Latest`（2026-11-04） |
+| 版本/发布 | **1.18.3**，GitHub `Latest`（2026-11-04） |
 | 工作区 | 发布提交后应干净；只允许 `.codem/` 运行时文件未跟踪 |
-| 全量测试 | 878 文件 / 9541 用例：**9524 通过、17 skipped、0 失败**（约 188s） |
+| 全量测试 | 879 文件 / 9547 用例：**9530 通过、17 skipped、0 失败**（约 181s） |
 | Rust / Flutter | 241 passed / 2 ignored；Flutter 10 passed（本轮未改，改动后重跑） |
 | 12 任务对标 | 1.18.0 单轮：Codem **10/12**，DSH **9/12**；`insufficient-repetition`，只能作方向性结论 |
 | 长尾单任务 | 修复前 1 轮 104.46M total；候选 2 轮均值 8.30M，均通过；但新闸门并非每轮触发，不能全归因 |
@@ -91,7 +91,7 @@ git status -sb
 git log --oneline -5
 npx tsc --noEmit                         # 必须 0
 npx vitest run src/test/<相关>.test.ts   # 先单跑
-npx vitest run                           # 全量约 3.2 分钟；878 文件 / 9541 用例
+npx vitest run                           # 全量约 3.2 分钟；879 文件 / 9547 用例
 npm run audit:docs                       # 文档/版本门禁
 node tools/audit/scan-report-sites.mjs --check
 node tools/mutate/check-artifacts.mjs

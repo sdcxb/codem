@@ -138,9 +138,9 @@ function buildRegistry() {
   return { registry, executed };
 }
 
-async function drain(loop: AgenticLoop): Promise<any[]> {
+async function drain(loop: AgenticLoop, userMessage = "修掉 edit 的二义性"): Promise<any[]> {
   const events: any[] = [];
-  for await (const e of loop.run(SESSION, "修掉 edit 的二义性", CWD, "system prompt")) {
+  for await (const e of loop.run(SESSION, userMessage, CWD, "system prompt")) {
     events.push(e);
   }
   return events;
@@ -233,5 +233,51 @@ describe("「改了但没验证」守卫的行为判据（第 93 波补 §3.2）
     expect(text, "跑过验证却还在提示「没有验证」= 误报，会白烧一个迭代").not.toContain("没有验证");
     expect(text, "跑过验证却还说「未经证实」= 误报").not.toContain("未经证实");
     expect(endResult(events).reason).toBe("completed");
+  });
+
+  it("VERIF-3 文档任务：写 .docx 后收尾，不催测试/构建", async () => {
+    const DOC = `${CWD}\\任务三_实施方案.docx`;
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      toolIteration("w1", "write", { path: DOC, content: "doc bytes" }),
+      textIteration("文档已写入。"),
+    ]);
+    const { registry, executed } = buildRegistry();
+
+    const loop = new AgenticLoop(provider as any, registry, {
+      maxIterations: 10,
+      model: "verify-guard-model",
+      securityMode: "full",
+    });
+    const events = await drain(loop, "写一份任务三实施方案文档（docx），按章节整理");
+    const text = textOf(events);
+
+    expect(executed).toEqual([`write:${DOC}`]);
+    expect(provider.requests.length, "文档任务不该被推着多跑一轮").toBe(2);
+    expect(text, "文档任务不该出现“没有验证”").not.toContain("没有验证");
+    expect(text, "文档任务不该出现“未经证实”").not.toContain("未经证实");
+    expect(endResult(events).reason).toBe("completed");
+  });
+
+  it("VERIF-4 文档任务：不透明 python 生成文档，也不催测试/构建", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      toolIteration("b1", "bash", { command: "python -X utf8 .codem-cache/build_doc.py" }),
+      textIteration("材料已生成。"),
+    ]);
+    const { registry, executed } = buildRegistry();
+
+    const loop = new AgenticLoop(provider as any, registry, {
+      maxIterations: 10,
+      model: "verify-guard-model",
+      securityMode: "full",
+    });
+    const events = await drain(loop, "把任务三材料整理成 docx 文档，按目录拆章节");
+    const text = textOf(events);
+
+    expect(executed).toEqual(["bash:python -X utf8 .codem-cache/build_doc.py"]);
+    expect(provider.requests.length, "文档任务不该被“没有验证”推多一轮").toBe(2);
+    expect(text).not.toContain("没有验证");
+    expect(text).not.toContain("未经证实");
   });
 });

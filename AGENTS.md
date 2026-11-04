@@ -1,7 +1,7 @@
 # AGENTS.md —— 快速操作规程（**当前文档集：`docs/project-guide/README.md`**）
 
 > ★★ **2026-10-26 起，先读 `docs/project-guide/00-AGENT-HANDBOOK.md`** ✓ —— 这是给任何 AI / Agent 平台的接手手册（开工清单 / 硬规则 / 基线 / 坑 / 任务路由）。
-> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.2**。
+> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.3**。
 >
 > ★★ 旧入口（仍可参考）：**先读 `docs/PROJECT-GUIDE.md` 开头的「从这里开始」一节** ✓ —— 那是本项目的**历史核心文档**，
 
@@ -17,9 +17,9 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.18.2**（完成回合隐藏继续 + 继续条阅读列对齐 + 子代理/搜索长尾闸门；长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
-- 1.18.2 包含：1.18.0 的目标模式/手机端/零码网关；1.18.1 的长尾效率与完成态修复；1.18.2 的继续条 CSS/旧会话修复。
-- 测试规模：**878 个测试文件 / 9541 个用例**（9524 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
+- 当前版本：**1.18.3**（完成回合隐藏继续 + 继续条阅读列对齐 + 子代理/搜索长尾闸门；长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
+- 1.18.3 包含：1.18.0 的目标模式/手机端/零码网关；1.18.1 的长尾效率与完成态修复；1.18.2 的继续条 CSS/旧会话修复；1.18.3 的文档任务验证误报修复。
+- 测试规模：**879 个测试文件 / 9547 个用例**（9530 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -48,7 +48,7 @@ src/core/environment/ 工作区变更追踪（file-change-tracker.ts）
 src/core/prompt/      系统提示词与外置模板
 src/core/knowledge/   知识与动画类小工具（字体/嵌入/PPT 生成等）
 src/components/       React 界面组件（含技能管理、设置面板、任务中心等）
-src/test/             878 个测试文件（判据都写在这里）
+src/test/             879 个测试文件（判据都写在这里）
 tools/eval/           评测口径（配对报告、去重）
 tools/audit/          结构审计（上报点分诊、可达性门禁等）
 .preview-shot/        评测脚手架与运行产物（**已被 .gitignore 忽略**，不进仓库）
@@ -60,7 +60,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 3.2 分钟；878 文件 / 9541 用例）
+npx vitest run                          # 全量测试（约 3.2 分钟；879 文件 / 9547 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
@@ -97,7 +97,7 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 **能力水平（对标 DSH，同一套任务、同一模型、同一推理强度）**
 
 - **12 个真实仓库修复任务（1.18.0 单轮）**：Codem 通过 **10/12**，DSH 通过 **9/12**；报告标记 `insufficient-repetition`，只能作方向性结论，**不是统计显著结果**。
-- **长尾单任务（repo-06）**：1.18.0 记录 total 104.5M / 4.25M input / 200k output / 283 tools / 234 iter / 2,611s；1.18.2 前构建候选 2 轮均通过，均值 total 8.30M / 293.6k input / 42.8k output / 84 tools / 55.5 iter / 869s。**新闸门并非每轮触发，不能把降幅全部归因于优化**；完整 12 任务未重跑。
+- **长尾单任务（repo-06）**：1.18.0 记录 total 104.5M / 4.25M input / 200k output / 283 tools / 234 iter / 2,611s；1.18.2 前构建的候选 2 轮均通过，均值 total 8.30M / 293.6k input / 42.8k output / 84 tools / 55.5 iter / 869s。**新闸门并非每轮触发，不能把降幅全部归因于优化**；完整 12 任务未重跑。
 - **仍弱于 DSH 的一项**：单次响应时延（约慢 1.5 倍）。**已定性**：实测 310 次调用里 **99% 的时间在等模型服务端**、客户端处理只占 **1.1%**，且服务端速率在批内极差仅 7%（不是负载波动）⇒ 差异来自**账号/路由**（DSH 走平台账号，我们用公开 API key）⇒ **产品内改不动**，不再投入。
 - **已知且被接受的方差**：个别评测任务（如 repo-06/repo-09）同一构建不同轮次会通过或不通过 ⇒ 属模型侧采样方差 ⇒ **不是可修的结构缺陷**（曾尝试用“零改动收尾闸”兜住，被两条既有行为判据证否 ⇒ 已撤销）。
 
@@ -116,7 +116,7 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 
 **未做 / 已知未修（别重复劳动，理由都记在交接里）**
 
-- **完整 12 任务配对评测**：1.18.0 只有单轮，1.18.1/1.18.2 未重跑；这是下一批重型任务的第一优先级。
+- **完整 12 任务配对评测**：1.18.0 只有单轮，1.18.1/1.18.3 未重跑；这是下一批重型任务的第一优先级。
 - **长尾因果**：候选两轮没有触发红判据停滞终态，不能把 token 降幅全部归因于新闸门。
 - **Android arm64 真机**：PRoot / WebView / 厂商保活未验证；APK 仍是 debug 签名预览包。
 - **项目工作台真实模型 3 并发**：未证明；自动压缩极端 80 万 token 会话仍是边界。
@@ -163,7 +163,7 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 
 ```powershell
 # 跑一批评测（示例；EVAL_ONLY 传用例 id，写错会大声报错）
-$env:EVAL_VERSION="1.18.2"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
+$env:EVAL_VERSION="1.18.3"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
 $env:EVAL_ONLY="repo-02-write-false-success,repo-06-llm-failure-not-completed"
 node .preview-shot\_codem-repo-eval.mjs run $env:EVAL_ONLY --register --run 1 --timeout-min 60
 node .preview-shot\_collect.mjs --apply --treatment .preview-shot/eval-records-codem-repo-vXX.jsonl

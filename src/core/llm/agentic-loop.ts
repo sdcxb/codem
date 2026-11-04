@@ -52,6 +52,7 @@ import { buildFamilyReminder } from "./task-keyword-search";
 import { RepeatGuard, type GuardKind, bashIntent, exactSignature } from "./loop-guard";
 import { ObservationCache } from "./observation-cache";
 import { StallGuard } from "./stall-guard";
+import { classifyChangePath, classifyChangeText, looksLikeDocumentTask, requiresCodeVerification } from "./change-scope";
 import { RedFingerprintGuard } from "./red-fingerprint";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
@@ -1322,6 +1323,10 @@ export class AgenticLoop {
    * （测试 / 构建 / 类型检查）才允许安静地收尾；否则先提示一次，仍然不验证就**明说"未经验证"**。
    */
   private turnModifiedFiles = false;
+  /** 改动对象分级：代码/配置 vs 文档/内容 vs 不透明；用于避免文档任务被催测试 */
+  private turnTouchedCode = false;
+  private turnTouchedDocument = false;
+  private turnTouchedUnknown = false;
   private turnRanVerification = false;
   /**
    * **第 140 波：最后一次编辑之后还没验证过** ✓。
@@ -2011,6 +2016,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.regressionNudges = 0;
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
+    this.turnTouchedCode = false;
+    this.turnTouchedDocument = false;
+    this.turnTouchedUnknown = false;
     this.turnRanVerification = false;
     this.turnEditsAfterVerification = false; // 第 140 波：时序判据 ✓
     this.verificationNudgeIssued = false;
@@ -3805,7 +3813,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * ① 先提示一次，让它自己去验证（花一轮，换"真的做对了"通常是划算的）；
          * ② 仍然不验证就**明说"这一轮未经证实"**，让用户与调用方都看得见。
          */
-        if (this.turnEditsAfterVerification || (this.turnModifiedFiles && !this.turnRanVerification)) {
+        if (
+          requiresCodeVerification({
+            touchedCode: this.turnTouchedCode,
+            touchedDocument: this.turnTouchedDocument,
+            touchedUnknown: this.turnTouchedUnknown,
+            userMessage: this.lastUserMessage,
+          }) &&
+          (this.turnEditsAfterVerification || (this.turnModifiedFiles && !this.turnRanVerification))
+        ) {
           if (!this.verificationNudgeIssued) {
             this.verificationNudgeIssued = true;
             recordLoopStop(sessionId, "completed_unverified", { phase: "nudge", iteration: this.state.iteration });
@@ -5439,6 +5455,41 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
         if (artifactThisCall) {
           this.turnModifiedFiles = true;
+          /**
+           * 第 187 波：按**改动对象**分级，避免“写文档”被要求跑测试/构建。
+           *
+           * 明确路径优先；没有路径时看命令/输出里出现的扩展名；两者都拿不到
+           * 才记为 unknown（收尾时再结合用户任务描述兜底）。
+           */
+          const changedPath =
+            typeof (effectiveArgs as any)?.path === "string" ? String((effectiveArgs as any).path) : "";
+          const pathScope = changedPath ? classifyChangePath(changedPath) : "unknown";
+          if (pathScope === "code") {
+            this.turnTouchedCode = true;
+          } else if (pathScope === "document") {
+            this.turnTouchedDocument = true;
+          } else {
+            const commandText = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
+            const outputText = String(result.output ?? "").slice(0, 4000);
+            const textScope = classifyChangeText(`${commandText}\n${outputText}`);
+            const docTask = looksLikeDocumentTask(this.lastUserMessage);
+            if (docTask) {
+              /**
+               * 文档任务里的 `.py` 常是**生成工具**，不是要交付的产品代码；
+               * 只要输出里出现了文档扩展名就按文档处理，否则记为 unknown，
+               * 由收尾时的任务描述兜底（不要求测试/构建）。
+               */
+              if (textScope.document) this.turnTouchedDocument = true;
+              else this.turnTouchedUnknown = true;
+            } else if (textScope.document && !textScope.code) {
+              this.turnTouchedDocument = true;
+            } else if (textScope.code && !textScope.document) {
+              this.turnTouchedCode = true;
+            } else {
+              // 同时出现两类或完全识别不到：不猜，交给任务描述兜底。
+              this.turnTouchedUnknown = true;
+            }
+          }
           /** 第 157 波：**会话级**的"动过盘" ✓（bash 写也算 ✓，族提醒用它而不是"用编辑工具改过"✗）。 */
           this.sessionModifiedAnything = true;
           /**
