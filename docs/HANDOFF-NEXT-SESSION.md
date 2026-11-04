@@ -7920,14 +7920,19 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 ### 2. 安装包 + 本机安装真机验证
 
 - `node node_modules/@tauri-apps/cli/tauri.js build`（带签名 env）产出：
-  `Codem_1.18.5_x64-setup.exe` + `.msi` + `.sig`。
-- 静默安装到隔离目录：`setup.exe /S /D=C:\mimo-gui\.preview-shot\installed-codem`
-  （NSIS 支持 `/D`，注册表 Uninstall 也指向该目录；原 `%LOCALAPPDATA%\Codem` 未覆盖）。
+  `Codem_1.18.5_x64-setup.exe`（74.8MB）+ `.msi` + `.sig`。
+- 第一轮静默安装到隔离目录做干净数据验证：`setup.exe /S /D=...\installed-codem`
+  （NSIS 支持 `/D`；但会把 HKCU Uninstall 与开始菜单/桌面快捷方式指向隔离目录）。
 - 已安装 exe（真实 `http://tauri.localhost/` 嵌入前端，非 Vite）通过 CDP 验证：
   - UI 正常、`hasTauri=true`、schema=3；
   - 1.1MB 文本摄取 → 200 块；补 1200 块+1400 向量 → 训练 9ms、k=37、assigned=1400；
   - ANN 查询 7ms vs 全量 13ms，recall@10=1.0；
   - 真实 PDF → ready，PDFium 渲染 800×1130 PNG；截图 `.preview-shot/installed-app.png`。
-- 注意：本机隔离安装不会覆盖用户原有安装；`/D` 会改写 HKCU Uninstall 指向隔离目录，
-  正式升级应再跑一次默认安装（或卸载隔离副本）。
+- 收尾：卸载隔离副本 → 把 `HKCU\Software\codem\Codem` 指回 `%LOCALAPPDATA%\Codem` →
+  重新静默安装到默认目录。最终注册表/快捷方式/exe 均指向
+  `C:\Users\abee\AppData\Local\Codem`（版本 1.18.5），隔离目录已删除；
+  再用隔离 `CODEM_DATA_HOME`/WebView 数据目录从标准安装路径验证：schema=3、PDF ready、
+  FTS 命中、PDFium 800×1130（`.preview-shot/final-installed-results.json`）。
+- 用户原先运行的 1.18.5 进程在安装前被停止；安装后未自动拉起（需要时点快捷方式）。
+
 
