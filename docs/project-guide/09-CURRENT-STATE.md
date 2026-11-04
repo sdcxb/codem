@@ -41,7 +41,7 @@
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败**（约 191s；2026-11-04 工作区实测，含目标模式/远程/零码新增判据） |
+| `npx vitest run` | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败**（约 196s；2026-11-04 工作区实测，含目标模式/远程/零码新增判据） |
 | `cargo test --lib` | **241 passed / 2 ignored / 0 failed**；其中网关 46 项 |
 | `cargo check` | exit 0（**0 error**） |
 | `flutter analyze` / `flutter test` | 0 issue / **10 passed** |

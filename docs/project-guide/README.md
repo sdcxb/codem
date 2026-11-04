@@ -97,7 +97,7 @@
 | HEAD | 以 `git log -1` 为准（v1.18.0 已发布） | `git rev-parse --short HEAD` |
 | 分支 | `master`；v1.18.0 已提交并推送 | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-03 实测 exit 0） |
-| 全量测试 | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-04 实测，约 191 秒） |
+| 全量测试 | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-04 实测，约 196 秒） |
 | 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | 干净（仅 `.codem/` 运行时文件未跟踪） | `git status --porcelain` |

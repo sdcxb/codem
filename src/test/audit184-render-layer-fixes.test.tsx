@@ -388,6 +388,7 @@ describe("F2：回合收尾与「有没有正文」解耦", () => {
     ]);
     expect(fin.update.metadata?.usage).toEqual({ inputTokens: 12, outputTokens: 3 });
     expect(fin.update.metadata?.turnEndTime).toBe(1234);
+    expect(fin.update.metadata?.turnOutcome, "完成态必须落结构化终态，继续条据此隐藏").toBe("completed");
   });
 
   it("F2b: 末轮以失败/中断收场（`{type:'error'}`）⇒ status=error + TurnStatus 落进 metadata", () => {

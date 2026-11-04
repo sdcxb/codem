@@ -373,6 +373,14 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     !isSessionStreaming &&
     lastMessage?.role === "assistant" &&
     (lastMessage.status ?? "done") === "done" &&
+    /**
+     * 已验证完成 ⇒ 不再显示「继续」。
+     *
+     * `status === "done"` 只说明气泡收尾；`metadata.turnOutcome === "completed"`
+     * 才是引擎根据完成门（含回归红判据）落下的结构化终态。旧消息没有该字段时
+     * 保持原行为，避免把历史会话的入口突然删掉。
+     */
+    lastMessage.metadata?.turnOutcome !== "completed" &&
     String(lastMessage.content ?? "").trim().length > 0;
   /* 引导栏是纯内容滚动区（max-height 168px）：边缘 7 档渐隐，判据 EDGEFADE-* */
   const guidanceFade = useEdgeFade<HTMLDivElement>();

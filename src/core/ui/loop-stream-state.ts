@@ -156,6 +156,12 @@ export function buildTurnFinalize(params: {
     // turn 级状态与呈现共用同一个判据（describeTurnOutcome），不许另立一套
     const outcomeForMeta = describeTurnOutcome(result, { lang });
     if (outcomeForMeta.turnStatus) metadata.turnStatus = outcomeForMeta.turnStatus;
+    /**
+     * 第 186 波：把**结构化回合终态**也落进消息。
+     * 继续条必须据此隐藏"已经完成"的回合，而不是只看 `status === "done"`：
+     * done 只表示气泡收尾，不表示任务已验证完成。
+     */
+    if (outcomeForMeta.kind !== "none") metadata.turnOutcome = outcomeForMeta.kind;
     if (r.usage) {
       metadata.usage = r.usage;
       metadata.turnEndTime = turnEndTime;

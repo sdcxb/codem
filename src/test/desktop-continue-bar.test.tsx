@@ -35,8 +35,9 @@ describe("CONT-D1 组件", () => {
 describe("CONT-D2 ChatPanel 接线", () => {
   const source = readFileSync(join(root, "src/components/ChatPanel.tsx"), "utf8");
 
-  it("有出现条件（正常结束 + 助手正文 + 非流式）", () => {
+  it("有出现条件（正常结束 + 助手正文 + 非流式 + 未完成）", () => {
     expect(source).toMatch(/const canContinue =[\s\S]*?!isSessionStreaming[\s\S]*?lastMessage\?\.role === "assistant"[\s\S]*?status \?\? "done"/);
+    expect(source, "已完成回合必须隐藏继续条").toContain('lastMessage.metadata?.turnOutcome !== "completed"');
   });
 
   it("点击发送「继续」，且不自动发", () => {
