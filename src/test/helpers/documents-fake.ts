@@ -26,6 +26,10 @@ export interface FakeDocSeed {
   vectors?: Array<{ document_id: string; chunk_no: number; score: number; name?: string | null; page_from?: number | null; page_to?: number | null; heading_path?: string | null }>;
   /** 向量覆盖状态（`documents.vector_status`） */
   vectorStatus?: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }>;
+  /** 集合级聚合（`vector_status` 的 count/assigned/meta） */
+  vectorCount?: number;
+  vectorAssigned?: number;
+  vectorMeta?: { dim: number; count: number; k: number; trained_at: number } | null;
 }
 
 export interface FakeDocHandle {
@@ -90,7 +94,14 @@ export function createFakeDocumentBackend(seed: FakeDocSeed = {}): FakeDocHandle
         case "documents.vector_search":
           return { items: seed.vectors ?? [], dim: 2 } as unknown as T;
         case "documents.vector_status":
-          return { items: seed.vectorStatus ?? [] } as unknown as T;
+          return {
+            items: seed.vectorStatus ?? [],
+            count: seed.vectorCount ?? (seed.vectorStatus ?? []).reduce((n, x) => n + x.chunks, 0),
+            assigned: seed.vectorAssigned ?? 0,
+            meta: seed.vectorMeta ?? null,
+          } as unknown as T;
+        case "documents.vector_train":
+          return { trained: true, count: seed.vectorCount ?? 0, k: 32, dim: 8, assigned: seed.vectorCount ?? 0 } as unknown as T;
         case "documents.vector_upsert":
           return { upserted: (params.vectors as unknown[] | undefined)?.length ?? 0, dim: 2, model: "m" } as unknown as T;
         case "documents.delete":

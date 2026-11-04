@@ -142,6 +142,7 @@ pub const COMMANDS: &[&str] = &[
     "documents.reset",
     "documents.health",
     "documents.vector_upsert",
+    "documents.vector_train",
     "documents.vector_search",
     "documents.vector_status",
 ];
@@ -299,6 +300,7 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "documents.reset" => documents_from_host(),
         "documents.health" => documents_from_host(),
         "documents.vector_upsert" => documents_from_host(),
+        "documents.vector_train" => documents_from_host(),
         "documents.vector_search" => documents_from_host(),
         "documents.vector_status" => documents_from_host(),
         other => Err(DbError::unsupported(format!(

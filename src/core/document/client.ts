@@ -356,9 +356,27 @@ export async function vectorSearch(params: {
 
 export async function vectorStatus(params: {
   documentId?: string;
-}): Promise<{ items: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }> }> {
+  collectionId?: string;
+} = {}): Promise<{
+  items: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }>;
+  count: number;
+  assigned: number;
+  meta: { dim: number; count: number; k: number; trained_at: number } | null;
+}> {
   return getBackend().command("documents.vector_status", {
     document_id: params.documentId,
+    collection_id: params.collectionId,
+  });
+}
+
+/** 训练/重建 IVF 聚类（≥1024 个向量才有意义；不足时返回 trained=false）。 */
+export async function vectorTrain(params: {
+  collectionId: string;
+  iterations?: number;
+}): Promise<{ trained: boolean; reason?: string; count: number; k?: number; dim?: number; assigned?: number }> {
+  return getBackend().command("documents.vector_train", {
+    collection_id: params.collectionId,
+    iterations: params.iterations,
   });
 }
 

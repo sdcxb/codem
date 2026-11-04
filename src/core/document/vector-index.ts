@@ -20,6 +20,7 @@ import {
   listDocuments,
   readDocumentChunk,
   vectorStatus,
+  vectorTrain,
   vectorUpsert,
   type DocumentRecord,
 } from "./client";
@@ -116,6 +117,21 @@ export async function ensureCollectionVectors(
     } catch (e: any) {
       console.warn("[doc-vectors] 向量补齐失败（该文档保留纯 FTS 可用）:", doc.id, e?.message ?? e);
     }
+  }
+  // 规模足够时训练/重建 IVF（增长 <30% 不重训，避免每次摄取都花 CPU）。
+  try {
+    const status = await vectorStatus({ collectionId });
+    const meta = status.meta;
+    if (status.count >= 1024 && (!meta || status.count > meta.count * 1.3)) {
+      const trained = await vectorTrain({ collectionId });
+      if (trained.trained) {
+        console.info(
+          `[doc-vectors] IVF 已训练：${trained.count} 向量 / k=${trained.k} / dim=${trained.dim}`,
+        );
+      }
+    }
+  } catch (e: any) {
+    console.warn("[doc-vectors] IVF 训练失败（继续全量扫描）:", e?.message ?? e);
   }
   return result;
 }

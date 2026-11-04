@@ -7902,3 +7902,32 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 
 - DOCI-16：cosine 恒 0.5 → 红；DOCI-17：去重键加 `:v` → 红（8/8 总账）。
 
+## 2026-11-05 07:20 — IVF-Flat 大规模向量检索 + 安装包真机验证
+
+### 1. IVF-Flat（DOCI-18）
+
+- schema v3：`document_vectors.cluster_id` + `document_vector_centroids` + `document_vector_meta`；
+  v2→v3 迁移先 `ALTER` 再建索引（顺序错会让老库打不开，判据 `schema_v2_gets_cluster_column_on_open` 抓到）。
+- 训练：向量 ≥1024 时 `documents.vector_train`（确定性采样 ≤2 万 + k-means++ + 8 轮，
+  `k=clamp(√n, 8, 128)`）；全量赋值簇号；增长 >30% 后台重训。
+- 查询：扫中心取 top-`nprobe`（默认 16）簇 + 未分配新向量；<1024/未训练/维度不符自动全量；
+  返回 `ann/probed/candidates`。
+- 实测（100,000 × 32 维，release，k=128）：训练 1.59s；查询中位 **517ms → 65ms（8×）**，
+  recall@10 **0.91**（nprobe=16）。
+- 判据：`ivf_train_then_ann_search_keeps_recall`（recall≥8/10）、`schema_v2_gets_cluster_column_on_open`、
+  `doc-vector-index`（≥1024 训练、增长<30% 不重训）；变异 ANN 关闭 → 红（9/9 总账）。
+
+### 2. 安装包 + 本机安装真机验证
+
+- `node node_modules/@tauri-apps/cli/tauri.js build`（带签名 env）产出：
+  `Codem_1.18.5_x64-setup.exe` + `.msi` + `.sig`。
+- 静默安装到隔离目录：`setup.exe /S /D=C:\mimo-gui\.preview-shot\installed-codem`
+  （NSIS 支持 `/D`，注册表 Uninstall 也指向该目录；原 `%LOCALAPPDATA%\Codem` 未覆盖）。
+- 已安装 exe（真实 `http://tauri.localhost/` 嵌入前端，非 Vite）通过 CDP 验证：
+  - UI 正常、`hasTauri=true`、schema=3；
+  - 1.1MB 文本摄取 → 200 块；补 1200 块+1400 向量 → 训练 9ms、k=37、assigned=1400；
+  - ANN 查询 7ms vs 全量 13ms，recall@10=1.0；
+  - 真实 PDF → ready，PDFium 渲染 800×1130 PNG；截图 `.preview-shot/installed-app.png`。
+- 注意：本机隔离安装不会覆盖用户原有安装；`/D` 会改写 HKCU Uninstall 指向隔离目录，
+  正式升级应再跑一次默认安装（或卸载隔离副本）。
+

@@ -93,6 +93,23 @@ describe("VEC-1 向量补齐编排", () => {
     expect(embed).not.toHaveBeenCalled();
   });
 
+  it("规模 ≥1024 时训练 IVF；增长不足 30% 不重复训练", async () => {
+    const fake = createFakeDocumentBackend({
+      documents: [],
+      vectorCount: 2000,
+      vectorMeta: null,
+    });
+    setDocumentBackend(fake.backend);
+    const embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0]));
+    await ensureCollectionVectors("c1", { embed });
+    expect(fake.calls.filter((c) => c.name === "documents.vector_train")).toHaveLength(1);
+
+    // 已训练 1900，现在 2000（+5%）→ 不重训
+    fake.seed.vectorMeta = { dim: 8, count: 1900, k: 32, trained_at: 1 };
+    await ensureCollectionVectors("c1", { embed });
+    expect(fake.calls.filter((c) => c.name === "documents.vector_train")).toHaveLength(1);
+  });
+
   it("单文档嵌入失败不抛出，也不影响其它文档", async () => {
     const fake = createFakeDocumentBackend({
       documents: [doc(), doc({ id: "doc_2", dedupe_key: "blob:2" })],

@@ -460,19 +460,30 @@ enqueue → verify（存在/可读/扩展名/根内/大小/安全上限）
 
 **定位**：FTS 是默认能力；向量是**可选增强**，没有 embedding 配置时完全不影响检索。
 
-- **存储**：`document_vectors(document_id, chunk_no, model, dim, vector BLOB)`，向量写入时归一化
-  （f32 little-endian），检索=点积；schema `DOCS_SCHEMA_VERSION=2`。
-- **命令**：`documents.vector_upsert` / `documents.vector_search` / `documents.vector_status`；
-  sha 变化、删文档、reset 都会清向量。
+- **存储**：`document_vectors(document_id, chunk_no, model, dim, vector BLOB, cluster_id)`，
+  向量写入时归一化（f32 little-endian），检索=点积；schema `DOCS_SCHEMA_VERSION=3`
+  （v2→v3 迁移补 `cluster_id`，并在 ALTER 之后才建索引）。
+- **命令**：`documents.vector_upsert` / `vector_train` / `vector_search` / `vector_status`；
+  sha 变化、删文档、reset 都会清向量/中心/元数据。
 - **补齐**：摄取完成后，若 `settings.embedding.enabled=true`，渲染侧后台按块嵌入
   （每批 16 块、每文档单次最多 512 块），失败只记日志、保留纯 FTS；`vector_status` 可看覆盖。
 - **混合检索**：`doc_cross_search` 把 FTS 与向量结果按 RRF 合并、同块去重、按文档分组，
   每条带 citation；**工具不生成答案**，只给证据并明确要求调用方基于证据作答（避免把
   “检索不到”伪装成“文档没有”）。
 - **跨文档问答**：主模型拿 `doc_cross_search` 的证据作答；需要更多上下文时按 citation 用 `doc_read`。
-- **边界**：暴力 cosine（进程内扫描）适用于万级向量；更大规模需要 ANN/HNSW，属 P2。
+- **大规模（IVF-Flat，2026-11-05）**：
+  - 向量数 ≥1024 时训练：k-means（确定性采样 ≤2 万 + k-means++ + 8 轮），`k=clamp(√n, 8, 128)`；
+    训练后把**所有**向量分配到最近中心（`document_vectors.cluster_id`）；
+  - 查询：扫中心取 top-`nprobe`（默认 16）簇 + 未分配新向量，再在候选内精确点积；
+    低于 1024 / 未训练 / 维度不符自动回退全量扫描；`vector_status` 报 `count/assigned/meta`；
+  - 重训：`vector_status.count` 比上次训练增长 >30% 时后台重训（不足 30% 不重复花 CPU）；
+  - **实测（100,000 × 32 维，k=128，release）**：训练 1.59s；查询中位
+    **全量 517ms → ANN 65ms（约 8×）**，recall@10 = **0.91**（nprobe=16）；
+  - 边界：这是 IVF-Flat，不是 HNSW 图索引；recall 与 nprobe 可调，100 万级仍可工作，
+    但内存需容纳 `n×dim×4` 字节向量本体（1M×768 维约 2.9GB 级，需量化/外存，属后续）。
 - **判据**：`docs.rs::vector_search_ranks_by_cosine_and_isolates_collections`、
-  `src/test/doc-vector-index.test.ts`、`src/test/doc-cross-search.test.ts`。
+  `docs.rs::ivf_train_then_ann_search_keeps_recall`（recall≥8/10）、
+  `docs.rs::schema_v2_gets_cluster_column_on_open`、`doc-vector-index.test.ts`、`doc-cross-search.test.ts`。
 - **真机验证（2026-11-04）**：真实 Codem 进程（隔离 `CODEM_DATA_HOME`）通过 WebView2 CDP 调用 IPC：
   真实 PDF 摄取 → `ready`、全文命中、正文回读 1,903 字符、PDFium 渲染 800×1130 PNG；
   合成向量 upsert/search 命中 score=1；纯图片 PDF → `needs_ocr`、待转录 1 页、

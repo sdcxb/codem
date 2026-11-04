@@ -105,9 +105,30 @@ CREATE TABLE IF NOT EXISTS document_vectors (
   model TEXT NOT NULL,
   dim INTEGER NOT NULL,
   vector BLOB NOT NULL,
+  cluster_id INTEGER,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (document_id, chunk_no),
   FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_document_vectors_model ON document_vectors(model);
+
+-- IVF-Flat 的聚类中心（每集合一套）；大规模向量检索先扫中心、再扫命中簇。
+CREATE TABLE IF NOT EXISTS document_vector_centroids (
+  collection_id TEXT NOT NULL,
+  cluster_id INTEGER NOT NULL,
+  dim INTEGER NOT NULL,
+  vector BLOB NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (collection_id, cluster_id)
+);
+
+-- 训练元数据：count 用于“增长 30% 后自动重训”的判定。
+CREATE TABLE IF NOT EXISTS document_vector_meta (
+  collection_id TEXT PRIMARY KEY,
+  dim INTEGER NOT NULL,
+  count INTEGER NOT NULL,
+  k INTEGER NOT NULL,
+  trained_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);

@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use crate::error::{DbError, DbResult};
 
 /// 索引库 schema 版本（`PRAGMA user_version`）。改 schema 必须 +1 并提供迁移。
-pub const DOCS_SCHEMA_VERSION: i64 = 2;
+pub const DOCS_SCHEMA_VERSION: i64 = 3;
 
 /// 索引库建表语句（`documents.sql`）。
 pub const DOCS_SCHEMA_SQL: &str = include_str!("../sql/documents.sql");
@@ -183,6 +183,25 @@ impl DocsEngine {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(DbError::from)?;
+        // v3：IVF-Flat 的 cluster_id。新库由 schema 直接带该列；老库补一次 ALTER。
+        if version < 3 {
+            let has_cluster: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('document_vectors') WHERE name='cluster_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if has_cluster == 0 {
+                conn.execute_batch("ALTER TABLE document_vectors ADD COLUMN cluster_id INTEGER")
+                    .map_err(DbError::from)?;
+            }
+        }
+        // 索引必须等 ALTER 之后建：v2 老库在 CREATE INDEX 时还没有 cluster_id。
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_document_vectors_cluster ON document_vectors(cluster_id)",
+        )
+        .map_err(DbError::from)?;
         if version < DOCS_SCHEMA_VERSION {
             conn.execute_batch(&format!("PRAGMA user_version={DOCS_SCHEMA_VERSION}"))
                 .map_err(DbError::from)?;
@@ -230,6 +249,7 @@ pub fn invoke(engine: &DocsEngine, command: &str, params: &Value) -> DbResult<Va
         "documents.stats" => stats(engine, params),
         "documents.reset" => reset(engine, params),
         "documents.vector_upsert" => vector_upsert(engine, params),
+        "documents.vector_train" => vector_train(engine, params),
         "documents.vector_search" => vector_search(engine, params),
         "documents.vector_status" => vector_status(engine, params),
         "documents.health" => health(engine),
@@ -1162,6 +1182,227 @@ fn blob_to_vector(blob: &[u8]) -> Vec<f32> {
         .collect()
 }
 
+/// 触发 IVF 训练的最小样本量。低于它没有统计意义，直接走全量扫描（Brute-force）。
+const VECTOR_MIN_TRAIN: usize = 1024;
+/// 训练时最多采样的向量数（全量赋值仍然覆盖所有向量）。
+const VECTOR_TRAIN_SAMPLE: usize = 20_000;
+/// 低于该规模不启用 ANN（结果少、全扫更快）。
+const VECTOR_MIN_ANN: usize = 512;
+
+fn cosine_dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+/// 确定性 LCG：训练可复现，不引入 rand 依赖。
+struct Lcg(u64);
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Self(seed | 1)
+    }
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0
+    }
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / ((1u64 << 53) as f64)
+    }
+}
+
+fn nearest_centroid(v: &[f32], centroids: &[Vec<f32>]) -> (usize, f32) {
+    let mut best = (0usize, -2.0f32);
+    for (i, c) in centroids.iter().enumerate() {
+        let s = cosine_dot(v, c);
+        if s > best.1 {
+            best = (i, s);
+        }
+    }
+    best
+}
+
+/// 读取集合内 ready 文档的向量（文档、块号、向量、已有簇号）。
+fn load_collection_vectors(
+    engine: &DocsEngine,
+    collection_id: &str,
+) -> DbResult<Vec<(String, i64, Vec<f32>, Option<i64>)>> {
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT v.document_id, v.chunk_no, v.vector, v.cluster_id \
+                 FROM document_vectors v JOIN documents d ON d.id=v.document_id \
+                 WHERE d.collection_id=?1 AND d.status='ready'",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![collection_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, Vec<u8>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (doc, chunk, blob, cluster) = row.map_err(DbError::from)?;
+            let v = blob_to_vector(&blob);
+            if !v.is_empty() {
+                out.push((doc, chunk, v, cluster));
+            }
+        }
+        Ok(out)
+    })
+}
+
+/// 训练 IVF-Flat：k-means（确定性采样 + k-means++ 初始化 + 8 轮），
+/// 然后把**所有**向量分配到最近中心。
+///
+/// 复杂度：O(sample × k × dim × iters + n × k × dim)。默认 sample=2万、k≈sqrt(n)≤128，
+/// 10 万向量 64 维约几秒；赋值是 O(nk)，比每次查询全扫 O(nd) 更适合大规模。
+pub fn vector_train(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    let collection_id = req_text(p, "collection_id")?;
+    let iterations = opt_i64(p, "iterations")?.unwrap_or(8).clamp(1, 30) as usize;
+    let vectors = load_collection_vectors(engine, &collection_id)?;
+    let n = vectors.len();
+    if n < VECTOR_MIN_TRAIN {
+        return Ok(json!({
+            "trained": false,
+            "reason": format!("样本不足：{n} < {VECTOR_MIN_TRAIN}（继续用全量扫描）"),
+            "count": n
+        }));
+    }
+    let dim = vectors[0].2.len();
+    if vectors.iter().any(|v| v.2.len() != dim) {
+        return Err(DbError::new(
+            crate::error::ErrorCode::Constraint,
+            "同一集合内向量维度不一致，拒绝训练",
+        ));
+    }
+
+    // 均匀采样（确定性）；样本只用于求中心，不用于最终赋值。
+    let sample_n = n.min(VECTOR_TRAIN_SAMPLE);
+    let sample: Vec<Vec<f32>> = (0..sample_n)
+        .map(|i| vectors[i * n / sample_n].2.clone())
+        .collect();
+    let mut k = (n as f64).sqrt().round() as usize;
+    k = k.clamp(8, 128).min(sample.len());
+
+    let mut rng = Lcg::new((n as u64) ^ (dim as u64).rotate_left(17));
+    let mut centroids: Vec<Vec<f32>> = vec![sample[0].clone()];
+    while centroids.len() < k {
+        // k-means++：按到最近中心的距离平方加权抽样。
+        let mut weights = Vec::with_capacity(sample.len());
+        let mut total = 0.0f64;
+        for v in &sample {
+            let (_, best) = nearest_centroid(v, &centroids);
+            let d = (2.0 - 2.0 * best.max(-1.0)).max(0.0) as f64;
+            weights.push(d);
+            total += d;
+        }
+        let picked = if total <= 1e-12 {
+            centroids.len() % sample.len()
+        } else {
+            let mut r = rng.unit() * total;
+            let mut idx = sample.len() - 1;
+            for (i, w) in weights.iter().enumerate() {
+                r -= *w;
+                if r <= 0.0 {
+                    idx = i;
+                    break;
+                }
+            }
+            idx
+        };
+        centroids.push(sample[picked].clone());
+    }
+
+    for _ in 0..iterations {
+        let mut sums = vec![vec![0.0f32; dim]; k];
+        let mut counts = vec![0usize; k];
+        for v in &sample {
+            let (ci, _) = nearest_centroid(v, &centroids);
+            counts[ci] += 1;
+            for d in 0..dim {
+                sums[ci][d] += v[d];
+            }
+        }
+        for ci in 0..k {
+            if counts[ci] == 0 {
+                continue;
+            }
+            let norm = sums[ci].iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 1e-12 {
+                for d in 0..dim {
+                    centroids[ci][d] = sums[ci][d] / norm;
+                }
+            }
+        }
+    }
+
+    // 全量赋值 + 落盘（一个事务：中心、簇号、元数据要么全成、要么全不成）。
+    let ts = now_ms();
+    let assigned = engine.write_tx(|tx| {
+        tx.execute(
+            "DELETE FROM document_vector_centroids WHERE collection_id=?1",
+            params![collection_id],
+        )
+        .map_err(DbError::from)?;
+        {
+            let mut ins = tx
+                .prepare(
+                    "INSERT INTO document_vector_centroids(collection_id, cluster_id, dim, vector, updated_at) \
+                     VALUES (?1,?2,?3,?4,?5)",
+                )
+                .map_err(DbError::from)?;
+            for (ci, c) in centroids.iter().enumerate() {
+                ins.execute(params![
+                    collection_id,
+                    ci as i64,
+                    dim as i64,
+                    vector_to_blob(c),
+                    ts
+                ])
+                .map_err(DbError::from)?;
+            }
+        }
+        let mut upd = tx
+            .prepare(
+                "UPDATE document_vectors SET cluster_id=?1 \
+                 WHERE document_id=?2 AND chunk_no=?3",
+            )
+            .map_err(DbError::from)?;
+        let mut assigned = 0usize;
+        for (doc, chunk, v, _) in &vectors {
+            let (ci, _) = nearest_centroid(v, &centroids);
+            upd.execute(params![ci as i64, doc, chunk])
+                .map_err(DbError::from)?;
+            assigned += 1;
+        }
+        tx.execute(
+            "INSERT INTO document_vector_meta(collection_id, dim, count, k, trained_at, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?5) \
+             ON CONFLICT(collection_id) DO UPDATE SET dim=excluded.dim, count=excluded.count, \
+             k=excluded.k, trained_at=excluded.trained_at, updated_at=excluded.updated_at",
+            params![collection_id, dim as i64, n as i64, k as i64, ts],
+        )
+        .map_err(DbError::from)?;
+        Ok(assigned)
+    })?;
+
+    Ok(json!({
+        "trained": true,
+        "collection_id": collection_id,
+        "count": n,
+        "dim": dim,
+        "k": k,
+        "iterations": iterations,
+        "assigned": assigned
+    }))
+}
+
 /// 向量索引写入（幂等：同一 (document_id, chunk_no) 覆盖）。
 ///
 /// `replace_all=true` 先清该文档的旧向量（整份重新嵌入时用）。向量在写入时归一化，
@@ -1265,20 +1506,94 @@ pub fn vector_search(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
                 .collect()
         })
         .unwrap_or_default();
+    let force_brute = p.get("force_brute").and_then(|v| v.as_bool()).unwrap_or(false);
+    let nprobe = opt_i64(p, "nprobe")?.unwrap_or(16).clamp(1, 128) as usize;
+
+    /*
+     * IVF-Flat：有训练好的中心就只扫 top-nprobe 簇 + 尚未分配的新向量。
+     * 没有中心 / 样本太小 / 维度不符 ⇒ 走全量扫描（Brute-force）。
+     * `force_brute` 是给判据与排障用的“同一份数据做对照”开关。
+     */
+    let ann = if force_brute {
+        None
+    } else {
+        engine.with_conn(|conn| {
+            let meta: Option<(i64, i64, i64)> = conn
+                .query_row(
+                    "SELECT dim, count, k FROM document_vector_meta WHERE collection_id=?1",
+                    params![collection_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
+            let Some((dim, count, _k)) = meta else {
+                return Ok(None);
+            };
+            if count < VECTOR_MIN_ANN as i64 || dim as usize != query.len() {
+                return Ok(None);
+            }
+            let mut stmt = conn
+                .prepare(
+                    "SELECT vector FROM document_vector_centroids \
+                     WHERE collection_id=?1 AND dim=?2 ORDER BY cluster_id",
+                )
+                .map_err(DbError::from)?;
+            let mapped = stmt
+                .query_map(params![collection_id, dim], |r| r.get::<_, Vec<u8>>(0))
+                .map_err(DbError::from)?;
+            let mut cents = Vec::new();
+            for row in mapped {
+                let blob = row.map_err(DbError::from)?;
+                let v = blob_to_vector(&blob);
+                if v.len() == query.len() {
+                    cents.push(v);
+                }
+            }
+            Ok(if cents.is_empty() { None } else { Some(cents) })
+        })?
+    };
+
+    let mut ann_used = false;
+    let mut selected: Vec<i64> = Vec::new();
+    if let Some(cents) = &ann {
+        let mut ranked: Vec<(usize, f32)> = cents
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i, cosine_dot(&query, c)))
+            .collect();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        selected = ranked
+            .into_iter()
+            .take(nprobe)
+            .map(|(i, _)| i as i64)
+            .collect();
+        ann_used = true;
+    }
 
     engine.with_conn(|conn| {
-        let mut stmt = conn
-            .prepare(
-                "SELECT v.document_id, v.chunk_no, v.vector, v.dim, c.page_from, c.page_to, \
-                        c.heading_path, d.name, v.model \
-                 FROM document_vectors v \
-                 JOIN document_chunks c ON c.document_id=v.document_id AND c.chunk_no=v.chunk_no \
-                 JOIN documents d ON d.id=v.document_id \
-                 WHERE d.collection_id=?1 AND d.status='ready'",
-            )
-            .map_err(DbError::from)?;
-        let rows = stmt
-            .query_map(params![collection_id], |r| {
+        let base = "SELECT v.document_id, v.chunk_no, v.vector, v.dim, c.page_from, c.page_to, \
+                    c.heading_path, d.name, v.model \
+                    FROM document_vectors v \
+                    JOIN document_chunks c ON c.document_id=v.document_id AND c.chunk_no=v.chunk_no \
+                    JOIN documents d ON d.id=v.document_id \
+                    WHERE d.collection_id=?1 AND d.status='ready'";
+        let sql = if ann_used {
+            let placeholders = selected
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{base} AND (v.cluster_id IN ({placeholders}) OR v.cluster_id IS NULL)")
+        } else {
+            base.to_string()
+        };
+        let mut values: Vec<rusqlite::types::Value> =
+            vec![rusqlite::types::Value::Text(collection_id.to_string())];
+        for id in &selected {
+            values.push(rusqlite::types::Value::Integer(*id));
+        }
+        let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
+        let mapped = stmt
+            .query_map(rusqlite::params_from_iter(values.iter()), |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, i64>(1)?,
@@ -1293,9 +1608,11 @@ pub fn vector_search(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
             })
             .map_err(DbError::from)?;
         let mut scored: Vec<Value> = Vec::new();
-        for row in rows {
+        let mut candidates = 0usize;
+        for row in mapped {
             let (doc_id, chunk_no, blob, dim, page_from, page_to, heading, name, stored_model) =
                 row.map_err(DbError::from)?;
+            candidates += 1;
             if dim as usize != query.len() {
                 continue;
             }
@@ -1329,7 +1646,13 @@ pub fn vector_search(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         scored.truncate(limit as usize);
-        Ok(json!({ "items": scored, "dim": query.len() }))
+        Ok(json!({
+            "items": scored,
+            "dim": query.len(),
+            "ann": ann_used,
+            "probed": if ann_used { selected.len() } else { 0 },
+            "candidates": candidates
+        }))
     })
 }
 
@@ -1371,7 +1694,47 @@ pub fn vector_status(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
                 collected
             }
         };
-        Ok(json!({ "items": rows }))
+        let mut count = 0i64;
+        let mut assigned = 0i64;
+        let mut meta = Value::Null;
+        if let Some(cid) = p.get("collection_id").and_then(|v| v.as_str()) {
+            count = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM document_vectors v JOIN documents d ON d.id=v.document_id \
+                     WHERE d.collection_id=?1 AND d.status='ready'",
+                    params![cid],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            assigned = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM document_vectors v JOIN documents d ON d.id=v.document_id \
+                     WHERE d.collection_id=?1 AND d.status='ready' AND v.cluster_id IS NOT NULL",
+                    params![cid],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            meta = conn
+                .query_row(
+                    "SELECT dim, count, k, trained_at FROM document_vector_meta WHERE collection_id=?1",
+                    params![cid],
+                    |r| {
+                        Ok(json!({
+                            "dim": r.get::<_, i64>(0)?,
+                            "count": r.get::<_, i64>(1)?,
+                            "k": r.get::<_, i64>(2)?,
+                            "trained_at": r.get::<_, i64>(3)?,
+                        }))
+                    },
+                )
+                .unwrap_or(Value::Null);
+        }
+        Ok(json!({
+            "items": rows,
+            "count": count,
+            "assigned": assigned,
+            "meta": meta
+        }))
     })
 }
 
@@ -1424,6 +1787,46 @@ mod tests {
         )
         .expect("upsert");
         out["id"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn schema_v2_gets_cluster_column_on_open() {
+        let path = std::env::temp_dir().join(format!(
+            "codem-docs-migrate-{}-{}.db",
+            std::process::id(),
+            now_ms()
+        ));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE document_vectors (
+                    document_id TEXT NOT NULL,
+                    chunk_no INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    vector BLOB NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY(document_id, chunk_no)
+                 );
+                 PRAGMA user_version=2;",
+            )
+            .unwrap();
+        }
+        let e = DocsEngine::open(&path).unwrap();
+        let has: i64 = e
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('document_vectors') WHERE name='cluster_id'",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(has, 1, "v2 老库必须补上 cluster_id");
+        assert_eq!(health(&e).unwrap()["schema_version"], 3);
+        drop(e);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -1659,6 +2062,204 @@ mod tests {
             .is_null());
         let pages = read_pages(&e, &json!({"document_id": id})).unwrap();
         assert_eq!(pages["items"].as_array().unwrap().len(), 0);
+    }
+
+    /// 生成 n 个按 8 个中心聚集的确定性向量，写入 chunks/vectors；返回原始向量。
+    fn seed_clustered_vectors(
+        e: &DocsEngine,
+        collection: &str,
+        n: usize,
+        dim: usize,
+    ) -> Vec<Vec<f32>> {
+        let id = upsert(e, collection, &format!("blob:{collection}"));
+        let chunks: Vec<Value> = (0..n)
+            .map(|i| json!({"chunk_no": i as i64, "text": format!("块{i}"), "page_from": 1, "page_to": 1}))
+            .collect();
+        for (batch_idx, batch) in chunks.chunks(4000).enumerate() {
+            write_batch(
+                e,
+                &json!({"document_id": id, "chunks": batch}),
+            )
+            .unwrap();
+        }
+        update_status(e, &json!({"id": id, "status": "ready"})).unwrap();
+
+        let mut bases: Vec<Vec<f32>> = Vec::new();
+        for c in 0..8 {
+            let mut b = vec![0.0f32; dim];
+            for d in 0..dim {
+                b[d] = if (c + d) % 2 == 0 { 1.0 } else { 0.25 } + (c as f32) * 0.01;
+            }
+            let norm = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+            bases.push(b.iter().map(|x| x / norm).collect());
+        }
+        let mut vectors = Vec::with_capacity(n);
+        let mut rng = Lcg::new(42);
+        for i in 0..n {
+            let base = &bases[i % 8];
+            let v: Vec<f32> = (0..dim)
+                .map(|d| base[d] + (rng.unit() as f32 - 0.5) * 0.08)
+                .collect();
+            vectors.push(v);
+        }
+        for batch in vectors.chunks(250) {
+            let items: Vec<Value> = batch
+                .iter()
+                .enumerate()
+                .map(|(j, v)| {
+                    let chunk_no = (items_offset(&vectors, batch) + j) as i64;
+                    json!({"chunk_no": chunk_no, "vector": v})
+                })
+                .collect();
+            vector_upsert(
+                e,
+                &json!({"document_id": id, "model": "m", "vectors": items}),
+            )
+            .unwrap();
+        }
+        vectors
+    }
+
+    fn items_offset(all: &[Vec<f32>], batch: &[Vec<f32>]) -> usize {
+        let base = all.as_ptr() as usize;
+        let cur = batch.as_ptr() as usize;
+        cur.saturating_sub(base) / std::mem::size_of::<Vec<f32>>()
+    }
+
+    #[test]
+    fn ivf_train_then_ann_search_keeps_recall() {
+        let e = engine();
+        let n = 1200usize;
+        let dim = 16usize;
+        let vectors = seed_clustered_vectors(&e, "ann", n, dim);
+
+        // 训练前：全量扫描，ann=false
+        let brute_before = vector_search(
+            &e,
+            &json!({"collection_id": "ann", "query_vector": vectors[7], "limit": 10, "force_brute": true}),
+        )
+        .unwrap();
+        assert_eq!(brute_before["ann"], false);
+
+        let trained = vector_train(&e, &json!({"collection_id": "ann"})).unwrap();
+        assert_eq!(trained["trained"], true, "{trained}");
+        assert_eq!(trained["count"], n);
+        assert!(trained["k"].as_i64().unwrap() >= 8);
+
+        let status = vector_status(&e, &json!({"collection_id": "ann"})).unwrap();
+        assert_eq!(status["assigned"], n);
+        assert!(status["meta"].is_object());
+
+        // 同一查询：ANN 与全量扫描的 top10 重合度（recall）必须足够高
+        let query = &vectors[7];
+        let brute = vector_search(
+            &e,
+            &json!({"collection_id": "ann", "query_vector": query, "limit": 10, "force_brute": true}),
+        )
+        .unwrap();
+        let ann = vector_search(
+            &e,
+            &json!({"collection_id": "ann", "query_vector": query, "limit": 10, "nprobe": 8}),
+        )
+        .unwrap();
+        assert_eq!(ann["ann"], true, "{ann}");
+        assert!(ann["candidates"].as_i64().unwrap() < n as i64);
+        let keys = |v: &Value| -> std::collections::HashSet<(String, i64)> {
+            v["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| {
+                    (
+                        x["document_id"].as_str().unwrap().to_string(),
+                        x["chunk_no"].as_i64().unwrap(),
+                    )
+                })
+                .collect()
+        };
+        let b = keys(&brute);
+        let a = keys(&ann);
+        let hit = a.intersection(&b).count();
+        assert!(
+            hit >= 8,
+            "ANN recall 太低：{hit}/10（brute={b:?} ann={a:?}）"
+        );
+    }
+
+    #[test]
+    fn ivf_train_refuses_small_collections_and_keeps_bruteforce() {
+        let e = engine();
+        let _ = seed_clustered_vectors(&e, "small", 20, 8);
+        let r = vector_train(&e, &json!({"collection_id": "small"})).unwrap();
+        assert_eq!(r["trained"], false);
+        let hit = vector_search(
+            &e,
+            &json!({"collection_id": "small", "query_vector": [1, 0, 0, 0, 0, 0, 0, 0], "limit": 3}),
+        )
+        .unwrap();
+        assert_eq!(hit["ann"], false);
+        assert_eq!(hit["items"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    #[ignore = "大规模基准：DOC_VEC_BENCH_N 可调，默认 10 万 × 32 维"]
+    fn bench_ivf_large_scale() {
+        let n: usize = std::env::var("DOC_VEC_BENCH_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100_000);
+        let dim = 32usize;
+        let e = engine();
+        let vectors = seed_clustered_vectors(&e, "bench", n, dim);
+        let t0 = std::time::Instant::now();
+        let trained = vector_train(&e, &json!({"collection_id": "bench"})).unwrap();
+        let train_ms = t0.elapsed().as_millis();
+        assert_eq!(trained["trained"], true);
+        let k = trained["k"].as_i64().unwrap();
+
+        let mut brute_ms = Vec::new();
+        let mut ann_ms = Vec::new();
+        let mut hits = 0usize;
+        for i in 0..20 {
+            let q = &vectors[(i * 7919) % n];
+            let t = std::time::Instant::now();
+            let brute = vector_search(
+                &e,
+                &json!({"collection_id": "bench", "query_vector": q, "limit": 10, "force_brute": true}),
+            )
+            .unwrap();
+            brute_ms.push(t.elapsed().as_millis() as i64);
+            let t = std::time::Instant::now();
+            let ann = vector_search(
+                &e,
+                &json!({"collection_id": "bench", "query_vector": q, "limit": 10, "nprobe": 16}),
+            )
+            .unwrap();
+            ann_ms.push(t.elapsed().as_millis() as i64);
+            let b: std::collections::HashSet<_> = brute["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| (x["document_id"].as_str().unwrap().to_string(), x["chunk_no"].as_i64().unwrap()))
+                .collect();
+            let a: std::collections::HashSet<_> = ann["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| (x["document_id"].as_str().unwrap().to_string(), x["chunk_no"].as_i64().unwrap()))
+                .collect();
+            hits += a.intersection(&b).count();
+        }
+        let median = |v: &mut Vec<i64>| {
+            v.sort_unstable();
+            v[v.len() / 2]
+        };
+        println!(
+            "VEC-BENCH n={n} dim={dim} k={k} train={train_ms}ms brute_med={}ms ann_med={}ms recall@10={:.3}",
+            median(&mut brute_ms),
+            median(&mut ann_ms),
+            hits as f64 / 200.0
+        );
     }
 
     #[test]
