@@ -149,6 +149,27 @@ describe("TURN：end 事件的呈现决策（渲染层与后台路径共用的�
     expect(outcome.turnStatus?.code).toBe("too_many_errors");
   });
 
+  it("TURN-RED-FINGERPRINT: 同一组红且没写文件 ⇒ 停滞终态，不是完成", () => {
+    const outcome = describeTurnOutcome(
+      {
+        type: "stop",
+        reason: "red_fingerprint_stalled",
+        usage: {},
+        detail: { streak: 12, redFiles: ["src/test/a.test.ts"] },
+      },
+      { lang: "zh" },
+    );
+
+    expect(outcome.kind).toBe("stopped");
+    expect(outcome.completionCard).toBe(false);
+    expect(outcome.suppressTaskBubble).toBe(true);
+    expect(String(outcome.notice)).toMatch(/不是正常完成/);
+    expect(String(outcome.notice)).toContain("12");
+    expect(outcome.turnStatus?.kind).toBe("error");
+    expect(outcome.turnStatus?.code).toBe("red_fingerprint_stalled");
+    expect(outcome.messageStatus).toBe("error");
+  });
+
   /**
    * 第 93 波：`plan_stale` = 循环被**停滞守卫杀掉**，必须有自己的终态。
    *

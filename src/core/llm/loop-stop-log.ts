@@ -23,6 +23,8 @@ export type LoopStopReason =
   | "tool_hung"
   | "plan_stale"
   | "plan_stale_ask"
+  | "red_fingerprint_ask"
+  | "red_fingerprint_stalled"
   | "budget"
   | "repeat_guard"
   | "args_truncated"

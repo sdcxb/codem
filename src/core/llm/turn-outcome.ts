@@ -264,6 +264,35 @@ export function describeTurnOutcome(
         };
       }
 
+      /**
+       * 第 186 波：同一组红判据 + 期间没写文件 ⇒ 停滞终态。
+       * 与 plan_stale 同语义：**绝不是完成**，必须让人工确认下一步。
+       */
+      if (reason === "red_fingerprint_stalled") {
+        const streak = (r.detail as Record<string, unknown> | undefined)?.streak;
+        const times = typeof streak === "number" ? streak : undefined;
+        const redFiles = (r.detail as Record<string, unknown> | undefined)?.redFiles;
+        const files = Array.isArray(redFiles) ? redFiles.filter((x): x is string => typeof x === "string") : [];
+        const list = files.slice(0, 5).join("、") + (files.length > 5 ? ` 等 ${files.length} 个` : "");
+        const msg = zhOr(
+          zh,
+          `同一组判据连续 ${times ?? "多"} 次仍是红的，而且期间没有改过文件${list ? `（${list}）` : ""} ——` +
+            `**这不是正常完成**：继续重复跑同一组测试不会带来新信息。请人工确认根因，或换一个不同的实验。`,
+          `The same tests stayed red ${times ?? "multiple"} times without any file change${list ? ` (${list})` : ""} — ` +
+            `this is NOT a normal completion. Confirm the root cause manually or try a different experiment.`,
+        );
+        return {
+          kind: "stopped",
+          notice: `⚠️ ${msg}`,
+          petPhase: errorPhase,
+          petMessage: msg,
+          completionCard: false,
+          suppressTaskBubble: true,
+          turnStatus: { kind: "error", message: msg, code: reason },
+          messageStatus: "error",
+        };
+      }
+
       // 迭代上限 / 停滞：循环自己已经吐了可见文本，这里只补 turn 级状态 + 不报完成。
       if (reason === "max_iterations" || reason === "no_progress") {
         return {

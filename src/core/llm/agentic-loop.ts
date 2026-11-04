@@ -52,6 +52,7 @@ import { buildFamilyReminder } from "./task-keyword-search";
 import { RepeatGuard, type GuardKind, bashIntent, exactSignature } from "./loop-guard";
 import { ObservationCache } from "./observation-cache";
 import { StallGuard } from "./stall-guard";
+import { RedFingerprintGuard } from "./red-fingerprint";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
 /** P0：工具调用/结果配对的唯一实现（请求侧最后一道结构保证）。 */
@@ -916,6 +917,15 @@ export class AgenticLoop {
    */
   private stallGuard: StallGuard = new StallGuard();
   /**
+   * 第 186 波：同一组红判据 + 没有写文件的收敛闸门。
+   * 与 StallGuard 的分工：StallGuard 抓"零信息增益"，这里抓"信息很多、但实现没动"。
+   */
+  private redFingerprint = new RedFingerprintGuard();
+  /** 当前轮的工作区写版本：真实写操作 +1，用于让红指纹在写后重新计数 */
+  private workspaceMutationRevision = 0;
+  /** 当前迭代是否真的跑过测试（没跑不累计红指纹） */
+  private iterationRanTests = false;
+  /**
    * **最近一次"跑测试"的结果**（第 108 波）。
    *
    * 为什么需要它（有一手证据，不是想当然）：真实评测里有一轮，
@@ -1182,6 +1192,7 @@ export class AgenticLoop {
       /(^|[\s;&|])cargo\s+test\b/.test(command);
     if (!invokesRunner) return;
     if (!/^(bash|run_code|workflow|pwsh)$/.test(name)) return;
+    this.iterationRanTests = true;
 
     /**
      * 解析条数：**先认汇总行**（vitest 的 `Tests  4 failed | 8 passed`），再退回任意 `N failed`。
@@ -1986,6 +1997,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.delegationProgressAtWait.clear();
     this.delegationStuckPeeks.clear();
     this.stallGuard.reset();
+    this.redFingerprint.reset();
+    this.workspaceMutationRevision = 0;
+    this.iterationRanTests = false;
     this.artifactTracker.reset();
     // 【第 108 波】"红测试收尾"守卫：每轮重置（同一轮里最多提醒一次，见 noteTestRun / 收尾判定）
     this.lastTestRun = null;
@@ -2269,6 +2283,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.state.toolCallsInIteration = 0;
         this.state.compactedThisIteration = false;
         this.guardSuppressedThisIteration = 0;
+        this.iterationRanTests = false;
         this.iterationProducedArtifact = false;
         this.iterationGainedInformation = false;
         // 第 69 波（修我自己上一波的 bug）：结束原因必须**每轮重置**。
@@ -3205,6 +3220,63 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               stalledFor: stall.stalledFor,
               planRevision: this.planRevision,
               noGainStreak: this.repeatGuard.noGainStreakCount,
+            },
+          });
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result };
+          return result;
+        }
+      }
+
+      // 第 186 波：红判据指纹 —— "同一组红 + 期间没写文件" 的收敛闸门。
+      // 与 StallGuard 互补：StallGuard 抓零信息增益；这里抓"读了很多新东西，但实现没动"。
+      // 只在这轮真的跑过测试时计数；写操作由 workspaceMutationRevision 让计数清零。
+      {
+        const red = this.redFingerprint.note({
+          redFiles: this.currentRedTestFiles(),
+          mutationRevision: this.workspaceMutationRevision,
+          ranTests: this.iterationRanTests,
+        });
+        if (red.action === "ask") {
+          console.warn(`[AgenticLoop] Red fingerprint stalled (${red.streak}) — asking for a different experiment`);
+          try {
+            this.getMessageStorage().createMessage({
+              id: `red-fingerprint-ask-${Date.now()}`,
+              role: "user",
+              content: red.message ?? "",
+              timestamp: Date.now(),
+              status: "done",
+            }, sessionId);
+            this.msgCache = null;
+            recordLoopStop(sessionId, "red_fingerprint_ask", {
+              streak: red.streak,
+              redFiles: red.key.split("\u0000").filter(Boolean),
+            });
+          } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          yield {
+            type: "text_delta",
+            text: `\n\n⏳ **判据停滞自查**：同一组判据连续 ${red.streak} 次仍红且没有改文件，正在要求模型换一个实验…`,
+          };
+        } else if (red.action === "stop") {
+          console.warn(`[AgenticLoop] Red fingerprint stop after ${red.streak} unchanged red runs`);
+          yield {
+            type: "text_delta",
+            text: `\n\n⚠️ **同一组判据反复红且没有改文件，已停止**：${red.message ?? ""}`,
+          };
+          this.noteExit("red_fingerprint_stalled", sessionId);
+          recordLoopStop(sessionId, "red_fingerprint_stalled", {
+            streak: red.streak,
+            redFiles: red.key.split("\u0000").filter(Boolean),
+          });
+          const result = this.finishWithNudges({
+            type: "stop",
+            reason: "red_fingerprint_stalled",
+            usage: this.state.totalUsage,
+            detail: {
+              streak: red.streak,
+              redFiles: red.key.split("\u0000").filter(Boolean),
             },
           });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
@@ -5304,16 +5376,18 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // "可能写"的命令（python/node/npm/git…）在**同一条反复出现**时不再算推进，
         // 否则"用脚本当读手段"的会话会让停滞守卫永远清零（真机现场：四道阀门同时失效）。
         let artifactThisCall = false;
+        let cmdIntent: ReturnType<typeof bashIntent> | null = null;
         {
           const cmd = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
           const isBashLike = name === "bash" || name === "shell" || name === "run_command" || name === "terminal";
+          cmdIntent = isBashLike ? bashIntent(cmd) : null;
           // 【本轮新增】把「验证过了」单独记下来 —— 光"写了"不算完成（见字段声明处的说明）。
           if (isBashLike && looksLikeVerificationCommand(cmd)) this.turnRanVerification = true;
           const verdict = this.artifactTracker.note(
             name,
             effectiveArgs as Record<string, any>,
             result.output,
-            isBashLike ? bashIntent(cmd) : null,
+            cmdIntent,
           );
           if (verdict.artifact) {
             this.iterationProducedArtifact = true;
@@ -5324,9 +5398,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             );
           }
         }
+        // 真实写操作 ⇒ 红判据指纹必须重新计数（"同一组红"只有在没写文件时才有意义）。
+        const explicitWrite = /^(write|edit|multi_edit|apply_patch)$/.test(name);
+        if (explicitWrite || (cmdIntent?.kind === "mutate" && cmdIntent.provable !== false)) {
+          this.workspaceMutationRevision++;
+        }
         // 工作区变了 ⇒ 之前 glob/grep 的观察结果不能再当"当前事实"。
         // （test 命令也可能由 artifactTracker 判成 artifact，所以放在 artifactThisCall 之后统一清。）
-        if (artifactThisCall || /^(write|edit|multi_edit|apply_patch)$/.test(name)) {
+        if (artifactThisCall || explicitWrite) {
           this.observationCache.clear();
         }
         /**

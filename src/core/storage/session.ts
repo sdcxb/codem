@@ -371,6 +371,7 @@ export const SYSTEM_INJECTED_MESSAGE_ID_PREFIXES = [
   "red-test-nudge-",
   "regression-nudge-",
   "stall-ask-",
+  "red-fingerprint-ask-",
   "del-reminder-",
   "trunc-cont-",
   "guidance-carryover-",

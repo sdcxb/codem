@@ -60,8 +60,8 @@ describe("SYSINJ：系统提醒的辨认", () => {
   it("SYSINJ-1：八种提醒的 id 都认得出；用户自己打的消息认不出", () => {
     expect(
       SYSTEM_INJECTED_MESSAGE_ID_PREFIXES.length,
-      "十一种提醒 + 两种压缩标记 + 子代理通知两类（见 session.ts 的对照表；`goal-phase-` 是目标模式阶段指令）",
-    ).toBe(13);
+      "十二种提醒 + 两种压缩标记 + 子代理通知两类（见 session.ts 的对照表；`goal-phase-` 是目标模式阶段指令）",
+    ).toBe(14);
     /* ★ 全量审计（高）：子智能体运行时写进父会话的通知也是**机器写的**（正文是子代理汇报） */
     expect(isMachineInjectedMessage({ id: "settlement-child1-1700000000000" }), "子代理结束通知").toBe(true);
     expect(isMachineInjectedMessage({ id: "report-child1-1700000000000" }), "子代理汇报").toBe(true);
