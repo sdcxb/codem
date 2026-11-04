@@ -53,6 +53,18 @@ impl Outcome {
 
 /// 按扩展名分派提取。任何错误都以 `failed` 语义返回（调用方写 DB 状态）。
 pub fn extract(path: &Path, sink: &mut dyn Sink) -> Result<Outcome, String> {
+    extract_from(path, sink, 0)
+}
+
+/// 从第 `start_page` 页之后继续提取（仅 PDF 使用；其它格式忽略该参数）。
+///
+/// `start_page` 来自 `document_ingest_state.pages_done`：续跑时已完成页不再重复解析，
+/// 分块流水线也以检查点的 offset/chunk_no 续写。
+pub fn extract_from(
+    path: &Path,
+    sink: &mut dyn Sink,
+    start_page: i64,
+) -> Result<Outcome, String> {
     let ext = path
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -65,7 +77,7 @@ pub fn extract(path: &Path, sink: &mut dyn Sink) -> Result<Outcome, String> {
         "docx" => extract_docx(path, sink),
         "xlsx" => extract_xlsx(path, sink),
         "pptx" => extract_pptx(path, sink),
-        "pdf" => crate::documents::pdf::extract_pdf(path, sink),
+        "pdf" => crate::documents::pdf::extract_pdf(path, sink, start_page),
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "svg" => {
             extract_image(path, sink)
         }

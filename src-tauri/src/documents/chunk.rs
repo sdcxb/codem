@@ -107,6 +107,22 @@ pub fn preview_of(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
+/// 续跑检查点（来自 `document_ingest_state` 与库内最大块号）。
+///
+/// 为什么按 **字节** 而不是「重跑整份」：1GiB 实测索引要 ~10 分钟，
+/// 取消/崩溃后从头再来会让用户等两遍；检查点保证已完成的部分不重算。
+#[derive(Debug, Clone, Copy)]
+pub struct ResumePoint {
+    /// 已写入正文侧车的字节数（也是下一块的起始 offset）
+    pub bytes: i64,
+    /// 下一个分块号（= 已落库块数）
+    pub chunk_no: i64,
+    /// 下一个块号
+    pub block_no: i64,
+    /// 已完成页数（PDF 从这一页之后继续）
+    pub pages: i64,
+}
+
 /// 流式分块写入器。
 pub struct Pipeline<'a> {
     engine: &'a DocsEngine,
@@ -153,39 +169,95 @@ impl<'a> Pipeline<'a> {
         final_path: PathBuf,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Self, String> {
+        Self::create_with_resume(engine, document_id, tmp_path, final_path, cancelled, None)
+    }
+
+    /// 创建（或从检查点续跑）分块流水线。
+    ///
+    /// 续跑时把 `.part` **截断到检查点字节数**：上次 flush 之后写入但没进索引的尾巴
+    /// 必须丢弃，否则下次从同一页重提会重复，且 offset 与库内块对不上。
+    pub fn create_with_resume(
+        engine: &'a DocsEngine,
+        document_id: impl Into<String>,
+        tmp_path: PathBuf,
+        final_path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+        resume: Option<ResumePoint>,
+    ) -> Result<Self, String> {
         if let Some(parent) = tmp_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("创建正文目录失败 {}: {e}", parent.display()))?;
         }
-        let file = File::create(&tmp_path).map_err(|e| format!("创建正文文件失败: {e}"))?;
+        let (file, offset, chunk_no, block_no, pages, bytes_written) = match resume {
+            Some(rp) => {
+                if !tmp_path.exists() {
+                    return Err("检查点存在但正文 .part 已丢失，拒绝续跑".to_string());
+                }
+                let fh = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&tmp_path)
+                    .map_err(|e| format!("打开正文 .part 失败: {e}"))?;
+                let len = fh.metadata().map_err(|e| e.to_string())?.len() as i64;
+                if len < rp.bytes {
+                    return Err(format!(
+                        "正文 .part 比检查点短（{len} < {}），拒绝续跑",
+                        rp.bytes
+                    ));
+                }
+                fh.set_len(rp.bytes as u64)
+                    .map_err(|e| format!("截断正文 .part 失败: {e}"))?;
+                drop(fh);
+                let f = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&tmp_path)
+                    .map_err(|e| format!("以追加方式打开正文 .part 失败: {e}"))?;
+                (
+                    f,
+                    rp.bytes,
+                    rp.chunk_no.max(0),
+                    rp.block_no.max(0),
+                    rp.pages.max(0),
+                    rp.bytes.max(0) as u64,
+                )
+            }
+            None => (
+                File::create(&tmp_path).map_err(|e| format!("创建正文文件失败: {e}"))?,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ),
+        };
         Ok(Self {
             engine,
             document_id: document_id.into(),
             tmp_path,
             final_path,
             file: BufWriter::with_capacity(256 * 1024, file),
-            offset: 0,
-            block_start: 0,
+            offset,
+            block_start: offset,
             block_page: 0,
             block_kind: "paragraph".to_string(),
             heading: None,
             chunk_buf: String::new(),
-            progress_bytes: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            progress_bytes: Arc::new(std::sync::atomic::AtomicI64::new(bytes_written as i64)),
             chunk_tokens: 0,
             chunk_page_from: 0,
             chunk_page_to: 0,
             chunk_heading: None,
             overlap_tail: String::new(),
-            chunk_no: 0,
-            block_no: 0,
-            page_count: 0,
-            bytes_written: 0,
+            chunk_no,
+            block_no,
+            page_count: pages,
+            bytes_written,
             pending_chunks: Vec::new(),
             pending_blocks: Vec::new(),
             pending_pages: Vec::new(),
             last_flush: Instant::now(),
             cancelled,
-            flushed_chunks: 0,
+            flushed_chunks: chunk_no,
         })
     }
 
@@ -316,9 +388,13 @@ impl<'a> Pipeline<'a> {
 
     /// 取消：保留已写入内容，删除半成品正文文件（下次重跑会重建）。
     pub fn abort(mut self) {
+        // 先把已解析的部分落库，形成一致的检查点；失败也只影响这次 flush。
+        if let Err(e) = self.flush() {
+            eprintln!("[documents] abort flush 失败（检查点可能落后，但不会损坏已落库内容）: {e}");
+        }
         let _ = self.file.flush();
         drop(self.file);
-        let _ = std::fs::remove_file(&self.tmp_path);
+        // **不删除** .part：同一 sha 的下一次 ingest 会从检查点续跑；成功后 rename 覆盖。
     }
 }
 
@@ -529,6 +605,93 @@ mod tests {
         let rows2 = docs::read_chunks(&engine, &json!({"document_id": id, "limit": 100})).unwrap();
         assert_eq!(rows2["items"].as_array().unwrap().len(), items.len());
         assert_eq!(stats2.chunk_count, stats.chunk_count);
+    }
+
+    /// 按字节续跑：abort 保留 `.part` + 检查点；下次从 offset/chunk_no 续写，
+    /// 已落库的块不重复、偏移仍能从最终侧车正确回读。
+    #[test]
+    fn pipeline_resumes_from_checkpoint_without_duplicating_chunks() {
+        let engine = DocsEngine::open_in_memory().unwrap();
+        let id = docs::upsert_document(
+            &engine,
+            &json!({"collection_id":"p1","kind":"attachment","dedupe_key":"blob:resume","name":"r.pdf"}),
+        )
+        .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("text.part");
+        let done = dir.path().join("text.txt");
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        {
+            let mut p = Pipeline::create(&engine, &id, tmp.clone(), done.clone(), cancel.clone())
+                .unwrap();
+            p.begin_block(1, "paragraph", None);
+            p.push_text("第一段：迁移目标与范围。");
+            p.end_block();
+            p.page(1, "text", "layout", 0);
+            p.emit_chunk().unwrap();
+            p.flush().unwrap();
+            let cp = docs::resume_checkpoint(&engine, &json!({"document_id": id})).unwrap();
+            assert!(cp["bytes_done"].as_i64().unwrap() > 0, "检查点必须记录字节数");
+            assert!(cp["pages_done"].as_i64().unwrap() >= 1);
+            p.abort();
+        }
+        assert!(tmp.exists(), "abort 必须保留 .part 供续跑");
+
+        let cp = docs::resume_checkpoint(&engine, &json!({"document_id": id})).unwrap();
+        let resume = ResumePoint {
+            bytes: cp["bytes_done"].as_i64().unwrap(),
+            chunk_no: cp["next_chunk_no"].as_i64().unwrap(),
+            block_no: cp["next_block_no"].as_i64().unwrap(),
+            pages: cp["pages_done"].as_i64().unwrap(),
+        };
+        assert!(resume.bytes > 0 && resume.chunk_no >= 1);
+
+        let stats = {
+            let mut p = Pipeline::create_with_resume(
+                &engine,
+                &id,
+                tmp.clone(),
+                done.clone(),
+                cancel,
+                Some(resume),
+            )
+            .unwrap();
+            p.begin_block(2, "paragraph", Some("第二页".to_string()));
+            p.push_text("第二段：验收与回滚。");
+            p.end_block();
+            p.finish().unwrap()
+        };
+
+        let text = std::fs::read_to_string(&done).unwrap();
+        assert!(text.contains("第一段") && text.contains("第二段"), "续跑后正文应完整：{text}");
+        assert!(!tmp.exists(), "完成后 .part 应被 rename 掉");
+
+        let rows = docs::read_chunks(&engine, &json!({"document_id": id, "limit": 50})).unwrap();
+        let items = rows["items"].as_array().unwrap();
+        assert_eq!(items.len() as i64, stats.chunk_count, "块数不能因续跑翻倍");
+        let mut nos: Vec<i64> = items.iter().map(|i| i["chunk_no"].as_i64().unwrap()).collect();
+        nos.sort_unstable();
+        nos.dedup();
+        assert_eq!(nos.len(), items.len(), "chunk_no 必须唯一");
+
+        for item in items {
+            let off = item["text_offset"].as_i64().unwrap() as usize;
+            let len = item["text_len"].as_i64().unwrap() as usize;
+            assert!(off + len <= text.len(), "偏移越界：{off}+{len}>{})", text.len());
+            assert!(!text[off..off + len].trim().is_empty());
+        }
+        for q in ["迁移", "验收"] {
+            let hits = docs::search(&engine, &json!({"collection_id":"p1","query":q,"limit":5}))
+                .unwrap();
+            assert!(
+                !hits["items"].as_array().unwrap().is_empty(),
+                "续跑后应能检索到 {q}"
+            );
+        }
     }
 
     #[test]

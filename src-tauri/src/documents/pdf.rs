@@ -160,7 +160,7 @@ pub fn render_page_png(path: &Path, page_no: i64, max_width: u32) -> Result<Rend
     })
 }
 
-pub fn extract_pdf(path: &Path, sink: &mut dyn Sink) -> Result<Outcome, String> {
+pub fn extract_pdf(path: &Path, sink: &mut dyn Sink, start_page: i64) -> Result<Outcome, String> {
     let pdfium = match pdfium_guard() {
         Ok(p) => p,
         Err(e) => {
@@ -227,27 +227,34 @@ pub fn extract_pdf(path: &Path, sink: &mut dyn Sink) -> Result<Outcome, String> 
     for (idx, page) in pages.iter().enumerate() {
         let page_no = idx as i64 + 1;
 
-        // 本页若有书签：生成标题块，并把当前标题栈设成书签路径（后续正文继承）。
+        // 书签：即使本页因续跑被跳过，也要维护标题栈（后续页继承正确路径）。
         while toc_idx < toc_entries.len() && toc_entries[toc_idx].page <= page_no {
             let entry = &toc_entries[toc_idx];
             if entry.page == page_no {
                 toc_stack.retain(|(level, _)| *level < entry.level);
                 toc_stack.push((entry.level, entry.title.clone()));
-                let path = toc_stack
-                    .iter()
-                    .map(|(_, t)| t.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" > ");
-                sink.begin_block(page_no, "heading", Some(path));
-                sink.push_text(&entry.title);
-                sink.push_text("\n\n");
-                sink.end_block();
+                if entry.page >= start_page {
+                    let path = toc_stack
+                        .iter()
+                        .map(|(_, t)| t.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" > ");
+                    sink.begin_block(page_no, "heading", Some(path));
+                    sink.push_text(&entry.title);
+                    sink.push_text("\n\n");
+                    sink.end_block();
+                }
             }
             toc_idx += 1;
         }
         if !toc_stack.is_empty() {
             heading_stack = toc_stack.iter().map(|(_, t)| t.clone()).collect();
             current_heading_level = toc_stack.last().map(|(l, _)| *l).unwrap_or(0);
+        }
+
+        // 续跑：已完成页不再解析（页行/块/分块已在库里；书签栈上面已维护）
+        if page_no <= start_page {
+            continue;
         }
 
         let text = page.text().map(|t| t.all()).unwrap_or_default();
@@ -532,7 +539,7 @@ mod tests {
         std::fs::write(&path, tiny_pdf_two_pages()).unwrap();
 
         let mut sink = Collect::default();
-        let out = extract_pdf(&path, &mut sink).unwrap();
+        let out = extract_pdf(&path, &mut sink, 0).unwrap();
         assert_eq!(out.status, "ready", "有文本页的 PDF 必须 ready");
         assert_eq!(sink.pages.len(), 2, "必须报告 2 页");
         assert_eq!(sink.pages[0].1, "text");
@@ -544,6 +551,28 @@ mod tests {
             sink.blocks.iter().any(|b| b.1 == "heading" && b.2.contains("Chapter 1")),
             "Chapter 1 应识别为标题：{:?}",
             sink.blocks
+        );
+    }
+
+    /// 续跑：从第 2 页开始，不再解析第 1 页（已完成页不重复进正文/块）。
+    #[test]
+    #[ignore = "需要 PDFium 动态库：先 node tools/vendor/fetch-pdfium.mjs 并设置 CODEM_PDFIUM_DIR"]
+    fn resumes_pdf_from_page_two_without_reparsing_first() {
+        assert!(engine_available(), "PDFium 不可用：先跑 fetch-pdfium.mjs");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fixture.pdf");
+        std::fs::write(&path, tiny_pdf_two_pages()).unwrap();
+
+        let mut sink = Collect::default();
+        let out = extract_pdf(&path, &mut sink, 1).unwrap();
+        assert_eq!(out.page_count, 2, "总页数仍是 2");
+        assert_eq!(sink.pages.len(), 1, "只应处理第 2 页");
+        assert_eq!(sink.pages[0].0, 2);
+        assert_eq!(sink.pages[0].1, "scanned");
+        let text: String = sink.blocks.iter().map(|b| b.2.clone()).collect();
+        assert!(
+            !text.contains("Migration Plan"),
+            "第 1 页不应被重新解析：{text}"
         );
     }
 

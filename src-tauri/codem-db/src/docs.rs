@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
 use crate::error::{DbError, DbResult};
@@ -264,6 +264,41 @@ pub fn upsert_document(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
             )
             .ok();
         if let Some(id) = existing {
+            /*
+             * 同一路径/去重键下 **sha 变了** = 换了内容：
+             * 旧的块/页/FTS/检查点必须整体清掉，否则续跑会拿旧检查点套新文件，
+             * 或留下「新文件里已经不存在的旧块」。同 sha 重跑则保留（检查点续跑）。
+             */
+            let old_sha: Option<String> = tx
+                .query_row(
+                    "SELECT sha256 FROM documents WHERE id=?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(DbError::from)?
+                .flatten();
+            let sha_changed = match (&old_sha, &sha256) {
+                (Some(a), Some(b)) => a != b,
+                _ => false,
+            };
+            if sha_changed {
+                for sql in [
+                    "DELETE FROM documents_fts WHERE document_id=?1",
+                    "DELETE FROM document_chunks WHERE document_id=?1",
+                    "DELETE FROM document_blocks WHERE document_id=?1",
+                    "DELETE FROM document_pages WHERE document_id=?1",
+                    "DELETE FROM document_ingest_state WHERE document_id=?1",
+                ] {
+                    tx.execute(sql, params![id]).map_err(DbError::from)?;
+                }
+                tx.execute(
+                    "UPDATE documents SET page_count=0, block_count=0, chunk_count=0, \
+                     text_bytes=0, outline_json=NULL, error=NULL WHERE id=?1",
+                    params![id],
+                )
+                .map_err(DbError::from)?;
+            }
             tx.execute(
                 "UPDATE documents SET name=COALESCE(?2,name), mime=COALESCE(?3,mime), \
                  size=CASE WHEN ?4 > 0 THEN ?4 ELSE size END, sha256=COALESCE(?5,sha256), \
@@ -1042,6 +1077,59 @@ pub fn mark_ocr_failed(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// 续跑检查点：`document_ingest_state` + 库内下一块号/块号。
+/// 没有检查点时返回 `null`（调用方走全新摄取）。
+pub fn resume_checkpoint(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    let document_id = req_text(p, "document_id")?;
+    engine.with_conn(|conn| {
+        let row = conn
+            .query_row(
+                "SELECT s.phase, s.bytes_done, s.pages_done, s.chunks_done, \
+                        (SELECT COALESCE(MAX(block_no)+1, 0) FROM document_blocks b \
+                          WHERE b.document_id = s.document_id), \
+                        (SELECT COALESCE(MAX(chunk_no)+1, 0) FROM document_chunks c \
+                          WHERE c.document_id = s.document_id) \
+                 FROM document_ingest_state s WHERE s.document_id=?1",
+                params![document_id],
+                |r| {
+                    Ok(json!({
+                        "phase": r.get::<_, Option<String>>(0)?,
+                        "bytes_done": r.get::<_, i64>(1).unwrap_or(0),
+                        "pages_done": r.get::<_, i64>(2).unwrap_or(0),
+                        "chunks_done": r.get::<_, i64>(3).unwrap_or(0),
+                        "next_block_no": r.get::<_, i64>(4).unwrap_or(0),
+                        "next_chunk_no": r.get::<_, i64>(5).unwrap_or(0),
+                    }))
+                },
+            )
+            .optional()
+            .map_err(DbError::from)?;
+        Ok(row.unwrap_or(Value::Null))
+    })
+}
+
+/// 页文本统计（续跑完成后重算文档状态用：剩余页可能全是扫描页）。
+pub fn page_text_stats(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    let document_id = req_text(p, "document_id")?;
+    engine.with_conn(|conn| {
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM document_pages WHERE document_id=?1",
+                params![document_id],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+        let scanned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM document_pages WHERE document_id=?1 AND kind='scanned'",
+                params![document_id],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "total": total, "scanned": scanned }))
+    })
+}
+
 pub fn health(engine: &DocsEngine) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let documents: i64 = conn
@@ -1258,6 +1346,74 @@ mod tests {
         let err = write_batch(&e, &json!({"document_id": id, "chunks": chunks})).unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::Other);
         assert!(err.message.contains("不合法"));
+    }
+
+    #[test]
+    fn resume_checkpoint_survives_same_sha_and_resets_on_new_sha() {
+        let e = engine();
+        let dedupe = "path:/tmp/report.pdf";
+        let id = upsert_document(
+            &e,
+            &json!({
+                "collection_id": "p1", "kind": "path", "dedupe_key": dedupe,
+                "name": "report.pdf", "sha256": "old-sha", "status": "extracting"
+            }),
+        )
+        .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        write_batch(
+            &e,
+            &json!({
+                "document_id": id,
+                "pages": [{"page_no": 1, "kind": "text", "text_source": "layout", "text_bytes": 10}],
+                "chunks": [{"chunk_no": 0, "text": "第一页内容", "page_from": 1, "page_to": 1}],
+                "state": {"phase": "index", "bytes_done": 15, "pages_done": 1, "chunks_done": 1}
+            }),
+        )
+        .unwrap();
+
+        let cp = resume_checkpoint(&e, &json!({"document_id": id})).unwrap();
+        assert_eq!(cp["bytes_done"], 15);
+        assert_eq!(cp["pages_done"], 1);
+        assert_eq!(cp["next_chunk_no"], 1);
+        assert_eq!(cp["next_block_no"], 0, "本用例未写块");
+
+        // 同 sha 重新登记：检查点/块保留（下次可续跑）
+        upsert_document(
+            &e,
+            &json!({
+                "collection_id": "p1", "kind": "path", "dedupe_key": dedupe,
+                "sha256": "old-sha", "status": "extracting"
+            }),
+        )
+        .unwrap();
+        assert!(
+            resume_checkpoint(&e, &json!({"document_id": id})).unwrap()["bytes_done"]
+                .as_i64()
+                .unwrap()
+                > 0
+        );
+        let rows = read_chunks(&e, &json!({"document_id": id, "limit": 10})).unwrap();
+        assert_eq!(rows["items"].as_array().unwrap().len(), 1);
+
+        // sha 变了 = 内容换了：旧块/检查点必须清空（否则续跑会拿旧检查点套新文件）
+        upsert_document(
+            &e,
+            &json!({
+                "collection_id": "p1", "kind": "path", "dedupe_key": dedupe,
+                "sha256": "new-sha", "status": "extracting"
+            }),
+        )
+        .unwrap();
+        let rows = read_chunks(&e, &json!({"document_id": id, "limit": 10})).unwrap();
+        assert_eq!(rows["items"].as_array().unwrap().len(), 0);
+        assert!(resume_checkpoint(&e, &json!({"document_id": id}))
+            .unwrap()
+            .is_null());
+        let pages = read_pages(&e, &json!({"document_id": id})).unwrap();
+        assert_eq!(pages["items"].as_array().unwrap().len(), 0);
     }
 
     #[test]

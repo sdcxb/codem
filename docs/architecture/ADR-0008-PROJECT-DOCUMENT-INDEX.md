@@ -29,8 +29,10 @@
    代价是索引体积更大 —— 由 DOCI-B1 实测后决定是否在 P1 换成分词。
 2. **不写 `.blocks.jsonl`**：结构块直接进索引库（`document_blocks`），正文侧车只有 `text/<sha>.txt`。
    少一份可漂移的副本。
-3. **恢复 = 幂等重跑**（不是按字节续跑）：`document_ingest_state` 记录阶段与计数，
-   `chunk_no` 覆盖写保证不重复；按页/按字节续跑是剩余 P1 项，ADR 不假装已完成。
+3. **恢复 = 检查点续跑（PDF 页级；其它格式幂等重跑）**：`document_ingest_state` 记录
+   `bytes_done/pages_done/chunks_done`，`.part` 在 abort 时保留；下一次同 sha 摄取把 `.part`
+   截断到检查点字节数，从 `pages_done` 之后继续解析、从 `next_chunk_no` 继续写块。
+   **sha 变了**（同路径换内容）会清空旧块/页/检查点，避免用旧检查点套新文件。
 4. **PDF 标题**：文本启发式（`第X章/Chapter N/1.2 标题`）+ **PDF 书签（outline）优先**（已接入）；
    按字号推断标题仍未做（pdfium-render 的 text-run 字号 API 未接）。
 5. **视觉转录（Q6 图片页）已实现（P1 首个能力）**：扫描页/图片页由渲染侧调用视觉模型转写，
@@ -55,11 +57,17 @@
   `pdf.rs::renders_page_to_png_with_pdfium`（真实 DLL）。
 - **PDF 书签标题**：`doc.bookmarks()` 的标题/层级/目标页优先于文本启发式，生成标题块并作为
   后续正文的 heading 路径；无书签的 PDF 行为不变。
+- **续跑（按字节检查点，PDF 页级）**：取消/崩溃后同 sha 重试不再从零开始：
+  `.part` 保留并截断到检查点、PDF 从 `pages_done` 之后继续、块号/偏移续写。
+  判据：`chunk.rs::pipeline_resumes_from_checkpoint_without_duplicating_chunks`、
+  `docs.rs::resume_checkpoint_survives_same_sha_and_resets_on_new_sha`、
+  `pdf.rs::resumes_pdf_from_page_two_without_reparsing_first`（真实 DLL）。
 - **长文件进度**：摄取期每 700ms 发 `document://progress`（bytes/percent），
   状态条显示百分比；否则 11 分钟的索引期 UI 看起来像卡死。
 
-**未完成（诚实清单）**：按字节续跑（P1）、按字号推断 PDF 标题（P1）、
-向量检索、跨文档问答。峰值 RSS 未测（基准不声明未测量的数字）。P1 前需要用户确认。
+**未完成（诚实清单）**：按字号推断 PDF 标题（pdfium-render 只暴露底层
+`FPDFText_GetFontSize`，没有安全的高层 API；书签已覆盖有 outline 的 PDF）、
+向量检索、跨文档问答。P1 前需要用户确认。
 
 
 ---

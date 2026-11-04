@@ -7844,3 +7844,23 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   **峰值 RSS 17.9MiB**；64MiB 35.8s / 25,617 块 / 峰值 32.8MiB。数据已写进 `DOC-INDEX-BENCH.md`。
 - 仍未做：按字节续跑、按字号推断 PDF 标题（见 ADR §0 诚实清单）。
 
+## 2026-11-04 22:20 — 按字节检查点续跑（DOCI-15）落地；字号标题明确不做
+
+- **续跑**（PDF 页级；其它格式仍幂等重跑）：
+  - `document_ingest_state` 的 `bytes_done/pages_done/chunks_done` 作为检查点；
+  - `Pipeline::abort` 不再删 `.part`，先 flush 形成一致检查点；
+  - `Pipeline::create_with_resume` 把 `.part` 截断到检查点字节数（丢弃未入索引的尾巴），
+    从 `next_chunk_no/next_block_no/pages_done` 续写；
+  - `extract_from(..., start_page)` 让 PDF 从 `pages_done` 之后继续；书签栈对跳过页仍维护；
+  - `upsert_document` 在**同路径 sha 变了**时清空旧块/页/FTS/检查点（避免旧检查点套新文件）；
+  - 续跑完成后按库内页表重算状态（避免“前文本页 + 后扫描页”被误判）。
+- 判据：
+  - `chunk.rs::pipeline_resumes_from_checkpoint_without_duplicating_chunks`
+  - `docs.rs::resume_checkpoint_survives_same_sha_and_resets_on_new_sha`
+  - `pdf.rs::resumes_pdf_from_page_two_without_reparsing_first`（真实 DLL）
+  - 变异：忽略检查点 / sha 变化不清旧数据 → 2/2 全红。
+- **按字号推断 PDF 标题**：明确不做——pdfium-render 0.9 只暴露底层
+  `FPDFText_GetFontSize`，没有安全的高层 text-run API；需要 unsafe FFI 才能实现，
+  收益低于风险。PDF 书签（outline）已覆盖有目录的 PDF，文本启发式覆盖其余。
+- 全量验证：见下一条（tsc/vitest/cargo/审计）。
+

@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, State};
 
-use chunk::Pipeline;
+use chunk::{Pipeline, ResumePoint};
 use extract::Outcome;
 
 /// 分块上传的单块上限（解码后 8 MiB）。渲染侧按 4 MiB 切，留一倍余量。
@@ -517,15 +517,54 @@ fn ingest_inner(
 
     emit_stage(app, job_id, Some(&document_id), "extracting", json!({ "name": name, "bytes": size }));
 
-    // 4) 流式提取 + 分块 + 索引
+    // 4) 流式提取 + 分块 + 索引（PDF 支持从检查点续跑）
     let text_final = root.join("documents").join("text").join(format!("{sha}.txt"));
     let text_tmp = root
         .join("documents")
         .join("text")
         .join(format!("{sha}.txt.part"));
-    let mut pipeline = Pipeline::create(engine, &document_id, text_tmp.clone(), text_final.clone(), cancel.clone())
-        .map_err(|e| format!("创建分块流水线失败: {e}"))?;
-    // 长文件（1GB ≈ 11 分钟）期间持续发进度；Drop 时自动停线程。
+    let is_pdf = path
+        .extension()
+        .map(|e| e.to_string_lossy().eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false);
+    /*
+     * 续跑条件（只对 PDF；其它格式没有页级检查点，幂等重跑）：
+     * - 有检查点（pages_done/bytes_done > 0）；
+     * - `.part` 还在（上次 abort 保留；成功后会 rename 走）；
+     * - 同一 sha：`upsert_document` 在 sha 变化时已清空检查点与子表。
+     */
+    let resume = if is_pdf && text_tmp.exists() {
+        let cp = codem_db::docs::resume_checkpoint(
+            engine,
+            &json!({ "document_id": document_id }),
+        )
+        .map_err(|e| format!("读取续跑检查点失败: {e}"))?;
+        let bytes = cp.get("bytes_done").and_then(|v| v.as_i64()).unwrap_or(0);
+        let pages = cp.get("pages_done").and_then(|v| v.as_i64()).unwrap_or(0);
+        if bytes > 0 && pages > 0 {
+            Some(ResumePoint {
+                bytes,
+                chunk_no: cp.get("next_chunk_no").and_then(|v| v.as_i64()).unwrap_or(0),
+                block_no: cp.get("next_block_no").and_then(|v| v.as_i64()).unwrap_or(0),
+                pages,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let resume_pages = resume.map(|r| r.pages).unwrap_or(0);
+    let mut pipeline = Pipeline::create_with_resume(
+        engine,
+        &document_id,
+        text_tmp.clone(),
+        text_final.clone(),
+        cancel.clone(),
+        resume,
+    )
+    .map_err(|e| format!("创建分块流水线失败: {e}"))?;
+    // 长文件（1GB ≈ 10 分钟）期间持续发进度；Drop 时自动停线程。
     let _progress_watcher = start_progress_watcher(
         app,
         job_id,
@@ -534,7 +573,8 @@ fn ingest_inner(
         pipeline.progress_counter(),
     );
 
-    let extract_result: Result<Outcome, String> = extract::extract(&path, &mut pipeline);
+    let extract_result: Result<Outcome, String> =
+        extract::extract_from(&path, &mut pipeline, resume_pages);
     let cancelled = cancel.load(Ordering::Relaxed);
 
     let outcome = match extract_result {
@@ -568,12 +608,40 @@ fn ingest_inner(
         "chunks": stats.chunk_count,
         "blocks": stats.block_count,
     });
-    let error = outcome.error.clone();
+    /*
+     * 续跑时 `outcome` 只统计了本次新解析的页：状态不能直接用
+     * （前面已完成页若全是文本页、剩余页全是扫描页，会被误判）。
+     * 以库内页表为准重算：全部 scanned ⇒ needs_ocr，否则 ready。
+     */
+    let (final_status, error) = if resume_pages > 0 && is_pdf {
+        let pages = codem_db::docs::page_text_stats(
+            engine,
+            &json!({ "document_id": document_id }),
+        )
+        .map_err(|e| format!("读取页统计失败: {e}"))?;
+        let total = pages.get("total").and_then(|v| v.as_i64()).unwrap_or(0);
+        let scanned = pages.get("scanned").and_then(|v| v.as_i64()).unwrap_or(0);
+        let status = if total > 0 && scanned == total {
+            "needs_ocr"
+        } else {
+            "ready"
+        };
+        let err = if scanned > 0 {
+            Some(format!(
+                "{scanned}/{total} 页没有可提取文本（扫描/图片页），已标记 needs_ocr 等待视觉转录"
+            ))
+        } else {
+            None
+        };
+        (status.to_string(), err)
+    } else {
+        (outcome.status.to_string(), outcome.error.clone())
+    };
     codem_db::docs::update_status(
         engine,
         &json!({
             "id": document_id,
-            "status": outcome.status,
+            "status": final_status,
             "error": error,
             "page_count": outcome.page_count.max(stats.page_count),
             "block_count": stats.block_count,
@@ -586,7 +654,7 @@ fn ingest_inner(
 
     Ok(json!({
         "document_id": document_id,
-        "status": outcome.status,
+        "status": final_status,
         "page_count": outcome.page_count.max(stats.page_count),
         "chunks": stats.chunk_count,
         "blocks": stats.block_count,
