@@ -25,6 +25,7 @@ import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { readContextHistory } from "../core/storage/context-history";
+import { warmSessionMessageMirror } from "../core/storage/message";
 import { WaterLevelBanner } from "./WaterLevelBanner";
 import { SandboxAllowPrompt } from "./SandboxAllowPrompt";
 import { SideSessionPanel } from "./SideSessionPanel";
@@ -180,6 +181,17 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
       clearTimeout(t2);
     };
   }, [activeSessionId, messagesLoading]);
+
+  /**
+   * 会话切换/新建时预热消息镜像。
+   *
+   * 只在启动时 warm 当时的 active session 不够：新会话的镜像永远不会被加载，
+   * `isHiddenStateAuthoritative` 持续 false ⇒ 水位条/自动压缩在当前进程里“永远未知”，
+   * 重启后才突然显示满。这里在 active session 变化时补一次；已加载时只是一次 touch。
+   */
+  useEffect(() => {
+    warmSessionMessageMirror(activeSessionId);
+  }, [activeSessionId]);
   useEffect(() => {
     setChatScrollTop(Number.MAX_SAFE_INTEGER);
   }, [activeSessionId, historyMode]);

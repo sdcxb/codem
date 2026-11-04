@@ -2278,6 +2278,23 @@ function rustMessageSource(sessionId: string): RustMessagePortLike | null {
  *
  * 语义：没有端口（旧库路径自洽）⇒ true；有端口但镜像未加载/被截断 ⇒ false（未知）。
  */
+/**
+ * 打开/切到一个会话时，主动预热它的消息索引镜像。
+ *
+ * 为什么不能只在启动时预热：启动时只 warm 了当时的 active session；之后新建或切换的会话
+ * 若没有镜像，`isHiddenStateAuthoritative` 会一直返回 false ⇒ 水位/图标一直“未知”，
+ * 但用户重启后 active session 被 warm ⇒ 才突然显示 100%。这正是“多轮无提示、重启才提示”。
+ */
+export function warmSessionMessageMirror(sessionId: string): void {
+  if (!sessionId) return;
+  try {
+    // rustMessageSource 内部会 ensureLoaded；这里只借它的“触发加载”副作用。
+    rustMessageSource(sessionId);
+  } catch {
+    // 预热失败不影响读取；下一条读路径会重试。
+  }
+}
+
 export function isHiddenStateAuthoritative(sessionId: string): boolean {
   try {
     /* 没有端口：旧库/内存路径自洽（hidden 就在那份数据里）⇒ 权威 */

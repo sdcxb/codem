@@ -2,6 +2,13 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.4] - 2026-11-04
+
+### 修复
+
+- **多轮对话不提示水位、重启后才提示**：启动时只预热了当时的 active session；之后新建/切换的会话没有加载消息索引镜像，`isHiddenStateAuthoritative` 持续为 false，水位与自动压缩在当前进程里一直按“未知”处理，重启后 active session 被预热才突然显示已满。现在 `ChatPanel` 在 active session 变化时主动预热消息镜像。
+- 水位条、上下文面板与自动压缩恢复同一份权威口径；不再需要重启才能看到当前会话的真实水位。
+
 ## [1.18.3] - 2026-11-04
 
 ### 修复
