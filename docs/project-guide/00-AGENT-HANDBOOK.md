@@ -43,6 +43,8 @@ npx vitest run                   # 约 2.5 分钟；当前基线见 §4
 
 如果只做 UI：把 3 换成 `05-UI-UX.md`；只做存储：换成 `06-DATA-STORAGE.md`；只做 Rust：换成 `07-BACKEND-IPC.md`。
 
+**重型任务（完整评测 / 长尾验证 / 移动端 / 结构债）**：先读 **`20-HEAVY-TASK-HANDOFF.md`**，再按本清单开工；不要把旧 `NEW-SESSION-START.md` 的 1.16 待办带进来。
+
 ---
 
 ## 2. 项目坐标（最短版）
@@ -112,20 +114,27 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 ---
 
-## 4. 当前基线（2026-11-03 实测）
+## 4. 当前基线（2026-11-04 实测）
 
 | 项 | 值 |
 |---|---|
 | 版本 | **1.18.2**（`package.json` / `tauri.conf.json` / `Cargo.toml` 一致） |
 | 发布 | GitHub `Codem v1.18.2` = `Latest`（2026-11-04）；上一稳定版 1.17.0 |
 | HEAD | 以 `git log -1` 为准（v1.18.2 发布提交） |
-| `tsc --noEmit` | **0 错误**（2026-11-03 实测） |
-| 全量测试 | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败**（约 196 秒，2026-11-04 实测） |
+| `tsc --noEmit` | **0 错误**（2026-11-04 实测） |
+| 全量测试 | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败**（约 188 秒，2026-11-04 实测） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
 | 上报点分诊 | 284 = 284（`node tools/audit/scan-report-sites.mjs --check`） |
 | 工作区 | 发布提交后干净；忽略 `.codem/` 运行时文件 |
 
 > 如果你跑出来不是这个数：先确认是不是多了未跟踪文件（`git status`），再看 `09-CURRENT-STATE.md`。不要为了让“全绿”去改产品代码。
+
+### 4.1 v1.18.0 之后新增的结构性变化
+
+- **完成回合隐藏继续**：`buildTurnFinalize` 写 `metadata.turnOutcome`；`ChatPanel` 的 `canContinue` 对 `completed` 和缺失字段都隐藏继续条。
+- **继续条 CSS 级联修复**：`ui.css` 在 `styles.css` 之后加载，`.chat-panel > .desktop-continue-bar` 提高优先级，保住横向 gutter；改 CSS 后必须刷新 `css-contract`。
+- **长尾闸门**：子代理窗口配额/去重/活跃上限；`glob/grep` 精确观察缓存；红判据指纹（4 次自查、12 次停成未完成）。判据见 `subagent-*`、`observation-cache`、`red-fingerprint`。
+- **1.18.2 只修继续条呈现**；它不改任务执行、完成门、工具调用或长任务行为。
 
 ---
 
@@ -146,11 +155,11 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 ```text
 你在 Windows 仓库 C:\mimo-gui 工作。这是 Codem：Tauri v2 + Rust + React/TS 的桌面 AI 编程助手。
-先读 docs/project-guide/00-AGENT-HANDBOOK.md、02-CODE-MAP.md、08-ENGINEERING-GATES.md，
+先读 docs/project-guide/20-HEAVY-TASK-HANDOFF.md（重型任务交接包）、00-AGENT-HANDBOOK.md、02-CODE-MAP.md、08-ENGINEERING-GATES.md，
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.18.2（GitHub `Latest`），tsc 0，878 测试文件 / 9541 用例（0 失败）。
+当前基线：1.18.2（GitHub `Latest`），tsc 0，878 测试文件 / 9541 用例（9524 通过 / 0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 

@@ -1,7 +1,7 @@
 # AGENTS.md —— 快速操作规程（**当前文档集：`docs/project-guide/README.md`**）
 
 > ★★ **2026-10-26 起，先读 `docs/project-guide/00-AGENT-HANDBOOK.md`** ✓ —— 这是给任何 AI / Agent 平台的接手手册（开工清单 / 硬规则 / 基线 / 坑 / 任务路由）。
-> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.0**。
+> 旧总览 `docs/PROJECT-GUIDE.md` 保留为历史（823 KB，正文状态停在 1.16.305）；当前版本 **1.18.2**。
 >
 > ★★ 旧入口（仍可参考）：**先读 `docs/PROJECT-GUIDE.md` 开头的「从这里开始」一节** ✓ —— 那是本项目的**历史核心文档**，
 
@@ -17,8 +17,8 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.18.0**（长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
-- 1.18.0 包含：目标模式多阶段契约/证据验收/重启与压缩恢复；原生手机端；零配对码（仅 Serve）；交互式命令 stdin 修复。
+- 当前版本：**1.18.2**（完成回合隐藏继续 + 继续条阅读列对齐 + 子代理/搜索长尾闸门；长任务目标模式；Flutter 原生 Android 客户端预览；Tailscale Serve 零配对码；远程新建项目/会话）
+- 1.18.2 包含：1.18.0 的目标模式/手机端/零码网关；1.18.1 的长尾效率与完成态修复；1.18.2 的继续条 CSS/旧会话修复。
 - 测试规模：**878 个测试文件 / 9541 个用例**（9524 通过 / 17 skipped / 0 失败，见 `docs/project-guide/09-CURRENT-STATE.md`），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
@@ -26,7 +26,8 @@
 
 | 文档 | 体量 | 什么时候读 |
 |---|---|---|
-| **`docs/project-guide/00-AGENT-HANDBOOK.md`（当前第一份）** | 230 行 | **任何 AI / 新会话先读它**：开工清单 / 硬规则 / 基线 / 坑 / 任务路由；索引见 `docs/project-guide/README.md` |
+| **`docs/project-guide/00-AGENT-HANDBOOK.md`（当前第一份）** | 240 行 | **任何 AI / 新会话先读它**：开工清单 / 硬规则 / 基线 / 坑 / 任务路由；索引见 `docs/project-guide/README.md` |
+| **`docs/project-guide/20-HEAVY-TASK-HANDOFF.md`（重型任务先读）** | 中 | **新对话接完整评测/长尾验证/移动端/结构债**：当前事实、证据等级、任务候选、验收口径、可直接粘贴的开场白 |
 | **`docs/PROJECT-GUIDE.md`（历史总览）** | 823 KB | 只读开头「从这里开始」与需要的章节；正文状态停在 1.16.305，当前状态以 `docs/project-guide/09-CURRENT-STATE.md` 为准 |
 | **本文件 `AGENTS.md`** | 短 | 需要"具体敲什么命令、哪些坑别踩"时（命令 / 构建签名 / 发版规程） |
 | `docs/RELEASE-GUIDE.md` | 216 行 | **要发版时必读**（构建/签名/说明模板/只发稳定版/删除 release 的安全规程） |
@@ -91,38 +92,36 @@ node tools\release\verify-update-manifest.mjs --remote   # 再比对 GitHub 上�
 Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 ```
 
-## 4. 当前开发状态（2026-10-07）
+## 4. 当前开发状态（2026-11-04）
 
 **能力水平（对标 DSH，同一套任务、同一模型、同一推理强度）**
 
-- **真实仓库修复任务：本版通过 10 个，DSH 通过 9 个**（共 12 个任务）✓
-- **效率优于 DSH**：完成同样任务所需工具调用约为 DSH 的一半；输出 token 用量明显更少 ✓
-- **仍弱于 DSH 的一项**：单次响应时延（约慢 1.5 倍）。**已定性** ✓：实测 310 次调用里
-  **99% 的时间在等模型服务端**、客户端处理只占 **1.1%**，且服务端速率在批内极差仅 7%（不是负载波动）
-  ⇒ 差异来自**账号/路由**（DSH 走平台账号，我们用公开 API key）⇒ **产品内改不动** ✗，不再投入 ✗。
-- **已知且被接受的方差** ✗：个别评测任务（如 repo-06/repo-09）同一构建在不同轮次会通过或不通过 ⇒
-  属模型侧采样方差 ⇒ **不是可修的结构缺陷** ✓（曾尝试用"零改动收尾闸"兜住，被两条既有行为判据证否 ⇒ 已撤销 ✗）。
+- **12 个真实仓库修复任务（1.18.0 单轮）**：Codem 通过 **10/12**，DSH 通过 **9/12**；报告标记 `insufficient-repetition`，只能作方向性结论，**不是统计显著结果**。
+- **长尾单任务（repo-06）**：1.18.0 记录 total 104.5M / 4.25M input / 200k output / 283 tools / 234 iter / 2,611s；1.18.2 前构建候选 2 轮均通过，均值 total 8.30M / 293.6k input / 42.8k output / 84 tools / 55.5 iter / 869s。**新闸门并非每轮触发，不能把降幅全部归因于优化**；完整 12 任务未重跑。
+- **仍弱于 DSH 的一项**：单次响应时延（约慢 1.5 倍）。**已定性**：实测 310 次调用里 **99% 的时间在等模型服务端**、客户端处理只占 **1.1%**，且服务端速率在批内极差仅 7%（不是负载波动）⇒ 差异来自**账号/路由**（DSH 走平台账号，我们用公开 API key）⇒ **产品内改不动**，不再投入。
+- **已知且被接受的方差**：个别评测任务（如 repo-06/repo-09）同一构建不同轮次会通过或不通过 ⇒ 属模型侧采样方差 ⇒ **不是可修的结构缺陷**（曾尝试用“零改动收尾闸”兜住，被两条既有行为判据证否 ⇒ 已撤销）。
 
 **最近落地且仍然生效的结构性改动（每条都有判据 + 变异自证）**
 
-1. **回归完成门**：本轮把原先正常的检查改红时，界面**不显示"任务完成"**，并递事实推动修复 ✓
-2. **无改动不发 git**：没有"会改工作区"的工具跑过的迭代，追踪器一次 git 都不发（git 调用 ~180 → ~14 次/任务）✓
-3. **库维护让路**：数据库维护不与正在进行的回合争用资源（首回合静默 6–11 秒归零）✓
-4. **技能安装引导**：系统提示始终给出**本机真实技能目录**、目录布局与"从仓库安装的 5 步"，
-   且 `load_skill` 未命中会重扫 ⇒ 装完无需重启即可用 ✓
-5. **凭据普查不再误报**：`task-…`/路径里的 `sk-` 片段不再被当成 API Key；同一规则也用于导出脱敏
-   ⇒ 顺带消除"把路径片段改写成 `sk-***`"的内容破坏 ✓
-6. **用户无法介入的自检发现只进日志**：重复事件清理/索引自愈/结构巡检/双写缺口对账不再弹横幅；
-   只有"用户能采取动作"的提示（凭据轮换）才展示 ✓
-7. **流式时间归属日志** `[provider] stream timing net=… self=…`：用于判定时延出在哪一侧（就是它把 ② 定了性）✓
+1. **回归完成门**：本轮把原先正常的检查改红时，界面**不显示“任务完成”**，并递事实推动修复。
+2. **无改动不发 git**：没有“会改工作区”的工具跑过的迭代，追踪器一次 git 都不发（git 调用 ~180 → ~14 次/任务）。
+3. **库维护让路**：数据库维护不与正在进行的回合争用资源（首回合静默 6–11 秒归零）。
+4. **技能安装引导**：系统提示始终给出**本机真实技能目录**、目录布局与“从仓库安装的 5 步”，且 `load_skill` 未命中会重扫 ⇒ 装完无需重启即可用。
+5. **凭据普查不再误报**：`task-…`/路径里的 `sk-` 片段不再被当成 API Key；同一规则也用于导出脱敏。
+6. **用户无法介入的自检发现只进日志**：重复事件清理/索引自愈/结构巡检/双写缺口对账不再弹横幅；只有“用户能采取动作”的提示才展示。
+7. **流式时间归属日志** `[provider] stream timing net=… self=…`：用于判定时延出在哪一侧。
+8. **完成回合隐藏继续**：`metadata.turnOutcome` 结构化终态；旧会话无字段也隐藏；继续条 CSS 已对齐阅读列。
+9. **子代理长尾闸门**：同会话 10 分钟最多 8 次启动、相同 prompt 去重、同时最多 2 个活跃。
+10. **搜索观察缓存 + 红判据指纹**：`glob/grep` 完全重复缓存；同一组红 + 无写文件 4 次自查、12 次停成“未完成”。
 
-**未做 / 已知未修（别重复劳动 ✗，理由都记在交接里）**
+**未做 / 已知未修（别重复劳动，理由都记在交接里）**
 
-- **E1+E2（把变更追踪搬到回合边界）**：B 切片已吃掉大头收益，剩余约 0.6% ⇒ 不做 ✓
-- **持久 pwsh 会话（对标 DSH 的常驻 shell）**：只影响每次命令的 ~256ms 地板，落在客户端那 1.1% 的邻域
-  ⇒ 对 ② 无实质作用 ⇒ 不做 ✓
-- **应用内自扫的搜索性能**（约 1.9% 墙钟）：需要 Rust 原生搜索 ⇒ 要新增依赖，风险大于收益 ⇒ 暂不做 ✓
-- **297 波遗留四项**：Job Object `KILL_ON_JOB_CLOSE`、WebView2 去节流、回退/假绿守卫、npx 税 ✓
+- **完整 12 任务配对评测**：1.18.0 只有单轮，1.18.1/1.18.2 未重跑；这是下一批重型任务的第一优先级。
+- **长尾因果**：候选两轮没有触发红判据停滞终态，不能把 token 降幅全部归因于新闸门。
+- **Android arm64 真机**：PRoot / WebView / 厂商保活未验证；APK 仍是 debug 签名预览包。
+- **项目工作台真实模型 3 并发**：未证明；自动压缩极端 80 万 token 会话仍是边界。
+- **E1+E2、持久 pwsh、应用内搜索性能**：已评估不做（收益 < 风险）。
+- **297 波遗留四项**：Job Object `KILL_ON_JOB_CLOSE`、WebView2 去节流、回退/假绿守卫、npx 税。
 
 ## 5. 开发纪律（这个仓库最看重的东西，违反会被判据挡住 ✗）
 
@@ -163,10 +162,10 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 ## 6. 评测与验证脚手架（都在 `.preview-shot/`，不进 git）
 
 ```powershell
-# 跑一批评测（3 格 × 2 轮示例；EVAL_ONLY 传用例 id，写错会大声报错）
-$env:EVAL_VERSION="1.16.298"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
+# 跑一批评测（示例；EVAL_ONLY 传用例 id，写错会大声报错）
+$env:EVAL_VERSION="1.18.2"; $env:EVAL_RECORDS_OUT=".preview-shot/eval-records-codem-repo-vXX.jsonl"
 $env:EVAL_ONLY="repo-02-write-false-success,repo-06-llm-failure-not-completed"
-node .preview-shot\_chain-ab-296.mjs      # 会先静默安装对应版本，再逐格跑（长时间，用后台作业）
+node .preview-shot\_codem-repo-eval.mjs run $env:EVAL_ONLY --register --run 1 --timeout-min 60
 node .preview-shot\_collect.mjs --apply --treatment .preview-shot/eval-records-codem-repo-vXX.jsonl
 node .preview-shot\_exec-baseline.mjs --ws codem-eval-ws --hours 0.2   # 工具耗时基线
 node .preview-shot\_gate-evidence.mjs                                  # 收尾门真机取证
@@ -181,7 +180,7 @@ node .preview-shot\_gate-evidence.mjs                                  # 收尾�
 2. **文档基线**（版本号改完后）：`npm run docs:sync` → 按输出清单更新 `docs/project-guide/{README,00,01,09}` 与 CHANGELOG/PROJECT-GUIDE → `npm run audit:docs` ✓（`verify` / `audit` 已含这道门禁；`.github/` 当前被忽略，CI 可选）
 3. `CHANGELOG.md` 顶部加 `## [x.y.z]` 段 ✓（**面向用户**的说明，不写内部编号 ✗）
 4. 构建 + 签名（见 §3）✓ → 生成并校验 `latest.json` ✓
-5. `gh release create vX.Y.Z --title "Codem vX.Y.Z" --notes-file <说明文件>` + 上传 5 个资产 ✓
+5. `gh release create vX.Y.Z --title "Codem vX.Y.Z" --notes-file <说明文件>` + 上传全部资产（Windows 4 个 + `latest.json` + 两个 APK，共 7 个）✓
 6. **发布说明用标准样式** ✓：`发布日期/类型/下载 → 本版要点 → 对标结果（通过多少真实任务、
    哪些方面优于/齐平/仍弱于 DSH）→ 健壮性 → 变更 → 升级说明 → 已知问题 → 校验` ✓
    **不许**出现：测试轮数/对数/通过率、"采样波动"、服务端占比、波次号、内部任务编号 ✗
@@ -191,6 +190,8 @@ node .preview-shot\_gate-evidence.mjs                                  # 收尾�
 
 ## 8. 交接约定
 
+- **重型任务**：先读 `docs/project-guide/20-HEAVY-TASK-HANDOFF.md`；它包含当前事实、证据等级、任务候选、验收口径和开场白。
+- **短入口**：`docs/NEW-SESSION-START.md` 已重写为 2026-11-04 版本，只导向 `20` / `00` / `09`。
 - **逐轮工程日志**：`docs/HANDOFF-NEXT-SESSION.md`（3000+ 行 ✓）。新发现、失败尝试、教训都追加在那里 ✓；
   用 grep 检索关键词即可 ✓，不要通读 ✗。
 - **历史版本说明**：`docs/releases/<tag>.md`（1.0 前 26 版 ✓，与 GitHub Releases 同步 ✓）。

@@ -7744,3 +7744,22 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 修复：前台 subagent 在 refusal/aborted/error/max-tokens 时返回 isError，不再被父 agent 当成功文本。
 - 全量 786 文件 / 8791 用例（8774 通过 + 17 skipped + 0 失败）；tsc 0。
 - 远端清单校验 7 项全过；资产 sha256 与本地产物一致。
+## 2026-11-04 15:10 — 1.18.1 / 1.18.2：长尾闸门、完成态与继续条 CSS
+
+- 发布：v1.18.1（长尾/完成态）、v1.18.2（继续条对齐/旧会话）。两版均为 GitHub `Latest`，最新为 v1.18.2。
+- 1.18.1 结构改动：
+  - 子代理启动闸门：同会话 10 分钟最多 8 次、相同 prompt 去重、同时最多 2 个活跃；
+  - glob/grep 精确观察缓存：120s TTL，写操作清空，`refresh:true` 绕过；
+  - 红判据指纹：同一组红 + 期间无写文件，4 次自查，12 次 `red_fingerprint_stalled`（`turn-outcome` 明确不是完成）；
+  - 完成回合隐藏继续：`buildTurnFinalize` 写 `metadata.turnOutcome`；`ChatPanel.canContinue` 不再只看 `status=done`。
+- 继续条 CSS 根因：`packages/ui/src/ui.css` 在 `src/styles.css` 之后加载，同优先级 `.continue-bar` 的 `4px 0` 内边距覆盖 `.desktop-continue-bar` 的横向 gutter；内容比正文列右移 24px。修复为 `.chat-panel > .desktop-continue-bar`，并用 CDP 实测 `padding=4px 24px`、按钮右缘 1070 = 正文列右缘。
+- 旧会话没有 `turnOutcome` 也按已完成处理；v1.18.2 安装后旧会话不再显示继续条（CDP 实测 `has=false`）。
+- repo-06 单任务 A/B（同模型、同判据）：
+  - 修复前：104,456,309 total / 4,245,533 input / 200,280 output / 283 tools / 234 iter / 2,611,773ms；
+  - 候选 r1：10,859,838 / 321,415 / 43,319 / 92 / 64 / 1,061,490ms；
+  - 候选 r2：5,739,715 / 265,782 / 42,253 / 76 / 47 / 675,992ms；
+  - 两轮均 passed。r1 无非 heartbeat stop；r2 只有既有 `completed_unverified`；`red_fingerprint` 未真正拦停 ⇒ 不能把全部降幅归因于新闸门。
+- 全量：878 文件 / 9541 用例 / 9524 通过 / 17 skipped / 0 失败（约 188s）；tsc 0。
+  - 全量曾出现 1 条 `concurrency-three-sessions` 计时 flake（383ms > 337.5ms），单跑 3/3 通过；第二轮全量 878/9524 全绿。
+- 文档：新增 `docs/project-guide/20-HEAVY-TASK-HANDOFF.md`；重写 `docs/NEW-SESSION-START.md`；刷新 AGENTS/00/09/README/01 的版本、测试、长尾证据与下一批重型任务。
+- 未做：完整 12 任务配对评测仍未重跑；Android arm64 真机未验；APK 仍是 1.0.0 debug 签名。
