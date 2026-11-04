@@ -18,6 +18,7 @@
 //! - 标题先用**文本启发式**（`第X章` / `Chapter N` / `1.2 标题` 这类行首模式）；
 //!   书签树与字号推断放在 P1（PDFium 已具备能力，缺的是结构化阈值与判据）。
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use super::chunk::Sink;
@@ -160,6 +161,79 @@ pub fn render_page_png(path: &Path, page_no: i64, max_width: u32) -> Result<Rend
     })
 }
 
+/// 按字号推断标题层级（书签/文本模式都不命中时的兜底）。
+///
+/// 刻意保守：只认「行短、字号显著大于正文、不是句子结尾」的整行；
+/// 命错标题比漏标题更糟（citation 会漂）。正文基准取本页行字号中位数。
+pub fn font_heading_level(line: &str, font_size: Option<f32>, body_size: f32) -> Option<usize> {
+    let text = line.trim();
+    let chars = text.chars().count();
+    if body_size <= 0.0 || chars < 2 || chars > 80 {
+        return None;
+    }
+    if text.ends_with(['。', '！', '？', '；', '.', '!', '?', ';', '，', ',']) {
+        return None;
+    }
+    let size = font_size?;
+    if !size.is_finite() || size <= 0.0 {
+        return None;
+    }
+    let ratio = size / body_size;
+    if ratio >= 1.8 {
+        Some(1)
+    } else if ratio >= 1.45 {
+        Some(2)
+    } else if ratio >= 1.25 {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+/// 一页的「行 → 该行最大字号」与正文基准字号（行字号中位数）。
+fn page_font_stats(
+    page: &pdfium_render::prelude::PdfPage,
+) -> (HashMap<String, f32>, f32) {
+    fn push_line(buf: &mut String, max: &mut f32, sizes: &mut HashMap<String, f32>) {
+        let key = buf.trim().to_string();
+        if key.chars().count() >= 2 {
+            sizes
+                .entry(key)
+                .and_modify(|v| *v = v.max(*max))
+                .or_insert(*max);
+        }
+        buf.clear();
+        *max = 0.0;
+    }
+
+    let mut sizes: HashMap<String, f32> = HashMap::new();
+    let Ok(text) = page.text() else {
+        return (sizes, 0.0);
+    };
+    let mut buf = String::new();
+    let mut max = 0.0f32;
+    for ch in text.chars().iter() {
+        let Some(c) = ch.unicode_char() else {
+            continue;
+        };
+        if c == '\n' || c == '\r' {
+            push_line(&mut buf, &mut max, &mut sizes);
+        } else {
+            buf.push(c);
+            let s = ch.scaled_font_size().value;
+            if s.is_finite() && s > max {
+                max = s;
+            }
+        }
+    }
+    push_line(&mut buf, &mut max, &mut sizes);
+
+    let mut values: Vec<f32> = sizes.values().copied().filter(|v| *v > 0.0).collect();
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let body = values.get(values.len() / 2).copied().unwrap_or(0.0);
+    (sizes, body)
+}
+
 pub fn extract_pdf(path: &Path, sink: &mut dyn Sink, start_page: i64) -> Result<Outcome, String> {
     let pdfium = match pdfium_guard() {
         Ok(p) => p,
@@ -263,6 +337,16 @@ pub fn extract_pdf(path: &Path, sink: &mut dyn Sink, start_page: i64) -> Result<
         if kind == "scanned" {
             scanned += 1;
         }
+        /*
+         * 字号标题：有书签时完全以书签为准（避免两套标题打架）；
+         * 否则用本页行字号相对正文基准推断，补足「没有 outline、但标题字号明显更大」的 PDF。
+         */
+        let has_toc = !toc_entries.is_empty();
+        let (line_font_sizes, body_font_size) = if has_toc || kind == "scanned" {
+            (HashMap::new(), 0.0)
+        } else {
+            page_font_stats(&page)
+        };
         let mut bytes = 0i64;
 
         for raw_line in text.split('\n') {
@@ -270,7 +354,14 @@ pub fn extract_pdf(path: &Path, sink: &mut dyn Sink, start_page: i64) -> Result<
             if line.is_empty() {
                 continue;
             }
-            if let Some(level) = heading_level_of_line(line) {
+            let level = heading_level_of_line(line).or_else(|| {
+                font_heading_level(
+                    line,
+                    line_font_sizes.get(line).copied(),
+                    body_font_size,
+                )
+            });
+            if let Some(level) = level {
                 let title: String = line.chars().take(120).collect();
                 heading_stack.truncate(level.saturating_sub(1));
                 heading_stack.push(title.clone());
@@ -552,6 +643,31 @@ mod tests {
             "Chapter 1 应识别为标题：{:?}",
             sink.blocks
         );
+    }
+
+    /// 字号标题必须保守：只认「短行 + 字号显著更大 + 不是句子结尾」。
+    #[test]
+    fn font_heading_level_is_conservative() {
+        assert_eq!(font_heading_level("第一章 总则", Some(24.0), 10.0), Some(1));
+        assert_eq!(font_heading_level("迁移范围", Some(16.0), 10.0), Some(2));
+        assert_eq!(font_heading_level("实施步骤", Some(13.0), 10.0), Some(3));
+        assert_eq!(
+            font_heading_level("这是正文里稍微大一点的行", Some(11.5), 10.0),
+            None,
+            "字号比不足 1.25 不得当标题"
+        );
+        assert_eq!(
+            font_heading_level("这一行看起来很大但其实是句子。", Some(24.0), 10.0),
+            None,
+            "句子结尾不得当标题"
+        );
+        assert_eq!(
+            font_heading_level(&"很长的一行".repeat(20), Some(24.0), 10.0),
+            None,
+            "超长行不得当标题"
+        );
+        assert_eq!(font_heading_level("标题", None, 10.0), None);
+        assert_eq!(font_heading_level("标题", Some(24.0), 0.0), None, "无正文基准不猜");
     }
 
     /// 续跑：从第 2 页开始，不再解析第 1 页（已完成页不重复进正文/块）。

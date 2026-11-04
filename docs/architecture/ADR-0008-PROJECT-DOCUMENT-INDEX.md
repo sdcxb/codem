@@ -33,8 +33,9 @@
    `bytes_done/pages_done/chunks_done`，`.part` 在 abort 时保留；下一次同 sha 摄取把 `.part`
    截断到检查点字节数，从 `pages_done` 之后继续解析、从 `next_chunk_no` 继续写块。
    **sha 变了**（同路径换内容）会清空旧块/页/检查点，避免用旧检查点套新文件。
-4. **PDF 标题**：文本启发式（`第X章/Chapter N/1.2 标题`）+ **PDF 书签（outline）优先**（已接入）；
-   按字号推断标题仍未做（pdfium-render 的 text-run 字号 API 未接）。
+4. **PDF 标题：书签优先 + 文本启发式 + 字号兜底（均已接入）**：
+   `doc.bookmarks()` 有 outline 时以书签为准；否则 `第X章/Chapter N/1.2 标题` 模式；
+   两者都不中时按「行字号 ≥ 正文中位数 ×1.25（分 1.8/1.45/1.25 三档）+ 短行 + 非句子结尾」推断。
 5. **视觉转录（Q6 图片页）已实现（P1 首个能力）**：扫描页/图片页由渲染侧调用视觉模型转写，
    Rust 负责渲染与索引（`documents_render_page` / `documents_ocr_write`），见下。
 
@@ -57,6 +58,9 @@
   `pdf.rs::renders_page_to_png_with_pdfium`（真实 DLL）。
 - **PDF 书签标题**：`doc.bookmarks()` 的标题/层级/目标页优先于文本启发式，生成标题块并作为
   后续正文的 heading 路径；无书签的 PDF 行为不变。
+- **PDF 字号标题（兜底）**：无书签且文本模式不命中时，用 `PdfPageTextChar::scaled_font_size()`
+  取每行最大字号、以本页行字号中位数为正文基准，按 1.8/1.45/1.25 三档推 1/2/3 级标题；
+  只认短行、非句子结尾。判据：`pdf.rs::font_heading_level_is_conservative`。
 - **续跑（按字节检查点，PDF 页级）**：取消/崩溃后同 sha 重试不再从零开始：
   `.part` 保留并截断到检查点、PDF 从 `pages_done` 之后继续、块号/偏移续写。
   判据：`chunk.rs::pipeline_resumes_from_checkpoint_without_duplicating_chunks`、
@@ -65,9 +69,8 @@
 - **长文件进度**：摄取期每 700ms 发 `document://progress`（bytes/percent），
   状态条显示百分比；否则 11 分钟的索引期 UI 看起来像卡死。
 
-**未完成（诚实清单）**：按字号推断 PDF 标题（pdfium-render 只暴露底层
-`FPDFText_GetFontSize`，没有安全的高层 API；书签已覆盖有 outline 的 PDF）、
-向量检索、跨文档问答。P1 前需要用户确认。
+**未完成（诚实清单）**：向量检索、跨文档问答（P1 之后的产品能力）。
+文档索引 P0 + 视觉转录 + 续跑 + 三类标题（书签/模式/字号）均已落地。
 
 
 ---

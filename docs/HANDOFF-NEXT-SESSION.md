@@ -7844,7 +7844,7 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   **峰值 RSS 17.9MiB**；64MiB 35.8s / 25,617 块 / 峰值 32.8MiB。数据已写进 `DOC-INDEX-BENCH.md`。
 - 仍未做：按字节续跑、按字号推断 PDF 标题（见 ADR §0 诚实清单）。
 
-## 2026-11-04 22:20 — 按字节检查点续跑（DOCI-15）落地；字号标题明确不做
+## 2026-11-04 22:20 — 按字节检查点续跑（DOCI-15）落地；PDF 字号标题补齐
 
 - **续跑**（PDF 页级；其它格式仍幂等重跑）：
   - `document_ingest_state` 的 `bytes_done/pages_done/chunks_done` 作为检查点；
@@ -7859,8 +7859,10 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   - `docs.rs::resume_checkpoint_survives_same_sha_and_resets_on_new_sha`
   - `pdf.rs::resumes_pdf_from_page_two_without_reparsing_first`（真实 DLL）
   - 变异：忽略检查点 / sha 变化不清旧数据 → 2/2 全红。
-- **按字号推断 PDF 标题**：明确不做——pdfium-render 0.9 只暴露底层
-  `FPDFText_GetFontSize`，没有安全的高层 text-run API；需要 unsafe FFI 才能实现，
-  收益低于风险。PDF 书签（outline）已覆盖有目录的 PDF，文本启发式覆盖其余。
+- **按字号推断 PDF 标题**：`PdfPageTextChar::scaled_font_size()`（pdfium-render 0.9 有高层 API，
+  上一轮判断有误）取每行最大字号，以本页行字号中位数为正文基准，按 1.8/1.45/1.25 三档
+  推 1/2/3 级标题；只认短行、非句子结尾。有书签时完全以书签为准。
+  判据：`pdf.rs::font_heading_level_is_conservative`。
+- 标题优先级：书签 > 文本模式（`第X章`/`Chapter N`/`1.2`）> 字号兜底。
 - 全量验证：见下一条（tsc/vitest/cargo/审计）。
 

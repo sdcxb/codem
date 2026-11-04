@@ -23,7 +23,7 @@
 | DOCI-9 | ✅ 已实现 | `src/test/doc-status-labels.test.ts`（纯函数判据） |
 | DOCI-10 | ✅ 已实现 | `src/test/doc-entries.test.ts`（4MB 分块/空文件）+ Rust 取消/检查点 |
 | DOCI-11 | ✅ 已实现 | `codem-db/src/docs.rs::reset` 测试 + `documents_rebuild`（宿主线程重放） |
-| DOCI-12 | ✅ 已实现（**真实 PDFium 验收**） | `documents/pdf.rs::extracts_text_from_real_pdf_with_pdfium`（`#[ignore]`；用 `tools/vendor/fetch-pdfium.mjs` 拉的 7.2MB DLL 真加载、真解析、真抽文本） |
+| DOCI-12 | ✅ 已实现（**真实 PDFium 验收 + 三类标题**） | `documents/pdf.rs::extracts_text_from_real_pdf_with_pdfium`、`bookmarks` 路径、`font_heading_level_is_conservative`（字号兜底）；真实 DLL 解析真 PDF |
 | DOCI-13 | ✅ 已实现（分类函数 + 真 PDF 页分类） | `documents/pdf.rs::tests::page_classification_*` + 真实 PDF 两页分类（text/scanned） |
 | DOCI-14 | ✅ 已实现（P1 首个能力：视觉转录） | `docs.rs::ocr_pages_are_written_and_document_becomes_ready`、`src/test/doc-ocr.test.ts`、`pdf.rs::renders_page_to_png_with_pdfium`（真实 DLL） |
 | DOCI-15 | ✅ 已实现（按字节检查点续跑，PDF 页级） | `chunk.rs::pipeline_resumes_from_checkpoint_without_duplicating_chunks`、`docs.rs::resume_checkpoint_survives_same_sha_and_resets_on_new_sha`、`pdf.rs::resumes_pdf_from_page_two_without_reparsing_first` |
@@ -50,7 +50,7 @@
 | DOCI-9 | 状态 UI：5 态徽标 + 状态条；失败可见；`needs_ocr` 不得显示「已索引」 | `src/test/doc-status-ui.test.tsx` | `failed → ready` 映射 |
 | DOCI-10 | 大文件有界：任何单次传输 ≤4MB；摄取时事件循环不被饿死；取消与检查点可恢复 | `src/test/doc-ingest-bounds.test.ts` | 整文件 base64 / 去掉检查点 |
 | DOCI-11 | 重建：删 `index.db` 后从 blob 重建，chunk 集合与检索恢复 | `src/test/doc-index-rebuild.test.ts` | 重建跳过 FTS |
-| DOCI-12 | PDF 文本页（PDFium）：页数/页文本/书签标题；引擎缺失 → `needs_engine` | `src/test/doc-pdf-text.test.ts` | 无引擎仍标 `ready` |
+| DOCI-12 | PDF 文本页（PDFium）：页数/页文本/三类标题（书签 → 文本模式 → 字号兜底）；引擎缺失 → `needs_engine` | `src/test/doc-pdf-text.test.ts` | 无引擎仍标 `ready` |
 | DOCI-13 | PDF 分类：文本页 / 图片页 / 混合页判定正确；图片页 → `needs_ocr` | `src/test/doc-pdf-classify.test.ts` | 全标 `text` |
 | DOCI-14 | 视觉索引：`text_source=vision` + 页 `ocr_model` + heading `第N页（视觉转录）`；单页失败 `ocr_state=failed` 且可重试，文档保持 `needs_ocr` | `src/test/doc-ocr.test.ts` + `docs.rs::ocr_pages_are_written_and_document_becomes_ready` | 失败仍标 `ready` / 失败页不再列出 |
 | DOCI-15 | 续跑：abort 保留检查点；同 sha 重试从 `pages_done` 之后续写，块号唯一、偏移可回读；sha 变了必须清空旧块/检查点 | `chunk.rs::pipeline_resumes_from_checkpoint_without_duplicating_chunks` + `docs.rs::resume_checkpoint_survives_same_sha_and_resets_on_new_sha` | 从头重跑（块数翻倍）/ 新 sha 复用旧检查点 |
@@ -187,7 +187,7 @@ npx vitest run                     # 全量（基线 9551 / 0 失败）
 | 16MB 索引要 111 秒（应为线性） | `bench_large_document_indexing`（DOCI-B1） | FTS 按 UNINDEXED 列逐块删除 ⇒ O(n²) |
 | 每块 ~5.2KB / ~1,700 token | `pipeline_chunks_structure_and_is_idempotent` | `push_text` 整段入缓冲击穿 800-token 目标 |
 
-**Rust 侧脚本变异（2026-11-04 补跑，5/5 全红）**：
+**Rust 侧脚本变异（2026-11-04 补跑，6/6 全红）**：
 
 | 判据 | 改坏了什么 | 结果 |
 |---|---|---|
@@ -196,6 +196,7 @@ npx vitest run                     # 全量（基线 9551 / 0 失败）
 | DOCI-11 | `reset` 不再删 FTS 行 | 🔴 exit 101（`health.fts_rows` 断言失败） |
 | DOCI-15 | 忽略检查点（`match None::<ResumePoint>`） | 🔴 exit 101（正文丢首段/块重复） |
 | DOCI-15 | sha 变化不清旧数据（`if false && sha_changed`） | 🔴 exit 101（旧块仍在） |
+| DOCI-12 | 字号标题恒返回 `Some(1)` | 🔴 exit 101（正文小字号行被误判标题） |
 
 > 规则：**没做变异的判据不得声明完成**。变异只允许临时改、随改随还原；不允许提交改坏的实现。
 > DOCI-1/5/11/15 的脚本变异已补齐；DOCI-2/3 由上面的「自然失败」证明。
