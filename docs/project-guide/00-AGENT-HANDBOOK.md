@@ -1,7 +1,7 @@
 # 00 · AI 接手手册（任何模型 / Agent 平台先读这份）
 
 > **目标**：只读这份手册 + `02-CODE-MAP.md` + `08-ENGINEERING-GATES.md`，就能在 **30–40 分钟**内安全地改第一行代码，并且知道“什么不能做、做完怎么证明”。
-> **基线**：2026-11-04 ｜ `master` @ 代码提交见 `git log -1`（v1.18.1 已发布）｜ **1.18.1**（GitHub `Latest`；上一稳定版 1.17.0）｜ Node 24.19 / rustc 1.97.1。
+> **基线**：2026-11-04 ｜ `master` @ 代码提交见 `git log -1`（v1.18.2 已发布）｜ **1.18.2**（GitHub `Latest`；上一稳定版 1.17.0）｜ Node 24.19 / rustc 1.97.1。
 > **适用范围**：`C:\mimo-gui` 这个仓库（Codem 桌面 AI 编程助手）。大富翁 / Godot 实验线见 `10-GAME-AND-PROTOTYPE.md`。
 
 ---
@@ -17,7 +17,7 @@
 7. **凭据是封存的**：库里 `providers[].apiKey` 是空串、`apiKeySealed` 是 `dsh1:…` 密文；不要据此判断“用户没填 Key”。
 8. **插件“注册 ≠ 生效”**：`builtin-registry.ts` 只填注册表；真正装配在 `config/codem.base.yml` → `loadFromEntries()`。只注册不写 YAML = 功能永不生效但单测可能全绿。
 9. **发布必须先问用户**；评测/构建有互斥纪律；不要整树 `git` 操作。
-10. **当前工作区应是干净的**：v1.18.1 已提交并推送；若 `git status` 有改动，先判断是不是自己的，不要整树 `git add -A`。`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪目录不属于发布内容。
+10. **当前工作区应是干净的**：v1.18.2 已提交并推送；若 `git status` 有改动，先判断是不是自己的，不要整树 `git add -A`。`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪目录不属于发布内容。
 
 ---
 
@@ -116,9 +116,9 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.18.1**（`package.json` / `tauri.conf.json` / `Cargo.toml` 一致） |
-| 发布 | GitHub `Codem v1.18.1` = `Latest`（2026-11-04）；上一稳定版 1.17.0 |
-| HEAD | 以 `git log -1` 为准（v1.18.1 发布提交） |
+| 版本 | **1.18.2**（`package.json` / `tauri.conf.json` / `Cargo.toml` 一致） |
+| 发布 | GitHub `Codem v1.18.2` = `Latest`（2026-11-04）；上一稳定版 1.17.0 |
+| HEAD | 以 `git log -1` 为准（v1.18.2 发布提交） |
 | `tsc --noEmit` | **0 错误**（2026-11-03 实测） |
 | 全量测试 | **878 文件 / 9541 用例：9524 通过、17 跳过、0 失败**（约 196 秒，2026-11-04 实测） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |
@@ -150,7 +150,7 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 再读 09-CURRENT-STATE.md。按任务补 03（运行时）/05（UI）/06（存储）/07（Rust）。
 硬规则：先写判据 + 变异自证；禁止 goal mode / 自动续跑；不要整树 git 操作；
 只按 PID 杀自己 spawn 的进程；发布先问用户；中文引号用「」；新文件无 BOM。
-当前基线：1.18.1（GitHub `Latest`），tsc 0，878 测试文件 / 9541 用例（0 失败）。
+当前基线：1.18.2（GitHub `Latest`），tsc 0，878 测试文件 / 9541 用例（0 失败）。
 先跑 git status -sb、npx tsc --noEmit，再决定改哪里。
 ```
 

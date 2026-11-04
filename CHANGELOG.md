@@ -2,6 +2,13 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.2] - 2026-11-04
+
+### 修复
+
+- **继续条仍然偏右 / 样式不一致**：`ui.css` 在桌面样式之后加载，同优先级的 `.continue-bar` 内边距覆盖了桌面阅读列的横向 gutter，导致内容比正文右缘多出 24px。桌面规则改为 `.chat-panel > .desktop-continue-bar`，恢复左右 gutter，内容与正文列右缘对齐。
+- **继续条在已完成旧会话里仍出现**：没有 `turnOutcome` 字段的历史消息也按“已完成”处理，不再为旧回合显示继续入口。
+
 ## [1.18.1] - 2026-11-04
 
 ### 改进

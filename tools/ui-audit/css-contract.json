@@ -3224,13 +3224,6 @@
     "flex-wrap": "wrap",
     "gap": "var(--space-2)"
   },
-  "desktop-continue-bar": {
-    "box-sizing": "border-box",
-    "margin": "0 auto",
-    "max-width": "calc(var(--reading-column) + var(--reading-gutter) * 2)",
-    "padding": "var(--space-2) var(--reading-gutter)",
-    "width": "100%"
-  },
   "detail-body": {
     "display": "flex",
     "flex": "1",

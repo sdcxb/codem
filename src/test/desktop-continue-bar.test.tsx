@@ -28,7 +28,7 @@ describe("CONT-D1 组件", () => {
 
     // 桌面父级是整条 chat-panel：必须夹到阅读列，否则内容贴窗口最右。
     const css = readFileSync(join(root, "src/styles.css"), "utf8");
-    expect(css).toMatch(/\.desktop-continue-bar\s*\{[\s\S]*?max-width:\s*calc\(var\(--reading-column\)/);
+    expect(css).toMatch(/\.chat-panel\s*>\s*\.desktop-continue-bar\s*\{[\s\S]*?max-width:\s*calc\(var\(--reading-column\)/);
   });
 });
 
@@ -38,6 +38,7 @@ describe("CONT-D2 ChatPanel 接线", () => {
   it("有出现条件（正常结束 + 助手正文 + 非流式 + 未完成）", () => {
     expect(source).toMatch(/const canContinue =[\s\S]*?!isSessionStreaming[\s\S]*?lastMessage\?\.role === "assistant"[\s\S]*?status \?\? "done"/);
     expect(source, "已完成回合必须隐藏继续条").toContain('lastMessage.metadata?.turnOutcome !== "completed"');
+    expect(source, "旧会话没有 turnOutcome 也不得显示继续条").toContain('lastMessage.metadata?.turnOutcome !== undefined');
   });
 
   it("点击发送「继续」，且不自动发", () => {

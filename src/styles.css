@@ -2737,8 +2737,11 @@ width: 100%;
 /* ========== Q&A Turn Container ========== */
 /* 桌面「继续」条：共享 `.continue-bar` 只有 flex 对齐，没有宽度约束。
    父级是整条 `.chat-panel`，若不夹阅读列，内容会贴到窗口最右（真机回归 2026-11-04）。
-   这里只约束桌面这一层，手机仍用 `packages/ui/src/ui.css` 的原样式。 */
-.desktop-continue-bar {
+   这里只约束桌面这一层，手机仍用 `packages/ui/src/ui.css` 的原样式。
+   ⚠️ 必须用 `.chat-panel >` 提高优先级：`ui.css` 在 `styles.css` 之后加载，
+   同优先级的 `.continue-bar` 的 `4px 0` 内边距会把横向 gutter 盖掉，
+   内容于是又贴到阅读列右缘外 24px。 */
+.chat-panel > .desktop-continue-bar {
   width: 100%;
   max-width: calc(var(--reading-column) + var(--reading-gutter) * 2);
   margin: 0 auto;
