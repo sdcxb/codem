@@ -31,11 +31,12 @@ vi.mock("../core/storage/persist-failure", () => ({
 }));
 
 /** `legacyDbPath()` 走 `get_app_data_dir`，所以给它一个最简 Tauri 桩 */
-function stubAppDataDir(): void {
+function stubAppDataDir(legacyExists = true): void {
   (window as any).__TAURI__ = {
     core: {
       invoke: async (cmd: string) => {
         if (cmd === "get_app_data_dir") return "C:\\appdata\\";
+        if (cmd === "path_exists") return legacyExists;
         return undefined;
       },
     },
@@ -105,6 +106,18 @@ describe("自动迁移的守卫", () => {
     // 具体理由可能是"已有迁移标记"，也可能是更早的一条守卫（"新库已有消息数据"）——
     // 两者都正确：**关键是没有任何一条路径去重写整库**。
     expect(restoreCalls(port).length, "有数据在就绝不允许重写整库").toBe(0);
+  });
+
+  it("MG-5: 旧库文件不存在（首次安装）→ 静默跳过，绝不弹失败横幅", async () => {
+    stubAppDataDir(false);
+    const port = createFakeStoragePort({ legacyMessageRows: 0, seed: {} });
+    setStoragePort(port);
+    const { migrateFromLegacyDb } = await import("../core/storage/bootstrap");
+    const res = await migrateFromLegacyDb("test");
+    expect(res.kind).toBe("skipped");
+    expect(res.kind === "skipped" && res.reason).toContain("旧库不存在");
+    expect(restoreCalls(port).length).toBe(0);
+    expect(failures, "没有旧库不是失败，不许上报").toHaveLength(0);
   });
 
   it("MG-4: 标记在、关键表确实为空、旧库有内容 → 允许重跑（自愈路径不能被挡死）", async () => {

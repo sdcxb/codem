@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use crate::error::{DbError, DbResult};
 
 /// 索引库 schema 版本（`PRAGMA user_version`）。改 schema 必须 +1 并提供迁移。
-pub const DOCS_SCHEMA_VERSION: i64 = 1;
+pub const DOCS_SCHEMA_VERSION: i64 = 2;
 
 /// 索引库建表语句（`documents.sql`）。
 pub const DOCS_SCHEMA_SQL: &str = include_str!("../sql/documents.sql");
@@ -229,6 +229,9 @@ pub fn invoke(engine: &DocsEngine, command: &str, params: &Value) -> DbResult<Va
         "documents.delete" => delete_document(engine, params),
         "documents.stats" => stats(engine, params),
         "documents.reset" => reset(engine, params),
+        "documents.vector_upsert" => vector_upsert(engine, params),
+        "documents.vector_search" => vector_search(engine, params),
+        "documents.vector_status" => vector_status(engine, params),
         "documents.health" => health(engine),
         other => Err(DbError::unsupported(format!("未知的文档索引命令：{other}"))),
     }
@@ -288,6 +291,7 @@ pub fn upsert_document(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
                     "DELETE FROM document_chunks WHERE document_id=?1",
                     "DELETE FROM document_blocks WHERE document_id=?1",
                     "DELETE FROM document_pages WHERE document_id=?1",
+                    "DELETE FROM document_vectors WHERE document_id=?1",
                     "DELETE FROM document_ingest_state WHERE document_id=?1",
                 ] {
                     tx.execute(sql, params![id]).map_err(DbError::from)?;
@@ -835,6 +839,8 @@ pub fn delete_document(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
             params![id],
         )
         .map_err(DbError::from)?;
+        tx.execute("DELETE FROM document_vectors WHERE document_id=?1", params![id])
+            .map_err(DbError::from)?;
         let n = tx
             .execute("DELETE FROM documents WHERE id=?1", params![id])
             .map_err(DbError::from)?;
@@ -886,7 +892,7 @@ pub fn stats(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
 pub fn reset(engine: &DocsEngine, _p: &Value) -> DbResult<Value> {
     engine.write_tx(|tx| {
         tx.execute_batch(
-            "DELETE FROM documents_fts; DELETE FROM documents; DELETE FROM document_ingest_state;",
+            "DELETE FROM documents_fts; DELETE FROM document_vectors; DELETE FROM documents; DELETE FROM document_ingest_state;",
         )
         .map_err(DbError::from)?;
         Ok(json!({ "ok": true }))
@@ -1127,6 +1133,245 @@ pub fn page_text_stats(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
             )
             .map_err(DbError::from)?;
         Ok(json!({ "total": total, "scanned": scanned }))
+    })
+}
+
+/// 归一化 f32 向量；空/非有限/零向量返回 None（不写坏数据）。
+fn normalize_vector(values: &[f32]) -> Option<Vec<f32>> {
+    if values.is_empty() || values.iter().any(|v| !v.is_finite()) {
+        return None;
+    }
+    let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if !norm.is_finite() || norm <= 1e-12 {
+        return None;
+    }
+    Some(values.iter().map(|v| v / norm).collect())
+}
+
+fn vector_to_blob(values: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(values.len() * 4);
+    for v in values {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+fn blob_to_vector(blob: &[u8]) -> Vec<f32> {
+    blob.chunks_exact(4)
+        .filter_map(|b| b.try_into().ok().map(f32::from_le_bytes))
+        .collect()
+}
+
+/// 向量索引写入（幂等：同一 (document_id, chunk_no) 覆盖）。
+///
+/// `replace_all=true` 先清该文档的旧向量（整份重新嵌入时用）。向量在写入时归一化，
+/// 检索只需点积 = cosine，避免每次查询重复算模长。
+pub fn vector_upsert(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    let document_id = req_text(p, "document_id")?;
+    let model = p
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default")
+        .to_string();
+    let replace_all = p
+        .get("replace_all")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let vectors = p
+        .get("vectors")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if vectors.is_empty() && !replace_all {
+        return Err(DbError::new(
+            crate::error::ErrorCode::Constraint,
+            "vectors 不能为空",
+        ));
+    }
+    let ts = now_ms();
+    engine.write_tx(|tx| {
+        if replace_all {
+            tx.execute(
+                "DELETE FROM document_vectors WHERE document_id=?1",
+                params![document_id],
+            )
+            .map_err(DbError::from)?;
+        }
+        let mut upserted = 0usize;
+        let mut dim = 0usize;
+        for item in &vectors {
+            let chunk_no = item
+                .get("chunk_no")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| DbError::missing("chunk_no"))?;
+            let raw: Vec<f32> = item
+                .get("vector")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect())
+                .unwrap_or_default();
+            let normalized = normalize_vector(&raw).ok_or_else(|| {
+                DbError::new(
+                    crate::error::ErrorCode::Constraint,
+                    "向量为空/含非有限值/零向量",
+                )
+            })?;
+            if dim == 0 {
+                dim = normalized.len();
+            } else if dim != normalized.len() {
+                return Err(DbError::new(
+                    crate::error::ErrorCode::Constraint,
+                    "同一批次向量维度不一致",
+                ));
+            }
+            tx.execute(
+                "INSERT INTO document_vectors(document_id, chunk_no, model, dim, vector, updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6) \
+                 ON CONFLICT(document_id, chunk_no) DO UPDATE SET model=excluded.model, \
+                 dim=excluded.dim, vector=excluded.vector, updated_at=excluded.updated_at",
+                params![
+                    document_id,
+                    chunk_no,
+                    model,
+                    normalized.len() as i64,
+                    vector_to_blob(&normalized),
+                    ts
+                ],
+            )
+            .map_err(DbError::from)?;
+            upserted += 1;
+        }
+        Ok(json!({ "upserted": upserted, "dim": dim, "model": model }))
+    })
+}
+
+/// 向量检索：collection 内按 cosine 排序（只检索 ready 文档）。
+pub fn vector_search(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    let collection_id = req_text(p, "collection_id")?;
+    let raw: Vec<f32> = p
+        .get("query_vector")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect())
+        .unwrap_or_default();
+    let query = normalize_vector(&raw)
+        .ok_or_else(|| DbError::new(crate::error::ErrorCode::Constraint, "query_vector 无效"))?;
+    let limit = opt_i64(p, "limit")?.unwrap_or(20).clamp(1, 64);
+    let model = p.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let document_filter: Vec<String> = p
+        .get("document_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT v.document_id, v.chunk_no, v.vector, v.dim, c.page_from, c.page_to, \
+                        c.heading_path, d.name, v.model \
+                 FROM document_vectors v \
+                 JOIN document_chunks c ON c.document_id=v.document_id AND c.chunk_no=v.chunk_no \
+                 JOIN documents d ON d.id=v.document_id \
+                 WHERE d.collection_id=?1 AND d.status='ready'",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![collection_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, Vec<u8>>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<i64>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                    r.get::<_, Option<String>>(7)?,
+                    r.get::<_, String>(8)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+        let mut scored: Vec<Value> = Vec::new();
+        for row in rows {
+            let (doc_id, chunk_no, blob, dim, page_from, page_to, heading, name, stored_model) =
+                row.map_err(DbError::from)?;
+            if dim as usize != query.len() {
+                continue;
+            }
+            if let Some(m) = &model {
+                if &stored_model != m {
+                    continue;
+                }
+            }
+            if !document_filter.is_empty() && !document_filter.contains(&doc_id) {
+                continue;
+            }
+            let values = blob_to_vector(&blob);
+            if values.len() != query.len() {
+                continue;
+            }
+            let score: f32 = values.iter().zip(query.iter()).map(|(a, b)| a * b).sum();
+            scored.push(json!({
+                "document_id": doc_id,
+                "chunk_no": chunk_no,
+                "score": score,
+                "page_from": page_from,
+                "page_to": page_to,
+                "heading_path": heading,
+                "name": name,
+            }));
+        }
+        scored.sort_by(|a, b| {
+            b.get("score")
+                .and_then(|v| v.as_f64())
+                .partial_cmp(&a.get("score").and_then(|v| v.as_f64()))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.truncate(limit as usize);
+        Ok(json!({ "items": scored, "dim": query.len() }))
+    })
+}
+
+/// 向量索引状态（按文档/模型计数；给 UI 与判据看“索引到哪了”）。
+pub fn vector_status(engine: &DocsEngine, p: &Value) -> DbResult<Value> {
+    fn row_to_json(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+        Ok(json!({
+            "document_id": r.get::<_, String>(0)?,
+            "model": r.get::<_, String>(1)?,
+            "chunks": r.get::<_, i64>(2)?,
+            "dim": r.get::<_, Option<i64>>(3)?,
+        }))
+    }
+    let document_id = p.get("document_id").and_then(|v| v.as_str());
+    engine.with_conn(|conn| {
+        let rows = match document_id {
+            Some(id) => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT document_id, model, COUNT(*), MAX(dim) FROM document_vectors \
+                         WHERE document_id=?1 GROUP BY document_id, model",
+                    )
+                    .map_err(DbError::from)?;
+                let mapped = stmt.query_map(params![id], row_to_json).map_err(DbError::from)?;
+                let collected = mapped.collect::<Result<Vec<_>, _>>().map_err(DbError::from)?;
+                drop(stmt);
+                collected
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT document_id, model, COUNT(*), MAX(dim) FROM document_vectors \
+                         GROUP BY document_id, model",
+                    )
+                    .map_err(DbError::from)?;
+                let mapped = stmt.query_map([], row_to_json).map_err(DbError::from)?;
+                let collected = mapped.collect::<Result<Vec<_>, _>>().map_err(DbError::from)?;
+                drop(stmt);
+                collected
+            }
+        };
+        Ok(json!({ "items": rows }))
     })
 }
 
@@ -1414,6 +1659,90 @@ mod tests {
             .is_null());
         let pages = read_pages(&e, &json!({"document_id": id})).unwrap();
         assert_eq!(pages["items"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn vector_search_ranks_by_cosine_and_isolates_collections() {
+        let e = engine();
+        let id1 = upsert(&e, "p1", "blob:v1");
+        let id2 = upsert(&e, "p2", "blob:v2");
+        for id in [id1.clone(), id2.clone()] {
+            write_batch(
+                &e,
+                &json!({
+                    "document_id": id,
+                    "chunks": [
+                        {"chunk_no": 0, "text": "迁移目标", "page_from": 1, "page_to": 1},
+                        {"chunk_no": 1, "text": "第二块", "page_from": 2, "page_to": 2}
+                    ]
+                }),
+            )
+            .unwrap();
+            update_status(&e, &json!({ "id": id, "status": "ready" })).unwrap();
+        }
+
+        vector_upsert(
+            &e,
+            &json!({
+                "document_id": id1,
+                "model": "m1",
+                "vectors": [
+                    {"chunk_no": 0, "vector": [1.0, 0.0]},
+                    {"chunk_no": 1, "vector": [0.0, 1.0]}
+                ]
+            }),
+        )
+        .unwrap();
+        vector_upsert(
+            &e,
+            &json!({
+                "document_id": id2,
+                "model": "m1",
+                "vectors": [{"chunk_no": 0, "vector": [1.0, 0.0]}]
+            }),
+        )
+        .unwrap();
+
+        // 归一化：查询 [3,4] 与 [1,0] 的 cosine = 0.6；排序按相似度而非模长
+        let hit = vector_search(
+            &e,
+            &json!({"collection_id": "p1", "query_vector": [3.0, 4.0], "limit": 10}),
+        )
+        .unwrap();
+        let items = hit["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["chunk_no"], 1, "查询 [3,4] 与 [0,1] 更接近");
+        assert!((items[0]["score"].as_f64().unwrap() - 0.8).abs() < 1e-5);
+        assert_eq!(items[1]["chunk_no"], 0);
+        assert!((items[1]["score"].as_f64().unwrap() - 0.6).abs() < 1e-5);
+
+        // 集合隔离：p1 检索不到 p2，即使向量相同
+        let leaked = vector_search(
+            &e,
+            &json!({"collection_id": "p1", "query_vector": [1.0, 0.0], "document_ids": [id2]}),
+        )
+        .unwrap();
+        assert_eq!(leaked["items"].as_array().unwrap().len(), 0);
+
+        // 状态可见
+        let status = vector_status(&e, &json!({"document_id": id1})).unwrap();
+        assert_eq!(status["items"][0]["chunks"], 2);
+        assert_eq!(status["items"][0]["dim"], 2);
+
+        // 零向量/坏维度必须显式失败
+        assert!(vector_upsert(
+            &e,
+            &json!({"document_id": id1, "vectors": [{"chunk_no": 0, "vector": [0.0, 0.0]}]})
+        )
+        .is_err());
+        assert!(vector_upsert(
+            &e,
+            &json!({"document_id": id1, "vectors": [
+                {"chunk_no": 0, "vector": [1.0, 0.0]},
+                {"chunk_no": 1, "vector": [1.0]}
+            ]})
+        )
+        .is_err());
     }
 
     #[test]

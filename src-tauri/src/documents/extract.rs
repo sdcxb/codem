@@ -196,7 +196,7 @@ fn extract_image(path: &Path, sink: &mut dyn Sink) -> Result<Outcome, String> {
         page_count: 1,
         status: "needs_ocr",
         error: Some(format!(
-            "图片待视觉转录：已登记元数据（{size} 字节），转录后进入检索"
+            "图片待视觉转录：已登记元数据（{size} 字节）；配置视觉模型后会自动转录并进入检索"
         )),
     })
 }

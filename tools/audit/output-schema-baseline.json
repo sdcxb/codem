@@ -2,6 +2,7 @@
   "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。",
   "covered": [
     "bash",
+    "doc_cross_search",
     "doc_outline",
     "doc_read",
     "doc_search",
@@ -12,5 +13,5 @@
     "stack_market",
     "web_fetch"
   ],
-  "toolCountAtBaseline": 58
+  "toolCountAtBaseline": 59
 }

@@ -17,6 +17,7 @@ import {
   type DocumentRecord,
 } from "./client";
 import { runDocumentOcr } from "./ocr";
+import { ensureCollectionVectorsInBackground } from "./vector-index";
 
 export interface DocStatusSnapshot {
   collectionId: string | null;
@@ -95,6 +96,8 @@ export async function startDocProgressWatcher(collectionId: string): Promise<() 
      */
     if (progress.stage === "done") {
       void ensureCollectionOcr(collectionId);
+      // 向量索引是可选增强：没配置 embedding 时函数立即返回，不影响 FTS。
+      ensureCollectionVectorsInBackground(collectionId);
     }
     if (timer) return;
     timer = setTimeout(() => {

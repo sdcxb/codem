@@ -22,6 +22,10 @@ export interface FakeDocSeed {
   byStatus?: Record<string, number>;
   totalChunks?: number;
   headings?: Array<{ heading: string; block_no: number }>;
+  /** 向量命中（`documents.vector_search`） */
+  vectors?: Array<{ document_id: string; chunk_no: number; score: number; name?: string | null; page_from?: number | null; page_to?: number | null; heading_path?: string | null }>;
+  /** 向量覆盖状态（`documents.vector_status`） */
+  vectorStatus?: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }>;
 }
 
 export interface FakeDocHandle {
@@ -83,6 +87,12 @@ export function createFakeDocumentBackend(seed: FakeDocSeed = {}): FakeDocHandle
           return { headings: seed.headings ?? [] } as unknown as T;
         case "documents.health":
           return { path: "C:\\x\\documents\\index.db", schema_version: 1, documents: documents.length, chunks: 0 } as unknown as T;
+        case "documents.vector_search":
+          return { items: seed.vectors ?? [], dim: 2 } as unknown as T;
+        case "documents.vector_status":
+          return { items: seed.vectorStatus ?? [] } as unknown as T;
+        case "documents.vector_upsert":
+          return { upserted: (params.vectors as unknown[] | undefined)?.length ?? 0, dim: 2, model: "m" } as unknown as T;
         case "documents.delete":
           return { deleted: 1 } as unknown as T;
         default:

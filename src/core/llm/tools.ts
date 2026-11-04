@@ -169,6 +169,7 @@ import {
   createDocSearchTool,
   createDocReadTool,
   createDocStatusTool,
+  createDocCrossSearchTool,
   withDocOutputValue,
 } from "./tools/document-tools";
 import { createSearchNotebookTool } from "./tools/search-notebook";
@@ -2599,6 +2600,7 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(withDocOutputValue(createDocSearchTool()));
   registry.register(withDocOutputValue(createDocReadTool()));
   registry.register(withDocOutputValue(createDocStatusTool()));
+  registry.register(withDocOutputValue(createDocCrossSearchTool()));
   // F5: search_notebook tool for knowledge base mode
   registry.register(createSearchNotebookTool());
   // P1-6: AI 跨笔记操作工具 (create_note / edit_note / link_notes)

@@ -7866,3 +7866,39 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 标题优先级：书签 > 文本模式（`第X章`/`Chapter N`/`1.2`）> 字号兜底。
 - 全量验证：见下一条（tsc/vitest/cargo/审计）。
 
+## 2026-11-04 23:15 — 向量检索 + 跨文档问答 + 真机验证（并抓到首次安装假失败）
+
+### 1. 向量检索（DOCI-16，可选增强）
+
+- schema v2：`document_vectors(document_id, chunk_no, model, dim, vector BLOB)`；写入时归一化，
+  检索=点积；sha 变化/删文档/reset 都清向量。
+- 命令：`documents.vector_upsert` / `vector_search` / `vector_status`。
+- 后台补齐：`settings.embedding.enabled=true` 时，摄取完成后每批 16 块嵌入（每文档单次 ≤512 块）；
+  失败只记日志，FTS 不受影响。
+- 判据：`docs.rs::vector_search_ranks_by_cosine_and_isolates_collections`（含零/坏维度）、
+  `doc-vector-index.test.ts`（批量/跳过/失败降级）。
+
+### 2. 跨文档问答（DOCI-17）
+
+- 新工具 `doc_cross_search`：FTS + 向量 RRF 合并、同块去重、按文档分组、每条 citation；
+  **不写答案**，只给证据并要求调用方基于证据作答；向量失败降级且 `vectorUsed=false`。
+- 判据：`doc-cross-search.test.ts`（分组/引用/去重/降级）。
+
+### 3. 真机验证（真实 Codem 进程 + 隔离数据根 + WebView2 CDP）
+
+- 启动方式：`CODEM_DATA_HOME=.preview-shot/realrun-data` + 隔离 `WEBVIEW2_USER_DATA_FOLDER`
+  （共享用户数据目录会被运行中的实例锁住，导致第二个实例没有 WebView）；
+  调试构建连 Vite dev（1420），CDP 端口 9555。
+- 结果：
+  - 真实 PDF（Chanterelles）摄取 → `ready`；FTS 命中；`documents_read` 1,903 字符；
+    PDFium 渲染 800×1130 PNG；合成向量 upsert/search 命中 score=1；UI 截图正常。
+  - 纯图片 PDF → `needs_ocr`；待转录 1 页；渲染 700×991 PNG；标记失败后仍待转录；
+    finish 保持 `needs_ocr`（不会假 ready）。
+- **抓到真机 bug**：隔离数据根首次启动时，`storage.auto-migrate` 对**不存在的旧库**仍调
+  `migration.auto`，失败后弹「操作没有生效」；新用户首次安装就会看到假失败。
+  修复：迁移前 `exists(legacyPath)`，不存在直接 skipped；判据 `migrate-guard.test.ts::MG-5`。
+
+### 4. 变异
+
+- DOCI-16：cosine 恒 0.5 → 红；DOCI-17：去重键加 `:v` → 红（8/8 总账）。
+

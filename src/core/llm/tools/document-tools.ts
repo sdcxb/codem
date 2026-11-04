@@ -1,5 +1,6 @@
 /**
- * 文档索引工具（ADR-0008 §10）：`doc_outline` / `doc_search` / `doc_read` / `doc_status`。
+ * 文档索引工具（ADR-0008 §10）：`doc_outline` / `doc_search` / `doc_read` / `doc_status` /
+ * `doc_cross_search`（跨文档证据层）。
  *
  * ## 契约（改这里先改 ADR）
  *
@@ -9,6 +10,7 @@
  * | `doc_search` | 命中块 + citation + snippet | 整次 ≤6K token |
  * | `doc_read` | 指定块/页正文 + citation + hasMore | 单次 ≤4K token |
  * | `doc_status` | 文件/索引/OCR 状态 + 可行动原因 | 永远给状态，不返回「没有相关内容」 |
+ * | `doc_cross_search` | 跨文档分组证据 + citation（FTS + 可选向量） | 不生成答案；≤6K token |
  *
  * ## 为什么「未就绪」必须返回状态
  *
@@ -32,8 +34,11 @@ import {
   readDocumentPage,
   searchDocuments,
   truncateToTokens,
+  vectorSearch,
   type DocumentRecord,
 } from "../../document/client";
+import { generateEmbeddings } from "../multimodal";
+import { isVectorIndexAvailable } from "../../document/vector-index";
 import { collectionIdForSession } from "../../document/session-collection";
 import { formatCitation, parseChunkRef } from "../../document/citation";
 import { recordDocumentRead, recordDocumentSearch } from "../../document/ledger";
@@ -478,7 +483,199 @@ export function createDocReadTool(): ToolDef {
   };
 }
 
-// ═══════════════════════════ doc_status ═══════════════════════════
+// ═══════════════════════ doc_cross_search（跨文档问答的证据层） ═══════════════════════
+
+/**
+ * 跨文档检索：一次查询覆盖集合内**所有**文档，把 FTS 与向量命中合并、
+ * 按文档分组返回带 citation 的证据，供主模型组织答案。
+ *
+ * 边界（如实写在 description 里）：本工具**不生成自然语言答案**，
+ * 它给的是「哪些文档的哪些块能回答 + 稳定引用」；答案由主模型基于证据写。
+ * 这样不会把「检索不到」伪装成「文档里没有」。
+ */
+export function createDocCrossSearchTool(): ToolDef {
+  return {
+    id: "doc_cross_search",
+    contract: {
+      readOnly: true,
+      accessScope: "workspace",
+      concurrencySafe: true,
+      outputSchema: DOC_TEXT_OUTPUT_SCHEMA,
+      renderOutput: renderDocTextOutput,
+    },
+    guidance:
+      "Use doc_cross_search when the answer may span several documents (compare/aggregate). " +
+      "It returns evidence grouped by document with citations; write the answer yourself from those citations. " +
+      "If vector search is unavailable it falls back to full-text only — say which mode was used if it matters.",
+    description:
+      "Cross-document evidence retrieval over the whole project collection: full-text + optional vector search, " +
+      "merged and grouped by document, each line with a stable citation. " +
+      "It does NOT write the final answer; the caller must synthesize it from the cited evidence. " +
+      "Budget ≤6,000 tokens. Use doc_read for the full text of a cited chunk.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The question or key phrases (Chinese/English)." },
+        collection_id: { type: "string", description: "Override the collection (defaults to the current project)." },
+        limit: { type: "number", description: "Max evidence chunks after merge (default 8, max 12)." },
+        include_vectors: {
+          type: "boolean",
+          description: "Try vector search when an embedding provider is configured (default true).",
+        },
+      },
+      required: ["query"],
+    },
+    async execute(args, ctx): Promise<ToolExecuteResult> {
+      const collectionId = resolveCollection(ctx, args.collection_id);
+      const query = String(args.query ?? "").trim();
+      if (!query) {
+        return { title: "doc_cross_search", output: "query 不能为空。", isError: true };
+      }
+      const limit = Math.min(Math.max(Number(args.limit) || 8, 1), 12);
+      try {
+        const fts = await searchDocuments({ collectionId, query, limit: 12 });
+
+        let vectorHits: Awaited<ReturnType<typeof vectorSearch>>["items"] = [];
+        let vectorUsed = false;
+        if (args.include_vectors !== false && isVectorIndexAvailable()) {
+          try {
+            const embedded = await generateEmbeddings({ texts: [query] });
+            const vec = await vectorSearch({
+              collectionId,
+              queryVector: embedded[0]?.embedding ?? [],
+              limit: 12,
+            });
+            vectorHits = vec.items;
+            vectorUsed = vectorHits.length > 0;
+          } catch (e: any) {
+            // 向量是增强：失败时明确降级，不假装用过
+            console.warn("[doc_cross_search] 向量检索不可用，降级为全文：", e?.message ?? e);
+          }
+        }
+
+        type Evidence = {
+          key: string;
+          documentId: string;
+          chunkNo: number;
+          name?: string | null;
+          pageFrom?: number;
+          pageTo?: number;
+          headingPath?: string | null;
+          preview?: string | null;
+          score: number;
+        };
+        const merged = new Map<string, Evidence>();
+        fts.items.forEach((h, i) => {
+          merged.set(`${h.document_id}:${h.chunk_no}`, {
+            key: `${h.document_id}:${h.chunk_no}`,
+            documentId: h.document_id,
+            chunkNo: h.chunk_no,
+            name: h.name,
+            pageFrom: h.page_from,
+            pageTo: h.page_to,
+            headingPath: h.heading_path,
+            preview: h.preview,
+            score: 1 / (60 + i),
+          });
+        });
+        vectorHits.forEach((h, i) => {
+          const key = `${h.document_id}:${h.chunk_no}`;
+          const existing = merged.get(key);
+          const add = 1.2 / (60 + i);
+          if (existing) {
+            existing.score += add;
+          } else {
+            merged.set(key, {
+              key,
+              documentId: h.document_id,
+              chunkNo: h.chunk_no,
+              name: h.name,
+              pageFrom: h.page_from ?? undefined,
+              pageTo: h.page_to ?? undefined,
+              headingPath: h.heading_path,
+              preview: null,
+              score: add,
+            });
+          }
+        });
+
+        const ranked = [...merged.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+        if (ranked.length === 0) {
+          return {
+            title: "doc_cross_search",
+            output: `未检索到与「${query}」相关的证据（全文${vectorUsed ? " + 向量" : ""}）。这不等于文档里没有；可换关键词或先看 doc_status。`,
+            isError: false,
+            metadata: { collectionId, vectorUsed, hits: 0, documents: 0 },
+          };
+        }
+
+        const byDoc = new Map<string, Evidence[]>();
+        for (const hit of ranked) {
+          const list = byDoc.get(hit.documentId) ?? [];
+          list.push(hit);
+          byDoc.set(hit.documentId, list);
+        }
+
+        const lines: string[] = [];
+        let tokens = 0;
+        const usedDocIds: string[] = [];
+        for (const [docId, hits] of byDoc) {
+          const header = `## ${hits[0].name || docId}`;
+          if (estimateDocTokens(header) + tokens > DOC_SEARCH_MAX_TOKENS) break;
+          lines.push(header);
+          tokens += estimateDocTokens(header);
+          usedDocIds.push(docId);
+          for (const hit of hits) {
+            const citation = formatCitation({
+              documentId: hit.documentId,
+              chunkNo: hit.chunkNo,
+              name: hit.name,
+              pageFrom: hit.pageFrom,
+              pageTo: hit.pageTo,
+              headingPath: hit.headingPath,
+            });
+            let preview = hit.preview?.trim() ?? "";
+            if (!preview) {
+              try {
+                preview = (await readDocumentChunk(hit.documentId, hit.chunkNo)).text;
+              } catch {
+                preview = "";
+              }
+            }
+            const clipped = truncateToTokens(preview.replace(/\s+/g, " ").trim(), 240).text;
+            const line = `${citation} ${clipped}`;
+            if (estimateDocTokens(line) + tokens > DOC_SEARCH_MAX_TOKENS) break;
+            lines.push(line);
+            tokens += estimateDocTokens(line);
+          }
+        }
+
+        recordDocumentSearch(collectionId, fts.items);
+        const header = [
+          `证据模式：${vectorUsed ? "全文 + 向量" : "全文"}；命中 ${ranked.length} 块，覆盖 ${usedDocIds.length} 份文档。`,
+          "请只基于下列证据作答，逐条引用 citation；证据不足就说不足。",
+        ].join("\n");
+        return {
+          title: "doc_cross_search",
+          output: `${header}\n\n${lines.join("\n")}`,
+          isError: false,
+          metadata: {
+            collectionId,
+            vectorUsed,
+            hits: ranked.length,
+            documents: usedDocIds.length,
+          },
+        };
+      } catch (e: any) {
+        return {
+          title: "doc_cross_search",
+          output: `跨文档检索失败：${e?.message ?? e}`,
+          isError: true,
+        };
+      }
+    },
+  };
+}
 
 export function createDocStatusTool(): ToolDef {
   return {

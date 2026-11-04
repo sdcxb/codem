@@ -96,3 +96,18 @@ CREATE TABLE IF NOT EXISTS document_ingest_state (
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
+
+-- 向量索引（可选能力）：每块一个归一化 f32 向量（little-endian BLOB）。
+-- 与 FTS 并存：没有 embedding 配置时本表为空，检索行为完全不变（纯 FTS）。
+CREATE TABLE IF NOT EXISTS document_vectors (
+  document_id TEXT NOT NULL,
+  chunk_no INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  dim INTEGER NOT NULL,
+  vector BLOB NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (document_id, chunk_no),
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_vectors_model ON document_vectors(model);

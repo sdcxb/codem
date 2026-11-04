@@ -141,6 +141,9 @@ pub const COMMANDS: &[&str] = &[
     "documents.stats",
     "documents.reset",
     "documents.health",
+    "documents.vector_upsert",
+    "documents.vector_search",
+    "documents.vector_status",
 ];
 
 /// 统一入口：命令名 + 结构化参数 → JSON 结果。
@@ -295,6 +298,9 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "documents.stats" => documents_from_host(),
         "documents.reset" => documents_from_host(),
         "documents.health" => documents_from_host(),
+        "documents.vector_upsert" => documents_from_host(),
+        "documents.vector_search" => documents_from_host(),
+        "documents.vector_status" => documents_from_host(),
         other => Err(DbError::unsupported(format!(
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),

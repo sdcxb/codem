@@ -456,6 +456,35 @@ enqueue → verify（存在/可读/扩展名/根内/大小/安全上限）
 
 ---
 
+## 16.5 向量检索与跨文档问答（2026-11-04 追加）
+
+**定位**：FTS 是默认能力；向量是**可选增强**，没有 embedding 配置时完全不影响检索。
+
+- **存储**：`document_vectors(document_id, chunk_no, model, dim, vector BLOB)`，向量写入时归一化
+  （f32 little-endian），检索=点积；schema `DOCS_SCHEMA_VERSION=2`。
+- **命令**：`documents.vector_upsert` / `documents.vector_search` / `documents.vector_status`；
+  sha 变化、删文档、reset 都会清向量。
+- **补齐**：摄取完成后，若 `settings.embedding.enabled=true`，渲染侧后台按块嵌入
+  （每批 16 块、每文档单次最多 512 块），失败只记日志、保留纯 FTS；`vector_status` 可看覆盖。
+- **混合检索**：`doc_cross_search` 把 FTS 与向量结果按 RRF 合并、同块去重、按文档分组，
+  每条带 citation；**工具不生成答案**，只给证据并明确要求调用方基于证据作答（避免把
+  “检索不到”伪装成“文档没有”）。
+- **跨文档问答**：主模型拿 `doc_cross_search` 的证据作答；需要更多上下文时按 citation 用 `doc_read`。
+- **边界**：暴力 cosine（进程内扫描）适用于万级向量；更大规模需要 ANN/HNSW，属 P2。
+- **判据**：`docs.rs::vector_search_ranks_by_cosine_and_isolates_collections`、
+  `src/test/doc-vector-index.test.ts`、`src/test/doc-cross-search.test.ts`。
+- **真机验证（2026-11-04）**：真实 Codem 进程（隔离 `CODEM_DATA_HOME`）通过 WebView2 CDP 调用 IPC：
+  真实 PDF 摄取 → `ready`、全文命中、正文回读 1,903 字符、PDFium 渲染 800×1130 PNG；
+  合成向量 upsert/search 命中 score=1；纯图片 PDF → `needs_ocr`、待转录 1 页、
+  渲染 700×991 PNG、失败页可重试、finish 保持 `needs_ocr`。
+
+### 真机验证抓到的 bug
+
+首次以隔离数据根启动时，`storage.auto-migrate` 在**旧库文件不存在**的情况下仍调用
+`migration.auto`，失败后弹「操作没有生效」横幅 —— 首次安装就会看到假失败。
+修复：迁移前先 `exists(legacyPath)`，不存在直接 `skipped`、不上报；判据
+`migrate-guard.test.ts::MG-5`（无旧库 ⇒ 静默跳过，且 `reportActionFailure` 零调用）。
+
 ## 17. 风险与回退
 
 | 风险 | 影响 | 缓解 |

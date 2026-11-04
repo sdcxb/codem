@@ -820,6 +820,20 @@ export async function migrateFromLegacyDb(
   // 条件 3：旧库路径 + 迁移标记
   const legacyPath = await legacyDbPath();
   if (!legacyPath) return { kind: "skipped", reason: "拿不到应用数据目录" };
+  /*
+   * 首次安装/用户手动清理后，旧库文件**根本不存在**。
+   * 这时继续调 `migration.auto` 只会得到"旧库不存在"的失败，再把
+   * 「操作没有生效（storage.auto-migrate）」横幅弹给用户 —— 真机实测（隔离数据根首次启动）
+   * 就会看到这条假失败。没有旧库 = 不需要迁移，直接跳过，不上报。
+   */
+  try {
+    const { exists } = await import("../file-api");
+    if (!(await exists(legacyPath))) {
+      return { kind: "skipped", reason: "旧库不存在（首次安装或已清理）" };
+    }
+  } catch {
+    // 查不了就按“存在”继续走原有守卫（迁移命令自己会再校验，绝不盲写）
+  }
 
   const rust = port as unknown as {
     engine: { health?: () => Promise<unknown> };

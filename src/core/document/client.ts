@@ -312,6 +312,56 @@ export async function documentStats(collectionId?: string): Promise<{
   return getBackend().command("documents.stats", { collection_id: collectionId });
 }
 
+// ═══════════════════════ 向量索引（可选能力） ═══════════════════════
+
+export interface DocumentVectorHit {
+  document_id: string;
+  chunk_no: number;
+  score: number;
+  name?: string | null;
+  page_from?: number | null;
+  page_to?: number | null;
+  heading_path?: string | null;
+}
+
+export async function vectorUpsert(params: {
+  documentId: string;
+  vectors: Array<{ chunk_no: number; vector: number[] }>;
+  model?: string;
+  replaceAll?: boolean;
+}): Promise<{ upserted: number; dim: number; model: string }> {
+  return getBackend().command("documents.vector_upsert", {
+    document_id: params.documentId,
+    vectors: params.vectors,
+    model: params.model,
+    replace_all: params.replaceAll ?? false,
+  });
+}
+
+export async function vectorSearch(params: {
+  collectionId: string;
+  queryVector: number[];
+  limit?: number;
+  model?: string;
+  documentIds?: string[];
+}): Promise<{ items: DocumentVectorHit[]; dim: number }> {
+  return getBackend().command("documents.vector_search", {
+    collection_id: params.collectionId,
+    query_vector: params.queryVector,
+    limit: params.limit ?? 20,
+    model: params.model,
+    document_ids: params.documentIds,
+  });
+}
+
+export async function vectorStatus(params: {
+  documentId?: string;
+}): Promise<{ items: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }> }> {
+  return getBackend().command("documents.vector_status", {
+    document_id: params.documentId,
+  });
+}
+
 /** 文档大纲（标题路径，按首次出现排序；不返回正文）。 */
 export async function documentOutline(
   documentId: string,
