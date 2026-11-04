@@ -2735,6 +2735,17 @@ width: 100%;
 }
 
 /* ========== Q&A Turn Container ========== */
+/* 桌面「继续」条：共享 `.continue-bar` 只有 flex 对齐，没有宽度约束。
+   父级是整条 `.chat-panel`，若不夹阅读列，内容会贴到窗口最右（真机回归 2026-11-04）。
+   这里只约束桌面这一层，手机仍用 `packages/ui/src/ui.css` 的原样式。 */
+.desktop-continue-bar {
+  width: 100%;
+  max-width: calc(var(--reading-column) + var(--reading-gutter) * 2);
+  margin: 0 auto;
+  padding: var(--space-2) var(--reading-gutter);
+  box-sizing: border-box;
+}
+
 /* Visual grouping: messages in the same turn are separated from other turns
    by a subtle border line. The fork/regenerate buttons appear on hover. */
 .qa-turn-footer {

@@ -17,6 +17,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from '../tools';
 import type { SubagentRuntime } from '../../subagent/runtime';
+import { getSubagentAdmission, resetSubagentAdmission } from '../../subagent/admission';
 import { getLang } from '../../i18n/lang';
 // 本文件的工具声明 `timeoutMs: NO_TIMEOUT`（它们是长任务，或会等用户确认），
 // 哨兵值必须在声明处可见。
@@ -26,8 +27,17 @@ import { NO_TIMEOUT } from '../tool-contract';
 
 let runtime: SubagentRuntime | null = null;
 
+/**
+ * 同时在前台等待的子代理数。后台子代理由 runtime 管理，前台不进入 activations，
+ * 所以这里单独记；两边都限制 2 个，避免一条助手消息里同时派生一打子代理。
+ */
+const foregroundActive = new Map<string, number>();
+const MAX_ACTIVE_SUBAGENTS_PER_PARENT = 2;
+
 export function setSubagentRuntime(rt: SubagentRuntime): void {
   runtime = rt;
+  resetSubagentAdmission();
+  foregroundActive.clear();
 }
 
 function getRuntime(): SubagentRuntime {
@@ -131,6 +141,47 @@ export function createSubagentTool(): ToolDef {
       const profileId = (args.profile_id as string) || undefined; // 可选 AgentProfile ID
       const cwd = ctx.cwd;
 
+      /**
+       * 第 186 波：长尾证据里 repo-06 一轮派生了约 166 个子代理，而每个子代理
+       * 又会跑自己的 glob/bash。启动侧必须有一道**可解释**的闸门：
+       *   · 同一会话窗口内最多 8 次启动（不是终身配额，10 分钟滑动）；
+       *   · 完全相同的 prompt 不复派，直接提示复用；
+       *   · 同时最多 2 个活跃子代理（后台看 runtime，前台看本地计数）。
+       * 超过时返回可行动错误，让模型直接在主循环干活，而不是无限派生。
+       */
+      const admission = getSubagentAdmission();
+      const decision = admission.check(ctx.sessionId, prompt);
+      if (!decision.ok) {
+        return {
+          title: `subagent: ${description}`,
+          output: `Error: ${decision.reason ?? (zh ? '子代理预算已用尽' : 'subagent budget exhausted')}`,
+          isError: true,
+        };
+      }
+
+      const activeCount = runInBackground
+        ? rt.listChildren(ctx.sessionId).filter((child) => child.status === 'running').length
+        : (foregroundActive.get(ctx.sessionId) ?? 0);
+      if (activeCount >= MAX_ACTIVE_SUBAGENTS_PER_PARENT) {
+        return {
+          title: `subagent: ${description}`,
+          output:
+            `Error: ` +
+            (zh
+              ? `当前已有 ${activeCount} 个活跃子代理（上限 ${MAX_ACTIVE_SUBAGENTS_PER_PARENT}）；` +
+                `先等它们结束或用 send_message 复用，不要继续派生。`
+              : `${activeCount} active subagents (limit ${MAX_ACTIVE_SUBAGENTS_PER_PARENT}); ` +
+                `wait for one or reuse it with send_message instead of spawning more.`),
+          isError: true,
+        };
+      }
+
+      // 先记账再启动：并行的两个调用不能都通过同一条预算检查。
+      admission.record(ctx.sessionId, prompt);
+      if (!runInBackground) {
+        foregroundActive.set(ctx.sessionId, activeCount + 1);
+      }
+
       try {
         if (runInBackground) {
           // 可持续后台模式 — 对标 DSH startContinuable
@@ -185,6 +236,12 @@ export function createSubagentTool(): ToolDef {
           title: `subagent: ${description}`,
           output: `Error: ${error.message}`, isError: true,
         };
+      } finally {
+        if (!runInBackground) {
+          const next = (foregroundActive.get(ctx.sessionId) ?? 1) - 1;
+          if (next <= 0) foregroundActive.delete(ctx.sessionId);
+          else foregroundActive.set(ctx.sessionId, next);
+        }
       }
     },
   };

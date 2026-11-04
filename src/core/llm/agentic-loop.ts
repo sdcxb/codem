@@ -49,7 +49,8 @@ import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
 import { buildFamilyReminder } from "./task-keyword-search";
-import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
+import { RepeatGuard, type GuardKind, bashIntent, exactSignature } from "./loop-guard";
+import { ObservationCache } from "./observation-cache";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
@@ -837,6 +838,21 @@ export class AgenticLoop {
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
   private readCache: Map<string, { offset: number; limit: number; lineNumbers: boolean; output: string }> = new Map();   // path → last read content (range **和** 是否带行号)
+  /**
+   * 只读搜索观察缓存（第 186 波长尾优化）。
+   *
+   * 真机 repo-06 一轮里约 982 次 glob；`readCache` 只覆盖 read，`RepeatGuard`
+   * 又要等"同一结果出现 4 次"才抑制。这里把 **glob/grep 的精确调用 + 结果**
+   * 直接记住：同一工作区（期间没有写操作）再次用完全相同的参数搜索时，返回
+   * `[CACHE HIT]` 和上次结果，不再执行工具，也不再让模型看到一份"新"输出。
+   *
+   * 边界：
+   *   · 只缓存 glob/grep；不缓存 read（已有 readCache，且更懂 range/行号）；
+   *   · 任何可证明写操作（write/edit/会改盘的 bash）都会 clear()；
+   *   · TTL 120s，避免外部进程改盘后长期返回旧结果；
+   *   · `args.refresh === true` 时不读缓存（逃生口）。
+   */
+  private observationCache = new ObservationCache(120_000);
   /** 宏观步骤计数器（1-based）。侦查类工具不推进它。 */
   private macroStep = 1;
   /** First execution tool seen in the current iteration (used to advance macroStep once per iteration). */
@@ -2129,6 +2145,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     // read/write caches are no longer relevant
     this.readCache.clear();
     this.writeCache.clear();
+    this.observationCache.clear();
     this.waitedSubagents.clear();
     this.spawnedSubagents.clear(); // no-op: 旧模式遗留
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
@@ -2799,6 +2816,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           // false cache hits on files that may have changed context.
           this.readCache?.clear();
           this.writeCache?.clear();
+          this.observationCache.clear();
           this.msgCache = null;
           // F1.2: Trigger memory extraction after compaction
           if (this.config.memoryEnabled && this.config.onCompactionComplete) {
@@ -4604,6 +4622,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           // P2-C: Clear stale caches on reactive compaction too
           this.readCache?.clear();
           this.writeCache?.clear();
+          this.observationCache.clear();
           this.msgCache = null;
           TranscriptCache.clear();
 
@@ -5244,7 +5263,41 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           );
         }
 
+        /**
+         * 第 186 波：glob/grep 的精确观察缓存。
+         *
+         * 这不是"用提示词让模型别重复"：同一个工具 + 同一组参数 + 同一工作区，
+         * 第二次开始直接返回上次结果，工具根本不执行。任何写操作都会清空，
+         * 所以工作区变化后不会拿旧结果。返回带 `errorSource: "loop"`，与
+         * readCache 的约定一致（循环合成结果不参与输出契约校验）。
+         */
+        const observationKey =
+          (name === "glob" || name === "grep") && (effectiveArgs as any)?.refresh !== true
+            ? exactSignature(name, effectiveArgs)
+            : "";
+        if (observationKey) {
+          const hit = this.observationCache.get(observationKey);
+          if (hit) {
+            cacheHitCount++;
+            return {
+              id: "",
+              name,
+              input: effectiveArgs,
+              output:
+                `[CACHE HIT] 这次搜索与之前一次**参数完全相同**，且期间工作区没有写操作。` +
+                `直接使用下面的结果，不要重复搜索；如果确实需要重新搜索，加 refresh: true。\n\n` +
+                hit.output,
+              status: "completed" as const,
+              errorSource: "loop" as const,
+            };
+          }
+        }
+
         const result = await tool.execute(effectiveArgs, ctx);
+
+        if (observationKey && result.isError !== true) {
+          this.observationCache.set(observationKey, result.output);
+        }
 
         // 第 65 波：交付物计数 —— 只有"写下来了"才算推进（读多少都不算）。
         // 第 83 波修正：判定改成**分级证据**（见 artifact-tracker.ts）——
@@ -5270,6 +5323,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               `[AgenticLoop] 交付物判定：同一条"可能写"的命令已重复 ${this.artifactTracker.speculativeCountOf(cmd)} 次且期间没有任何可证明的写操作 → 本轮不计推进（${name}: ${cmd.slice(0, 80)}）`,
             );
           }
+        }
+        // 工作区变了 ⇒ 之前 glob/grep 的观察结果不能再当"当前事实"。
+        // （test 命令也可能由 artifactTracker 判成 artifact，所以放在 artifactThisCall 之后统一清。）
+        if (artifactThisCall || /^(write|edit|multi_edit|apply_patch)$/.test(name)) {
+          this.observationCache.clear();
         }
         /**
          * **第 163 波：读过/搜过仓库源码** ⇒ 记为"确实在读源码干活" ✓

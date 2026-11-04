@@ -19,6 +19,17 @@ describe("CONT-D1 组件", () => {
     fireEvent.click(screen.getByRole("button", { name: /继续|Continue/ }));
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
+
+  it("使用共享布局类与主题按钮类，不再退回浏览器默认样式", () => {
+    const { container } = render(<ContinueBar onContinue={() => {}} />);
+    expect(container.querySelector(".desktop-continue-bar")).toBeTruthy();
+    expect(container.querySelector("button.primary")).toBeTruthy();
+    expect(container.querySelector("[data-testid='continue-bar']")?.getAttribute("style")).toBeNull();
+
+    // 桌面父级是整条 chat-panel：必须夹到阅读列，否则内容贴窗口最右。
+    const css = readFileSync(join(root, "src/styles.css"), "utf8");
+    expect(css).toMatch(/\.desktop-continue-bar\s*\{[\s\S]*?max-width:\s*calc\(var\(--reading-column\)/);
+  });
 });
 
 describe("CONT-D2 ChatPanel 接线", () => {
