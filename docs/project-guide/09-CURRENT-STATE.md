@@ -1,6 +1,6 @@
-# 09 · 当前状态、未完成项与风险（2026-11-03 快照）
+# 09 · 当前状态、未完成项与风险（2026-11-04 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（v1.18.0 已发布）｜ **1.18.0**（2026-11-03 发布，GitHub `Latest`；上一稳定版 1.17.0）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.18.1 已发布）｜ **1.18.1**（2026-11-04 发布，GitHub `Latest`；上一稳定版 1.17.0）
 >
 > 1.18.0 包含：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）+ Flutter 原生 Android 客户端预览 +
 > Tailscale Serve 零配对码 + 远程新建项目/会话 + 交互式命令 stdin 修复；Funnel/公网仍保留配对码。
@@ -12,25 +12,25 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.18.0**（2026-11-03 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.18.0` = **Latest**（2026-11-03） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` = 1.18.0（发布时上传并远端校验） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（v1.18.0 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.0 已提交并推送 | `git status -sb` |
-| 本地 tag | 最新为 **v1.18.0** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.18.1**（2026-11-04 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.18.1` = **Latest**（2026-11-04） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.18.1（发布时上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.18.1 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.1 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.18.1** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：以 `gh release list` 与 `latest.json` 为准。
 
 ---
 
-## 2. 工作区状态（v1.18.0 已提交）
+## 2. 工作区状态（v1.18.1 已提交）
 
 ```text
 ## master...origin/master
-# v1.18.0 已提交并推送；仅 .codem/ 运行时文件未跟踪
+# v1.18.1 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
-- v1.18.0 的目标模式 / Flutter 客户端 / 零码网关改动已提交并推送。
+- v1.18.1 的长任务效率与完成态修复；v1.18.0 的目标模式 / Flutter 客户端 / 零码网关改动已提交并推送。
 - `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不属于本次发布，未提交。
 - `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
@@ -45,7 +45,7 @@
 | `cargo test --lib` | **241 passed / 2 ignored / 0 failed**；其中网关 46 项 |
 | `cargo check` | exit 0（**0 error**） |
 | `flutter analyze` / `flutter test` | 0 issue / **10 passed** |
-| `npm run audit:docs` | 通过（version=1.18.0；`docs:sync` 基线 878 文件 / 45 表 / 118 命令注解） |
+| `npm run audit:docs` | 通过（version=1.18.1；`docs:sync` 基线 878 文件 / 45 表 / 118 命令注解） |
 | 已知失败 | **0** |
 
 ### 3.1 本轮没有已知失败
