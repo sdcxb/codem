@@ -7763,3 +7763,10 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   - 全量曾出现 1 条 `concurrency-three-sessions` 计时 flake（383ms > 337.5ms），单跑 3/3 通过；第二轮全量 878/9524 全绿。
 - 文档：新增 `docs/project-guide/20-HEAVY-TASK-HANDOFF.md`；重写 `docs/NEW-SESSION-START.md`；刷新 AGENTS/00/09/README/01 的版本、测试、长尾证据与下一批重型任务。
 - 未做：完整 12 任务配对评测仍未重跑；Android arm64 真机未验；APK 仍是 1.0.0 debug 签名。
+## 2026-11-04 16:10 — 1.18.3：文档任务不再被误催测试/构建
+
+- 根因：收尾守卫只看 `turnModifiedFiles && !turnRanVerification`，把 `.docx/.md` 生成也算成“代码改动未验证”。
+- 修复：新增 `core/llm/change-scope.ts`，按改动对象分 code/document/unknown；明确路径优先，命令/输出扩展名次之，任务描述只做 unknown 兜底。文档-only 不触发 verify-nudge / “未经证实”；代码/混合改动保持原验证门。
+- 判据：`change-scope.test.ts`；`verification-guard-behavior.test.ts` 新增 VERIF-3（.docx）与 VERIF-4（python 生成文档），原 VERIF-1/2 仍绿。
+- 全量：879 文件 / 9547 用例 / 9530 通过 / 17 skipped / 0 失败（约 181s）；tsc 0。
+- 发布：v1.18.3 = Latest；7 资产 + latest.json；远端清单 7/7 通过。
