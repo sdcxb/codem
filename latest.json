@@ -1,15 +1,15 @@
 {
-  "version": "1.18.8",
-  "notes": "AI Code With 一把 key 支持 Claude/GPT/Gemini 等聊天模型；模型列表标注来源、模态与自动刷新",
-  "pub_date": "2026-11-05T14:44:57Z",
+  "version": "1.18.9",
+  "notes": "Android 本机模式支持 AI Code With（Claude/Gemini/OpenAI）；模型列表可选；桌面自动刷新目录",
+  "pub_date": "2026-11-05T15:42:48Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1o5cTlUQnV2eXM2WWZMbFEzY0owOXR0Wm1oZjhlRHpFL3NsR0M0SjN1aVVxM094QmhSdXpnbGUvdDJ0NFlyMGVTZ0lqTmI0NjZCUU5HSGI1N0N3NEFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0ODM0CWZpbGU6Q29kZW1fMS4xOC44X3g2NC1zZXR1cC5leGUKTmhiRDlQQnpINXpUSjBuU2tIcE81aWJXK0JZLzRxYkExQTZGUTM3SkV3Q0trVC9HN3ZMdkNva0dXOGJhSW5ORzdIc0ZFV0lDK1BCd2l4VkZpSEY1RHc9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.8/Codem_1.18.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1haYWhVWE9FSi9HdGkvWXlzOFcxcUgzZWNPYWdGcXNXbWV0UDV5b1UyRkUvSTlRTTc4cnMxU2EreVJ2YWpTbUFkV1V5ekpoVWN2NUoxYmJDVUpzWkFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkzMjk4CWZpbGU6Q29kZW1fMS4xOC45X3g2NC1zZXR1cC5leGUKMU1MT1lDWFhwZk94RWJjcGZ3Q3NzMEhvdytyWjdrbFJZaWUzbGJxNVRJZmg0elJXSW8vVFZtMDRRanlwbEx2akhJL283b1NQUVpqUTVhclZsY2ZoQ2c9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.9/Codem_1.18.9_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1o5cTlUQnV2eXM2WWZMbFEzY0owOXR0Wm1oZjhlRHpFL3NsR0M0SjN1aVVxM094QmhSdXpnbGUvdDJ0NFlyMGVTZ0lqTmI0NjZCUU5HSGI1N0N3NEFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0ODM0CWZpbGU6Q29kZW1fMS4xOC44X3g2NC1zZXR1cC5leGUKTmhiRDlQQnpINXpUSjBuU2tIcE81aWJXK0JZLzRxYkExQTZGUTM3SkV3Q0trVC9HN3ZMdkNva0dXOGJhSW5ORzdIc0ZFV0lDK1BCd2l4VkZpSEY1RHc9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.8/Codem_1.18.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1haYWhVWE9FSi9HdGkvWXlzOFcxcUgzZWNPYWdGcXNXbWV0UDV5b1UyRkUvSTlRTTc4cnMxU2EreVJ2YWpTbUFkV1V5ekpoVWN2NUoxYmJDVUpzWkFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkzMjk4CWZpbGU6Q29kZW1fMS4xOC45X3g2NC1zZXR1cC5leGUKMU1MT1lDWFhwZk94RWJjcGZ3Q3NzMEhvdytyWjdrbFJZaWUzbGJxNVRJZmg0elJXSW8vVFZtMDRRanlwbEx2akhJL283b1NQUVpqUTVhclZsY2ZoQ2c9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.9/Codem_1.18.9_x64-setup.exe"
     }
   }
 }

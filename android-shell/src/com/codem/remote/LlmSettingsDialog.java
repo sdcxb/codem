@@ -11,7 +11,16 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 原生「本机模型设置」对话框：**base URL / API Key / model**。
@@ -80,6 +89,24 @@ final class LlmSettingsDialog {
         modelField.setContentDescription("模型名");
         root.addView(modelField);
 
+        final Button preset = new Button(activity);
+        preset.setText("使用 AI Code With 预设");
+        preset.setAllCaps(false);
+        preset.setOnClickListener(v -> {
+            base.setText("https://api.aicodewith.ai/v1");
+            if (modelField.getText().toString().trim().isEmpty()) {
+                modelField.setText("deepseek-v4-flash");
+            }
+            status.setText("AI Code With：填 sk-acw- 开头的 Key，再点「获取模型列表」选 Claude / GPT / Gemini / DeepSeek / GLM / Kimi 等。");
+        });
+        root.addView(preset);
+
+        final Button fetchButton = new Button(activity);
+        fetchButton.setText("获取模型列表");
+        fetchButton.setAllCaps(false);
+        fetchButton.setOnClickListener(v -> fetchModels(activity, base, key, fetchButton, status, modelField));
+        root.addView(fetchButton);
+
         TextView hint = new TextView(activity);
         hint.setText("保存后会加密存储，并重启本机 Host（会话与工作区保留）。");
         hint.setPadding(0, pad / 2, 0, 0);
@@ -124,9 +151,96 @@ final class LlmSettingsDialog {
         return dialog;
     }
 
+    /**
+     * 从 `/models` 拉模型列表并让用户选一个（仅 Android 本机模式用）。
+     *
+     * Key 只在这次 HTTPS 请求的 Authorization 头里使用，不写日志、不进 UI 文案；
+     * 已保存的 Key 不回显（设计如此），所以留空时明确提示重新输入一次。
+     */
+    private static void fetchModels(
+            Activity activity,
+            EditText base,
+            EditText key,
+            Button button,
+            TextView status,
+            EditText modelField) {
+        String baseUrl = base.getText().toString().trim().replaceAll("/+$", "");
+        String apiKey = key.getText().toString().trim();
+        if (baseUrl.isEmpty()) {
+            status.setText("请先填写服务地址");
+            return;
+        }
+        if (apiKey.isEmpty()) {
+            status.setText("请先填写一次 API Key（已保存的 Key 不回显，无法用于拉取列表）");
+            return;
+        }
+        button.setEnabled(false);
+        status.setText("正在获取模型列表…");
+        new Thread(() -> {
+            List<String> ids = new ArrayList<>();
+            String error = null;
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(baseUrl + "/models");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(15_000);
+                conn.setReadTimeout(20_000);
+                conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+                conn.setRequestProperty("Accept", "application/json");
+                int code = conn.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    error = "获取失败：HTTP " + code;
+                } else {
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) sb.append(line);
+                    }
+                    JSONArray data = new JSONObject(sb.toString()).optJSONArray("data");
+                    if (data == null) throw new IllegalStateException("响应里没有 data 数组");
+                    for (int i = 0; i < data.length(); i++) {
+                        JSONObject item = data.optJSONObject(i);
+                        String id = item == null ? "" : item.optString("id", "").trim();
+                        if (id.isEmpty() || isMediaModel(id) || ids.contains(id)) continue;
+                        ids.add(id);
+                    }
+                }
+            } catch (Throwable t) {
+                error = "获取失败：" + t.getClass().getSimpleName();
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            final String failure = error;
+            activity.runOnUiThread(() -> {
+                button.setEnabled(true);
+                if (failure != null) {
+                    status.setText(failure);
+                    return;
+                }
+                if (ids.isEmpty()) {
+                    status.setText("没有可用聊天模型（检查 Key / 服务地址）");
+                    return;
+                }
+                status.setText("已获取 " + ids.size() + " 个模型，点一个填入模型名");
+                new AlertDialog.Builder(activity)
+                        .setTitle("选择模型（" + ids.size() + "）")
+                        .setItems(ids.toArray(new String[0]), (d, which) -> modelField.setText(ids.get(which)))
+                        .setNegativeButton("取消", null)
+                        .show();
+            });
+        }, "codem-model-list").start();
+    }
+
+    /** 与桌面选择器同一口径：图像/视频生成模型不进入聊天模型列表。 */
+    private static boolean isMediaModel(String id) {
+        String s = id.toLowerCase();
+        return s.startsWith("gpt-image") || s.startsWith("nano-banana") || s.startsWith("seedance")
+                || s.startsWith("veo-") || s.startsWith("wan-") || s.startsWith("minimax-h3");
+    }
+
     /** 校验：返回 null = 通过；否则是一句**能照着改**的人话 */
-    static String validate(String baseUrl, String model, String apiKey) {
-        if (baseUrl.isEmpty()) return "请填写服务地址（形如 https://api.deepseek.com/v1）";
+    static String validate(String baseUrl, String model, String apiKey) {        if (baseUrl.isEmpty()) return "请填写服务地址（形如 https://api.deepseek.com/v1）";
         if (baseUrl.length() > 2_000) return "服务地址太长";
         URI uri;
         try {

@@ -2,6 +2,13 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.9] - 2026-11-05
+
+### 新增
+
+- Android 本机模式支持 AI Code With：Claude/Anthropic、Gemini 与 OpenAI 兼容模型按模型族分派；本机模型设置新增 AICodeWith 预设与「获取模型列表」，填 `sk-acw-*` 后可点选模型。
+- AICodeWith 模型目录在桌面启动后自动刷新（24 小时内最多一次，失败下次启动重试）。
+
 ## [1.18.8] - 2026-11-05
 
 ### 新增

@@ -20,6 +20,13 @@ import type {
   StreamEvent,
   TokenUsage,
 } from "../../../src/core/llm/types";
+import {
+  aggregateStream,
+  classifyAICodeWithModel,
+  isAICodeWithChatModel,
+  streamAnthropic,
+  streamGemini,
+} from "../../../src/core/llm/aicodewith-protocols";
 
 export interface OpenAILikeOptions {
   id?: string;
@@ -119,7 +126,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
     return this.baseUrl.length > 0;
   }
 
+  /**
+   * AICodeWith 同一把 key 覆盖三家协议；只有确认是 AICodeWith 时才按模型族分派，
+   * 避免把普通 OpenAI 兼容端点上的 `claude-*` 误走 Anthropic。
+   */
+  private aicodewithInfo(request: LLMRequest) {
+    const isAICodeWith = this.apiKey.startsWith("sk-acw-") || /aicodewith\.(ai|com)/i.test(this.baseUrl);
+    if (!isAICodeWith) return null;
+    return classifyAICodeWithModel(request.model || this.model);
+  }
+
   async listModels(): Promise<ModelConfig[]> {
+    const info = this.apiKey.startsWith("sk-acw-") ? classifyAICodeWithModel(this.model) : null;
     return [
       {
         id: this.model,
@@ -129,6 +147,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         supportsTools: true,
         supportsStreaming: true,
         dynamic: true,
+        ...(info ? { inputModalities: info.inputModalities } : {}),
       },
     ];
   }
@@ -140,7 +159,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     });
     if (!res.ok) throw new Error(`GET /models ${res.status}`);
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
-    return (body.data ?? [])
+    const all = (body.data ?? [])
       .filter((m): m is { id: string } => typeof m.id === "string")
       .map(
         (m) =>
@@ -154,6 +173,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
             dynamic: true,
           }),
       );
+    if (this.apiKey.startsWith("sk-acw-")) {
+      return all
+        .filter((m) => isAICodeWithChatModel(m.id))
+        .map((m) => ({ ...m, inputModalities: classifyAICodeWithModel(m.id)!.inputModalities }));
+    }
+    return all;
   }
 
   private headers(): Record<string, string> {
@@ -183,6 +208,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    const info = this.aicodewithInfo(request);
+    if (info && info.protocol !== "openai") return aggregateStream(this.stream(request));
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: this.headers(),
@@ -216,6 +243,15 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   async *stream(request: LLMRequest): AsyncGenerator<StreamEvent, void, unknown> {
+    const info = this.aicodewithInfo(request);
+    if (info?.protocol === "anthropic") {
+      yield* streamAnthropic({ apiKey: this.apiKey, baseUrl: this.baseUrl }, request);
+      return;
+    }
+    if (info?.protocol === "gemini") {
+      yield* streamGemini({ apiKey: this.apiKey, baseUrl: this.baseUrl }, request);
+      return;
+    }
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: this.headers(),
