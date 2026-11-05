@@ -1,15 +1,15 @@
 {
-  "version": "1.18.5",
-  "notes": "Codem v1.18.5：文档任务识别再修正，Python 生成文档/最终交付物不再被误催测试",
-  "pub_date": "2026-11-04T09:50:08Z",
+  "version": "1.18.6",
+  "notes": "项目级文档索引（视觉转录/续跑/PDF 标题）+ 大规模向量检索（IVF/int8/外存）+ 跨文档证据；修视觉误判、附件挤压、目标暂停、首次安装假失败",
+  "pub_date": "2026-11-05T01:39:29Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZQeFJTdWhRMkhzUXVYaGpuWWkvN0NHZVNnQ0ptVCs5dStEYVM0MW4rdjBwa1U5SEFUQndQdUlvTXNEOG41RGZvOTFIM2pHTU5XT3A0ZXozTSszcmdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzg1NzcyCWZpbGU6Q29kZW1fMS4xOC41X3g2NC1zZXR1cC5leGUKOVI0bmUvTVFQSlAxekVJZktyR1B2dHRyVEdGYjVwa0JObW9jZEtXWHhhRGJQYnJWRDVzTzNIZE9GOGZGZ3d6SEpMbjlmblFyMzFZQ0NUSGdFZjQxQkE9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.5/Codem_1.18.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pDNE5sNGEwT1FqN3JsWXppUzhZakdqRG5qUTlIK3ZJVlFwdEE5TFh0NlJYeUFuR2ZjNVZwMU1NNGdJeXc4TkFGQzRwLzNKT29MTURBamJSMWhPMXdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODQyNzYyCWZpbGU6Q29kZW1fMS4xOC42X3g2NC1zZXR1cC5leGUKZG1xTzhxUjFEemk3ZjBlRDVLM3B3WVh6aGVueTA3MVdmQXBreUpTMXZlcDlZYnl1a0dQNkJxOERJV3lzbXVvRFh4bjRjaCtvUUd2c2VocWJ5eVRmQ0E9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.6/Codem_1.18.6_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZQeFJTdWhRMkhzUXVYaGpuWWkvN0NHZVNnQ0ptVCs5dStEYVM0MW4rdjBwa1U5SEFUQndQdUlvTXNEOG41RGZvOTFIM2pHTU5XT3A0ZXozTSszcmdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzg1NzcyCWZpbGU6Q29kZW1fMS4xOC41X3g2NC1zZXR1cC5leGUKOVI0bmUvTVFQSlAxekVJZktyR1B2dHRyVEdGYjVwa0JObW9jZEtXWHhhRGJQYnJWRDVzTzNIZE9GOGZGZ3d6SEpMbjlmblFyMzFZQ0NUSGdFZjQxQkE9PQo=",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.5/Codem_1.18.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pDNE5sNGEwT1FqN3JsWXppUzhZakdqRG5qUTlIK3ZJVlFwdEE5TFh0NlJYeUFuR2ZjNVZwMU1NNGdJeXc4TkFGQzRwLzNKT29MTURBamJSMWhPMXdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODQyNzYyCWZpbGU6Q29kZW1fMS4xOC42X3g2NC1zZXR1cC5leGUKZG1xTzhxUjFEemk3ZjBlRDVLM3B3WVh6aGVueTA3MVdmQXBreUpTMXZlcDlZYnl1a0dQNkJxOERJV3lzbXVvRFh4bjRjaCtvUUd2c2VocWJ5eVRmQ0E9PQo=",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.6/Codem_1.18.6_x64-setup.exe"
     }
   }
 }

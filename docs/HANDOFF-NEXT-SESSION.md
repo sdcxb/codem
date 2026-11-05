@@ -7952,5 +7952,29 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 踩坑：PowerShell 批量替换曾把 SQL 续行写成 `\\`，导致 `qvector IS NOT NULL` 计数查询
   静默失败（被 `unwrap_or(0)` 吃掉），状态显示 quantized=0；已修为单行 SQL 并加断言。
 
+## 2026-11-05 09:35 — DeepSeek Flash 真实视觉 OCR 端到端 + 1.18.6 发版
+
+### 1. OCR 端到端（真实 key / 真实模型）
+
+- 生成两页纯图片 PDF（无文本层）：`ORION-42` / `NEBULA-77`、中文验收行、表格行。
+- 调试构建 + Vite dev 连接**真实用户数据**（`%APPDATA%\com.codem.app`），通过 CDP 动态
+  `import("/src/core/document/ocr.ts")` 调真实 `runDocumentOcr`（不是 fake）：
+  - 初始 2 页 `needs_ocr` → `runDocumentOcr` → `written=2 / failed=0 / model=deepseek-flash`
+    → `ready`，`chunks=2`；
+  - 检索 `ORION-42` 命中，preview 为模型转录的原文；`NEBULA-77` 也在第二页写入。
+- **踩坑（真实）**：首次调用返回「未配置视觉模型」，但紧接着 probe 显示 chat=deepseek-flash、
+  key 长度 35。属引擎/凭据异步初始化竞态；重试即成功。未改代码，记为已知边界：
+  冷启动后立刻触发 OCR 可能先失败一次，重试即可（错误提示可行动）。
+- 测试文档已从真实索引删除（`documents.delete`），不污染用户数据。
+
+### 2. 1.18.6 发版
+
+- 三处版本 + Cargo.lock 升 1.18.6；CHANGELOG / PROJECT-GUIDE / 四份当前文档更新；
+  `latest.json` 生成并本地验签通过（2 个平台键）。
+- 签名构建产出 NSIS 74.8MB / MSI 93.6MB + `.sig`；安装到 `%LOCALAPPDATA%\Codem`，
+  注册表/快捷方式指向默认目录，版本 1.18.6，schema=4，UI/CDP 正常。
+- Release notes：`docs/releases/v1.18.6.md`；Android APK 与 stacks-index 沿用 1.18.5（未改移动端）。
+
+
 
 
