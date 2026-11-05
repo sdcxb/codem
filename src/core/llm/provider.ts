@@ -17,6 +17,14 @@ import { reasoningEffortForRequest } from "./reasoning-effort";
 import { mapFinishReason } from "./finish-reason";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
+import {
+  aggregateStream,
+  classifyAICodeWithModel,
+  decorateAICodeWithModel,
+  isAICodeWithChatModel,
+  streamAnthropic,
+  streamGemini,
+} from "./aicodewith-protocols";
 
 /**
  * ★ 第 48 波：**流式时间的"服务端间隙 vs 我们这侧"** 格式化（纯函数 ✓，便于判据 ✓）。
@@ -112,9 +120,9 @@ export function inferContextWindow(modelId: string): number {
 export class OpenAICompatibleProvider implements LLMProvider {
   id: string;
   name: string;
-  private config: ProviderConfig;
+  protected config: ProviderConfig;
   /** Dynamically fetched models (cached after fetchModelsFromServer) */
-  private dynamicModels: ModelConfig[] | null = null;
+  protected dynamicModels: ModelConfig[] | null = null;
 
   constructor(config: ProviderConfig) {
     this.id = config.id;
@@ -1077,6 +1085,53 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 }
 
+// ========== AI Code With（OpenAI 兼容聚合入口） ==========
+
+/**
+ * AI Code With：一把 key 覆盖多家模型，但三家协议不同。
+ * - Claude：Anthropic Messages（`/v1/messages`）
+ * - Gemini：Google Gemini（`/gemini_cli/v1beta/...`）
+ * - GPT / DeepSeek / GLM / Kimi / Grok / MiniMax / Jev：OpenAI Chat Completions
+ *
+ * `AICodeWithProvider` 按模型族把 `stream/complete` 分派给对应协议；
+ * 模型目录保留三家的聊天模型，图像/视频生成模型不进聊天选择器。
+ */
+export class AICodeWithProvider extends OpenAICompatibleProvider {
+  override async listModels(): Promise<ModelConfig[]> {
+    return (await super.listModels()).filter((m) => isAICodeWithChatModel(m.id)).map(decorateAICodeWithModel);
+  }
+
+  override async fetchModelsFromServer(): Promise<ModelConfig[]> {
+    // 基类会先把服务器全量列表塞进 dynamicModels；这里必须用过滤/标注后的结果覆盖它，
+    // 否则引擎内部仍会看到 56 个（含图像/视频、无模态）的旧形态。
+    const models = (await super.fetchModelsFromServer())
+      .filter((m) => isAICodeWithChatModel(m.id))
+      .map(decorateAICodeWithModel);
+    this.dynamicModels = models;
+    return models;
+  }
+
+  override async *stream(request: LLMRequest): AsyncGenerator<StreamEvent, void, unknown> {
+    const protocol = classifyAICodeWithModel(request.model)?.protocol;
+    if (protocol === "anthropic") {
+      yield* streamAnthropic(this.config, request);
+      return;
+    }
+    if (protocol === "gemini") {
+      yield* streamGemini(this.config, request);
+      return;
+    }
+    yield* super.stream(request);
+  }
+
+  override async complete(request: LLMRequest): Promise<LLMResponse> {
+    if (classifyAICodeWithModel(request.model)?.protocol !== "openai") {
+      return aggregateStream(this.stream(request));
+    }
+    return super.complete(request);
+  }
+}
+
 // ========== Provider Registry ==========
 export class ProviderRegistry {
   private providers: Map<string, LLMProvider> = new Map();
@@ -1164,6 +1219,27 @@ export function createDefaultProviders(ctx?: Context): ProviderRegistry {
     models: [
       { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
       { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
+    ],
+  }));
+
+  // AI Code With（一把 key + 三套协议：Claude / Gemini / OpenAI 兼容）
+  registry.register(new AICodeWithProvider({
+    id: "aicodewith",
+    name: "AI Code With",
+    apiKey: getApiKey("aicodewith"),
+    baseUrl: "https://api.aicodewith.ai/v1",
+    models: [
+      { id: "gpt-5.4", name: "GPT-5.4 (AI Code With)", contextWindow: 1000000, maxOutputTokens: 128000, supportsTools: true, supportsStreaming: true },
+      { id: "gpt-5.5", name: "GPT-5.5 (AI Code With)", contextWindow: 1000000, maxOutputTokens: 128000, supportsTools: true, supportsStreaming: true },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash (AI Code With)", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (AI Code With)", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
+      { id: "glm-5.3", name: "GLM-5.3 (AI Code With)", contextWindow: 200000, maxOutputTokens: 128000, supportsTools: true, supportsStreaming: true },
+      { id: "kimi-k3", name: "Kimi K3 (AI Code With)", contextWindow: 256000, maxOutputTokens: 128000, supportsTools: true, supportsStreaming: true },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (AI Code With)", contextWindow: 200000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6 (AI Code With)", contextWindow: 200000, maxOutputTokens: 32000, supportsTools: true, supportsStreaming: true },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (AI Code With)", contextWindow: 200000, maxOutputTokens: 32000, supportsTools: true, supportsStreaming: true },
+      { id: "gemini-3-pro-preview", name: "Gemini 3 Pro (AI Code With)", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
+      { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (AI Code With)", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
     ],
   }));
 

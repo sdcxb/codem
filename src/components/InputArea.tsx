@@ -113,7 +113,9 @@ sessionKey?: string;
   hasDrafts?: boolean;
   /** P0: Model selector props — model picker now lives in input area bottom bar */
   model?: string;
-  onModelChange?: (model: string) => void;
+  /** 当前模型来源 provider（同名模型可来自不同供应商） */
+  providerId?: string;
+  onModelChange?: (model: string, providerId?: string) => void;
   mode?: "cli" | "api";
   /** P1: Connection status indicator */
   connected?: boolean;
@@ -153,7 +155,7 @@ function pickAudioRecorderMimeType(): string | null {
   return null;
 }
 
-export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, searchOpen = false, onToggleSideSession, sideSessionOpen = false, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, searchOpen = false, onToggleSideSession, sideSessionOpen = false, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, providerId, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
   const lang = useLang();
   const zh = lang === "zh";
   const [input, setInput] = useState("");
@@ -1086,7 +1088,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
   // P0: Model list for inline model selector
   const modelList: ModelOption[] = getModelsForMode(mode);
-  const currentModelName = modelList.find(m => m.id === model)?.name || model || "";
+  const currentModelName = modelList.find(m => m.id === model && (!providerId || !m.providerId || m.providerId === providerId))?.name || model || "";
   const [reasoningEffort, setReasoningEffort] = useState<string>(() =>
     getSettingJSON<string>("codem-reasoning-effort", "high"),
   );

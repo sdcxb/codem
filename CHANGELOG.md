@@ -2,6 +2,17 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.8] - 2026-11-05
+
+### 新增
+
+- **接入 AI Code With**：一把 `sk-acw-*` key 可选 Claude / GPT / Gemini / Grok / DeepSeek / GLM / Kimi / MiniMax / Jev 的聊天模型；按模型族自动走 Anthropic Messages、Google Gemini、OpenAI 三套协议。模型列表同时标注来源 provider 与「多模态 / 文本」；同名模型（如 DeepSeek 原生与 AICodeWith）分成两条，选择时携带 provider，不会调错。图像/视频生成模型不进入聊天列表。AICodeWith 模型目录在启动后自动刷新（24 小时内最多一次，失败下次启动重试），设置卡片仍可手动刷新。
+
+### 修复
+
+- 暂停免费模型插件后，对话模型列表仍显示并允许选择免费模型。现在暂停/删除会立即清空免费模型归属索引并广播设置变更，模型选择器按开关过滤：关闭时一个免费模型都不出现，重新启用后才恢复。
+- 模型列表的「视觉」槽位徽标与「多模态」能力标注混用、部分模型漏标。现在统一为「【多模态】/【文本】」，下拉改为固定宽度并避开右栏，来源/模态不换行。
+
 ## [1.18.7] - 2026-11-05
 
 ### 修复

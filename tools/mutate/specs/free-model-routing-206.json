@@ -82,8 +82,8 @@
       "patches": [
         {
           "file": "src/App.tsx",
-          "from": "        if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
-          "to": "        {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
+          "from": "        if (providerOverride) {\n          provider = providerOverride;\n        } else if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
+          "to": "        if (providerOverride) {\n          provider = providerOverride;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
         }
       ],
       "tests": [
@@ -367,7 +367,7 @@
       "patches": [
         {
           "file": "src/core/model-config.ts",
-          "from": "    for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }",
+          "from": "      for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n        if (seenFreeIds.has(m.id)) continue;\n        seenFreeIds.add(m.id);\n        freeModelOptions.push({ id: m.id, name: m.name });\n      }",
           "to": "    /* 变异：不读落盘动态列表 */"
         }
       ],

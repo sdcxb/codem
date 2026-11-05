@@ -1191,10 +1191,12 @@
     "cursor": "pointer",
     "display": "flex",
     "font-size": "var(--fs-sm)",
-    "gap": "var(--space-4)",
+    "gap": "var(--space-3)",
+    "min-width": "0",
     "padding": "var(--space-3) var(--space-4)",
     "text-align": "left",
     "transition": "background var(--duration-press) var(--ease-out), border-color var(--duration-press) var(--ease-out)",
+    "white-space": "nowrap",
     "width": "100%"
   },
   "browser-go-btn": {

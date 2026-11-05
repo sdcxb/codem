@@ -565,6 +565,14 @@ interface DayLiteralException {
 
 const DAY_LITERAL_EXCEPTIONS: DayLiteralException[] = [
   {
+    file: "src/App.tsx",
+    literal: "24 * 60 * 60 * 1000",
+    occurrences: 2,
+    kind: "elapsed",
+    reason:
+      "两处都是经过时长：① 数据库维护的 24h 间隔；② AICodeWith 模型目录自动刷新 TTL（距上次成功刷新满 24 小时再拉一次）。都不按本地日历日分格，也不生成任何日窗口",
+  },
+  {
     file: "src/components/Sidebar.tsx",
     literal: "86_400_000",
     occurrences: 2,

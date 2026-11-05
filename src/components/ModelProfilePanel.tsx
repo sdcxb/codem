@@ -13,6 +13,7 @@ import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure } from "../core/storage/persist-failure";
 import { getMergedDynamicModels } from "../core/llm/model-catalog";
 import { MIMO_MODELS } from "../core/model-config";
+import { modelModalityLabel } from "../core/llm/model-modality";
 import { ActionIcons } from "../core/icons/icon-map";
 
 // ========== Constants ==========
@@ -64,13 +65,13 @@ const SLOT_DESCRIPTIONS_ZH: Record<TaskSlot, string> = {
 interface ProviderWithModels {
   id: string;
   name: string;
-  models: Array<{ id: string; name: string; catalogOnly?: boolean }>;
+  models: Array<{ id: string; name: string; catalogOnly?: boolean; inputModalities?: Array<"text" | "image"> }>;
 }
 
 /** 纯函数部分抽出来，便于用例守住"内置目录条目必须出现在方案面板里" */
 export function buildAvailableProviders(
   settings: { providers?: Array<{ id: string; name?: string; apiKey?: string }> },
-  dynamicModels: Record<string, Array<{ id: string; name: string; catalogOnly?: boolean }>>,
+  dynamicModels: Record<string, Array<{ id: string; name: string; catalogOnly?: boolean; inputModalities?: Array<"text" | "image"> }>>,
   fallback: Record<string, Array<{ id: string; name: string }>> = API_MODELS_FALLBACK,
   mimoModels: Array<{ id: string; name: string }> = MIMO_MODELS.map((m) => ({ id: m.id, name: m.name })),
 ): ProviderWithModels[] {
@@ -594,7 +595,9 @@ function SlotConfigRow({
             {providerModels.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
-                {isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, "zh") : ""}
+                {isFreeModelId(m.id)
+                  ? freeModelPlugin.models.modalityLabel(m.id, "zh")
+                  : modelModalityLabel(m.id, m.inputModalities, "zh")}
               </option>
             ))}
           </select>

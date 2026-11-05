@@ -7984,3 +7984,24 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 判据：`doc-ocr-race.test.ts`（前两次解析失败、第三次成功仍写回）；
   真实数据复测两页纯图片 PDF：首次 `written=2 / failed=0 / deepseek-flash`，无需手动重试。
 - 版本 1.18.7 已签名构建、安装、发版；测试文档已删除。
+## 2026-11-05 16:20 — 1.18.8：暂停免费模型插件后模型列表仍可选的修复
+
+- 用户实报：暂停 Our Free Model 插件后，对话模型菜单仍列出/可选免费模型。
+- 根因三层：① `pausePlugin` 只清缓存，没清 `setFreeModelIds`（`isFreeModelId` 仍为 true）；
+  ② `writePluginSetting` 不广播，ChatPanel 不会重算 `models`；
+  ③ `getConfiguredApiModels` 无条件合并缓存/落盘动态 `free-model` 条目，没有看开关。
+- 修复：暂停/删除清归属索引；写插件设置广播 `codem-settings-changed`；ChatPanel 监听并重算；
+  `getConfiguredApiModels` 用 `readSetting().enabled` 做闸门。
+- 判据：OFM-2 暂停后 `isFreeModelId=false`；`free-model-paused-list.test.ts` 关闭时免费 id 不出现、
+  开启时恢复；真实 pause 列表 37→2、免费 20→0，重新 enable 后恢复。
+- 版本 1.18.8 已构建/安装/发版。
+## 2026-11-05 16:45 — 1.18.8：接入 AI Code With（OpenAI 兼容入口）
+
+- 文档：OpenAI Chat Completions `https://api.aicodewith.ai/v1`，Bearer `sk-acw-*`；
+  Claude 走 Anthropic Messages、Gemini 走 Google Gemini，Claude/Gemini 不能混用 OpenAI 入口。
+- 新增内置 provider `aicodewith`（设置 → 模型供应商，Base URL 可改国内线路）：
+  `/v1/models` 动态拉取后只保留 GPT / DeepSeek / GLM / Kimi（排除 Claude/Gemini/图像/视频）；
+  模型归属优先于 `gpt`/`deepseek` 内置前缀，避免把 AICodeWith 的 `gpt-5.4` 误发给原生 OpenAI。
+- 真实 `/v1/models` 拉取过滤验证：56 个条目 → 16 个可调用模型（gpt-5.x/6.x、deepseek、glm、kimi）。
+- 判据：`aicodewith-provider.test.ts`（过滤/路由/列表）；真实 key 对话验收待用户配置后执行。
+- 版本仍 1.18.8（未发布前合并免费模型暂停修复 + AICodeWith）。

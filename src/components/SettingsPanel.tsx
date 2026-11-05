@@ -24,7 +24,8 @@ import { addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/c
 // 第 47 轮补：失败上报通道（代码图谱开关写失败时**必须可见**，不再静默）
 import { reportActionFailure } from "../core/storage/persist-failure";
 import { mergeModelsWithCatalog, getMergedDynamicModels, catalogFor } from "../core/llm/model-catalog";
-import { MIMO_MODELS } from "../core/model-config";
+import { MIMO_MODELS, resolveProviderForModel } from "../core/model-config";
+import { modelModalityLabel } from "../core/llm/model-modality";
 import { getCatalogHealthFor, describeCatalogHealth, subscribeCatalogHealth, orderModelsByHealth, catalogModelLabelSuffix } from "../core/llm/catalog-health";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
@@ -157,6 +158,8 @@ interface ProviderKey {
 interface Settings {
   mode: "cli" | "api";
   model: string;
+  /** 当前模型来源（同名模型可能来自多个 provider；选择时与 model 一起落库） */
+  provider?: string;
   fontSize: number;
   language: Language;
   providers: ProviderKey[];
@@ -167,6 +170,7 @@ const defaultProviders: ProviderKey[] = [
   { id: "openai", name: "OpenAI", apiKey: "", baseUrl: "https://api.openai.com/v1" },
   { id: "anthropic", name: "Anthropic", apiKey: "", baseUrl: "https://api.anthropic.com/v1" },
   { id: "deepseek", name: "DeepSeek", apiKey: "", baseUrl: "https://api.deepseek.com/v1" },
+  { id: "aicodewith", name: "AI Code With", apiKey: "", baseUrl: "https://api.aicodewith.ai/v1" },
   { id: "moonshot", name: "Moonshot (Kimi)", apiKey: "", baseUrl: "https://api.moonshot.cn/v1" },
   { id: "gemini", name: "Google Gemini", apiKey: "", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
 ];
@@ -329,7 +333,7 @@ export function SettingsPanel({
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number; catalogOnly?: boolean }>>>({});
+  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number; catalogOnly?: boolean; inputModalities?: Array<"text" | "image"> }>>>({});
   /**
    * 第 81 波：目录条目健康状态变化时重绘。
    *
@@ -392,6 +396,13 @@ export function SettingsPanel({
           if (!existingIds.includes(dp.id)) {
             parsed.providers.push(dp);
           }
+        }
+      }
+      if (!parsed.provider && parsed.model && parsed.mode !== "cli") {
+        try {
+          parsed.provider = isFreeModelId(parsed.model) ? "free-model" : resolveProviderForModel(parsed.model);
+        } catch {
+          // 推断失败就保持原值，用户重新选一次即可
         }
       }
       setSettings({ ...defaultSettings, ...parsed });
@@ -1547,12 +1558,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <label>{S.settings.model[lang]}</label>
             <div className="sp-row">
               <select
-                value={settings.model}
+                value={settings.mode === "cli" ? settings.model : settings.provider || isFreeModelId(settings.model) ? `${settings.provider || "free-model"}::${settings.model}` : settings.model}
                 onChange={(e) => {
                   // D-23：模型下拉**只在本地 state 改**（保存时才落库）⇒ 记进"本地改动"集合，
                   // 保存时这一项以面板为准，而不是被库里的更晚写入顶掉（反之亦然）。
+                  const rawValue = e.target.value;
+                  const sep = rawValue.indexOf("::");
+                  const nextProvider = sep >= 0 ? rawValue.slice(0, sep) : "";
+                  const nextModel = sep >= 0 ? rawValue.slice(sep + 2) : rawValue;
                   dirtyLocalFields.current.add("model");
-                  setSettings({ ...settings, model: e.target.value });
+                  setSettings({ ...settings, model: nextModel, ...(nextProvider ? { provider: nextProvider } : {}) });
                   /*
                    * 第 208 波（用户实报「选了 free 模型，对话却报 openai not configured」）：
                    * 在「等面板保存」这条路上，用户选了之后**没保存 / 找不到保存按钮**就什么都没发生，
@@ -1561,7 +1576,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                    */
                   try {
                     const current = getSettingJSON<Record<string, unknown>>("codem-settings", {}) || {};
-                    setSettingJSON("codem-settings", { ...current, model: e.target.value });
+                    setSettingJSON("codem-settings", { ...current, model: nextModel, ...(nextProvider ? { provider: nextProvider } : {}) });
                   } catch (err) {
                     console.warn("[SettingsPanel] 模型选择没能立刻落盘（面板保存仍可兜住）", err);
                   }
@@ -1595,7 +1610,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       .map((m) => (
                       <option
                         key={`ofm-${m.id}`}
-                        value={m.id}
+                        value={`free-model::${m.id}`}
                         title="来自内置的免费模型插件（Our Free Model）：不需要 API Key，由插件在本地提供；选中后会走插件的本地网关。"
                       >
                         {freeModelPlugin.name} - {m.name}
@@ -1603,7 +1618,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                             「刷得出来」不等于「能用」—— catalog 里没有可用性字段。
                             这里把**探测 / 真实调用**得到的结论标在名字上（结论过期就不标）。 */}
                         {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
-{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
+{isFreeModelId(m.id)
+                              ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")
+                              : modelModalityLabel(m.id, (m as { inputModalities?: Array<"text" | "image"> }).inputModalities, lang === "zh" ? "zh" : "en")}
                       </option>
                     ))}
                   {/*
@@ -1663,12 +1680,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                             ? "Codem 内置目录条目：服务器 /models 没有列出它，但它确实可以调用（例如 DeepSeek 的视觉实验模型）。服务器的当前列表优先。"
                             : undefined;
                         return (
-                          <option key={m.id} value={m.id} title={title}>
+                          <option key={m.id} value={`${p.id}::${m.id}`} title={title}>
                             {p.name} - {m.name}
                             {suffix}
                             {/* 第 219 波：本条分支（刷新后的 dynamicModels）也要带可用性后缀 */}
                             {isFreeModelId(m.id) ? freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") : ""}
-{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
+{isFreeModelId(m.id)
+                              ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")
+                              : modelModalityLabel(m.id, (m as { inputModalities?: Array<"text" | "image"> }).inputModalities, lang === "zh" ? "zh" : "en")}
                           </option>
                         );
                       });
@@ -1690,11 +1709,13 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     return fallbackModels.filter((m) => !(isFreeModelId(m.id) && freeModelPlugin.models.isUnavailable(m.id) && m.id !== settings.model)).map(m => (
                       <option
                         key={m.id}
-                        value={m.id}
+                        value={`${p.id}::${m.id}`}
                         title="Codem 内置名单：还没有从服务器取到模型列表（或上次获取失败）。点这一行的『刷新』按钮按服务器实际返回的列表更新；内置名单可能已过期。"
                       >
                         {p.name} - {m.name}（内置目录，服务器列表未获取）
-{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
+{isFreeModelId(m.id)
+                              ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")
+                              : modelModalityLabel(m.id, (m as { inputModalities?: Array<"text" | "image"> }).inputModalities, lang === "zh" ? "zh" : "en")}
                       </option>
                     ));
                   })}

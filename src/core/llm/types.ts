@@ -31,6 +31,8 @@ export interface ModelConfig {
   costPer1kOutput?: number;
   /** Whether this model was discovered dynamically from the server */
   dynamic?: boolean;
+  /** 输入模态：用于模型选择器标示「多模态 / 文本」 */
+  inputModalities?: Array<"text" | "image">;
 }
 
 /**

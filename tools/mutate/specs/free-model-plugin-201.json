@@ -92,22 +92,17 @@
       "expectRed": true
     },
     {
-      "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
-      "why": "OFM-7：用户要求「开启后对话优先从这个插件里获取模型列表服务」",
+      "id": "MUT-7 暂停开关被绕过（关闭时仍合并免费模型）",
+      "why": "FREE-LIST-1 / OFM-11：暂停插件后，关闭状态必须一个免费模型都不进选择器",
       "patches": [
         {
           "file": "src/core/model-config.ts",
-          "from": "    const freeModelOptions: Array<{ id: string; name: string }> = [];\n    const seenFreeIds = new Set<string>();\n    for (const m of freeModelPlugin.models.cached()) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }\n    for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }\n    for (const m of freeModelOptions) {\n      result.push({ id: m.id, name: m.name });\n    }\n\n    for (const p of providers) {",
-          "to": "    for (const p of providers) {"
-        },
-        {
-          "file": "src/core/model-config.ts",
-          "from": "    return result;\n  } catch {\n    return [];\n  }\n}",
-          "to": "    for (const m of freeModelOptions) {\n      result.push({ id: m.id, name: m.name });\n    }\n    return result;\n  } catch {\n    return [];\n  }\n}"
+          "from": "    if (freeModelsEnabled) {",
+          "to": "    if (true) {"
         }
       ],
       "tests": [
-        "src/test/free-model-plugin.test.ts"
+        "src/test/free-model-paused-list.test.ts"
       ],
       "expectRed": true
     },
@@ -197,8 +192,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  __resetPluginModelsCacheForTests();\n  stopModelRefreshLoop();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });",
-          "to": "  stopModelRefreshLoop();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });"
+          "from": "  __resetPluginModelsCacheForTests();\n  /* 归属索引也要清：否则 `isFreeModelId()` 仍为 true，路由/选择器还会把旧 id 当免费模型 */\n  setFreeModelIds([]);\n  stopModelRefreshLoop();",
+          "to": "  /* 归属索引也要清：否则 `isFreeModelId()` 仍为 true，路由/选择器还会把旧 id 当免费模型 */\n  setFreeModelIds([]);\n  stopModelRefreshLoop();"
         }
       ],
       "tests": [

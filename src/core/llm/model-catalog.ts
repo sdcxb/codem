@@ -31,6 +31,7 @@
 
 import { getSettingJSON } from "../storage/settings";
 import { mergeCustomModels, type LightModel } from "./custom-models";
+import { classifyAICodeWithModel } from "./aicodewith-protocols";
 
 /** 目录条目：与运行时 ModelConfig 兼容（多出来的字段供界面解释来源） */
 export interface CatalogModel {
@@ -161,7 +162,16 @@ export function getMergedDynamicModels(): Record<string, CatalogModel[]> {
   const withCustom = mergeCustomModels(stored as Record<string, LightModel[]>) as Record<string, CatalogModel[]>;
   const out: Record<string, CatalogModel[]> = {};
   for (const [pid, models] of Object.entries(withCustom)) {
-    out[pid] = mergeModelsWithCatalog(pid, models);
+    const merged = mergeModelsWithCatalog(pid, models);
+    /*
+     * 历史数据纠偏：旧版 AICodeWith 拉过全量 /models（含图像/视频、无模态字段）并落盘。
+     * 不清理的话，升级后仍会把不可聊天/无标签的条目摆进选择器。
+     */
+    out[pid] = pid === "aicodewith"
+      ? merged
+          .filter((m) => classifyAICodeWithModel(m.id) !== null)
+          .map((m) => ({ ...m, inputModalities: classifyAICodeWithModel(m.id)!.inputModalities }))
+      : merged;
   }
   // 只登记了手动模型 / 目录里有、缓存里没有的 provider 也要出现
   for (const pid of Object.keys(BUILTIN_MODEL_CATALOG)) {

@@ -19,6 +19,7 @@
  * "插件本体能不能跑"由真机冒烟验证（本波实测：内置副本能独立起来，`/v1/models` 返回 8 个免费模型）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { isFreeModelId, setFreeModelIds } from "../core/free-model-plugin/model-index";
 
 const mockInvoke = vi.fn();
 const mockExists = vi.fn();
@@ -119,7 +120,9 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
   });
 
   it("OFM-2：暂停 = 停进程 + 记下暂停 + **保留数据**（不删目录）", async () => {
+    setFreeModelIds(["free-stale"]);
     const r = await freeModelPlugin.pause();
+    expect(isFreeModelId("free-stale"), "暂停后归属索引必须清空，不能再把旧 id 当免费模型").toBe(false);
     expect(r.ok).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("ofm_stop", undefined);
     expect(settingStore[freeModelPlugin.settingKey], "暂停要写进设置（下次启动不再自动开）").toMatchObject({

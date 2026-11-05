@@ -22,6 +22,7 @@
 import { memo, useRef, useEffect } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import { getModelsForMode, type ModelOption } from "../core/model-config";
+import { modelModalityLabel } from "../core/llm/model-modality";
 
 interface RegenerateModelPopoverProps {
   /** Current model */
@@ -29,7 +30,7 @@ interface RegenerateModelPopoverProps {
   /** Mode: "cli" or "api" — determines which model list to show */
   mode?: "cli" | "api";
   /** When user selects a model */
-  onModelSelect: (model: string) => void;
+  onModelSelect: (model: string, providerId?: string) => void;
   /** Popover close callback */
   onClose: () => void;
 }
@@ -60,11 +61,15 @@ export const RegenerateModelPopover = memo(function RegenerateModelPopover({
       <div className="regenerate-list">
         {models.map((model) => (
           <button
-            key={model.id}
+            key={`${model.providerId ?? ""}:${model.id}`}
             className={`regenerate-option ${currentModel === model.id ? "selected" : ""}`}
-            onClick={() => onModelSelect(model.id)}
+            onClick={() => onModelSelect(model.id, model.providerId)}
           >
             <div className="regenerate-model-name">{model.name}</div>
+            {model.providerName && <span className="model-option-note">{model.providerName}</span>}
+            {modelModalityLabel(model.id, model.inputModalities, "zh") ? (
+              <span className="model-option-note">{modelModalityLabel(model.id, model.inputModalities, "zh")}</span>
+            ) : null}
             {currentModel === model.id && <span className="regenerate-check">✓</span>}
           </button>
         ))}

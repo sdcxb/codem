@@ -34,6 +34,12 @@ const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
   "gpt-4o-mini": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gpt-4-turbo": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gpt-4": { supportsTools: true, supportsVision: false, supportsStreaming: true },
+  // AI Code With 文档里的 GPT-5.x（OpenAI 兼容入口）；支持图片输入
+  "gpt-5.4": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  "gpt-5.5": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  // 目录里会出现 gpt-5.6 / gpt-6 等新代际；按家族保守地视为支持视觉
+  "gpt-5": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  "gpt-6": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gpt-3.5-turbo": { supportsTools: true, supportsVision: false, supportsStreaming: true },
   o1: { supportsTools: true, supportsVision: true, supportsStreaming: false },
   "o1-mini": { supportsTools: false, supportsVision: false, supportsStreaming: false },
@@ -65,9 +71,13 @@ const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
   // 旧 UI 前缀表也认 `claude-3`/`claude-4`，并入后行为不回退。精确键优先于它们。
   "claude-4": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "claude-3": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  // 新代际（claude-sonnet-5 / claude-opus-5）按家族兜底
+  "claude": { supportsTools: true, supportsVision: true, supportsStreaming: true },
 
   // Google
   "gemini-2": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  // 新代际（gemini-3 / gemini-4）按家族兜底
+  "gemini": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gemini-1.5-pro": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gemini-1.5-flash": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "gemini-1.0-pro": { supportsTools: true, supportsVision: false, supportsStreaming: true },
@@ -80,6 +90,7 @@ const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
   // V4.1-Flash（当前 id）原生多模态；旧 vision-exp 只是临时路由别名，已 retired
   "deepseek-flash": { supportsTools: true, supportsVision: true, supportsStreaming: true },
   "deepseek-v4-flash": { supportsTools: true, supportsVision: true, supportsStreaming: true },
+  "deepseek-v4-pro": { supportsTools: true, supportsVision: false, supportsStreaming: true },
   "deepseek-v4-flash-vision-exp": { supportsTools: true, supportsVision: true, supportsStreaming: true },
 
   // MiMo

@@ -2650,7 +2650,8 @@ font-size: var(--fs-sm);
 }
 
 /* 第 224 波：标注（可用性 / 模态）是标签不是名字 —— 不许被省略号吃掉、也不许被压缩换行 */
-.model-option .model-option-note {
+.model-option .model-option-note,
+.bottom-bar-dropdown-item .model-option-note {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -12440,7 +12441,9 @@ min-height: 36px;
 .bottom-bar-dropdown-item {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  min-width: 0;
+  white-space: nowrap;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);

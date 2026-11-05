@@ -3,6 +3,7 @@ import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 /* 第 215 波：模型选择器要能标出「当前不可用」的免费模型（判定与文案都在 model-index / service 里） */
 import { isFreeModelId } from "../core/free-model-plugin/model-index";
+import { modelModalityLabel as modalityLabelForModel } from "../core/llm/model-modality";
 import { freeModelPlugin } from "../core/free-model-plugin/service";
 /*
  * 第 2 步：`./MessageBubble` 现在是**入口 + 桌面平台适配器**，
@@ -105,7 +106,7 @@ interface ChatPanelProps {
   sessionId?: string;
   connected: boolean;
   model: string;
-  onModelChange: (model: string) => void;
+  onModelChange: (model: string, providerId?: string) => void;
   mode?: "cli" | "api";
   providerId?: string;
 collaborationMode?: CollaborationMode;
@@ -148,6 +149,17 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, messagesLoading, loadMoreReadUnavailable } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
+  /*
+   * 用户实报：暂停免费模型插件后，模型菜单没有刷新，仍能选已经停掉的免费模型。
+   * 菜单的 `models` 在 render 时计算；插件暂停只写设置、不触发本组件重渲染。
+   * 这里监听与其它设置写入一致的变更事件，强制重算一次（开关恢复后同理）。
+   */
+  const [, setModelSettingsTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setModelSettingsTick((n) => n + 1);
+    window.addEventListener("codem-settings-changed", handler);
+    return () => window.removeEventListener("codem-settings-changed", handler);
+  }, []);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const [stepTooltipLocked, setStepTooltipLocked] = useState(false);
@@ -344,6 +356,14 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   }, []);
 
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
+  /**
+   * 模态标注：免费模型用插件自己的三态口径；普通供应商（含 AICodeWith）用
+   * provider `/models` 带回的 `inputModalities`。没有依据就不标，绝不按名字猜。
+   */
+  const modelModalityLabel = (m: { id: string; inputModalities?: Array<"text" | "image"> }) => {
+    if (isFreeModelId(m.id)) return freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en");
+    return modalityLabelForModel(m.id, m.inputModalities, lang === "zh" ? "zh" : "en");
+  };
   /* P1-2：模型本身没有 role 字段，按名字猜 Default/Fast/Thinking 会贴错标签；
      但**当前档案的槽位分配**是真实数据，作为角色徽标展示，不参与分组。 */
   const menuModels = models.filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id));
@@ -353,7 +373,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const activeProfile = getModelProfileManager().getActiveProfile();
 
   const renderModelRoles = (modelId: string) => {
-    const slots = modelRoleSlots(activeProfile, modelId);
+    const slots = modelRoleSlots(activeProfile, modelId).filter((slot) => slot !== "vision");
     if (slots.length === 0) return null;
     const labels = slots.map((slot) => MODEL_SLOT_LABELS[slot][lang === "zh" ? "zh" : "en"]);
     return (
@@ -912,20 +932,23 @@ setStepTooltipLocked(false);
                   </div>
                   {group.models.map((m) => (
                     <div
-                      key={m.id}
-                      className={`model-option ${model === m.id ? "active" : ""}`}
+                      key={`${m.providerId ?? ""}:${m.id}`}
+                      className={`model-option ${model === m.id && (!providerId || !m.providerId || m.providerId === providerId) ? "active" : ""}`}
                       role="option"
-                      aria-selected={model === m.id}
-                      onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
+                      aria-selected={model === m.id && (!providerId || !m.providerId || m.providerId === providerId)}
+                      onClick={() => { onModelChange(m.id, m.providerId); setShowModelPicker(false); }}
                     >
                       {/* 第 224 波：名字过长由 CSS 截断，这里把全称放进 title ⇒ 悬停显示完整模型名 */}
                       <span className="model-option-name" title={m.name}>
                         {m.name}
                       </span>
                       {renderModelRoles(m.id)}
-                      {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
-                      {isFreeModelId(m.id) && (
-                        <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
+                      {m.providerName && (
+                        <span className="model-option-note" title={lang === "zh" ? "模型来源" : "Provider"}>{m.providerName}</span>
+                      )}
+                      {/* 模态标注：免费模型三态；AICodeWith 等动态目录按 inputModalities 标「多模态/文本」 */}
+                      {modelModalityLabel(m) && (
+                        <span className="model-option-note">{modelModalityLabel(m)}</span>
                       )}
                       {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
                           对话里的模型选择器也要标出**已知不可用**的免费模型 ——
@@ -935,7 +958,7 @@ setStepTooltipLocked(false);
                           {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
                         </span>
                       ) : null}
-                      {model === m.id && <Check size={14} className="model-option-check" aria-label={lang === "zh" ? "当前模型" : "Current model"} />}
+                      {model === m.id && (!providerId || !m.providerId || m.providerId === providerId) && <Check size={14} className="model-option-check" aria-label={lang === "zh" ? "当前模型" : "Current model"} />}
                     </div>
                   ))}
                 </div>
@@ -947,16 +970,19 @@ setStepTooltipLocked(false);
                   </summary>
                   {menuUnknown.map((m) => (
                     <div
-                      key={m.id}
-                      className={`model-option ${model === m.id ? "active" : ""}`}
+                      key={`${m.providerId ?? ""}:${m.id}`}
+                      className={`model-option ${model === m.id && (!providerId || !m.providerId || m.providerId === providerId) ? "active" : ""}`}
                       role="option"
-                      aria-selected={model === m.id}
-                      onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
+                      aria-selected={model === m.id && (!providerId || !m.providerId || m.providerId === providerId)}
+                      onClick={() => { onModelChange(m.id, m.providerId); setShowModelPicker(false); }}
                     >
                       <span className="model-option-name" title={m.name}>{m.name}</span>
+                      {m.providerName && (
+                        <span className="model-option-note" title={lang === "zh" ? "模型来源" : "Provider"}>{m.providerName}</span>
+                      )}
                       {renderModelRoles(m.id)}
-                      {isFreeModelId(m.id) && (
-                        <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
+                      {modelModalityLabel(m) && (
+                        <span className="model-option-note">{modelModalityLabel(m)}</span>
                       )}
                     </div>
                   ))}
@@ -1911,7 +1937,7 @@ canEdit={editable}
           }}
         />
       ) : null}
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} providerId={providerId} onModelChange={onModelChange} mode={mode}
         /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
         searchOpen={showSearch}
         onToggleSearch={() => {

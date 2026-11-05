@@ -149,6 +149,15 @@ function readPluginSetting(): FreeModelPluginSetting {
 
 function writePluginSetting(next: FreeModelPluginSetting): void {
   setSettingJSON(FREE_MODEL_PLUGIN_SETTING_KEY, next);
+  /*
+   * 用户实报：暂停插件后模型列表仍能选免费模型。
+   * 只写设置不会让任何界面重算 —— 模型选择器读的是 `getConfiguredApiModels()`，
+   * 它只在组件重渲染时执行。这里派发与其它设置写入一致的变更事件，让 App/ChatPanel/
+   * 设置页立刻刷新；暂停/删除还会清空归属索引（见 pausePlugin/removePlugin）。
+   */
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("codem-settings-changed"));
+  }
 }
 
 /** 扩展的数据目录（Rust 给，唯一来源） */
@@ -626,6 +635,8 @@ async function pausePlugin(): Promise<{ ok: boolean; message: string }> {
    * 还会以为「暂停没生效」。
    */
   __resetPluginModelsCacheForTests();
+  /* 归属索引也要清：否则 `isFreeModelId()` 仍为 true，路由/选择器还会把旧 id 当免费模型 */
+  setFreeModelIds([]);
   stopModelRefreshLoop();
   writePluginSetting({ enabled: false, pausedAt: Date.now() });
   if (!stopped.ok) return stopped;
@@ -644,6 +655,7 @@ async function removePlugin(): Promise<{ ok: boolean; message: string }> {
     if (await exists(dir)) await deleteDirectoryPermanent(dir);
     removeManagedProvider();
     __resetPluginModelsCacheForTests();
+    setFreeModelIds([]);
     stopModelRefreshLoop();
     writePluginSetting({ enabled: false, pausedAt: Date.now() });
     return { ok: true, message: "插件已删除（数据目录已清空；重新启用会重新安装并重新拉取模型清单）" };

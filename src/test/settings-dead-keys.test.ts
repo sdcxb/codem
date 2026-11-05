@@ -19,6 +19,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// 设置面板要渲染完整分组/异步加载，CI 满载时单条接近 5s；给足预算但仍远小于"卡死"。
+vi.setConfig({ testTimeout: 10000 });
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createElement } from "react";
@@ -650,10 +653,10 @@ describe("D-23 保存基座必须用保存这一刻的库值", () => {
       // 但用户在面板里**自己**改过的模型仍必须由面板说了算（别把这条修成"面板改不动"）
       const modelSelect = container.querySelector(".sp-select-flex") as HTMLSelectElement;
       expect(modelSelect, "应能找到模型下拉").toBeTruthy();
-      const option = [...modelSelect.options].find((o) => o.value === "deepseek-v4-flash");
+      const option = [...modelSelect.options].find((o) => o.value.endsWith("::deepseek-v4-flash") || o.value === "deepseek-v4-flash");
       expect(option, "模型下拉里应有 deepseek-v4-flash").toBeTruthy();
       await act(async () => {
-        fireEvent.change(modelSelect, { target: { value: "deepseek-v4-flash" } });
+        fireEvent.change(modelSelect, { target: { value: option!.value } });
       });
       await act(async () => {
         fireEvent.click(saveBtn);

@@ -1693,7 +1693,7 @@ const clearPendingPromptChanges = () => {
 };
 
 // Handle model change from chat header - sync with engine
-const handleModelChange = useCallback((model: string) => {
+const handleModelChange = useCallback((model: string, providerOverride?: string) => {
 // Abort all ongoing streaming sessions
 for (const controller of abortControllersRef.current.values()) {
 controller.abort();
@@ -1725,7 +1725,9 @@ abortControllersRef.current.clear();
          * 修法：先按**模型归属**判定 —— 插件提供的模型走 `free-model`（它的密钥由插件启动时
          * 运行时注册，用户不需要配任何 Key），判不出来才退回原来的解析。
          */
-        if (isFreeModelId(model)) {
+        if (providerOverride) {
+          provider = providerOverride;
+        } else if (isFreeModelId(model)) {
           provider = MANAGED_FREE_MODEL_PROVIDER_ID;
         } else {
           const resolved = resolveProviderForModel(model);
@@ -1746,7 +1748,7 @@ abortControllersRef.current.clear();
     try {
       const settings = getSettingJSON<any>("codem-settings", {});
       const mode = getMode();
-      setSettingJSON("codem-settings", { ...settings, model, mode });
+      setSettingJSON("codem-settings", { ...settings, model, mode, provider });
     } catch (e) {
       console.warn("[ModelChange] Failed to persist model:", e);
     }
@@ -1832,6 +1834,8 @@ id: string; name: string; path: string;
 // D2-1: 一切插件化 — 不回退到模块级单例，Provider 禁用时 engineRef 为 null
 // 使用 useEffect + 重试机制等待 Provider fiber 变为 ACTIVE
 const engineRef = useRef<any>(null);
+// AICodeWith 模型目录每天最多自动刷新一次（失败下次启动再试）
+const acwAutoRefreshRef = useRef(false);
 useEffect(() => {
   let retry = 0
   const timer = setInterval(() => {
@@ -2699,12 +2703,48 @@ flushStreamBuffer(); // flush all on unmount
             }
           }
         }
-        // Determine provider from selected model
+        /*
+         * AICodeWith 的模型目录是持续更新的：启动后自动拉一次（24h 内不重复），
+         * 用户仍然可以在设置卡片里手动「刷新模型列表」。失败不写时间戳，下次启动再试。
+         */
+        if (!acwAutoRefreshRef.current) {
+          const acw = settings.providers?.find((p: any) => p.id === "aicodewith" && p.apiKey);
+          if (acw) {
+            acwAutoRefreshRef.current = true;
+            const last = Number(getSettingJSON<number>("codem-aicodewith-models-refreshed-at", 0)) || 0;
+            if (Date.now() - last > 24 * 60 * 60 * 1000) {
+              setTimeout(() => {
+                void engine.refreshModels("aicodewith")
+                  .then((result: Record<string, any[]>) => {
+                    const count = result?.aicodewith?.length ?? 0;
+                    // 失败时 fetchModelsFromServer 会退回静态目录（个位数）；不要把它当成“已刷新”。
+                    if (count > 10) {
+                      setSettingJSON("codem-aicodewith-models-refreshed-at", Date.now());
+                      window.dispatchEvent(new Event("codem-settings-changed"));
+                      console.log(`[AICodeWith] auto-refreshed ${count} models`);
+                    } else {
+                      console.warn("[AICodeWith] auto-refresh returned too few models; will retry next launch");
+                    }
+                  })
+                  .catch((e: any) => console.warn("[AICodeWith] auto-refresh failed:", e?.message || e));
+              }, 1500);
+            }
+          }
+        }
+        // Determine provider from selected model（优先用上次选择时记录的 provider：
+        // 同一模型 id 可能同时来自 DeepSeek 原生与 AICodeWith，只靠前缀会选错供应商）
         const model = settings.model || "";
-        let provider = "openai"; // default fallback
-        if (model) {
-          const resolved = resolveProviderForModel(model);
-          if (resolved) provider = resolved;
+        let provider = "";
+        if (typeof settings.provider === "string" && settings.provider) {
+          const saved = engine.providers.get(settings.provider);
+          if (saved?.isConfigured()) provider = settings.provider;
+        }
+        if (!provider) {
+          provider = "openai";
+          if (model) {
+            const resolved = resolveProviderForModel(model);
+            if (resolved) provider = resolved;
+          }
         }
         // If model doesn't match any provider, use first configured provider's first model
         // (custom providers resolve their first dynamic model via getFirstConfiguredModel)
@@ -2722,7 +2762,7 @@ flushStreamBuffer(); // flush all on unmount
         // Persist mode + model so it survives restart
         try {
           const s = getSettingJSON<any>("codem-settings", {});
-          setSettingJSON("codem-settings", { ...s, mode: "api", model: finalModel });
+          setSettingJSON("codem-settings", { ...s, mode: "api", model: finalModel, provider });
         } catch (e) {
           console.warn("[Engine] Failed to persist api mode:", e);
         }

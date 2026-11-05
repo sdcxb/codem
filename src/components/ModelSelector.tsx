@@ -11,6 +11,7 @@
 
 import { isFreeModelId } from "../core/free-model-plugin/model-index";
 import { freeModelPlugin } from "../core/free-model-plugin/service";
+import { modelModalityLabel } from "../core/llm/model-modality";
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Cpu, ChevronDown, Check, ChevronRight } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
@@ -22,10 +23,12 @@ import { useAppStore } from '../store'
 export interface ModelSelectorProps {
   /** 当前选中的模型 ID */
   model: string
+  /** 当前模型来源 provider（同一 id 可能来自多个 provider） */
+  providerId?: string
   /** 可选模型列表 */
   models: ModelOption[]
-  /** 选择模型回调 */
-  onModelChange: (model: string) => void
+  /** 选择模型回调（带来源，避免同名模型选错供应商） */
+  onModelChange: (model: string, providerId?: string) => void
   /** 是否锁定（如正在流式输出时） */
   locked?: boolean
 }
@@ -47,7 +50,7 @@ export interface ModelSelectorProps {
  * （`getModelsForMode`，与 ChatPanel/InputArea 同一来源）、当前模型取 `useAppStore.currentModel`；
  * 没有 `onModelChange` 时列表项不可点（不假装能切换）。
  */
-export function ModelSelector({ model: modelProp, models: modelsProp, onModelChange, locked = false }: Partial<ModelSelectorProps>) {
+export function ModelSelector({ model: modelProp, providerId: providerIdProp, models: modelsProp, onModelChange, locked = false }: Partial<ModelSelectorProps>) {
   const lang = useLang()
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
@@ -66,8 +69,8 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
 
   const currentModelName = useMemo(
     // 第 45 轮 D-15：`models` 可能为空数组/undefined（旧版本直接 `models.find` 抛错）
-    () => models?.find?.(m => m.id === model)?.name || model || '',
-    [models, model]
+    () => models?.find?.((m) => m.id === model && (!providerIdProp || !m.providerId || m.providerId === providerIdProp))?.name || model || '',
+    [models, model, providerIdProp]
   )
 
   // 外部点击关闭
@@ -136,10 +139,12 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
           style={{
             position: 'absolute',
             bottom: '100%',
-            left: 0,
+            right: 64,
+            left: 'auto',
             marginBottom: 4,
-            minWidth: 200,
-            maxHeight: 280,
+            width: 'min(420px, calc(100vw - 96px))',
+            minWidth: 300,
+            maxHeight: 420,
             overflowY: 'auto',
           }}
         >
@@ -155,24 +160,30 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
 
           {models.map(m => (
             <button
-              key={m.id}
-              className={`bottom-bar-dropdown-item ${model === m.id ? 'active' : ''}`}
+              key={`${m.providerId ?? ""}:${m.id}`}
+              className={`bottom-bar-dropdown-item ${model === m.id && (!providerIdProp || !m.providerId || m.providerId === providerIdProp) ? 'active' : ''}`}
               // D-15：没有 onModelChange 时不可点 —— 不假装能切换（点击后什么都不会发生最伤人）
               disabled={!canPick}
               onClick={() => {
                 if (!canPick) return
-                onModelChange(m.id)
+                onModelChange(m.id, m.providerId)
                 setOpen(false)
               }}
             >
               <span style={{ fontSize: 'var(--fs-md)', display: 'flex', alignItems: 'center' }}>
-                {model === m.id ? <Check size={14} /> : <Cpu size={14} />}
+                {model === m.id && (!providerIdProp || !m.providerId || m.providerId === providerIdProp) ? <Check size={14} /> : <Cpu size={14} />}
               </span>
               <span className="model-option-name" style={{ fontSize: 'var(--fs-sm)' }} title={m.name}>{m.name}</span>
-              {/* 第 222 波：模态标注只加在**显示文本**上（点击仍然传 m.id —— 标签绝不许进模型名） */}
-              {isFreeModelId(m.id) && (
-                <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, "zh")}</span>
+              {m.providerName && (
+                <span className="model-option-note" title={zh ? "模型来源" : "Provider"}>{m.providerName}</span>
               )}
+              {/* 模态标注只加在显示文本上（点击仍然传 m.id，标签绝不许进模型名） */}
+              {(() => {
+                const label = isFreeModelId(m.id)
+                  ? freeModelPlugin.models.modalityLabel(m.id, zh ? "zh" : "en")
+                  : modelModalityLabel(m.id, m.inputModalities, zh ? "zh" : "en");
+                return label ? <span className="model-option-note">{label}</span> : null;
+              })()}
             </button>
           ))}
 

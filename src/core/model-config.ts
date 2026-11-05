@@ -13,6 +13,11 @@ import { freeModelPlugin } from "./free-model-plugin/service";
 export interface ModelOption {
   id: string;
   name: string;
+  /** 来源 provider（同一模型 id 可能同时来自 DeepSeek 原生与 AICodeWith，选择时必须带来源） */
+  providerId?: string;
+  providerName?: string;
+  /** 输入模态（AICodeWith 等动态目录用；用于选择器标注） */
+  inputModalities?: Array<"text" | "image">;
 }
 
 /** MiMo CLI 模式可用的模型列表 */
@@ -29,6 +34,17 @@ const API_MODELS: Record<string, ModelOption[]> = {
     { id: "gpt-4o", name: "GPT-4o" },
     { id: "gpt-4o-mini", name: "GPT-4o Mini" },
     { id: "o3", name: "o3" },
+  ],
+  aicodewith: [
+    { id: "gpt-5.4", name: "GPT-5.4 (AI Code With)" },
+    { id: "gpt-5.5", name: "GPT-5.5 (AI Code With)" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash (AI Code With)" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (AI Code With)" },
+    { id: "glm-5.3", name: "GLM-5.3 (AI Code With)" },
+    { id: "kimi-k3", name: "Kimi K3 (AI Code With)" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (AI Code With)" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6 (AI Code With)" },
+    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro (AI Code With)" },
   ],
   anthropic: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
@@ -86,20 +102,27 @@ export function getConfiguredApiModels(): ModelOption[] {
      * 两者都是"服务器曾经列出来的真实模型"，取并集不会凭空造模型 ✓，却能防止任何一侧偏短时藏掉模型 ✓。
      * 顺序保持"插件缓存优先"（它最新），落盘里多出来的补在后面。
      */
+    /*
+     * 用户暂停插件后，缓存/落盘动态列表里仍可能留着上次的免费模型（缓存 TTL、动态列表是历史事实），
+     * 所以必须用当前开关做闸门：关闭时一个都不进选择器；开启时才参与并集。
+     */
+    const freeModelsEnabled = freeModelPlugin.readSetting().enabled;
     const freeModelOptions: Array<{ id: string; name: string }> = [];
     const seenFreeIds = new Set<string>();
-    for (const m of freeModelPlugin.models.cached()) {
-      if (seenFreeIds.has(m.id)) continue;
-      seenFreeIds.add(m.id);
-      freeModelOptions.push({ id: m.id, name: m.name });
-    }
-    for (const m of getMergedDynamicModels()["free-model"] ?? []) {
-      if (seenFreeIds.has(m.id)) continue;
-      seenFreeIds.add(m.id);
-      freeModelOptions.push({ id: m.id, name: m.name });
+    if (freeModelsEnabled) {
+      for (const m of freeModelPlugin.models.cached()) {
+        if (seenFreeIds.has(m.id)) continue;
+        seenFreeIds.add(m.id);
+        freeModelOptions.push({ id: m.id, name: m.name });
+      }
+      for (const m of getMergedDynamicModels()["free-model"] ?? []) {
+        if (seenFreeIds.has(m.id)) continue;
+        seenFreeIds.add(m.id);
+        freeModelOptions.push({ id: m.id, name: m.name });
+      }
     }
     for (const m of freeModelOptions) {
-      result.push({ id: m.id, name: m.name });
+      result.push({ id: m.id, name: m.name, providerId: "free-model", providerName: "Our Free Model" });
     }
 
     for (const p of providers) {
@@ -109,13 +132,13 @@ export function getConfiguredApiModels(): ModelOption[] {
       const dynModels = dynamicModels[p.id];
       if (dynModels && dynModels.length > 0) {
         for (const m of dynModels) {
-          result.push({ id: m.id, name: m.name });
+          result.push({ id: m.id, name: m.name, providerId: p.id, providerName: p.name, ...(m.inputModalities ? { inputModalities: m.inputModalities } : {}) });
         }
       }
       // 回退到静态列表
       else if (API_MODELS[p.id]) {
         for (const m of API_MODELS[p.id]) {
-          result.push({ id: m.id, name: m.name });
+          result.push({ id: m.id, name: m.name, providerId: p.id, providerName: p.name });
         }
       }
     }
@@ -132,23 +155,37 @@ export function getModelsForMode(mode: "cli" | "api"): ModelOption[] {
 
 /**
  * Resolve which provider serves a given model id.
- * First tries known prefixes (deepseek/claude/gpt/...), then falls back to
- * scanning configured providers' dynamic model lists — this supports custom
- * OpenAI-compatible providers (通用协议配置) whose model ids don't match
- * any built-in prefix. Returns "" if no provider matches.
+ *
+ * 顺序很重要：**聚合/自定义 provider 的目录优先于内置前缀**。
+ * AICodeWith 这类一把 key 的聚合入口会提供 `gpt-5.4`、`deepseek-v4-flash` 等 id；
+ * 若先按 `gpt`/`deepseek` 前缀判断，请求会被错误地发给原生 OpenAI/DeepSeek
+ * （用户只配了 AICodeWith key 时直接报 not configured）。先认目录，再退回前缀，
+ * 最后才扫其它 provider 的动态列表。Returns "" if no provider matches.
  */
 export function resolveProviderForModel(model: string): string {
-  if (model.startsWith("deepseek")) return "deepseek";
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("moonshot")) return "moonshot";
-  if (model.startsWith("gemini")) return "gemini";
-  if (model.startsWith("gpt") || model.startsWith("o3")) return "openai";
-
-  // Custom providers: match against their dynamically fetched model lists
   try {
     const settings = getSettingJSON<any>("codem-settings", {});
     const providers = settings.providers || [];
     const dynamicModels = getMergedDynamicModels();
+
+    // 1) 聚合/自定义 provider：它们目录里的 id 归它们，不能被前缀抢走
+    for (const p of providers) {
+      if (!p.apiKey || p.id === "mimo") continue;
+      if (!(p.custom || p.id === "aicodewith")) continue;
+      const dyn = dynamicModels[p.id];
+      if (dyn && dyn.some((m) => m.id === model)) return p.id;
+      // 刷新前也可能显示静态目录（Claude/Gemini/GPT 文档 id）；配了 AICodeWith key 就归它
+      if (p.id === "aicodewith" && (API_MODELS.aicodewith || []).some((m) => m.id === model)) return p.id;
+    }
+
+    // 2) 内置 provider 的稳定前缀
+    if (model.startsWith("deepseek")) return "deepseek";
+    if (model.startsWith("claude")) return "anthropic";
+    if (model.startsWith("moonshot")) return "moonshot";
+    if (model.startsWith("gemini")) return "gemini";
+    if (model.startsWith("gpt") || model.startsWith("o3")) return "openai";
+
+    // 3) 其它 provider 的动态目录
     for (const p of providers) {
       if (!p.apiKey || p.id === "mimo") continue;
       const dyn = dynamicModels[p.id];

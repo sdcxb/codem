@@ -383,17 +383,17 @@ describe("MODALITY：标注不许进模型名 + 每处列表都要标（第 222 
       /* 选模型的地方必须仍然用 m.id */
       if (f.name.includes("SettingsPanel") || f.name.includes("ModelProfilePanel")) {
         /* 写法可能多行，只要"值仍然是 m.id"即可（关键是不能变成标签） */
-        expect(f.text, `${f.name} 的 option 仍然用 m.id 作为值`).toContain("value={m.id}");
+        expect(f.text, `${f.name} 的 option 仍然用 m.id 作为值（允许 provider 前缀）`).toMatch(/value=\{(?:`[^`]*\$\{m\.id\}`|m\.id)\}/);
         expect(f.text, `${f.name} 的 option 值里不许出现标签`).not.toMatch(/value=\{[^}]*modalityLabel/);
       }
       if (f.name.includes("ModelSelector")) {
-        expect(f.text, "点击仍然传 m.id").toContain("onModelChange(m.id)");
+        expect(f.text, "点击仍然传 m.id（允许附带 providerId）").toMatch(/onModelChange\(m\.id(?:, m\.providerId)?\)/);
       }
     }
   });
 
   it("MODALITY-5：列表的每一处都要标（设置三条 + 对话 + 档案 + ModelSelector ≥ 6 处）", () => {
-    const sites = files.reduce((sum, f) => sum + (f.text.match(/modalityLabel\(m\.id/g) ?? []).length, 0);
+    const sites = files.reduce((sum, f) => sum + (f.text.match(/modalityLabel\(/g) ?? []).length, 0);
     expect(sites, "少标一处，用户就会觉得'有的地方标了有的没标'").toBeGreaterThanOrEqual(6);
   });
 });
