@@ -15,6 +15,8 @@
  */
 
 import { getLLMEngine } from "../llm";
+import { getSettingJSON } from "../storage/settings";
+import { ensureSecretsHydrated } from "../storage/secret-store";
 import { modelSupportsVision } from "../llm/model-capabilities";
 import { VisionProxy } from "../llm/vision-proxy";
 import type { MultimodalProviderConfig } from "../llm/multimodal";
@@ -108,6 +110,48 @@ function resolveOcrDescriber(): OcrDescriber {
   };
 }
 
+/**
+ * 把设置里的 provider key 同步进当前引擎。
+ *
+ * 为什么 OCR 要自己做一次：`App.configureEngine()` 是异步的，冷启动后立刻触发 OCR
+ * 可能在它完成前读引擎 —— 此时 `isConfigured()` 还是 false，会误报「未配置视觉模型」。
+ * 这里读的是同一份已水合的 `codem-settings`，并在解析前重试，避免把启动竞态暴露给用户。
+ */
+function applyProviderKeysFromSettings(): void {
+  try {
+    const saved = getSettingJSON<any>("codem-settings", null);
+    if (!saved?.providers) return;
+    const engine = getLLMEngine();
+    for (const p of saved.providers) {
+      if (!p?.id || !p.apiKey) continue;
+      if (p.custom) {
+        engine.registerCustomProvider(p.id, { name: p.name, apiKey: p.apiKey, baseUrl: p.baseUrl });
+      } else {
+        engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+      }
+    }
+  } catch {
+    // 设置/引擎尚未就绪：交给重试；不在这里吞掉最终错误
+  }
+}
+
+async function resolveOcrDescriberWithRetry(): Promise<OcrDescriber> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      await ensureSecretsHydrated();
+      applyProviderKeysFromSettings();
+      return resolveOcrDescriber();
+    } catch (e) {
+      last = e;
+      if (attempt < 11) {
+        await new Promise((r) => setTimeout(r, attempt < 6 ? 150 : 400));
+      }
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
 export interface OcrRunResult {
   pages: number;
   written: number;
@@ -138,7 +182,7 @@ export async function runDocumentOcr(
     return { pages: 0, written: 0, failed: 0, model: "", status: fin.status };
   }
 
-  const describer = options.describer ?? resolveOcrDescriber();
+  const describer = options.describer ?? (await resolveOcrDescriberWithRetry());
   let written = 0;
   const errors: string[] = [];
 

@@ -2,6 +2,12 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.7] - 2026-11-05
+
+### 修复
+
+- 冷启动后立即对扫描件/图片触发视觉转录时，第一次可能误报「未配置视觉模型」。现在 OCR 会先同步已水合的 provider key，并在引擎尚未就绪时短暂重试；不再需要用户手动重试。
+
 ## [1.18.6] - 2026-11-05
 
 ### 新增

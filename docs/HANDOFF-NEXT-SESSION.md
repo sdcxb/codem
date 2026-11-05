@@ -7974,7 +7974,13 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 签名构建产出 NSIS 74.8MB / MSI 93.6MB + `.sig`；安装到 `%LOCALAPPDATA%\Codem`，
   注册表/快捷方式指向默认目录，版本 1.18.6，schema=4，UI/CDP 正常。
 - Release notes：`docs/releases/v1.18.6.md`；Android APK 与 stacks-index 沿用 1.18.5（未改移动端）。
+## 2026-11-05 12:45 — 1.18.7：修 OCR 冷启动误报（真实复测首次成功）
 
-
-
-
+- 真实原因：`App.configureEngine()` 异步灌 provider key；冷启动后立刻触发 OCR 时
+  `getConfiguredProvider()` 还看到未配置，于是误报「未配置视觉模型」。
+- 修复：`runDocumentOcr` 先 `ensureSecretsHydrated()`，把已水合的 `codem-settings.providers`
+  同步进引擎（`setProviderConfig`/`registerCustomProvider`），仍失败则最多重试 12 次
+  （约 3s）；真正没配置时仍抛可行动错误。
+- 判据：`doc-ocr-race.test.ts`（前两次解析失败、第三次成功仍写回）；
+  真实数据复测两页纯图片 PDF：首次 `written=2 / failed=0 / deepseek-flash`，无需手动重试。
+- 版本 1.18.7 已签名构建、安装、发版；测试文档已删除。
