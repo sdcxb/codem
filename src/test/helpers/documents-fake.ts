@@ -98,6 +98,7 @@ export function createFakeDocumentBackend(seed: FakeDocSeed = {}): FakeDocHandle
             items: seed.vectorStatus ?? [],
             count: seed.vectorCount ?? (seed.vectorStatus ?? []).reduce((n, x) => n + x.chunks, 0),
             assigned: seed.vectorAssigned ?? 0,
+            quantized: seed.vectorAssigned ?? 0,
             meta: seed.vectorMeta ?? null,
           } as unknown as T;
         case "documents.vector_train":

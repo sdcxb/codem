@@ -361,6 +361,8 @@ export async function vectorStatus(params: {
   items: Array<{ document_id: string; model: string; chunks: number; dim?: number | null }>;
   count: number;
   assigned: number;
+  /** 已写入 int8 量化向量的条数（训练/upsert 后 == count） */
+  quantized: number;
   meta: { dim: number; count: number; k: number; trained_at: number } | null;
 }> {
   return getBackend().command("documents.vector_status", {

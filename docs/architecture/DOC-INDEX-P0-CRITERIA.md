@@ -30,6 +30,7 @@
 | DOCI-16 | ✅ 已实现（可选向量索引 + 混合检索） | `docs.rs::vector_search_ranks_by_cosine_and_isolates_collections`、`src/test/doc-vector-index.test.ts` |
 | DOCI-17 | ✅ 已实现（跨文档问答证据层） | `src/test/doc-cross-search.test.ts`（分组/引用/去重/向量降级） |
 | DOCI-18 | ✅ 已实现（IVF-Flat 大规模向量检索） | `docs.rs::ivf_train_then_ann_search_keeps_recall`（recall≥8/10）、`schema_v2_gets_cluster_column_on_open`；bench 见 ADR §16.5 |
+| DOCI-19 | ✅ 已实现（int8 量化 + 外存；重排后分数精确） | `docs.rs::ivf_train_then_ann_search_keeps_recall`（分数必须等于 brute）、`quantized_search_falls_back_for_rows_without_qvector`；bench 见 ADR §16.5 |
 | DOCI-B1 | ✅ **已实测（1GiB）** | `documents/chunk.rs::bench_large_document_indexing`（`#[ignore]`，`DOC_BENCH_MB=1024`）；结果见 `DOC-INDEX-BENCH.md` |
 
 > 变异自证：DOCI-2 的 id 冲突、DOCI-3 的 UTF-8 截断、DOCI-6 的预算越界，都是在实现期判据真的变红后才修好的
@@ -60,6 +61,7 @@
 | DOCI-16 | 向量：归一化 cosine 排序正确、集合隔离、零/坏维度显式失败；无 embedding 配置时 FTS 行为不变 | `docs.rs::vector_search_ranks_by_cosine_and_isolates_collections` + `doc-vector-index.test.ts` | 未归一化（按模长排序）/ 跨集合泄漏 |
 | DOCI-17 | 跨文档：按文档分组、citation 稳定、同块去重、向量失败降级且 `vectorUsed=false`；工具不写答案 | `doc-cross-search.test.ts` | 重复引用同一块 / 失败仍标 vectorUsed |
 | DOCI-18 | 大规模：≥1024 训练 IVF；ANN 与全量 top10 重合 ≥8/10；v2 老库打开自动补 `cluster_id`；未训练自动回退全量 | `docs.rs::ivf_train_then_ann_search_keeps_recall` + `schema_v2_gets_cluster_column_on_open`；bench `bench_ivf_large_scale` | ANN 关闭（`ann_used=false`）/ 迁移顺序错（CREATE INDEX 先于 ALTER） |
+| DOCI-19 | 量化：默认 int8 近似 + top-K 精确重排，最终分数与全量一致（1e-5）；缺 `qvector` 老行可回读原向量；训练采样/赋簇内存有上限 | `ivf_train_then_ann_search_keeps_recall`（分数断言）+ `quantized_search_falls_back_for_rows_without_qvector` | 跳过精确重排（分数变成近似值） |
 | DOCI-B1 | 基准（1GB）：提取耗时 / 峰值 RSS / 索引库大小实测入库 | `documents/chunk.rs::bench_large_document_indexing` + `docs/architecture/DOC-INDEX-BENCH.md` | 不适用（基准先于调参） |
 
 ---
@@ -193,7 +195,7 @@ npx vitest run                     # 全量（基线 9551 / 0 失败）
 | 16MB 索引要 111 秒（应为线性） | `bench_large_document_indexing`（DOCI-B1） | FTS 按 UNINDEXED 列逐块删除 ⇒ O(n²) |
 | 每块 ~5.2KB / ~1,700 token | `pipeline_chunks_structure_and_is_idempotent` | `push_text` 整段入缓冲击穿 800-token 目标 |
 
-**Rust 侧脚本变异（2026-11-05 补跑，9/9 全红）**：
+**Rust 侧脚本变异（2026-11-05 补跑，10/10 全红）**：
 
 | 判据 | 改坏了什么 | 结果 |
 |---|---|---|
@@ -206,6 +208,7 @@ npx vitest run                     # 全量（基线 9551 / 0 失败）
 | DOCI-16 | 向量 score 恒为 0.5（cosine 失效） | 🔴 exit 101（排序/分值断言失败） |
 | DOCI-17 | 向量命中去重键加 `:v`（同块重复） | 🔴 exit 1（citation 出现两次） |
 | DOCI-18 | ANN 关闭（`ann_used=false`） | 🔴 exit 101（`ann=true` 断言失败） |
+| DOCI-19 | 跳过 int8 后的精确重排（分数保留近似值） | 🔴 exit 101（与 brute 分数差 >1e-5） |
 
 > 规则：**没做变异的判据不得声明完成**。变异只允许临时改、随改随还原；不允许提交改坏的实现。
 > DOCI-1/5/11/15 的脚本变异已补齐；DOCI-2/3 由上面的「自然失败」证明。

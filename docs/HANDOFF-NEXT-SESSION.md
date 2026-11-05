@@ -7935,4 +7935,22 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   FTS 命中、PDFium 800×1130（`.preview-shot/final-installed-results.json`）。
 - 用户原先运行的 1.18.5 进程在安装前被停止；安装后未自动拉起（需要时点快捷方式）。
 
+## 2026-11-05 09:00 — int8 量化 + 外存训练/检索（DOCI-19）
+
+- schema v4：`document_vectors.qvector BLOB` + `qscale REAL`；v3→v4 补列（仍先 ALTER 再建索引）。
+- 写入/训练时做对称标量量化（每向量一个 scale，int8）；训练赋簇改为**流式 1000 行/批**，
+  采样单遍且只保留 ≤2 万条 —— 内存不随集合规模增长。
+- 检索默认：int8 近似打分 → top-64 回读 float 原向量精确重排；`force_float` 走 float 簇扫描对照，
+  `force_brute` 全量精确；缺 `qvector` 的老行按主键回读原向量，不会漏检。
+- 实测（100,000×32 维，k=128，release）：训练 2.07s；
+  查询中位 **全量 527ms / float-ANN 68ms / int8+重排 37ms（14×）**；
+  recall@10 float 0.910 / 量化 0.905；最终分数与 brute 一致（1e-5）。
+- 判据：`ivf_train_then_ann_search_keeps_recall`（含 `quantized==n`、分数精确）、
+  `quantized_search_falls_back_for_rows_without_qvector`；变异「跳过精确重排」→ 红（10/10）。
+- 安装包已用 v4 源码重建；在旧 v3 数据上实测打开自动迁移到 schema=4，
+  1400 向量重新训练后 `quantized=1400`，ANN 返回 `quantized=true/rerank=64`。
+- 踩坑：PowerShell 批量替换曾把 SQL 续行写成 `\\`，导致 `qvector IS NOT NULL` 计数查询
+  静默失败（被 `unwrap_or(0)` 吃掉），状态显示 quantized=0；已修为单行 SQL 并加断言。
+
+
 

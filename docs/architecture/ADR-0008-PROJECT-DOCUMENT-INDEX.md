@@ -460,9 +460,9 @@ enqueue → verify（存在/可读/扩展名/根内/大小/安全上限）
 
 **定位**：FTS 是默认能力；向量是**可选增强**，没有 embedding 配置时完全不影响检索。
 
-- **存储**：`document_vectors(document_id, chunk_no, model, dim, vector BLOB, cluster_id)`，
-  向量写入时归一化（f32 little-endian），检索=点积；schema `DOCS_SCHEMA_VERSION=3`
-  （v2→v3 迁移补 `cluster_id`，并在 ALTER 之后才建索引）。
+- **存储**：`document_vectors(document_id, chunk_no, model, dim, vector BLOB, cluster_id, qvector BLOB, qscale REAL)`，
+  向量写入时归一化（f32 little-endian），检索=点积；schema `DOCS_SCHEMA_VERSION=4`
+  （v2→v3 补 `cluster_id`；v3→v4 补 int8 量化列；索引在 ALTER 之后才建）。
 - **命令**：`documents.vector_upsert` / `vector_train` / `vector_search` / `vector_status`；
   sha 变化、删文档、reset 都会清向量/中心/元数据。
 - **补齐**：摄取完成后，若 `settings.embedding.enabled=true`，渲染侧后台按块嵌入
@@ -471,18 +471,25 @@ enqueue → verify（存在/可读/扩展名/根内/大小/安全上限）
   每条带 citation；**工具不生成答案**，只给证据并明确要求调用方基于证据作答（避免把
   “检索不到”伪装成“文档没有”）。
 - **跨文档问答**：主模型拿 `doc_cross_search` 的证据作答；需要更多上下文时按 citation 用 `doc_read`。
-- **大规模（IVF-Flat，2026-11-05）**：
-  - 向量数 ≥1024 时训练：k-means（确定性采样 ≤2 万 + k-means++ + 8 轮），`k=clamp(√n, 8, 128)`；
-    训练后把**所有**向量分配到最近中心（`document_vectors.cluster_id`）；
-  - 查询：扫中心取 top-`nprobe`（默认 16）簇 + 未分配新向量，再在候选内精确点积；
-    低于 1024 / 未训练 / 维度不符自动回退全量扫描；`vector_status` 报 `count/assigned/meta`；
+- **大规模（IVF-Flat + int8 量化 + 外存，2026-11-05）**：
+  - 向量数 ≥1024 时训练：k-means（单遍采样 ≤2 万 + k-means++ + 8 轮），`k=clamp(√n, 8, 128)`；
+    赋簇**流式**进行（每批 1000 行，内存不随集合规模增长），并同时回填 int8 量化；
+  - 查询：扫中心取 top-`nprobe`（默认 16）簇 + 未分配新向量；默认走
+    **int8 近似打分 → top-64 回读原向量精确重排**；`force_float` 走 float 簇扫描做对照，
+    `force_brute` 全量精确扫描；低于 1024 / 未训练 / 维度不符自动回退；
+  - 外存语义：候选只从 SQLite 读取命中的簇（`qvector` BLOB），top-64 才回读 float；
+    训练采样/赋簇都有固定内存上限，不把 `n×dim×4` 的向量本体常驻 RAM；
+    `vector_status` 报 `count/assigned/quantized/meta`；
   - 重训：`vector_status.count` 比上次训练增长 >30% 时后台重训（不足 30% 不重复花 CPU）；
-  - **实测（100,000 × 32 维，k=128，release）**：训练 1.59s；查询中位
-    **全量 517ms → ANN 65ms（约 8×）**，recall@10 = **0.91**（nprobe=16）；
-  - 边界：这是 IVF-Flat，不是 HNSW 图索引；recall 与 nprobe 可调，100 万级仍可工作，
-    但内存需容纳 `n×dim×4` 字节向量本体（1M×768 维约 2.9GB 级，需量化/外存，属后续）。
+  - **实测（100,000 × 32 维，k=128，release）**：训练 2.07s；查询中位
+    全量 **527ms** / float-ANN **68ms** / **int8+重排 37ms（约 14× vs 全量）**；
+    recall@10 = float 0.910 / **量化 0.905**（nprobe=16，重排 top-64）；
+  - 边界：这是 IVF-Flat（非 HNSW 图索引）；recall 与 nprobe/重排深度可调。
+    量化只压索引侧 IO/内存（int8 = 原 float 的 1/4），原向量仍保留用于重排；
+    1M×768 维磁盘仍约 3.1GB（float）+ 0.77GB（int8），但查询/训练不再需要把它们全装进 RAM。
 - **判据**：`docs.rs::vector_search_ranks_by_cosine_and_isolates_collections`、
-  `docs.rs::ivf_train_then_ann_search_keeps_recall`（recall≥8/10）、
+  `docs.rs::ivf_train_then_ann_search_keeps_recall`（recall≥8/10 且分数必须精确重排）、
+  `docs.rs::quantized_search_falls_back_for_rows_without_qvector`、
   `docs.rs::schema_v2_gets_cluster_column_on_open`、`doc-vector-index.test.ts`、`doc-cross-search.test.ts`。
 - **真机验证（2026-11-04）**：真实 Codem 进程（隔离 `CODEM_DATA_HOME`）通过 WebView2 CDP 调用 IPC：
   真实 PDF 摄取 → `ready`、全文命中、正文回读 1,903 字符、PDFium 渲染 800×1130 PNG；

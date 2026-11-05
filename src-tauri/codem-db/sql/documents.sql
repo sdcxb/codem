@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS document_vectors (
   dim INTEGER NOT NULL,
   vector BLOB NOT NULL,
   cluster_id INTEGER,
+  qvector BLOB,
+  qscale REAL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (document_id, chunk_no),
   FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
