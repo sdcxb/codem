@@ -1294,6 +1294,41 @@ Context OS + Document OS + Memory Graph + Artifact-centric Agents **方向正确
 
 ---
 
+### 11.6 源码复查补充：最该采纳的 12 条（按优先级）
+
+| 机制 | 来源/证据 | 对 Context OS 的用法 | 优先级 |
+|---|---|---|---|
+| **复用现有文档工具** | `src/core/llm/tools/document-tools.ts:2`（outline/search/read/status）、`:496-520`（cross_search 带 citation） | Document OS 不重造；只补 `doc_diff/doc_patch/doc_verify` + 账本/编译器 | P0 |
+| **goal runner 承载 Document OS** | `src/core/goal/runner.ts:232-245`、`:303-350`、`:537-568` | 用阶段 DAG/证据/验收/受控重规划跑 section jobs，不另造流水线 | P0 |
+| **agent-teams attempt CAS + 回滚** | `src/core/agent-teams/engine.ts:160-185`、`:220-287` | Artifact 任务的唯一任务态；Bot 只是成员视图；防旧结果覆盖新领取 | P0 |
+| **缓存冻结边界（折中版）** | DS-Bot `memory.js:23-26`、`:985-1028`；Codem `prompt.ts` cache boundary | epoch 首冻结**索引**；新记忆走 `memory_read`，不整段冻结、不阻止新事实生效 | P0 |
+| **request_id 三态幂等** | DS-Bot `requests.js:5-10`、`:41-50`、`:73-101` | artifact/task 派发：replay 原回执 / conflict 拒绝 / uncertain 不自动重试 | P0 |
+| **execpolicy + 审批即策略** | Codex `execpolicy/src/decision.rs:9`、`rule.rs:124`、`protocol/src/protocol.rs:4469` | Trust plane：Allow/Prompt/Forbid + 理由；审批产出可撤销 policy delta | P0 |
+| **AGENTS.md 层级指令栈** | Codex `core/src/agents_md.rs:1-20`、`:45`、`:308` | Document/Instruction OS：project→cwd 分层、provenance、预算 | P0 |
+| **Rollout trace / replay / fork lineage** | Codex `rollout-trace/src/lib.rs`、`thread-store/src/local/paginated_fork.rs` | Context Manifest/Replay 的模型；从 artifact/边界分叉，不重跑 | P0 |
+| **Hooks + 输出 spill** | Codex `hooks/src/lib.rs:29`、`output_spill.rs:13`（默认 2500 token） | 生命周期事件总线；上下文注入默认“引用而非内联” | P1 |
+| **Code Mode + deferred tools** | Codex `code-mode-protocol/...`、`description.rs:20` | 工具中间结果留 isolate，只 text 结果进上下文；按需 tool_search | P1 |
+| **增量工具声明 / skills 依赖** | Codex `incremental_tools.rs`、`skills/src/model.rs:81,87` | 运行中装卸工具不重发全量 schema；skill 作为 procedural memory | P1 |
+| **per-Bot 路由 / workspace / privacy fence** | DS-Bot `models.js`、`roster.js`、`privacy.js` | 多 Agent 隔离：模型/工作区/记忆/工具围栏；失败路由隔离 | P1 |
+
+**不该照搬**：
+
+- 文件级 `pending.json` 直接搬进 Codem 的 SQLite 记忆（收益低；用 DB 事务/outbox）；
+- `state.json` 全量写 + 无限 receipts；
+- 整段记忆冻结导致新记忆当前段不可见；
+- 用群聊消息做文档任务协调；
+- 浏览器隔离（除非 Context OS 真引入浏览器工具）。
+
+**对 §10 的具体修订**：
+
+1. Document OS 的读路径先复用 `doc_outline/search/read/status/cross_search`，只补写路径/账本/编译器；
+2. Document OS 的执行载体用 `goal runner`，不要新写一套 stage/job；
+3. Agent Team 的任务态用 `agent-teams` 的 attempt/claim/rollback，Bot 只做身份/记忆/工作区；
+4. Memory 的缓存策略改为“epoch 首冻结索引 + 新事实 read”，不做 DS-Bot 式整段冻结；
+5. `request_id` 进 artifact/task 派发，不进普通聊天消息。
+
+---
+
 ## 附录 A：DS-Bot 源码索引
 
 - `ds-bot/src/host/steward.js`：阈值、steward prompt、checkpoint、parseDecision、checkpointCount/Text
