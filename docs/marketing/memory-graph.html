@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Codem · 记忆怎么做到可查</title>
-<meta name="description" content="Codem 记忆实现细节：完整原文、来源、作用范围、有效期、冲突、写入与读取。">
+<title>Codem · 不想每次重新解释，怎么办</title>
+<meta name="description" content="Codem 记忆：每条记录带来源、作用范围和有效期；你能查、能改、能删，自动流程不会偷偷覆盖。">
 <link rel="stylesheet" href="./context-os-detail.css">
 </head>
 <body>
@@ -30,12 +30,12 @@
   <section class="hero">
     <div class="wrap">
       <div class="eyebrow">03 / 记忆</div>
-      <h1>记忆要能查回原文，<br>不能只剩一句摘要。</h1>
-      <p>用户想翻所有对话和原文，不想只相信摘要。模型一次只能带一部分，所以 Codem 把「完整原文」和「当前要用的记忆」分开：原文留在时间线，记忆是带出处的索引，需要时按来源取。</p>
+      <h1>不想每次重新解释，<br>怎么办？</h1>
+      <p>你上周说过「发布前必须跑全量测试」。这周开新对话，Codem 能把这条取出来，并告诉你它从哪来、在哪个项目生效、现在还有没有效。</p>
       <div class="meta">
-        <span class="status"><i></i> 审批/作用域已有实现</span>
+        <span class="status"><i></i> 审批/范围已能用</span>
         <span class="status partial"><i></i> 检索/使用信号部分能用</span>
-        <span class="status target"><i></i> 完整图谱与冲突视图还在做</span>
+        <span class="status target"><i></i> 完整冲突视图还在做</span>
       </div>
     </div>
   </section>
@@ -43,30 +43,87 @@
   <div class="wrap layout">
     <aside class="toc" aria-label="页内目录">
       <div class="toc-label">本页目录</div>
-      <a href="#problem">01 先分清两件事</a>
-      <a href="#schema">02 一条记忆有什么</a>
-      <a href="#write">03 怎么写</a>
-      <a href="#read">04 怎么读</a>
-      <a href="#conflict">05 冲突与边界</a>
-      <a href="#code">06 代码位置</a>
+      <a href="#see">01 你会看到什么</a>
+      <a href="#what">02 它记什么</a>
+      <a href="#use">03 怎么取</a>
+      <a href="#conflict">04 冲突和过期</a>
+      <a href="#limits">05 边界</a>
+      <a href="#dev">06 开发视角</a>
     </aside>
 
     <article>
-      <section id="problem">
-        <div class="sec-kicker">01 / 原文与记忆</div>
-        <h2>完整原文是底，记忆是索引。</h2>
-        <p class="lead">「想看到所有记忆」，落到实现上是两件事：原文不能丢，用户能翻；模型需要时能按来源取回相关部分。</p>
+      <section id="see">
+        <div class="sec-kicker">01 / 你会看到什么</div>
+        <h2>你问一句，它能把上周的话找回来。</h2>
+        <p class="lead">你换了一个新对话，问：「发布前还要跑什么？」Codem 找到上周那条记录：“发布前必须跑全量测试”，并带上来源。你点开，能看到当时的原话。</p>
+
         <div class="grid-2">
-          <div class="box"><h4>完整时间线</h4><p>所有消息都在，包含被压缩的旧消息。可以搜索、回读、导出。原文都在这里。</p></div>
-          <div class="box"><h4>记忆条目</h4><p>从对话/文档/任务中提炼出的偏好、决定、事实、限制。每条带来源、范围、时间、状态。</p></div>
+          <div class="box">
+            <h4>你会看到</h4>
+            <p>你看到的是一条清楚的记录：它从哪来、在哪个项目生效、什么时候写的，都能查。</p>
+          </div>
+          <div class="box">
+            <h4>你可以做</h4>
+            <p>确认、修改、删除，或者标成“只在当前项目用”。自动流程不能偷偷改你手动写的记忆。</p>
+          </div>
         </div>
-        <p>摘要只是入口，核对细节要回到原文。用户想核对时能翻时间线；模型要细节时按锚点或检索读回那一段。</p>
-        <div class="callout"><b>解决「只能看二手摘要」：</b> 摘要说明大概是什么，原文和来源让你核对细节。两者都要有。</div>
+
+        <p>如果这条记错了，你直接说「这条不对，改成发布前跑冒烟测试」。旧记录留下可追溯的替代关系，新记录从下一轮开始生效。</p>
       </section>
 
-      <section id="schema">
-        <div class="sec-kicker">02 / 数据结构</div>
-        <h2>一条记忆，至少要有这些字段。</h2>
+      <section id="what">
+        <div class="sec-kicker">02 / 它记什么</div>
+        <h2>一条记忆，至少要回答五个问题。</h2>
+        <ul>
+          <li><strong>说的是什么：</strong>一句能独立看懂的话，比如「发布前必须跑全量测试」。</li>
+          <li><strong>从哪来：</strong>哪条消息、哪份文档、哪次任务。</li>
+          <li><strong>在哪个范围生效：</strong>当前对话、这个项目、这个 Bot，还是只限本人。</li>
+          <li><strong>什么时候有效：</strong>从哪天开始，到哪天过期。</li>
+          <li><strong>现在是什么状态：</strong>候选、已确认、有争议、已归档。</li>
+        </ul>
+        <p>这五项缺一项，记忆就容易变成“黑盒”：你看到一句结论，却不知道它从哪来、什么时候会过期、和另一条会不会冲突。</p>
+        <div class="callout"><b>记忆和聊天记录分开存。</b> 聊天记录保留原文；记忆是从原文里提炼出来、带出处的索引。你需要细节时，仍然能回到原话。</div>
+      </section>
+
+      <section id="use">
+        <div class="sec-kicker">03 / 怎么取</div>
+        <h2>只取这次相关的几条，不把全部记忆倒进来。</h2>
+        <ol class="steps">
+          <li><b>先看范围</b><span>当前项目/对话能看哪些记忆；项目 A 的偏好不会带到项目 B。</span></li>
+          <li><b>再排相关</b><span>按关键词、语义、来源可信度、时效和使用次数排；过期或低可信的降权。</span></li>
+          <li><b>需要时读全文</b><span>先给索引；你追问细节时，再打开完整记录和来源。</span></li>
+          <li><b>回答带出处</b><span>回答里标出来源；你能点回原对话、文档或任务。</span></li>
+        </ol>
+        <p>这样既不把窗口塞满，也不会让你只看到一句没有出处的摘要。</p>
+      </section>
+
+      <section id="conflict">
+        <div class="sec-kicker">04 / 冲突和过期</div>
+        <h2>两条记忆打架，保留双方。</h2>
+        <ul>
+          <li><strong>冲突：</strong>一条说「发布前跑全量」，另一条说「只跑冒烟」。两条都留下，标出来源和时间，让你判断。</li>
+          <li><strong>过期：</strong>有有效期的记忆到期后降权或标为过期，不继续当现行事实。</li>
+          <li><strong>纠错：</strong>你说「记错了」，新记忆替代旧记忆，但旧记录留可追溯的替代关系。</li>
+          <li><strong>删除：</strong>由你显式删除或归档；自动流程不能偷偷删。</li>
+        </ul>
+        <div class="callout warn"><b>边界：</b>记忆可能错，检索可能漏。别把记忆当权限、审批或法律事实；关键结论仍要回到原文和验收。</div>
+      </section>
+
+      <section id="limits">
+        <div class="sec-kicker">05 / 边界</div>
+        <h2>它做不到什么。</h2>
+        <ul>
+          <li><strong>不能保证想起一切。</strong> 检索可能漏；所以关键结论要带来源，重要决定要写进文档或任务。</li>
+          <li><strong>不会把所有原文塞进每一轮。</strong> 原文留在历史里，记忆按需取；你仍然能翻、能搜。</li>
+          <li><strong>自动提取会出错。</strong> 所以它只产生候选；高影响写入要批准，手动记忆优先。</li>
+        </ul>
+      </section>
+
+      <section id="dev">
+        <div class="sec-kicker">06 / 开发视角</div>
+        <h2>给开发看的实现细节。</h2>
+        <p>如果你不写代码，这一节可以跳过。</p>
+
 <pre><code><span class="key">MemoryFact</span> {
   statement: <span class="str">"发布前必须跑全量测试"</span>,
   scope: <span class="str">"project"</span>,              <span class="cm">// 平台 / 项目 / 对话 / Bot / 群 / 团队</span>
@@ -77,65 +134,21 @@
   usageCount: <span class="str">12</span>,
   supersedes: [<span class="str">"mem_17"</span>]           <span class="cm">// 它替代了哪条旧记忆</span>
 }</code></pre>
-        <p>这些字段用来回答四个问题：</p>
-        <ul>
-          <li>这句话从哪来？</li>
-          <li>在哪个项目/对话里生效？</li>
-          <li>什么时候有效，什么时候过期？</li>
-          <li>和另一条冲突时，谁替代谁？</li>
-        </ul>
-      </section>
 
-      <section id="write">
-        <div class="sec-kicker">03 / 写入</div>
-        <h2>自动提取只产生候选，手动记忆优先。</h2>
-        <ol class="steps">
-          <li><b>提取候选</b><span>从对话/文档里识别可能长期有用的事实、偏好、决定；只写长期有用的，不逐句记。</span></li>
-          <li><b>去重与合并</b><span>同主题候选先合并；相似度不够就不硬合；合并结果要能撤销。</span></li>
-          <li><b>按作用域审批</b><span>项目级/高影响写入需要批准；对话级可按设置直接生效；平台级只手动。</span></li>
-          <li><b>写入记录并记来源</b><span>写入 statement、scope、provenance、status；手动条目打上保护标记。</span></li>
-        </ol>
-        <div class="callout warn"><b>三件不能做：</b> 自动流程不能删掉或偷偷改你手写的记忆；两条冲突记忆不能互相覆盖；项目 A 的偏好不能带到项目 B。</div>
-      </section>
+        <p>写入时只产生候选；项目级/高影响写入需要批准；手动条目打保护标记。读取时先按 scope 过滤，再按相关度、来源、时效和使用次数排序。</p>
 
-      <section id="read">
-        <div class="sec-kicker">04 / 读取</div>
-        <h2>读取分三步：范围、排序、引用。</h2>
-        <ol class="steps">
-          <li><b>范围过滤</b><span>当前项目/对话/Bot 能看哪些记忆；跨项目默认不带。</span></li>
-          <li><b>相关性排序</b><span>关键词/语义/实体匹配 + 来源可信度 + 时效 + 使用次数。</span></li>
-          <li><b>取全文</b><span>需要时用 <code>memory_read</code> 取完整条目和来源，不只给 200 字摘要。</span></li>
-          <li><b>带引用回答</b><span>回答里标出来源；用户能点回原对话/文档；冲突时把双方都摆出来。</span></li>
-        </ol>
-        <p>记忆按需读取，不用每轮把所有记忆塞进上下文。上下文里放索引/摘要，需要时再读全文；这样既能看到，又不把窗口塞满。</p>
-      </section>
-
-      <section id="conflict">
-        <div class="sec-kicker">05 / 冲突与边界</div>
-        <h2>冲突保留双方，过期就标过期。</h2>
-        <ul>
-          <li><strong>冲突：</strong>两条记忆说法不一致时，保留双方，标出来源和时间，让模型和用户判断。</li>
-          <li><strong>过期：</strong>有 validTo 的记忆到期后降权或标为过期，不继续当现行事实。</li>
-          <li><strong>纠错：</strong>用户说「记错了」时，新记忆可以替代旧记忆，但旧记录要留可追溯的 supersedes。</li>
-          <li><strong>删除：</strong>由用户显式删除或归档；自动流程不能偷偷删。</li>
-        </ul>
-        <div class="callout warn"><b>边界：</b>记忆可能错，检索可能漏。不要把记忆当权限、审批或法律事实；关键结论仍要回到原文和验收。</div>
-      </section>
-
-      <section id="code">
-        <div class="sec-kicker">06 / 代码位置</div>
-        <h2>代码在哪。</h2>
         <div class="table-wrap">
           <table>
             <thead><tr><th>位置</th><th>负责什么</th><th>状态</th></tr></thead>
             <tbody>
               <tr><td>memory/memory.ts</td><td>作用域、审批、待批准、注入、记忆管理</td><td>已有实现</td></tr>
-              <tr><td>llm/index.ts</td><td>提取、去重、候选合并、注入接线</td><td>已有实现</td></tr>
+              <tr><td>llm/index.ts</td><td>提取、去重、候选合并、上下文接线</td><td>已有实现</td></tr>
               <tr><td>memory/similarity.ts</td><td>相似度/合并判断</td><td>已有实现</td></tr>
               <tr><td>memory/pending-backlog.ts</td><td>待批准积压闸门</td><td>已有实现</td></tr>
             </tbody>
           </table>
         </div>
+
         <div class="end">
           <h3>记忆要能核对，数量多没用。</h3>
           <p>完整原文、来源、范围、冲突，四件事都做到，记忆才值得信。</p>

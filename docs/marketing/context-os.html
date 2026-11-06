@@ -624,8 +624,8 @@
         <div class="eyebrow">CODEM · 长对话与长文档</div>
         <h1 data-claim="C01">聊到第 300 轮，<br><span class="grad">也不用重开对话。</span></h1>
         <p class="hero-lead" data-claim="C03">
-          长任务做到一半，最怕窗口满了要重来。Codem 会在后台把长对话<span class="nowrap">分成几段</span>来喂模型：
-          旧内容留在本地，模型每次只带当前需要的部分。<span class="nowrap">你看到的</span>，始终是一个对话。
+          长任务做到一半，最怕窗口满了要重来。Codem 会在后台整理已经处理完的内容，留一份交接记录，再接着往下做。
+          旧消息还在，你随时能翻。
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#how">看它怎么工作
@@ -700,9 +700,9 @@
 
   <section class="signal-bar" aria-label="核心特征">
     <div class="wrap signal-grid">
-      <div class="signal" data-claim="C01"><strong>1 条</strong><span>你看到的对话主线</span></div>
-      <div class="signal" data-claim="C13"><strong>3 种</strong><span>内部处理：保留原文 / 压缩 / 换段</span></div>
-      <div class="signal" data-claim="C02"><strong>0 条</strong><span>被删除的旧消息</span></div>
+      <div class="signal" data-claim="C01"><strong>1 条</strong><span>你看到的对话</span></div>
+      <div class="signal" data-claim="C13"><strong>0 次</strong><span>因窗口满被迫重开</span></div>
+      <div class="signal" data-claim="C02"><strong>100%</strong><span>旧消息保留</span></div>
       <div class="signal" data-claim="C03"><strong>4 类</strong><span>可查内容：对话 / 文档 / 记忆 / 任务</span></div>
     </div>
   </section>
@@ -712,13 +712,13 @@
       <div class="section-head" data-reveal>
         <div class="eyebrow">先说痛点</div>
         <h2>长任务做到一半，<br>最怕什么？</h2>
-        <p>问题常常出在工作台：做一步被打断，写着写着忘了前文，用户只能看摘要，代码改完文档还是旧的。</p>
+        <p>问题常常出在工作台：做一步被打断，写着写着忘了前文，你只能看摘要，代码改完文档还是旧的。</p>
       </div>
       <div class="problem-grid">
         <article class="problem" data-reveal>
           <div class="num">01 / 水位</div>
           <h3>做一步，就停了。</h3>
-          <p>长对话里，刚改完一个文件、跑完一次测试，下一轮就停了。任务没做完，上下文先满了；只能压缩、重开，或者把刚说过的话再讲一遍。</p>
+          <p>长对话里，刚改完一个文件、跑完一次测试，下一轮就停了。任务没做完，窗口先满了；只能压缩、重开，或者把刚说过的话再讲一遍。</p>
           <span class="consequence">结果：任务按水位中断，不按步骤完成</span>
         </article>
         <article class="problem" data-reveal data-delay="1">
@@ -730,7 +730,7 @@
         <article class="problem" data-reveal data-delay="2">
           <div class="num">03 / 只剩摘要</div>
           <h3>想翻完整记忆，却只看到摘要。</h3>
-          <p>用户希望看到所有原文和记忆，但模型一次只能带一部分。于是系统不断压缩，用户看到的只是被加工过的二手摘要，很难判断丢了什么。</p>
+          <p>你想翻所有原文和记忆，但一次回复装不下所有材料。于是系统不断压缩，你看到的只是被加工过的二手摘要，很难判断丢了什么。</p>
           <span class="consequence">结果：只能相信摘要，没法核对原文</span>
         </article>
         <article class="problem" data-reveal data-delay="3">
@@ -747,7 +747,7 @@
     <div class="wrap">
       <div class="section-head" data-reveal>
         <div class="eyebrow">Codem 怎么做</div>
-        <h2>一条对话，<br><span class="grad">后台换段继续。</span></h2>
+        <h2>一条对话，<br><span class="grad">不用重开。</span></h2>
         <p>Codem 不逼你开新会话，也不把整段历史压成一句摘要。它在后台做三件事：写交接、留原文、把旧内容放在随时能查的地方。</p>
       </div>
 
@@ -755,25 +755,25 @@
         <article class="pillar" data-reveal data-claim="C01 C03">
           <div class="pillar-copy">
             <div class="pillar-index">01 / 对话不断</div>
-            <h3>上下文快满时，<br>换一段继续，不重开对话。</h3>
-            <p>比如你让 Codem 改登录流程，聊到第 80 轮，模型这一段快装不下了。它不弹窗，也不新建对话；它会：</p>
+            <h3>窗口快满时，<br>换一段继续，不重开对话。</h3>
+            <p>比如你让 Codem 改登录流程，聊到第 80 轮，对话已经很长，快装不下了。它不弹窗，也不新建对话；它会：</p>
             <ul>
               <li>写一张交接单：目标、已完成、未完成、关键文件、下一步</li>
               <li>保留最近一段原文，避免语气和细节断掉</li>
               <li>把旧消息留在完整时间线里，随时能按锚点回读</li>
             </ul>
-            <p style="margin-top:14px;color:var(--faint);font-size:12px">然后模型换到新的一段，你继续输入。界面上仍然是一个对话，不会多出一条「新会话」。</p>
+            <p style="margin-top:14px;color:var(--faint);font-size:12px">然后 Codem 从交接记录接着往下做，你继续输入。界面上仍然是一个对话，不会多出一条「新会话」。</p>
             <div class="pillar-tags"><span>交接单</span><span>最近原文</span><span>旧内容可回读</span><span>不新建会话</span></div>
             <a class="pillar-more" href="context-thread.html">看对话怎么保持连续 →</a>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
-              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">对话主线 / 后台换段</span></div>
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">对话主线 / 后台整理</span></div>
               <div class="context-stack">
                 <div class="ctx-window">
                   <div class="ctx-line"><span>完整对话</span><span>旧消息都还在</span></div>
                   <div class="ctx-bar"><i style="width:100%;opacity:.55"></i></div>
-                  <div class="ctx-note">旧消息还在，只是不再全部塞给模型</div>
+                  <div class="ctx-note">旧消息还在，只是不再全部塞进这一轮</div>
                 </div>
                 <div class="ctx-arrow">↓ 取当前需要的部分</div>
                 <div class="ctx-window active">
@@ -783,7 +783,7 @@
                 </div>
                 <div class="ctx-arrow">↓ 快满时</div>
                 <div class="ctx-window">
-                  <div class="ctx-line"><span>写交接，换下一段</span><span>你继续说话</span></div>
+                  <div class="ctx-line"><span>写交接，接着聊</span><span>你继续说话</span></div>
                   <div class="ctx-bar"><i style="width:55%"></i></div>
                   <div class="ctx-note">旧段仍可查；新段从交接单继续</div>
                 </div>
@@ -797,7 +797,7 @@
             <div class="pillar-index">02 / 长文档</div>
             <h3>300 页文档，<br>不用 300 次复制粘贴。</h3>
             <p>先把文档拆成目录、章节、段落、表格和引用。写到第 4 节，只取第 4 节相关的材料和前面已经确认过的事实。</p>
-            <p>同时记一本账：哪节读过、哪节改过、哪句有引用、哪里还没核验。下次接着写，先看账本，不靠模型「记得」。</p>
+            <p>同时记一本账：哪节读过、哪节改过、哪句有引用、哪里还没核验。下次接着写，先看账本，不靠硬记。</p>
             <ul>
               <li>大纲、章节、表格、引用，都能定位</li>
               <li>每个结论能回到页码、章节或原文片段</li>
@@ -827,7 +827,7 @@
           <div class="pillar-copy">
             <div class="pillar-index">03 / 记忆</div>
             <h3>完整原文还在，<br>记忆只是索引。</h3>
-            <p>用户想翻所有对话和原文，不用只相信摘要。旧消息留在完整时间线里，可以搜索、回读、导出；模型每次只取和当前任务相关的那几条。</p>
+            <p>你想翻所有对话和原文，不用只相信摘要。旧消息留在完整时间线里，可以搜索、回读、导出；Codem 每次只取和当前任务相关的那几条。</p>
             <p>记忆本身也带出处：这句话从哪来、在哪个项目生效、什么时候写的、现在是否还有效。两条记忆冲突时，不偷偷覆盖：保留双方，标出来源。</p>
             <ul>
               <li>原文不删；摘要只是入口，原文才是底</li>
@@ -887,13 +887,13 @@
       <div class="section-head" data-reveal data-claim="C04 C12">
         <div class="eyebrow">一次请求的旅程</div>
         <h2>一条请求，<br>要经过四步。</h2>
-        <p>你发一句话，背后是记录、取材料、模型工作、写回结果四件事在配合。</p>
+        <p>你发一句话，背后是记录、取材料、Codem 做事、写回结果四件事在配合。</p>
       </div>
       <div class="flow-grid" data-reveal>
         <div class="flow-step">
           <div class="flow-num">01</div>
           <h3>你发消息</h3>
-          <p>对话主线记下这句话；当前任务状态更新。你不需要选模型、选段、选记忆。</p>
+          <p>对话主线记下这句话；当前任务状态更新。你不需要自己选模型、选材料、挑记忆。</p>
         </div>
         <div class="flow-step">
           <div class="flow-num">02</div>
@@ -902,7 +902,7 @@
         </div>
         <div class="flow-step">
           <div class="flow-num">03</div>
-          <h3>模型做事</h3>
+          <h3>Codem 做事</h3>
           <p>读文件、改代码、跑命令。工具结果写回时间线；文档改动写进章节账本。</p>
         </div>
         <div class="flow-step">
@@ -913,7 +913,7 @@
       </div>
       <div class="flow-note" data-reveal>
         <b>所以你看到的仍然是一个对话。</b>
-        背后是记录、检索、上下文选择和验收在配合。模型不用把整段历史都记住，也能接着做。
+        背后是记录、检索、挑材料和验收在配合。Codem 不用把整段历史都记住，也能接着做。
       </div>
     </div>
   </section>
@@ -925,7 +925,7 @@
           <div class="eyebrow">长文档</div>
           <h2 style="font-size:clamp(30px,4vw,52px);line-height:1.06;letter-spacing:-.045em;margin:14px 0 16px">一份长文档，<br><span class="grad">应该越写越稳。</span></h2>
           <p style="color:var(--muted);font-size:13px;line-height:1.85;margin:0 0 0;max-width:460px">
-            Codem 不把全文塞进模型。它先拆结构、再分节写、最后对账。
+            Codem 不把全文塞进一次对话。它先拆结构、再分节写、最后对账。
             结构、版本、引用、覆盖都做到，长文才不会越写越散。
           </p>
           <div class="pipeline" aria-label="长文档流程">
@@ -965,7 +965,7 @@
         <article class="trust-card" data-reveal>
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></svg></div>
           <h3>来源可查</h3>
-          <p>每个结论能回到消息、页码、文件或提交。靠证据，不靠「模型记得」。</p>
+          <p>每个结论能回到消息、页码、文件或提交。靠证据，不靠硬记。</p>
         </article>
         <article class="trust-card" data-reveal data-delay="1">
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4Z"/><path d="M9 12l2 2 4-4"/></svg></div>
@@ -991,17 +991,17 @@
       <div class="section-head" data-reveal>
         <div class="eyebrow">和常见做法比</div>
         <h2>差别在长任务<br>能不能接住。</h2>
-        <p>常见做法把上下文当一次性容器；Codem 把对话、文档、记忆、任务都留下记录，能查、能停、能回滚。</p>
+        <p>常见做法把对话当一次性容器；Codem 把对话、文档、记忆、任务都留下记录，能查、能停、能回滚。</p>
       </div>
       <div class="compare-wrap" data-reveal data-claim="C01 C03 C05 C08 C10 C12">
         <table class="compare">
           <thead><tr><th>场景</th><th>常见做法</th><th>Codem 的做法</th></tr></thead>
           <tbody>
-            <tr><td>聊到窗口满</td><td class="old">总结一下，或者开新会话；细节靠摘要保留。</td><td class="new"><b>同一条对话，后台换段</b>；旧原文不删，交接单带上下文。</td></tr>
+            <tr><td>聊到窗口满</td><td class="old">总结一下，或者开新会话；细节靠摘要保留。</td><td class="new"><b>同一条对话，后台整理</b>；旧原文不删，交接单带关键信息。</td></tr>
             <tr><td>长文档写作</td><td class="old">切块检索，跨章节结论容易接不上。</td><td class="new"><b>先拆结构，再分节写</b>；账本记录覆盖、引用和未验部分。</td></tr>
             <tr><td>长期记忆</td><td class="old">一段全局摘要；来源、有效期、冲突都看不见。</td><td class="new"><b>一条条有来源的记录</b>；按范围取，冲突保留双方。</td></tr>
             <tr><td>多 Agent</td><td class="old">多个窗口、转发聊天；重复和冲突难查。</td><td class="new"><b>共享任务和产物</b>；有领取、回滚、独立验收。</td></tr>
-            <tr><td>出错之后</td><td class="old">不知道模型当时看了什么，很难复现。</td><td class="new"><b>记录来源和上下文</b>；能复盘、能回滚、能找到当时的来源。</td></tr>
+            <tr><td>出错之后</td><td class="old">不知道当时用了哪些材料，很难复现。</td><td class="new"><b>记录来源和用料</b>；能复盘、能回滚、能找到当时的来源。</td></tr>
           </tbody>
         </table>
       </div>
@@ -1019,7 +1019,7 @@
         <a class="detail-card" href="context-thread.html" data-reveal>
           <div class="dc-num">01</div>
           <h3>对话为什么不会断</h3>
-          <p>Session 和上下文段是什么关系；压缩和换段分别做什么；旧消息放在哪。</p>
+          <p>它怎么收好前一段、旧消息放在哪、你怎么接着聊。</p>
           <span>看实现 →</span>
         </a>
         <a class="detail-card" href="document-os.html" data-reveal data-delay="1">
@@ -1053,7 +1053,7 @@
     <div class="wrap final-inner" data-reveal data-claim="C01 C13">
       <div class="kicker"><span class="dot"></span> 长任务，不必从第一句重来</div>
       <h2>让下一次长任务，<br><span class="grad">从第一句到最后一句都不丢。</span></h2>
-      <p>不重开、不反复解释、不把整篇文档塞给模型。上下文应该是一个能反复用的工作台。</p>
+      <p>不重开、不反复解释、不把整篇文档塞进对话。对话应该是一个能反复用的工作台。</p>
       <div class="final-actions">
         <a class="btn primary" href="context-os-details.html">看实现细节
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -1062,7 +1062,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
         </a>
       </div>
-      <div class="final-note">对话主线 · 后台换段 · 文档账本 · 记忆来源 · 任务验收</div>
+      <div class="final-note">对话主线 · 后台整理 · 文档账本 · 记忆来源 · 任务验收</div>
     </div>
   </section>
 </main>

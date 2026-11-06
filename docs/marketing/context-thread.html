@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Codem · 对话为什么不会断</title>
-<meta name="description" content="Codem 长对话实现细节：Session、ContextEpoch、压缩与换段、交接单、旧内容检索。">
+<title>Codem · 聊到第 300 轮，为什么不用重开</title>
+<meta name="description" content="Codem 长对话：窗口快满时，你继续输入，旧消息还在，Codem 在后台整理前一段并接着往下做。">
 <link rel="stylesheet" href="./context-os-detail.css">
 </head>
 <body>
@@ -29,13 +29,13 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <div class="eyebrow">01 / 对话主线</div>
-      <h1>一条对话，<br>内部为什么要分成几段？</h1>
-      <p>Codem 把「你看到的对话」和「模型这一轮看到的内容」分开存。旧消息留着，模型每轮只拿当前需要的一段。这样对话不用重开，模型也不会被整段历史压住。</p>
+      <div class="eyebrow">01 / 长对话</div>
+      <h1>聊到第 300 轮，<br>为什么不用重开？</h1>
+      <p>你继续打字就行。Codem 会在后台把已经处理完的部分收好，留一份交接记录，再从新的一段接着做。旧消息还在，往上翻、搜索都能找到。</p>
       <div class="meta">
-        <span class="status"><i></i> 完整时间线已能用</span>
-        <span class="status partial"><i></i> 自动换段部分能用</span>
-        <span class="status target"><i></i> 自动判断仍是还在做</span>
+        <span class="status"><i></i> 完整历史已能用</span>
+        <span class="status partial"><i></i> 自动整理部分能用</span>
+        <span class="status target"><i></i> 自动判断还在做</span>
       </div>
     </div>
   </section>
@@ -43,115 +43,115 @@
   <div class="wrap layout">
     <aside class="toc" aria-label="页内目录">
       <div class="toc-label">本页目录</div>
-      <a href="#data">01 数据结构</a>
-      <a href="#switch">02 压缩还是换段</a>
-      <a href="#request">03 一次请求</a>
+      <a href="#see">01 你会看到什么</a>
+      <a href="#full">02 快满时发生什么</a>
+      <a href="#example">03 一次真实对话</a>
       <a href="#history">04 旧内容怎么找</a>
       <a href="#limits">05 边界</a>
-      <a href="#map">06 代码位置</a>
+      <a href="#dev">06 开发视角</a>
     </aside>
 
     <article>
-      <section id="data">
-        <div class="sec-kicker">01 / 数据结构</div>
-        <h2>一条对话，两个对象：Session 和 ContextEpoch。</h2>
-        <p class="lead">你看到的那一条聊天，在 Codem 里是一个 <code>Session</code>。模型这一轮实际拿到什么，由最新的 <code>ContextEpoch</code> 决定。</p>
-        <p>名字不用背，先记住一件事：<strong>工作段就是模型这一轮看到的那段上下文。</strong> 它在对话内部，不会新建对话。换段之后，对话记忆、侧边栏、远程查看都还在。</p>
-
-<pre><code><span class="cm">// 逻辑关系</span>
-<span class="key">Session</span>（对话主线）
-  ├─ <span class="key">ContextEpoch</span> 1  kind=<span class="str">"compact"</span>   <span class="cm">// 段内压缩</span>
-  ├─ <span class="key">ContextEpoch</span> 2  kind=<span class="str">"switch"</span>    <span class="cm">// 换工作段</span>
-  └─ <span class="key">ContextEpoch</span> 3  kind=<span class="str">"switch"</span>
-       cutoffMessageId = <span class="str">"msg_..."</span>       <span class="cm">// 从这条消息之后开始看</span></code></pre>
+      <section id="see">
+        <div class="sec-kicker">01 / 你会看到什么</div>
+        <h2>你看到的，还是一条对话。</h2>
+        <p class="lead">普通做法里，窗口满了会提示你总结，或者新开一个对话。在 Codem 里，你继续输入；它不会多出一条「新会话」，也不会让你把背景重讲一遍。</p>
 
         <div class="grid-2">
-          <div class="box"><h4>你看到的：时间线</h4><p>所有消息都在，包括被压缩的旧消息。可以搜索、回读、导出。对应 <code>listTimelineMessages</code>。</p></div>
-          <div class="box"><h4>模型看到的：本轮的版本</h4><p>只取最新检查点之后的 marker + 尾部消息。对应 <code>listMessages</code> / <code>ContextView</code>。</p></div>
+          <div class="box">
+            <h4>你会看到</h4>
+            <p>同一条聊天；第 1 天说过的话还在；输入框一直能用；回答接着上文，不会突然失忆。</p>
+          </div>
+          <div class="box">
+            <h4>Codem 在后台做</h4>
+            <p>把已经处理完的内容收成一份交接；只把这次要用的材料带上；旧内容放回历史，不删除。</p>
+          </div>
         </div>
 
-        <p><code>cutoffMessageId</code> 是按<strong>消息 id</strong>定位的，不按时间、不按摘要位置。模型从哪条消息开始看，可以精确复现；旧消息一条没删。</p>
-        <div class="callout"><b>换段为什么不新建 Session？</b> 对话记忆、侧边栏、远程查看、分叉都挂在 Session 上。新建 Session 会把「换工作段」变成「换对话」。Codem 的做法是：<b>Session 不变，只换模型看到的那一段。</b></div>
-        <span class="status"><i></i> 检查点 / cutoff / 完整时间线已有实现</span>
+        <p>你可以像平时一样往上翻，也可以搜索旧消息。侧边栏、远程查看、分叉都还是这条对话，不会变成另一条。</p>
+        <div class="callout"><b>这些都在后台完成。</b> 你继续用同一条对话，往上翻、搜索、接着问，都不受影响。</div>
       </section>
 
-      <section id="switch">
-        <div class="sec-kicker">02 / 压缩还是换段</div>
-        <h2>快满时，有两种处理：压缩，或者换段。</h2>
-        <p>压缩和换段用在不同的时点。压缩适合任务还没完、但过程可以收起来的时候；换段适合这一段确实可以收尾，或者压完还是太满。</p>
-
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>动作</th><th>什么时候用</th><th>发生什么</th></tr></thead>
-            <tbody>
-              <tr><td>压缩 compact</td><td>任务没结束，过程多、结论少</td><td>写检查点摘要，保留最近原文和关键用户消息；旧消息不删，模型从检查点之后继续。</td></tr>
-              <tr><td>换段 switch</td><td>任务告一段落，或连续压缩后仍然太满</td><td>写交接单，带最近原文和锚点；同一个 Session 里开新工作段；旧段仍可查。</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <section id="full">
+        <div class="sec-kicker">02 / 快满时发生什么</div>
+        <h2>窗口快满时，Codem 会先看任务做到哪。</h2>
+        <p>它不会一看到占用高就打断你。先看你的要求有没有做完、还有没有没回答的问题、有没有正在跑的工具，再决定是收一收，还是从新的一段接着做。</p>
 
         <ol class="steps">
-          <li><b>先量占用</b><span>系统提示、工具定义、输出预留都算进去，不只数聊天字数。</span></li>
-          <li><b>看任务有没有结束</b><span>看用户要求、未回答的问题、还在跑的工具和验收条件，不要只听模型说「完成了」。</span></li>
-          <li><b>写交接单</b><span>目标、限制、已完成、未完成、关键决定、关键文件、下一步、去哪里查。</span></li>
-          <li><b>保留最近原文</b><span>交接单负责理解，最近原文负责语气、细节和刚说过的话；两者都要有。</span></li>
-          <li><b>换段，不换对话</b><span>新段从交接单和尾部消息开始；旧消息仍在时间线；切换中的输入要转交，不丢。</span></li>
+          <li><b>先看任务有没有告一段落</b><span>你的要求做完了吗？还有没有等你确认的事？工具还在跑吗？别只听它说「完成了」。</span></li>
+          <li><b>没结束，先把过程收起来</b><span>写一份简短交接：做到哪、试过什么、卡在哪、下一步做什么。最近几轮对话保留原文。</span></li>
+          <li><b>结束了，就写交接单</b><span>目标、已完成、未完成、关键文件、下一步、去哪里查。下一段从这张单子开始。</span></li>
+          <li><b>从新的一段继续</b><span>你继续输入。界面上还是同一条对话，旧消息还在时间线里。</span></li>
+          <li><b>切换中的输入不丢</b><span>你在这时发的消息会排队，提交到新的一段，不会重复，也不会掉。</span></li>
         </ol>
 
-        <div class="callout warn"><b>当前状态：</b>压缩路径已有检查点和完整时间线；自动换段还在分阶段开发，当前版本以压缩为主。</div>
+        <div class="callout warn"><b>当前版本：</b>完整历史一直保留；自动整理已经能用一部分；什么时候该整理、什么时候该换一段，还在继续做。现在以整理为主。</div>
       </section>
 
-      <section id="request">
-        <div class="sec-kicker">03 / 一次请求</div>
-        <h2>把一次真实请求拆开看。</h2>
-        <p>假设你说：「把登录流程改成支持扫码，保留原来的账号密码登录，补测试。」聊到第 80 轮，当前工作段快满了。</p>
+      <section id="example">
+        <div class="sec-kicker">03 / 一次真实对话</div>
+        <h2>你让 Codem 改登录流程，聊到第 80 轮。</h2>
+        <p>这时对话已经很长，快装不下了。你不需要做什么，继续问就行。</p>
         <ol class="steps">
-          <li><b>记下任务</b><span>这句话进入对话主线；当前任务状态变成“改登录流程 + 补测试”。</span></li>
-          <li><b>写交接</b><span>目标、已改文件、未完成的测试、关键决定（保留旧登录）、下一步。不要只写「登录改造中」。</span></li>
-          <li><b>留最近原文</b><span>保留最近几轮的用户原话和关键工具结果，避免新段不知道刚才试过什么。</span></li>
-          <li><b>开新工作段</b><span>新段从交接单、最近原文和锚点开始；旧段仍在时间线，需要时可回读。</span></li>
-          <li><b>继续输入</b><span>你不需要点“新对话”；切换过程中输入会排队，提交到新段，不重复、不丢。</span></li>
+          <li><b>你继续问</b><span>「扫码登录的测试补一下，账号密码登录别动。」</span></li>
+          <li><b>Codem 收好上一段</b><span>把已经改过的文件、没做完的测试、保留旧登录这个决定，写进交接；最近几轮原话留着。</span></li>
+          <li><b>你看到的没有变化</b><span>还是同一条对话。它接着改代码，不会弹「请开新会话」，也不会让你再讲一遍为什么要保留旧登录。</span></li>
+          <li><b>你回头问旧决定</b><span>过几轮你问「刚才为什么不用轮询？」Codem 会去翻旧消息或搜索，不会回你「我不记得」。</span></li>
         </ol>
-        <div class="callout"><b>这一步解决「做一步就停了」：</b> 模型快满时把任务状态交出去，换一个干净的工作段继续做。模型不用把整段历史都装进去，任务也不用重来。</div>
+        <div class="callout"><b>你要做的事只有一件：继续输入。</b> 整理、交接、换段都在后台完成；旧内容一直能翻。</div>
       </section>
 
       <section id="history">
-        <div class="sec-kicker">04 / 旧内容</div>
-        <h2>旧消息没有消失，只是不再全部塞给模型。</h2>
+        <div class="sec-kicker">04 / 旧内容怎么找</div>
+        <h2>旧消息没有被删，只是不再全部塞进这一轮。</h2>
         <ul>
-          <li><strong>完整时间线：</strong>按顺序看所有消息，包括被压缩的旧消息。</li>
-          <li><strong>全文检索：</strong>按关键词找旧对话；中文按字符/词组处理，不要求先分词。</li>
-          <li><strong>锚点：</strong>交接单记录“第几段、第几条”，需要时直接回到原文。</li>
-          <li><strong>工具结果：</strong>长输出落盘/落记录，模型按定位读取，不长期占上下文。</li>
+          <li><strong>往上翻：</strong>所有消息按时间排着，包括很早以前的内容。</li>
+          <li><strong>搜索：</strong>输入关键词，找旧对话里的原话；中文按字符/词组处理。</li>
+          <li><strong>点引用：</strong>回答里的来源能回到原消息、文件或页码。</li>
+          <li><strong>看工具结果：</strong>长输出留在记录里，需要时再打开，不一直占着对话。</li>
         </ul>
-        <p>摘要只是入口，原文才是底。用户想核对时可以翻时间线；模型需要细节时按锚点或检索读那一段。</p>
-        <div class="callout warn"><b>边界：</b>检索靠关键词和锚点，不能保证「什么都能想起来」。交接单要写清楚去哪里查，不要只写结论。</div>
+        <p>摘要只是帮你快速找到入口。要核对细节，回到原文；要接着做，Codem 只取这次相关的部分。</p>
+        <div class="callout warn"><b>边界：</b>搜索靠关键词和引用，不能保证「什么都能想起来」。所以交接单会写清楚去哪里查，别只写一句结论。</div>
       </section>
 
       <section id="limits">
         <div class="sec-kicker">05 / 边界</div>
-        <h2>边界：它做不到什么。</h2>
+        <h2>它做不到什么。</h2>
         <ul>
-          <li><strong>单次请求仍受窗口限制。</strong> Codem 做的是把旧内容放到可检索的地方，让模型需要时能取。</li>
-          <li><strong>检索可能漏。</strong> 关键结论要带锚点，交接单要写清楚去哪里查。</li>
-          <li><strong>会有成本。</strong> 压缩、换段、检索都要花时间；省下的是重新解释和重做的成本。</li>
+          <li><strong>单次回复仍有窗口上限。</strong> Codem 做的是把旧内容放到可搜索的地方，需要时再取。</li>
+          <li><strong>搜索可能漏。</strong> 所以关键结论要带来源，交接单要写清楚去哪里找。</li>
+          <li><strong>整理需要时间。</strong> 长对话切换时会有一次短暂停顿；换来的是不用重讲背景、不用重做。</li>
         </ul>
       </section>
 
-      <section id="map">
-        <div class="sec-kicker">06 / 代码位置</div>
-        <h2>代码在哪。</h2>
+      <section id="dev">
+        <div class="sec-kicker">06 / 开发视角</div>
+        <h2>给开发看的实现名词。</h2>
+        <p>如果你不写代码，这一节可以跳过。</p>
+
+        <p>在实现里，你看到的这条对话记作 <code>Session</code>；每次整理或换段记作 <code>ContextEpoch</code>。换段只改「下一次给模型看哪些消息」，不改对话本身，所以侧边栏、远程查看、分叉都还在。</p>
+
+<pre><code><span class="cm">// 逻辑关系</span>
+<span class="key">Session</span>（对话主线）
+  ├─ <span class="key">ContextEpoch</span> 1  kind=<span class="str">"compact"</span>   <span class="cm">// 段内整理</span>
+  ├─ <span class="key">ContextEpoch</span> 2  kind=<span class="str">"switch"</span>    <span class="cm">// 换到新一段</span>
+  └─ <span class="key">ContextEpoch</span> 3  kind=<span class="str">"switch"</span>
+       cutoffMessageId = <span class="str">"msg_..."</span>       <span class="cm">// 从这条消息之后开始看</span></code></pre>
+
+        <p><code>cutoffMessageId</code> 按消息 id 定位，不按时间猜。模型从哪条消息开始看可以精确复现；完整时间线不变，旧消息一条没删。</p>
+
         <div class="table-wrap">
           <table>
             <thead><tr><th>位置</th><th>负责什么</th><th>状态</th></tr></thead>
             <tbody>
               <tr><td>context-view.ts / context-epochs.ts</td><td>检查点、cutoff、完整时间线与模型看到的版本</td><td>已有实现</td></tr>
-              <tr><td>agentic-loop.ts / compaction-budget.ts</td><td>上下文压力、压缩触发、保留预算</td><td>已有实现</td></tr>
+              <tr><td>agentic-loop.ts / compaction-budget.ts</td><td>窗口压力、整理触发、保留预算</td><td>已有实现</td></tr>
               <tr><td>message.ts / session-search.ts</td><td>时间线、全文检索、旧消息回读</td><td>已有实现</td></tr>
               <tr><td>prompt/prompt.ts</td><td>稳定前缀、易变尾部、缓存边界</td><td>已有实现</td></tr>
             </tbody>
           </table>
         </div>
+
         <div class="end">
           <h3>继续看其他技术点</h3>
           <p>对话不断只是第一层。长文档、记忆、交付对账各有自己的实现页。</p>
@@ -164,7 +164,7 @@
     </article>
   </div>
 </main>
-<footer><div class="wrap" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap"><span>codem · 对话主线</span><span>产品概念页 · 具体能力以版本与验收为准</span></div></footer>
+<footer><div class="wrap" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap"><span>codem · 长对话</span><span>产品概念页 · 具体能力以版本与验收为准</span></div></footer>
 <script src="./context-os-detail.js"></script>
 </body>
 </html>
