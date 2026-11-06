@@ -156,7 +156,9 @@ class _ChatPageState extends State<ChatPage> {
                 onStop: state.stop,
                 running: state.running,
                 enabled: state.connected || state.demo,
-                model: widget.session.model ?? 'deepseek-flash',
+                model: state.activeHost?.kind == HostKind.local && state.localModel.model.isNotEmpty
+                    ? state.localModel.model
+                    : widget.session.model ?? 'deepseek-flash',
                 hint: state.demo ? '演示模式：输入消息试试' : '输入消息…  @ 提及文件 / 命令',
                 onAttach: state.attachmentsSupported || state.demo ? state.pickImage : null,
                 onMention: () => _comingSoon(context, '@ 文件'),

@@ -8,6 +8,7 @@ import '../../design/tokens.dart';
 import '../../state/app_state.dart';
 import '../../utils/format.dart';
 import '../hosts/host_sheets.dart';
+import '../hosts/local_host_sheet.dart';
 
 class SessionsPage extends StatelessWidget {
   const SessionsPage({super.key, required this.state, required this.onOpenSession});
@@ -52,6 +53,14 @@ class SessionsPage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(CodemSpace.xl, 0, CodemSpace.xl, CodemSpace.sm),
                   child: _DemoBanner(
                     onTap: () => showHostsSheet(context, state),
+                  ),
+                ),
+              if (!state.connected && !state.demo && state.localHostNeedsStart)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(CodemSpace.xl, 0, CodemSpace.xl, CodemSpace.sm),
+                  child: _LocalHostBanner(
+                    message: state.localHostError,
+                    onTap: () => showLocalHostSheet(context, state),
                   ),
                 ),
               if (state.error != null)
@@ -208,6 +217,63 @@ class _DemoBanner extends StatelessWidget {
                 child: Text(
                   '当前是演示数据 · 点这里连接电脑',
                   style: context.texts.labelSmall?.copyWith(fontSize: 12, color: palette.accent),
+                ),
+              ),
+              Icon(LucideIcons.chevronRight, size: 14, color: palette.accent),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 有本机 Host 配置但没启动时的入口条：点开配置面板启动，而不是报错。
+class _LocalHostBanner extends StatelessWidget {
+  const _LocalHostBanner({required this.onTap, this.message});
+
+  final VoidCallback onTap;
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(CodemRadius.sm),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: CodemSpace.md, vertical: CodemSpace.sm),
+          decoration: BoxDecoration(
+            color: palette.accent.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(CodemRadius.sm),
+            border: Border.all(color: palette.accent.withValues(alpha: 0.18)),
+          ),
+          child: Row(
+            children: [
+              Icon(LucideIcons.smartphone, size: 15, color: palette.accent),
+              const SizedBox(width: CodemSpace.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '启动本机 Host',
+                      style: context.texts.labelSmall?.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: palette.accent,
+                      ),
+                    ),
+                    if (message != null)
+                      Text(
+                        message!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.texts.labelSmall?.copyWith(fontSize: 11),
+                      ),
+                  ],
                 ),
               ),
               Icon(LucideIcons.chevronRight, size: 14, color: palette.accent),

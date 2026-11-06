@@ -2,6 +2,14 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.13] - 2026-11-06
+
+### 新增
+
+- Flutter Android 客户端内置本机 Host：APK 内含 PRoot + Ubuntu + Node + Codem Host，可不连电脑直接对话、跑工具；本机模型/项目配置、共享工作区 `/storage/emulated/0/codem/workspace`。
+- 本机 Host 原生面板与 MethodChannel；API Key 使用 AndroidKeyStore AES/GCM 加密，Host 通过 stdin 接收。
+- Android 本机 APK 首次启动引导「所有文件访问」，拒绝可回退私有工作区。
+
 ## [1.18.12] - 2026-11-06
 
 ### 新增

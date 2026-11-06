@@ -4,8 +4,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../design/components/common.dart';
 import '../../design/theme.dart';
 import '../../design/tokens.dart';
+import '../../platform/local_host.dart';
 import '../../state/app_state.dart';
 import '../hosts/host_sheets.dart';
+import '../hosts/local_host_sheet.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.state});
@@ -68,8 +70,10 @@ class SettingsPage extends StatelessWidget {
                   Divider(color: palette.hairline, height: 1),
                   _SettingRow(
                     icon: LucideIcons.plus,
-                    title: '添加电脑',
-                    value: 'Tailscale 地址 / 配对码',
+                    title: '添加主机',
+                    value: LocalHostBridge.platformSupported
+                        ? '本机 / Tailscale / 配对码'
+                        : 'Tailscale 地址 / 配对码',
                     onTap: () => showAddHostSheet(context, state),
                   ),
                   Divider(color: palette.hairline, height: 1),
@@ -92,6 +96,38 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
             ),
+            if (LocalHostBridge.platformSupported) ...[
+              const SizedBox(height: CodemSpace.xl),
+              _SectionTitle('本机 Host'),
+              SectionCard(
+                child: Column(
+                  children: [
+                    _SettingRow(
+                      icon: LucideIcons.smartphone,
+                      title: '本机运行',
+                      value: _localStatusText(state),
+                      onTap: () => showLocalHostSheet(context, state),
+                    ),
+                    Divider(color: palette.hairline, height: 1),
+                    _SettingRow(
+                      icon: LucideIcons.cpu,
+                      title: '模型',
+                      value: state.localModel.hasKey
+                          ? (state.localModel.model.isEmpty ? '已配置' : state.localModel.model)
+                          : '未配置',
+                      onTap: () => showLocalHostSheet(context, state),
+                    ),
+                    Divider(color: palette.hairline, height: 1),
+                    _SettingRow(
+                      icon: LucideIcons.folder,
+                      title: '当前项目',
+                      value: (state.localProject ?? '').isEmpty ? '工作区根目录' : state.localProject!,
+                      onTap: () => showLocalHostSheet(context, state),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: CodemSpace.xl),
             _SectionTitle('数据与隐私'),
             SectionCard(
@@ -144,6 +180,15 @@ class SettingsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 设置页本机 Host 一行显示的状态文案。
+String _localStatusText(CodemAppState state) {
+  if (state.localHostBusy) return '处理中…';
+  if (!state.localHostAvailable) return '这台设备不支持';
+  if (state.localHostStatus.running) return '运行中 · 127.0.0.1';
+  if (state.localHostNeedsPermission) return '待授权';
+  return '未运行';
 }
 
 class _SectionTitle extends StatelessWidget {

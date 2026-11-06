@@ -12,6 +12,7 @@ import 'models.dart';
 class HostStore {
   static const _hostsKey = 'codem.hosts.v1';
   static const _cookiePrefix = 'codem.host.cookie.';
+  static const _localProjectKey = 'codem.localHost.project';
 
   Future<List<HostProfile>> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -51,5 +52,19 @@ class HostStore {
   Future<void> saveCookie(HostProfile host, String cookie) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('$_cookiePrefix${host.id}', cookie);
+  }
+
+  /// 本机 Host 最近选择的项目（空字符串 = 工作区根）。
+  ///
+  /// 原生在 Host 停止时的 `status` 不带 `project`，这里留一份 Dart 侧记忆，
+  /// 编辑页重新打开时能回填上次选择。
+  Future<String?> loadLocalProject() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_localProjectKey);
+  }
+
+  Future<void> saveLocalProject(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localProjectKey, name);
   }
 }

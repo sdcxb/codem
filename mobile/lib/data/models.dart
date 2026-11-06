@@ -24,11 +24,18 @@ class HostProfile {
   /// 远程设备凭据（HttpOnly cookie 的客户端存储；不进日志）。
   final String? cookie;
 
-  HostProfile copyWith({bool? online, int? lastSeenAt, String? cookie, String? name}) {
+  HostProfile copyWith({
+    bool? online,
+    int? lastSeenAt,
+    String? cookie,
+    String? name,
+    String? baseUrl,
+  }) {
     return HostProfile(
       id: id,
       name: name ?? this.name,
-      baseUrl: baseUrl,
+      // 本机 Host 每次启动端口/令牌都会变，baseUrl 必须能跟着换。
+      baseUrl: baseUrl ?? this.baseUrl,
       kind: kind,
       online: online ?? this.online,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,

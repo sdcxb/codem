@@ -222,6 +222,9 @@ packages/host/web/ui.css
 # Android 外壳的手写构建产物与调试签名（不进 git）
 android-shell/build/
 android-shell/debug.keystore
+# Flutter 内置 Host 的生成资产（由 mobile/android/tools/stage-local-host.mjs 从 android-shell stage 复制）
+mobile/android/app/src/main/assets/
+mobile/android/app/src/main/jniLibs/
 
 # 阶段 3 的本机构建输入（rootfs / node / proot / 交叉编译产物）
 .android-proot/
