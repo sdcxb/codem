@@ -710,32 +710,32 @@
       <div class="section-head" data-reveal>
         <div class="eyebrow">先说痛点</div>
         <h2>长任务做到一半，<br>最怕什么？</h2>
-        <p>不是模型不会写代码。是它工作到一半，工作台不够用了：窗口装不下，摘要记不全，文档接不上，几个 Agent 各说各话。</p>
+        <p>不是模型不会写代码。是它做一步就被打断，写着写着忘了前文，用户只能看摘要，代码改完文档还是旧的。</p>
       </div>
       <div class="problem-grid">
         <article class="problem" data-reveal>
-          <div class="num">01 / 窗口满</div>
-          <h3>聊到一半，只能重开。</h3>
-          <p>你刚解释完背景，它说上下文不够了。要么手动总结，要么开新对话，再把路径、约束、报错重讲一遍。</p>
-          <span class="consequence">结果：长任务被切成很多段</span>
+          <div class="num">01 / 水位</div>
+          <h3>做一步，就停了。</h3>
+          <p>长对话里，刚改完一个文件、跑完一次测试，下一轮就停了。不是任务做完了，是上下文快满了；只能压缩、重开，或者把刚说过的话再讲一遍。</p>
+          <span class="consequence">结果：任务按水位中断，不按步骤完成</span>
         </article>
         <article class="problem" data-reveal data-delay="1">
-          <div class="num">02 / 摘要丢细节</div>
-          <h3>总结很顺，细节没了。</h3>
-          <p>摘要写「已完成登录改造」，但没写改了哪几个文件、哪条命令失败过、哪个方案被否掉。下次接着做，很容易走回头路。</p>
-          <span class="consequence">结果：越总结，越容易重复犯错</span>
+          <div class="num">02 / 健忘</div>
+          <h3>写着写着，前文就忘了。</h3>
+          <p>写第 8 节时，第 2 节的术语、第 5 节的数字、刚刚确认的口径都不在眼前。摘要没写进去，就接不上；重新读一遍，又装不下。</p>
+          <span class="consequence">结果：越写越散，前后容易矛盾</span>
         </article>
         <article class="problem" data-reveal data-delay="2">
-          <div class="num">03 / 文档接不上</div>
-          <h3>读到第 20 章，前面忘了。</h3>
-          <p>把 300 页文档切块检索，能找到相似段落，却接不上前后章节的结论、术语和数字。写着写着，前后矛盾。</p>
-          <span class="consequence">结果：长文越写越散</span>
+          <div class="num">03 / 只剩摘要</div>
+          <h3>想翻完整记忆，却只看到摘要。</h3>
+          <p>用户希望看到所有原文和记忆，但模型一次只能带一部分。于是系统不断压缩，用户看到的只是被加工过的一手摘要，很难判断丢了什么。</p>
+          <span class="consequence">结果：只能相信摘要，没法核对原文</span>
         </article>
         <article class="problem" data-reveal data-delay="3">
-          <div class="num">04 / Agent 各说各话</div>
-          <h3>几个 Agent，靠转发聊天。</h3>
-          <p>一个写完交给另一个，靠复制聊天记录；谁做过、做到哪、谁验收，没有统一状态。重复、冲突、漏做，很难查。</p>
-          <span class="consequence">结果：人越多，越乱</span>
+          <div class="num">04 / 收尾失配</div>
+          <h3>一分工，收尾就散了。</h3>
+          <p>代码、文档、测试分给不同 Agent，谁都说自己完成了；但没人核对文档有没有同步、版本有没有对齐。最后代码是新版，文档还是旧版，任务看板上却全写着「完成」。</p>
+          <span class="consequence">结果：任务显示完成，交付物对不上</span>
         </article>
       </div>
     </div>
@@ -822,15 +822,15 @@
         <article class="pillar" data-reveal data-claim="C08 C09">
           <div class="pillar-copy">
             <div class="pillar-index">03 / 记忆</div>
-            <h3>记忆不是一句摘要，<br>是一条有出处的记录。</h3>
-            <p>「用户喜欢简洁」这句话，可能是从三次对话里推出来的。Codem 会记录它从哪来、在哪个项目生效、什么时候写的、现在是否还有效。</p>
-            <p>两条记忆冲突时，不偷偷覆盖：保留双方，标出来源。自动提取只产生候选；你手动写的记忆，不会被自动流程删掉或改掉。</p>
+            <h3>完整原文还在，<br>记忆只是索引。</h3>
+            <p>用户想翻所有对话和原文，不用只相信摘要。旧消息留在完整时间线里，可以搜索、回读、导出；模型每次只取和当前任务相关的那几条。</p>
+            <p>记忆本身也带出处：这句话从哪来、在哪个项目生效、什么时候写的、现在是否还有效。两条记忆冲突时，不偷偷覆盖：保留双方，标出来源。</p>
             <ul>
+              <li>原文不删；摘要只是入口，不是唯一真相</li>
               <li>来源、作用范围、时间、状态，都能查</li>
-              <li>冲突保留双方，不静默覆盖</li>
-              <li>手动记忆优先；删除由你决定</li>
+              <li>手动记忆优先；自动提取不会删改它</li>
             </ul>
-            <div class="pillar-tags"><span>来源</span><span>作用范围</span><span>冲突</span><span>可撤销</span></div>
+            <div class="pillar-tags"><span>完整时间线</span><span>可回读</span><span>有来源</span><span>可撤销</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -849,16 +849,16 @@
 
         <article class="pillar reverse" data-reveal data-claim="C10">
           <div class="pillar-copy">
-            <div class="pillar-index">04 / 多 Agent</div>
-            <h3>共享任务和文件，<br>不共享一整段聊天。</h3>
-            <p>写文档、查资料、做核验，可以分给不同角色。但交接的不是「我把聊天记录发给你」，而是一份任务和一组文件：目标、输入、产物、验收标准。</p>
-            <p>谁领了任务、试到第几次、结果交回没有、谁验收，都有状态。旧结果不会覆盖新结果；卡住的任务能被看见，不用靠人盯聊天窗口。</p>
+            <div class="pillar-index">04 / 交付对账</div>
+            <h3>分工之后，<br>要有一张交付清单。</h3>
+            <p>大任务最容易漏的不是代码，是收尾：架构文档、CHANGELOG、测试记录、引用。Codem 把「完成」写成一张清单：代码、文档、测试、引用，各自有没有更新、有没有核验。</p>
+            <p>Agent 可以分工，但共享任务和产物。谁改了什么、文档有没有同步、验收有没有过，都落在任务里；不是靠人盯聊天窗口，也不是每个 Agent 各自说「我完成了」。</p>
             <ul>
               <li>任务有领取、尝试、回滚，不重复执行</li>
-              <li>文档、代码、测试、决定，都是同一种工作产物</li>
-              <li>验收角色独立检查，不自己批自己</li>
+              <li>代码、文档、测试、决定，都是同一种工作产物</li>
+              <li>验收角色检查文档是否同步，不自己批自己</li>
             </ul>
-            <div class="pillar-tags"><span>任务状态</span><span>产物</span><span>验收</span><span>可回滚</span></div>
+            <div class="pillar-tags"><span>完成清单</span><span>文档对账</span><span>独立验收</span><span>可回滚</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -1030,8 +1030,8 @@
         </a>
         <a class="detail-card" href="context-os-details.html#agents" data-reveal data-delay="3">
           <div class="dc-num">04</div>
-          <h3>Agent 怎么协作</h3>
-          <p>任务怎么领、结果怎么交、旧结果怎么防覆盖、验收角色怎么独立。</p>
+          <h3>大任务怎么收尾</h3>
+          <p>Agent 怎么分工、任务怎么交、代码和文档怎么一起验收，避免「都完成了，但版本对不上」。</p>
           <span>看实现 →</span>
         </a>
       </div>

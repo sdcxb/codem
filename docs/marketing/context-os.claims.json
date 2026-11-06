@@ -1,7 +1,7 @@
 {
   "schema": "codem.context-os.claims.v1",
   "page": "context-os.html",
-  "pageSha256": "3ce393bc6075e541057c81bc6b85fcb8580db16c36d4730aae89be08f710ade9",
+  "pageSha256": "40bd7892ad2e134e0ae0949a6c49bf6c11c576514021588165200b3e94444a2b",
   "updatedAt": "2026-11-06",
   "purpose": "把宣传页上的承诺变成可追溯的验收条目。页面负责表达，清单负责证明；不能通过改文案来让门禁变绿。",
   "statusMeaning": {
@@ -73,7 +73,7 @@
       "status": "partial",
       "owner": "document",
       "evidence": ["src/core/document/ledger.ts", "src/core/document/citation.ts"],
-      "acceptance": "Ledger 能在压缩/换段后保留覆盖状态；每个 claim 可回溯 citation；未读/未验章节可见。"
+      "acceptance": "Ledger 能在压缩/换段后保留覆盖状态；每个 claim 可回溯 citation；未读/未验章节可见；代码任务完成后检查相关文档版本是否同步。"
     },
     {
       "id": "C07",
@@ -113,7 +113,7 @@
       "status": "partial",
       "owner": "agents",
       "evidence": ["src/core/agent-teams/engine.ts", "src/core/subagent/runtime.ts"],
-      "acceptance": "任务有 claim/attempt/rollback；Agent 只拿任务相关切片；Verifier 独立检查；群聊不是唯一协调层。"
+      "acceptance": "任务有 claim/attempt/rollback；Agent 只拿任务相关切片；Verifier 独立检查；任务完成条件包含代码、文档、测试、引用，文档没同步不算完成。"
     },
     {
       "id": "C11",
