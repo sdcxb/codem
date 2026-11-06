@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <script>document.documentElement.classList.add('js');</script>
-<title>Codem · Context OS — 一个对话，装得下整个项目</title>
-<meta name="description" content="Codem Context OS：把上下文从一次性窗口，升级为可检索、可验证、可恢复的工作空间。Context OS、Document OS、Memory Graph、Artifact-centric Agents 四位一体。">
+<title>Codem · 一个对话，装得下整个项目</title>
+<meta name="description" content="Codem 的长对话与长文档能力：一条对话，内部换工作段；旧消息保留，长文档有账本，记忆有来源，Agent 有任务和验收。">
 <style>
   :root{
     --bg:#06070d;
@@ -64,6 +64,7 @@
     background:linear-gradient(100deg,#fff 4%,var(--violet-2) 38%,var(--cyan) 68%,#fff 96%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
   }
+  .nowrap{white-space:nowrap}
   .eyebrow{
     display:inline-flex;align-items:center;gap:10px;
     font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
@@ -475,6 +476,25 @@
   .footer-links a:hover{color:var(--text)}
   .footer-meta{font-size:8.5px;color:var(--faint);letter-spacing:.04em}
 
+  /* flow */
+  .flow-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .flow-step{position:relative;padding:20px 17px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.012))}
+  .flow-step:not(:last-child)::after{content:"→";position:absolute;right:-13px;top:50%;transform:translateY(-50%);color:var(--violet-2);font-size:13px;opacity:.7;z-index:1}
+  .flow-num{font-family:monospace;font-size:9px;letter-spacing:.14em;color:var(--violet-2);margin-bottom:22px}
+  .flow-step h3{font-size:15px;letter-spacing:-.02em;margin:0 0 8px}
+  .flow-step p{font-size:10.5px;line-height:1.7;color:var(--muted);margin:0}
+  .flow-note{margin-top:18px;padding:15px 18px;border-left:2px solid var(--cyan);background:rgba(110,231,255,.045);color:var(--muted);font-size:11.5px;line-height:1.7;border-radius:0 10px 10px 0}
+  .flow-note b{color:var(--text)}
+
+  /* detail cards */
+  .detail-links{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .detail-card{display:block;padding:20px 17px 17px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.025);transition:transform .2s,border-color .2s,background .2s}
+  .detail-card:hover{transform:translateY(-2px);border-color:rgba(139,124,255,.45);background:rgba(139,124,255,.07)}
+  .dc-num{font-family:monospace;font-size:9px;letter-spacing:.14em;color:var(--violet-2);margin-bottom:18px}
+  .detail-card h3{font-size:14px;line-height:1.35;letter-spacing:-.02em;margin:0 0 8px}
+  .detail-card p{font-size:10.5px;line-height:1.65;color:var(--muted);margin:0 0 15px}
+  .detail-card span{font-size:10px;color:var(--violet-2)}
+
   /* reveal */
   .js [data-reveal]{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.8,.2,1),transform .7s cubic-bezier(.2,.8,.2,1)}
   .js [data-reveal].in{opacity:1;transform:none}
@@ -493,6 +513,8 @@
     .float-doc{right:-2px}.float-mem{left:-2px}
     .problem-grid{grid-template-columns:repeat(2,1fr)}
     .trust-grid{grid-template-columns:repeat(2,1fr)}
+    .flow-grid,.detail-links{grid-template-columns:repeat(2,1fr)}
+    .flow-step:nth-child(2)::after{display:none}
     .arch-wrap{grid-template-columns:1fr}
     .trust-rail{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .trust-rail h3,.trust-rail .tr-label{grid-column:1/-1}
@@ -552,6 +574,8 @@
     .signal:first-child{border-top:0}
     .pipeline{grid-template-columns:repeat(2,1fr)}
     .pipe:nth-child(2n)::after{display:none}
+    .flow-grid,.detail-links{grid-template-columns:1fr}
+    .flow-step::after{display:none}
     .layer{grid-template-columns:1fr;gap:7px}
     .layer .chip{justify-self:start}
     .trust-rail{grid-template-columns:1fr}
@@ -576,13 +600,13 @@
       <div class="brand-word">codem<span>.</span></div>
     </a>
     <nav class="nav-links" aria-label="页面导航">
-      <a href="#problem">问题</a>
-      <a href="#system">四个平面</a>
-      <a href="#architecture">架构</a>
-      <a href="#documents">长文档</a>
-      <a href="#trust">可控性</a>
+      <a href="#problem">痛点</a>
+      <a href="#how">怎么做</a>
+      <a href="#flow">一次请求</a>
+      <a href="#document">长文档</a>
+      <a href="context-os-details.html">实现细节</a>
     </nav>
-    <a class="nav-cta" href="#final">看看它如何工作
+    <a class="nav-cta" href="context-os-details.html">看实现细节
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </a>
     <button class="menu-btn" id="menuBtn" aria-label="打开导航">
@@ -595,23 +619,23 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy" data-reveal>
-        <div class="eyebrow">Codem · Context OS</div>
-        <h1 data-claim="C01">一个对话，<br><span class="grad">装得下整个项目。</span></h1>
+        <div class="eyebrow">CODEM · 长对话与长文档</div>
+        <h1 data-claim="C01">聊到第 300 轮，<br><span class="grad">也不用重开对话。</span></h1>
         <p class="hero-lead" data-claim="C03">
-          长任务不必重开，大文档不必反复投喂，记忆不再靠猜。
-          Codem 把上下文从一次性的窗口，升级为可检索、可验证、可恢复的工作空间。
+          长任务做到一半，最怕窗口满了要重来。Codem 把一次长对话拆成<span class="nowrap">内部工作段</span>：
+          旧内容留在本地，模型每次只带当前需要的部分。你看到的，始终是一个对话。
         </p>
         <div class="hero-actions">
-          <a class="btn primary" href="#system">看懂四个平面
+          <a class="btn primary" href="#how">看它怎么工作
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
           </a>
-          <a class="btn" href="#architecture">查看架构
+          <a class="btn" href="context-os-details.html">看实现细节
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
         </div>
         <div class="hero-meta" data-claim="C11 C12">
-          <span><i></i> 一个连续 Thread</span>
-          <span><i></i> 原文可追溯</span>
+          <span><i></i> 一条对话主线</span>
+          <span><i></i> 旧消息不删除</span>
           <span><i></i> 本地优先</span>
           <span><i></i> 多模型可选</span>
         </div>
@@ -620,52 +644,52 @@
       <div class="hero-visual" data-reveal data-delay="1">
         <div class="thread-card" id="threadCard">
           <div class="thread-head">
-            <span class="live"><i></i> Live thread</span>
-            <span>Session 01 · 连续中</span>
+            <span class="live"><i></i> 对话主线</span>
+            <span>第 1 条对话 · 连续中</span>
           </div>
           <div class="thread-body">
             <div class="seg done">
               <div class="seg-line"></div><div class="seg-dot"></div>
               <div class="seg-card">
-                <div class="seg-meta">SEGMENT 01 · 已归档</div>
-                <div class="seg-title">理解需求与约束</div>
-                <div class="seg-tags"><span>12 facts</span><span>3 sources</span><span>handoff ready</span></div>
+                <div class="seg-meta">工作段 1 · 已结束</div>
+                <div class="seg-title">理解需求与限制</div>
+                <div class="seg-tags"><span>12 条事实</span><span>3 个来源</span><span>已写交接</span></div>
               </div>
             </div>
             <div class="seg done">
               <div class="seg-line"></div><div class="seg-dot"></div>
               <div class="seg-card">
-                <div class="seg-meta">SEGMENT 02 · 已归档</div>
+                <div class="seg-meta">工作段 2 · 已结束</div>
                 <div class="seg-title">拆解实现路径</div>
-                <div class="seg-tags"><span>8 decisions</span><span>2 risks</span></div>
+                <div class="seg-tags"><span>8 个决定</span><span>2 个风险</span></div>
               </div>
             </div>
             <div class="seg now">
               <div class="seg-line"></div><div class="seg-dot"></div>
               <div class="seg-card">
-                <div class="seg-meta">SEGMENT 03 · 当前工作集</div>
-                <div class="seg-title">写实现，保持全局一致</div>
-                <div class="seg-tags"><span>only what's needed</span><span>source-linked</span></div>
+                <div class="seg-meta">工作段 3 · 当前</div>
+                <div class="seg-title">写实现，保持前后一致</div>
+                <div class="seg-tags"><span>只带当前需要</span><span>可回到原文</span></div>
               </div>
             </div>
           </div>
           <div class="floating float-doc">
-            <div class="fd-head"><span>Document ledger</span><span>62%</span></div>
+            <div class="fd-head"><span>文档账本</span><span>62%</span></div>
             <div class="fd-title">年度技术报告 · v3</div>
             <div class="fd-bar"><i style="width:62%"></i></div>
-            <div class="fd-meta"><span>18 / 29 sections verified</span><span>cited</span></div>
+            <div class="fd-meta"><span>18 / 29 节已核验</span><span>有引用</span></div>
           </div>
           <div class="floating float-mem">
-            <div class="fm-head"><span>Memory graph</span><span>scoped</span></div>
-            <div class="fm-row"><i class="mem-dot"></i><b>偏好</b><span>中文 · 简洁</span><span class="fm-source">source</span></div>
-            <div class="fm-row"><i class="mem-dot" style="background:var(--violet)"></i><b>决定</b><span>不使用轮询</span><span class="fm-source">event</span></div>
-            <div class="fm-row"><i class="mem-dot" style="background:var(--amber)"></i><b>约束</b><span>必须可回滚</span><span class="fm-source">user</span></div>
+            <div class="fm-head"><span>记忆</span><span>有来源</span></div>
+            <div class="fm-row"><i class="mem-dot"></i><b>偏好</b><span>中文 · 简洁</span><span class="fm-source">来源</span></div>
+            <div class="fm-row"><i class="mem-dot" style="background:var(--violet)"></i><b>决定</b><span>不使用轮询</span><span class="fm-source">对话</span></div>
+            <div class="fm-row"><i class="mem-dot" style="background:var(--amber)"></i><b>限制</b><span>必须可回滚</span><span class="fm-source">用户</span></div>
           </div>
           <div class="floating float-art">
-            <div class="fa-head">Artifacts</div>
-            <div class="fa-line"><i></i> spec.md <span style="margin-left:auto;color:var(--faint)">v4</span></div>
-            <div class="fa-line"><i style="background:var(--violet)"></i> report.docx <span style="margin-left:auto;color:var(--faint)">v3</span></div>
-            <div class="fa-line"><i style="background:var(--amber)"></i> tests.log <span style="margin-left:auto;color:var(--faint)">passed</span></div>
+            <div class="fa-head">工作产物</div>
+            <div class="fa-line"><i></i> 方案.md <span style="margin-left:auto;color:var(--faint)">v4</span></div>
+            <div class="fa-line"><i style="background:var(--violet)"></i> 报告.docx <span style="margin-left:auto;color:var(--faint)">v3</span></div>
+            <div class="fa-line"><i style="background:var(--amber)"></i> 测试.log <span style="margin-left:auto;color:var(--faint)">通过</span></div>
           </div>
         </div>
       </div>
@@ -674,89 +698,91 @@
 
   <section class="signal-bar" aria-label="核心特征">
     <div class="wrap signal-grid">
-      <div class="signal" data-claim="C01"><strong>1 个</strong><span>用户看到的连续对话</span></div>
-      <div class="signal" data-claim="C13"><strong>0 次</strong><span>因窗口满被迫重开</span></div>
-      <div class="signal" data-claim="C02"><strong>100%</strong><span>旧消息原文保留</span></div>
-      <div class="signal" data-claim="C03"><strong>4 层</strong><span>上下文 / 文档 / 记忆 / 协作</span></div>    </div>
+      <div class="signal" data-claim="C01"><strong>1 条</strong><span>你看到的对话主线</span></div>
+      <div class="signal" data-claim="C13"><strong>3 种</strong><span>内部动作：保留原文 / 压缩 / 换段</span></div>
+      <div class="signal" data-claim="C02"><strong>0 条</strong><span>被删除的旧消息</span></div>
+      <div class="signal" data-claim="C03"><strong>4 类</strong><span>可查内容：对话 / 文档 / 记忆 / 任务</span></div>
+    </div>
   </section>
 
   <section class="section" id="problem">
     <div class="wrap">
       <div class="section-head" data-reveal>
-        <div class="eyebrow">The old way</div>
-        <h2>传统 Agent 的四个断点。</h2>
-        <p>问题从来不是“模型不够聪明”。是上下文、文档、记忆和协作，各自停在了一次性窗口里。</p>
+        <div class="eyebrow">先说痛点</div>
+        <h2>长任务做到一半，<br>最怕什么？</h2>
+        <p>不是模型不会写代码。是它工作到一半，工作台不够用了：窗口装不下，摘要记不全，文档接不上，几个 Agent 各说各话。</p>
       </div>
       <div class="problem-grid">
         <article class="problem" data-reveal>
-          <div class="num">01 / WINDOW</div>
-          <h3>窗口一满，对话就断。</h3>
-          <p>长任务做到一半，只能压缩、重开、再解释一遍。用户被迫管理上下文，而不是解决问题。</p>
-          <span class="consequence">后果：长任务天然碎片化</span>
+          <div class="num">01 / 窗口满</div>
+          <h3>聊到一半，只能重开。</h3>
+          <p>你刚解释完背景，它说上下文不够了。要么手动总结，要么开新对话，再把路径、约束、报错重讲一遍。</p>
+          <span class="consequence">结果：长任务被切成很多段</span>
         </article>
         <article class="problem" data-reveal data-delay="1">
-          <div class="num">02 / COMPRESSION</div>
-          <h3>压缩之后，细节就没了。</h3>
-          <p>摘要保住了“大意”，却丢掉了路径、数字、失败尝试和那句关键的原话。</p>
-          <span class="consequence">后果：越压越像，越像越错</span>
+          <div class="num">02 / 摘要丢细节</div>
+          <h3>总结很顺，细节没了。</h3>
+          <p>摘要写「已完成登录改造」，但没写改了哪几个文件、哪条命令失败过、哪个方案被否掉。下次接着做，很容易走回头路。</p>
+          <span class="consequence">结果：越总结，越容易重复犯错</span>
         </article>
         <article class="problem" data-reveal data-delay="2">
-          <div class="num">03 / MEMORY</div>
-          <h3>记忆是黑盒，错了也不知道。</h3>
-          <p>一条偏好从哪来、什么时候过期、和另一条是否冲突，用户看不见，模型也说不清。</p>
-          <span class="consequence">后果：越用越不信任</span>
+          <div class="num">03 / 文档接不上</div>
+          <h3>读到第 20 章，前面忘了。</h3>
+          <p>把 300 页文档切块检索，能找到相似段落，却接不上前后章节的结论、术语和数字。写着写着，前后矛盾。</p>
+          <span class="consequence">结果：长文越写越散</span>
         </article>
         <article class="problem" data-reveal data-delay="3">
-          <div class="num">04 / ARTIFACTS</div>
-          <h3>文档、代码、任务，各活各的。</h3>
-          <p>文档在附件里，代码在仓库里，任务在聊天里。Agent 每换一个窗口，就重新认识一次项目。</p>
-          <span class="consequence">后果：协作靠转发，不靠事实</span>
+          <div class="num">04 / Agent 各说各话</div>
+          <h3>几个 Agent，靠转发聊天。</h3>
+          <p>一个写完交给另一个，靠复制聊天记录；谁做过、做到哪、谁验收，没有统一状态。重复、冲突、漏做，很难查。</p>
+          <span class="consequence">结果：人越多，越乱</span>
         </article>
       </div>
     </div>
   </section>
 
-  <section class="section" id="system">
+  <section class="section" id="how">
     <div class="wrap">
       <div class="section-head" data-reveal>
-        <div class="eyebrow">The Codem answer</div>
-        <h2>不是更大的窗口，<br><span class="grad">是一套 Context OS。</span></h2>
-        <p>把上下文拆成四个协作平面。模型只带当前需要的 1%，其余都在可检索、可验证的工作空间里。</p>
+        <div class="eyebrow">Codem 怎么做</div>
+        <h2>一条对话，<br><span class="grad">内部换工作段。</span></h2>
+        <p>不是让你开新会话，也不是把历史压成一句摘要。Codem 在后台做三件事：写交接、留原文、把旧内容放在随时能查的地方。</p>
       </div>
 
       <div class="pillars">
         <article class="pillar" data-reveal data-claim="C01 C03">
           <div class="pillar-copy">
-            <div class="pillar-index">01 / CONTEXT OS</div>
-            <h3>一个 Thread，<br>多个 Segment。</h3>
-            <p>对话是连续的，上下文是分段的。Codem 在后台判断“继续压缩”还是“换一段”，用户看到的始终是一个对话。</p>
+            <div class="pillar-index">01 / 对话不断</div>
+            <h3>上下文快满时，<br>发生的是「换工作段」。</h3>
+            <p>比如你让 Codem 改登录流程，聊到第 80 轮，当前工作段快装不下了。它不会弹窗让你重开，而是：</p>
             <ul>
-              <li>不显示水位，不让用户做压缩决策</li>
-              <li>旧消息原文保留，随时可按锚点回读</li>
-              <li>每次只取当前任务的最小充分上下文</li>
+              <li>写一张交接单：目标、已完成、未完成、关键文件、下一步</li>
+              <li>保留最近一段原文，避免语气和细节断掉</li>
+              <li>把旧消息留在完整时间线里，随时能按锚点回读</li>
             </ul>
-            <div class="pillar-tags"><span>Working Set</span><span>Segment</span><span>Handoff</span><span>Source Anchor</span></div>
+            <p style="margin-top:14px;color:var(--faint);font-size:12px">然后模型换到新的工作段，你继续输入。界面上仍然是一个对话，不会多出一条「新会话」。</p>
+            <div class="pillar-tags"><span>交接单</span><span>最近原文</span><span>旧内容可回读</span><span>不新建会话</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
-              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">context projection</span></div>
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">对话主线 / 内部工作段</span></div>
               <div class="context-stack">
                 <div class="ctx-window">
-                  <div class="ctx-line"><span>原始窗口</span><span>接近上限</span></div>
-                  <div class="ctx-bar"><i style="width:92%"></i></div>
-                  <div class="ctx-note">旧方案：到顶 → 压缩 / 重开</div>
-                </div>
-                <div class="ctx-arrow">↓</div>
-                <div class="ctx-window active">
-                  <div class="ctx-line"><span>当前工作集</span><span>只带需要的</span></div>
-                  <div class="ctx-bar"><i style="width:28%"></i></div>
-                  <div class="ctx-note">Codem：按任务取用，旧段仍可检索</div>
-                </div>
-                <div class="ctx-arrow">↓</div>
-                <div class="ctx-window">
-                  <div class="ctx-line"><span>Thread 全量</span><span>原文保留</span></div>
+                  <div class="ctx-line"><span>完整对话</span><span>旧消息都还在</span></div>
                   <div class="ctx-bar"><i style="width:100%;opacity:.55"></i></div>
-                  <div class="ctx-note">不丢历史，也不把历史全塞给模型</div>
+                  <div class="ctx-note">不是删除，只是不再全部塞给模型</div>
+                </div>
+                <div class="ctx-arrow">↓ 取当前需要的部分</div>
+                <div class="ctx-window active">
+                  <div class="ctx-line"><span>当前工作段</span><span>只带相关材料</span></div>
+                  <div class="ctx-bar"><i style="width:28%"></i></div>
+                  <div class="ctx-note">任务 + 最近对话 + 相关文档 + 相关记忆</div>
+                </div>
+                <div class="ctx-arrow">↓ 快满时</div>
+                <div class="ctx-window">
+                  <div class="ctx-line"><span>写交接，换下一段</span><span>你继续说话</span></div>
+                  <div class="ctx-bar"><i style="width:55%"></i></div>
+                  <div class="ctx-note">旧段仍可查；新段从交接单继续</div>
                 </div>
               </div>
             </div>
@@ -765,28 +791,29 @@
 
         <article class="pillar reverse" data-reveal data-claim="C05 C06 C07">
           <div class="pillar-copy">
-            <div class="pillar-index">02 / DOCUMENT OS</div>
-            <h3>文档不是附件，<br>是可编辑的工作区。</h3>
-            <p>章节、表格、引用、版本、覆盖状态，都是可查询的结构。模型不必“记住全文”，但必须知道写到哪、依据是什么。</p>
+            <div class="pillar-index">02 / 长文档</div>
+            <h3>300 页文档，<br>不是 300 次复制粘贴。</h3>
+            <p>先把文档拆成目录、章节、段落、表格和引用。写到第 4 节，只取第 4 节相关的材料和前面已经确认过的事实。</p>
+            <p>同时记一本账：哪节读过、哪节改过、哪句有引用、哪里还没核验。下次接着写，先看账本，不靠模型「记得」。</p>
             <ul>
-              <li>大纲 / 段落 / 表格 / 引用，多粒度索引</li>
-              <li>Document Ledger 记录读过、改过、验证过</li>
-              <li>分节写作 + 合并 + 一致性检查 + 引用验证</li>
+              <li>大纲、章节、表格、引用，都能定位</li>
+              <li>每个结论能回到页码、章节或原文片段</li>
+              <li>没读的章节、没验的段落，账本里看得见</li>
             </ul>
-            <div class="pillar-tags"><span>Outline</span><span>Ledger</span><span>Citation</span><span>Coverage</span></div>
+            <div class="pillar-tags"><span>结构解析</span><span>章节账本</span><span>引用</span><span>覆盖检查</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
-              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">document compiler</span></div>
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">文档账本</span></div>
               <div class="doc-mock">
                 <div class="doc-outline">
                   <div class="doc-row"><b>01</b> 背景与目标 <span class="check">✓</span></div>
-                  <div class="doc-row"><b>02</b> 现状与约束 <span class="check">✓</span></div>
+                  <div class="doc-row"><b>02</b> 现状与限制 <span class="check">✓</span></div>
                   <div class="doc-row"><b>03</b> 方案对比 <span class="check">✓</span></div>
                   <div class="doc-row"><b>04</b> 实施路径 <span class="check pending">…</span></div>
                   <div class="doc-row"><b>05</b> 风险与回滚 <span class="check pending">…</span></div>
                 </div>
-                <div class="doc-cite"><b>[source: 访谈记录 · p.12]</b><br>“先保证可回滚，再谈自动化。”<br><span style="color:var(--faint)">— 已引用，可回到原文</span></div>
+                <div class="doc-cite"><b>[来源：访谈记录 · 第 12 页]</b><br>「先保证可回滚，再谈自动化。」<br><span style="color:var(--faint)">— 引用可回到原文</span></div>
               </div>
             </div>
           </div>
@@ -794,25 +821,26 @@
 
         <article class="pillar" data-reveal data-claim="C08 C09">
           <div class="pillar-copy">
-            <div class="pillar-index">03 / MEMORY GRAPH</div>
-            <h3>记忆不是提示词，<br>是可验证的数据库。</h3>
-            <p>每条记忆都带来源、作用域、有效期和状态。冲突不覆盖，过期可识别，手动记忆永远优先。</p>
+            <div class="pillar-index">03 / 记忆</div>
+            <h3>记忆不是一句摘要，<br>是一条有出处的记录。</h3>
+            <p>「用户喜欢简洁」这句话，可能是从三次对话里推出来的。Codem 会记录它从哪来、在哪个项目生效、什么时候写的、现在是否还有效。</p>
+            <p>两条记忆冲突时，不偷偷覆盖：保留双方，标出来源。自动提取只产生候选；你手动写的记忆，不会被自动流程删掉或改掉。</p>
             <ul>
-              <li>事实 / 偏好 / 决定 / 约束，分型存储</li>
-              <li>来源、置信度、使用次数，全部可查</li>
-              <li>不自动删除，不静默改写；合并要可撤销</li>
+              <li>来源、作用范围、时间、状态，都能查</li>
+              <li>冲突保留双方，不静默覆盖</li>
+              <li>手动记忆优先；删除由你决定</li>
             </ul>
-            <div class="pillar-tags"><span>Provenance</span><span>Validity</span><span>Conflict</span><span>Scope</span></div>
+            <div class="pillar-tags"><span>来源</span><span>作用范围</span><span>冲突</span><span>可撤销</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
-              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">memory graph</span></div>
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">记忆及其来源</span></div>
               <div class="mem-mock">
                 <div class="mem-line ml1"></div><div class="mem-line ml2"></div><div class="mem-line ml3"></div><div class="mem-line ml4"></div>
-                <div class="mem-core"><div><b>Memory</b>scoped · sourced</div></div>
+                <div class="mem-core"><div><b>记忆</b>有来源 · 有范围</div></div>
                 <div class="mem-node mn1"><b>偏好</b> 中文 · 简洁</div>
                 <div class="mem-node mn2"><b>决定</b> 不引入新依赖</div>
-                <div class="mem-node mn3"><b>约束</b> 必须可回滚</div>
+                <div class="mem-node mn3"><b>限制</b> 必须可回滚</div>
                 <div class="mem-node mn4"><b>事实</b> v1.18.13</div>
               </div>
             </div>
@@ -821,24 +849,25 @@
 
         <article class="pillar reverse" data-reveal data-claim="C10">
           <div class="pillar-copy">
-            <div class="pillar-index">04 / ARTIFACT-CENTRIC AGENTS</div>
-            <h3>Agent 共享工件，<br>不共享一整段聊天。</h3>
-            <p>Conductor 负责目标，Curator 负责上下文和记忆，Specialist 负责执行，Verifier 负责验收。它们通过任务图和工件协作。</p>
+            <div class="pillar-index">04 / 多 Agent</div>
+            <h3>共享任务和文件，<br>不共享一整段聊天。</h3>
+            <p>写文档、查资料、做核验，可以分给不同角色。但交接的不是「我把聊天记录发给你」，而是一份任务和一组文件：目标、输入、产物、验收标准。</p>
+            <p>谁领了任务、试到第几次、结果交回没有、谁验收，都有状态。旧结果不会覆盖新结果；卡住的任务能被看见，不用靠人盯聊天窗口。</p>
             <ul>
-              <li>任务、依赖、领取、回滚，都有明确状态</li>
-              <li>文档 / 代码 / 测试 / 决策，都是同一种 artifact</li>
-              <li>群聊只是界面；协调靠账本，不靠刷屏</li>
+              <li>任务有领取、尝试、回滚，不重复执行</li>
+              <li>文档、代码、测试、决定，都是同一种工作产物</li>
+              <li>验收角色独立检查，不自己批自己</li>
             </ul>
-            <div class="pillar-tags"><span>Conductor</span><span>Verifier</span><span>Task Graph</span><span>Artifact Store</span></div>
+            <div class="pillar-tags"><span>任务状态</span><span>产物</span><span>验收</span><span>可回滚</span></div>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
-              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">artifact board</span></div>
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">共享任务台</span></div>
               <div class="agent-mock">
-                <div class="agent-row"><span class="agent-role">Conductor</span><span class="agent-task"><i style="width:100%"></i></span><span class="agent-state">done</span></div>
-                <div class="agent-row"><span class="agent-role">Retrieval</span><span class="agent-task"><i style="width:84%"></i></span><span class="agent-state">done</span></div>
-                <div class="agent-row"><span class="agent-role">Writer</span><span class="agent-task"><i style="width:56%"></i></span><span class="agent-state">working</span></div>
-                <div class="agent-row"><span class="agent-role">Verifier</span><span class="agent-task"><i style="width:18%"></i></span><span class="agent-state wait">waiting</span></div>
+                <div class="agent-row"><span class="agent-role">负责人</span><span class="agent-task"><i style="width:100%"></i></span><span class="agent-state">完成</span></div>
+                <div class="agent-row"><span class="agent-role">资料检索</span><span class="agent-task"><i style="width:84%"></i></span><span class="agent-state">完成</span></div>
+                <div class="agent-row"><span class="agent-role">写作</span><span class="agent-task"><i style="width:56%"></i></span><span class="agent-state">进行中</span></div>
+                <div class="agent-row"><span class="agent-role">核验</span><span class="agent-task"><i style="width:18%"></i></span><span class="agent-state wait">等待</span></div>
               </div>
             </div>
           </div>
@@ -847,218 +876,72 @@
     </div>
   </section>
 
-  <section class="section" id="architecture">
+  <section class="section" id="flow">
     <div class="wrap">
-      <div class="section-head" data-reveal>
-        <div class="eyebrow">Architecture</div>
-        <h2>四个平面，<br>一套工作流。</h2>
-        <p>交互、上下文、知识、编排彼此独立，又通过同一份事件与工件连接。任何一层都可以替换模型，而不用重做整套系统。</p>
+      <div class="section-head" data-reveal data-claim="C04 C12">
+        <div class="eyebrow">一次请求的旅程</div>
+        <h2>四层怎么接力，<br>而不是四个孤立功能。</h2>
+        <p>你发一句话，背后是记录、取材料、模型工作、写回结果四件事在配合。</p>
       </div>
-
-      <div class="arch-wrap" data-reveal data-claim="C04 C11 C12">
-        <div class="layers">
-          <div class="layer l1">
-            <div><div class="ln">01 / INTERACTION</div><div class="lt">一个 Thread</div></div>
-            <div class="ld">用户只看到连续对话。没有水位，没有“请开新会话”。</div>
-            <div class="chip">user-facing</div>
-          </div>
-          <div class="layer-connector">↓</div>
-          <div class="layer l2">
-            <div><div class="ln">02 / CONTEXT</div><div class="lt">Working Set / Pager</div></div>
-            <div class="ld">按任务取最小充分上下文；冷数据换出，热数据预取；段边界自动调度。</div>
-            <div class="chip">model-facing</div>
-          </div>
-          <div class="layer-connector">↓</div>
-          <div class="layer l3">
-            <div><div class="ln">03 / KNOWLEDGE</div><div class="lt">Event Log · Document Graph · Memory Graph</div></div>
-            <div class="ld">所有消息、工具结果、文档版本、记忆事实，都可检索、可引用、可恢复。</div>
-            <div class="chip">source of truth</div>
-          </div>
-          <div class="layer-connector">↓</div>
-          <div class="layer l4">
-            <div><div class="ln">04 / ORCHESTRATION</div><div class="lt">Conductor · Curators · Specialists · Verifier</div></div>
-            <div class="ld">共享任务图与工件，不共享整段上下文；每个角色有自己的工作集。</div>
-            <div class="chip">artifact-centric</div>
-          </div>
+      <div class="flow-grid" data-reveal>
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <h3>你发消息</h3>
+          <p>对话主线记下这句话；当前任务状态更新。你不需要选模型、选段、选记忆。</p>
         </div>
-        <aside class="trust-rail">
-          <div class="tr-label">Cross-cutting / Trust</div>
-          <h3>强大，<br>但不失控。</h3>
-          <p>每一层都受同一套来源、权限、审批与回滚约束。</p>
-          <div class="trust-item"><i></i><span>来源可查：每条结论回到原文</span></div>
-          <div class="trust-item"><i></i><span>变更可审：写入有 diff / 审批</span></div>
-          <div class="trust-item"><i></i><span>失败可回：任务与工件可回滚</span></div>
-          <div class="trust-item"><i></i><span>数据本地：默认不离开你的机器</span></div>
-        </aside>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <h3>取当前材料</h3>
+          <p>最近对话 + 相关文档片段 + 相关记忆。超出预算，就在内部压缩或换段，不打断你。</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <h3>模型做事</h3>
+          <p>读文件、改代码、跑命令。工具结果写回时间线；文档改动写进章节账本。</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <h3>回答并归档</h3>
+          <p>回答带来源；需要时生成记忆候选、更新文档状态。下一次请求继续用这些记录。</p>
+        </div>
+      </div>
+      <div class="flow-note" data-reveal>
+        <b>所以你看到的仍然是一个对话。</b>
+        背后不是「模型记性特别好」，而是记录、检索、上下文投影和验收在配合。
       </div>
     </div>
   </section>
 
-  <section class="section" id="capabilities">
-    <div class="wrap">
-      <div class="section-head" data-reveal>
-        <div class="eyebrow">What changes</div>
-        <h2>你不再需要，<br>替模型管理上下文。</h2>
-        <p>四个平面带来的不是“更多按钮”，而是更少的上下文管理动作。</p>
-      </div>
-
-      <div class="tabs" role="tablist" aria-label="能力面板" data-reveal>
-        <button class="tab active" data-tab="tab-context" role="tab" aria-selected="true" aria-controls="panel-context">Context</button>
-        <button class="tab" data-tab="tab-document" role="tab" aria-selected="false" aria-controls="panel-document">Document</button>
-        <button class="tab" data-tab="tab-memory" role="tab" aria-selected="false" aria-controls="panel-memory">Memory</button>
-        <button class="tab" data-tab="tab-agents" role="tab" aria-selected="false" aria-controls="panel-agents">Agents</button>
-      </div>
-
-      <div class="tab-panels" data-reveal>
-        <article class="tab-panel active" id="panel-context" role="tabpanel">
-          <div class="panel-grid">
-            <div class="panel-card">
-              <h3>长任务，不再被窗口切成碎片。</h3>
-              <p>上下文管理从“用户手动压缩”变成“系统按任务调度”。你继续说话，Codem 在后台决定带什么、换什么、留什么。</p>
-              <ul class="checklist">
-                <li>不因接近上限而要求你开新会话</li>
-                <li>旧消息不删除，可按段、按锚点回读</li>
-                <li>每次请求只带当前任务需要的材料</li>
-                <li>换段对用户透明，对模型有明确交接</li>
-              </ul>
-            </div>
-            <div class="mini-code">
-<span class="cm">// 用户看到的</span>
-<span class="key">thread</span>: <span class="str">"一个连续对话"</span>
-
-<span class="cm">// 模型实际拿到的</span>
-<span class="fn">workingSet</span> = {
-  task: <span class="str">"继续写第 4 节"</span>,
-  recent: <span class="str">"最近 8 轮"</span>,
-  sources: [<span class="str">"doc#42"</span>, <span class="str">"decision#7"</span>],
-  memory: [<span class="str">"偏好：中文"</span>]
-}
-
-<span class="cm">// 其余仍在</span>
-<span class="key">eventLog</span> · <span class="key">documentGraph</span> · <span class="key">memoryGraph</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="tab-panel" id="panel-document" role="tabpanel">
-          <div class="panel-grid">
-            <div class="panel-card">
-              <h3>300 页文档，不是 300 次复制粘贴。</h3>
-              <p>文档被解析成结构，任务被拆成章节。每一节都有来源、状态和验收，不需要把全文塞进一次请求。</p>
-              <ul class="checklist">
-                <li>先大纲，再分节；每节独立阅读/写作</li>
-                <li>合并时检查术语、数字、交叉引用</li>
-                <li>引用可回到页码、章节、chunk</li>
-                <li>覆盖账本明确“哪节还没读/没验”</li>
-              </ul>
-            </div>
-            <div class="mini-code">
-<span class="cm">// 不是一次 prompt</span>
-<span class="fn">plan</span> = [<span class="str">"背景"</span>, <span class="str">"现状"</span>, <span class="str">"方案"</span>, <span class="str">"路径"</span>]
-
-<span class="cm">// 每节都有账本</span>
-<span class="key">section</span>: {
-  status: <span class="str">"verified"</span>,
-  sources: [<span class="str">"p.12"</span>, <span class="str">"p.18"</span>],
-  claims: <span class="str">3</span>,
-  citations: <span class="str">3/3</span>
-}
-
-<span class="cm">// 缺口不会被“摘要”吞掉</span>
-<span class="key">coverage</span>: <span class="str">"18 / 29 sections"</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="tab-panel" id="panel-memory" role="tabpanel">
-          <div class="panel-grid">
-            <div class="panel-card">
-              <h3>记得对，比记得多更重要。</h3>
-              <p>记忆是带来源、作用域和有效期的数据库。它不替你“猜”，而是让你能查、能改、能撤销。</p>
-              <ul class="checklist">
-                <li>事实、偏好、决定、约束分开存储</li>
-                <li>冲突保留双方，不静默覆盖</li>
-                <li>手动记忆优先，自动提取只做候选</li>
-                <li>跨项目隔离，不把 A 项目偏好带进 B 项目</li>
-              </ul>
-            </div>
-            <div class="mini-code">
-<span class="cm">// 一条可验证的记忆</span>
-<span class="key">fact</span>: {
-  statement: <span class="str">"发布前必须跑全量测试"</span>,
-  scope: <span class="str">"project"</span>,
-  provenance: [<span class="str">"msg#184"</span>],
-  confidence: <span class="str">0.96</span>,
-  status: <span class="str">"approved"</span>,
-  usage: <span class="str">12</span>
-}
-
-<span class="cm">// 冲突不覆盖</span>
-<span class="key">conflict</span>: [<span class="str">"v1: 先跑定向"</span>, <span class="str">"v2: 先跑全量"</span>]
-            </div>
-          </div>
-        </article>
-
-        <article class="tab-panel" id="panel-agents" role="tabpanel">
-          <div class="panel-grid">
-            <div class="panel-card">
-              <h3>多 Agent，不是多开几个窗口。</h3>
-              <p>Agent 通过任务图和工件协作，而不是互相转发聊天记录。每个角色拿自己需要的那一小份上下文。</p>
-              <ul class="checklist">
-                <li>Conductor 负责目标、预算、停止和汇总</li>
-                <li>Specialist 只拿任务 + 相关切片 + 记忆</li>
-                <li>Verifier 独立检查引用、覆盖、一致性</li>
-                <li>任务有领取、尝试、回滚，不重复执行</li>
-              </ul>
-            </div>
-            <div class="mini-code">
-<span class="cm">// 共享的是工件，不是上下文</span>
-<span class="key">artifactStore</span>: [<span class="str">"report.docx"</span>, <span class="str">"tests.log"</span>]
-<span class="key">taskGraph</span>: [
-  { id: <span class="str">"outline"</span>, owner: <span class="str">"conductor"</span> },
-  { id: <span class="str">"draft-4"</span>, owner: <span class="str">"writer"</span>, deps: [<span class="str">"outline"</span>] },
-  { id: <span class="str">"verify-4"</span>, owner: <span class="str">"verifier"</span> }
-]
-
-<span class="cm">// 群聊只是 UI</span>
-<span class="key">coordination</span> = <span class="str">"ledger + task graph"</span>
-            </div>
-          </div>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="documents">
+  <section class="section" id="document">
     <div class="wrap">
       <div class="doc-section" data-reveal data-claim="C05 C06 C07">
         <div>
-          <div class="eyebrow">Document OS</div>
+          <div class="eyebrow">长文档</div>
           <h2 style="font-size:clamp(30px,4vw,52px);line-height:1.06;letter-spacing:-.045em;margin:14px 0 16px">一份长文档，<br><span class="grad">应该越写越稳。</span></h2>
-          <p style="color:var(--muted);font-size:13px;line-height:1.85;margin:0 0 0;max-width:440px">
-            不是把全文塞进模型，而是让模型知道：写到哪、依据是什么、还差什么。
-            结构、版本、引用、覆盖，四件事同时成立，长文才不会越写越散。
+          <p style="color:var(--muted);font-size:13px;line-height:1.85;margin:0 0 0;max-width:460px">
+            不是把全文塞进模型，而是先拆结构、再分节写、最后对账。
+            结构、版本、引用、覆盖四件事同时成立，长文才不会越写越散。
           </p>
-          <div class="pipeline" aria-label="长文档流水线">
-            <div class="pipe"><div class="pnum">01</div><div class="pname">解析<br>Ingest</div></div>
-            <div class="pipe"><div class="pnum">02</div><div class="pname">大纲<br>Outline</div></div>
-            <div class="pipe"><div class="pnum">03</div><div class="pname">分节<br>Draft</div></div>
-            <div class="pipe"><div class="pnum">04</div><div class="pname">合并<br>Merge</div></div>
-            <div class="pipe"><div class="pnum">05</div><div class="pname">验证<br>Verify</div></div>
-            <div class="pipe"><div class="pnum">06</div><div class="pname">交付<br>Diff</div></div>
+          <div class="pipeline" aria-label="长文档流程">
+            <div class="pipe"><div class="pnum">01</div><div class="pname">拆结构<br>目录/段落</div></div>
+            <div class="pipe"><div class="pnum">02</div><div class="pname">列大纲<br>分节</div></div>
+            <div class="pipe"><div class="pnum">03</div><div class="pname">逐节写<br>取材料</div></div>
+            <div class="pipe"><div class="pnum">04</div><div class="pname">合并<br>查术语</div></div>
+            <div class="pipe"><div class="pnum">05</div><div class="pname">核验<br>引用</div></div>
+            <div class="pipe"><div class="pnum">06</div><div class="pname">交付<br>看差异</div></div>
           </div>
         </div>
         <div class="ledger-card">
-          <div class="ledger-head"><b>Document Ledger</b><span>live coverage</span></div>
-          <div class="ledger-row"><b>01 背景与目标</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
-          <div class="ledger-row"><b>02 现状与约束</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
-          <div class="ledger-row"><b>03 方案对比</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
-          <div class="ledger-row"><b>04 实施路径</b><span class="pct"><i style="width:64%"></i></span><span class="status warn">drafting</span></div>
-          <div class="ledger-row"><b>05 风险与回滚</b><span class="pct"><i style="width:22%"></i></span><span class="status warn">queued</span></div>
+          <div class="ledger-head"><b>文档账本</b><span>实时覆盖</span></div>
+          <div class="ledger-row"><b>01 背景与目标</b><span class="pct"><i style="width:100%"></i></span><span class="status">已核验</span></div>
+          <div class="ledger-row"><b>02 现状与限制</b><span class="pct"><i style="width:100%"></i></span><span class="status">已核验</span></div>
+          <div class="ledger-row"><b>03 方案对比</b><span class="pct"><i style="width:100%"></i></span><span class="status">已核验</span></div>
+          <div class="ledger-row"><b>04 实施路径</b><span class="pct"><i style="width:64%"></i></span><span class="status warn">写作中</span></div>
+          <div class="ledger-row"><b>05 风险与回滚</b><span class="pct"><i style="width:22%"></i></span><span class="status warn">排队</span></div>
           <div class="ledger-foot">
-            <span class="chip-mini">18 / 29 sections</span>
-            <span class="chip-mini">47 citations</span>
-            <span class="chip-mini">0 unsupported claims</span>
+            <span class="chip-mini">18 / 29 节</span>
+            <span class="chip-mini">47 条引用</span>
+            <span class="chip-mini">0 条无来源结论</span>
           </div>
         </div>
       </div>
@@ -1068,30 +951,30 @@
   <section class="section" id="trust">
     <div class="wrap">
       <div class="section-head" data-reveal>
-        <div class="eyebrow">Trust by design</div>
-        <h2>强大，不等于失控。</h2>
-        <p>越是长任务、越多 Agent，越需要来源、审批、回滚和审计。Codem 把这些做成底座，而不是事后补丁。</p>
+        <div class="eyebrow">能查、能停、能回滚</div>
+        <h2>能力越强，<br>越不能是黑盒。</h2>
+        <p>长任务、多 Agent、记忆和文档，都会改变工作区。每一次重要改变，都应该能说清来源、经过谁批准、失败怎么退回去。</p>
       </div>
       <div class="trust-grid" data-claim="C12 C11">
         <article class="trust-card" data-reveal>
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></svg></div>
           <h3>来源可查</h3>
-          <p>每个结论都能回到消息、页码、文件或提交；不是“模型记得”，是“这里有证据”。</p>
+          <p>每个结论能回到消息、页码、文件或提交。不是「模型记得」，是「这里有证据」。</p>
         </article>
         <article class="trust-card" data-reveal data-delay="1">
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4Z"/><path d="M9 12l2 2 4-4"/></svg></div>
           <h3>变更可审</h3>
-          <p>文档改动、记忆写入、Agent 任务都有 diff / 审批 / 审计记录，重要动作不静默发生。</p>
+          <p>文档改动、记忆写入、Agent 任务都有记录；重要动作不静默发生。</p>
         </article>
         <article class="trust-card" data-reveal data-delay="2">
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></div>
           <h3>失败可回</h3>
-          <p>上下文段、任务、工件都可回滚；崩溃或重启后，按事件恢复，而不是从零再来。</p>
+          <p>工作段、任务、文件都能回滚；崩溃或重启后，按记录恢复，不从头再来。</p>
         </article>
         <article class="trust-card" data-reveal data-delay="3">
           <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg></div>
-          <h3>本地优先</h3>
-          <p>会话、文档、记忆默认留在本机；模型可选，数据边界由你决定。</p>
+          <h3>数据在本地</h3>
+          <p>对话、文档、记忆默认留在本机；模型可以换，数据边界由你决定。</p>
         </article>
       </div>
     </div>
@@ -1100,42 +983,84 @@
   <section class="section" id="compare">
     <div class="wrap">
       <div class="section-head" data-reveal>
-        <div class="eyebrow">Why it feels different</div>
-        <h2>和传统 harness /<br>通用 Agent 平台相比。</h2>
-        <p>不是多一个功能，而是把“上下文、文档、记忆、协作”从聊天记录里拆出来，变成可管理的基础设施。</p>
+        <div class="eyebrow">和常见做法比</div>
+        <h2>差别不在功能多少，<br>在长任务能不能接住。</h2>
+        <p>常见做法把上下文当一次性容器；Codem 把它当成一套可记录、可检索、可验收的工作台。</p>
       </div>
       <div class="compare-wrap" data-reveal data-claim="C01 C03 C05 C08 C10 C12">
         <table class="compare">
-          <thead><tr><th>维度</th><th>传统 harness / 通用 Agent 平台</th><th>Codem Context OS</th></tr></thead>
+          <thead><tr><th>场景</th><th>常见做法</th><th>Codem 的做法</th></tr></thead>
           <tbody>
-            <tr><td>上下文</td><td class="old">一次性窗口；满了就压缩或重开；细节随摘要流失。</td><td class="new"><b>一个 Thread，多个 Segment</b>；按任务取工作集，旧原文保留。</td></tr>
-            <tr><td>长文档</td><td class="old">当附件上传，切成 chunk 检索；跨节结论容易散。</td><td class="new"><b>Document Graph + Ledger</b>；分节写作、合并、引用验证、覆盖检查。</td></tr>
-            <tr><td>记忆</td><td class="old">一段摘要或全局偏好；来源、有效期、冲突都不可见。</td><td class="new"><b>可验证 Memory Graph</b>；来源、作用域、有效期、冲突、使用信号。</td></tr>
-            <tr><td>协作</td><td class="old">多开窗口 / 多个 Agent 转发聊天记录；重复、冲突、难验收。</td><td class="new"><b>Artifact-centric Agents</b>；任务图 + 工件 + 独立 Verifier。</td></tr>
-            <tr><td>控制</td><td class="old">黑盒自动压缩 / 自动写入；出错难定位、难回滚。</td><td class="new"><b>来源、审批、审计、回滚</b>；本地优先，多模型可选。</td></tr>
+            <tr><td>聊到窗口满</td><td class="old">总结一下，或者开新会话；细节靠摘要保留。</td><td class="new"><b>同一条对话，内部换工作段</b>；旧原文不删，交接单带上下文。</td></tr>
+            <tr><td>长文档写作</td><td class="old">切块检索，跨章节结论容易接不上。</td><td class="new"><b>先拆结构，再分节写</b>；账本记录覆盖、引用和未验部分。</td></tr>
+            <tr><td>长期记忆</td><td class="old">一段全局摘要；来源、有效期、冲突都看不见。</td><td class="new"><b>一条条有来源的记录</b>；按范围取，冲突不覆盖。</td></tr>
+            <tr><td>多 Agent</td><td class="old">多个窗口、转发聊天；重复和冲突难查。</td><td class="new"><b>共享任务和产物</b>；有领取、回滚、独立验收。</td></tr>
+            <tr><td>出错之后</td><td class="old">不知道模型当时看了什么，很难复现。</td><td class="new"><b>记录来源和上下文</b>；可回放、可回滚、可追责。</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </section>
 
-  <section class="final" id="final">
-    <div class="wrap final-inner" data-reveal data-claim="C01 C13">
-      <div class="kicker"><span class="dot"></span> Codem Context OS</div>
-      <h2>让下一次长任务，<br><span class="grad">从第一句到最后一句都不丢。</span></h2>
-      <p>不重开、不反复解释、不把整篇文档塞给模型。让上下文成为工作空间，而不是消耗品。</p>
-      <div class="final-actions">
-        <a class="btn primary" href="#top">回到顶部，再看一遍
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+  <section class="section" id="details">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">再往下看</div>
+        <h2>首页讲「是什么」，<br>详情页讲「怎么实现」。</h2>
+        <p>如果你关心数据结构、压缩和换段的判断、文档账本、记忆检索、Agent 任务状态，下面四篇是具体实现。</p>
+      </div>
+      <div class="detail-links">
+        <a class="detail-card" href="context-os-details.html#thread" data-reveal>
+          <div class="dc-num">01</div>
+          <h3>对话为什么不会断</h3>
+          <p>Session 和上下文段是什么关系；压缩和换段分别做什么；旧消息放在哪。</p>
+          <span>看实现 →</span>
         </a>
-        <a class="btn" href="#architecture">阅读架构
+        <a class="detail-card" href="context-os-details.html#document" data-reveal data-delay="1">
+          <div class="dc-num">02</div>
+          <h3>长文档怎么不写散</h3>
+          <p>文档结构、章节账本、分节任务、引用核验和覆盖检查怎么接起来。</p>
+          <span>看实现 →</span>
+        </a>
+        <a class="detail-card" href="context-os-details.html#memory" data-reveal data-delay="2">
+          <div class="dc-num">03</div>
+          <h3>记忆怎么做到可查</h3>
+          <p>一条记忆包含什么；自动提取和手动写入怎么分工；冲突怎么处理。</p>
+          <span>看实现 →</span>
+        </a>
+        <a class="detail-card" href="context-os-details.html#agents" data-reveal data-delay="3">
+          <div class="dc-num">04</div>
+          <h3>Agent 怎么协作</h3>
+          <p>任务怎么领、结果怎么交、旧结果怎么防覆盖、验收角色怎么独立。</p>
+          <span>看实现 →</span>
+        </a>
+      </div>
+      <div style="text-align:center;margin-top:30px" data-reveal>
+        <a class="btn primary" href="context-os-details.html">进入实现细节
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
       </div>
-      <div class="final-note">Context OS · Document OS · Memory Graph · Artifact-centric Agents</div>
+    </div>
+  </section>
+
+  <section class="final" id="final">
+    <div class="wrap final-inner" data-reveal data-claim="C01 C13">
+      <div class="kicker"><span class="dot"></span> 长任务，不必从第一句重来</div>
+      <h2>让下一次长任务，<br><span class="grad">从第一句到最后一句都不丢。</span></h2>
+      <p>不重开、不反复解释、不把整篇文档塞给模型。让上下文成为工作台，而不是一次性消耗品。</p>
+      <div class="final-actions">
+        <a class="btn primary" href="context-os-details.html">看实现细节
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn" href="#top">回到顶部
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </a>
+      </div>
+      <div class="final-note">对话主线 · 工作段 · 文档账本 · 记忆来源 · 任务验收</div>
     </div>
   </section>
 </main>
+
 
 <footer>
   <div class="wrap footer-grid">
@@ -1144,9 +1069,10 @@
       <div><b>codem</b><span>Local-first AI coding workspace</span></div>
     </div>
     <div class="footer-links">
-      <a href="#system">四个平面</a>
-      <a href="#architecture">架构</a>
-      <a href="#documents">长文档</a>
+      <a href="#how">怎么做</a>
+      <a href="#flow">一次请求</a>
+      <a href="#document">长文档</a>
+      <a href="context-os-details.html">实现细节</a>
       <a href="#trust">可控性</a>
     </div>
     <div class="footer-meta">产品概念页 · 具体能力随版本演进</div>
