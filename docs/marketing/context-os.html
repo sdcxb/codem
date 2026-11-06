@@ -297,6 +297,8 @@
   .pillar li span{color:var(--faint)}
   .pillar-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
   .pillar-tags span{font-size:9px;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:rgba(0,0,0,.12)}
+  .pillar-more{display:inline-flex;align-items:center;gap:6px;margin-top:18px;font-size:11px;color:var(--violet-2);border-bottom:1px solid rgba(139,124,255,.25);padding-bottom:3px}
+  .pillar-more:hover{color:#fff;border-color:var(--violet-2)}
 
   /* visual mockups */
   .visual-shell{
@@ -762,6 +764,7 @@
             </ul>
             <p style="margin-top:14px;color:var(--faint);font-size:12px">然后模型换到新的工作段，你继续输入。界面上仍然是一个对话，不会多出一条「新会话」。</p>
             <div class="pillar-tags"><span>交接单</span><span>最近原文</span><span>旧内容可回读</span><span>不新建会话</span></div>
+            <a class="pillar-more" href="context-thread.html">看对话怎么保持连续 →</a>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -801,6 +804,7 @@
               <li>没读的章节、没验的段落，账本里看得见</li>
             </ul>
             <div class="pillar-tags"><span>结构解析</span><span>章节账本</span><span>引用</span><span>覆盖检查</span></div>
+            <a class="pillar-more" href="document-os.html">看长文档怎么不写散 →</a>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -831,6 +835,7 @@
               <li>手动记忆优先；自动提取不会删改它</li>
             </ul>
             <div class="pillar-tags"><span>完整时间线</span><span>可回读</span><span>有来源</span><span>可撤销</span></div>
+            <a class="pillar-more" href="memory-graph.html">看记忆怎么做到可查 →</a>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -859,6 +864,7 @@
               <li>验收角色检查文档是否同步，不自己批自己</li>
             </ul>
             <div class="pillar-tags"><span>完成清单</span><span>文档对账</span><span>独立验收</span><span>可回滚</span></div>
+            <a class="pillar-more" href="agent-delivery.html">看大任务怎么收尾 →</a>
           </div>
           <div class="pillar-visual">
             <div class="visual-shell">
@@ -1010,25 +1016,25 @@
         <p>如果你关心数据结构、压缩和换段的判断、文档账本、记忆检索、Agent 任务状态，下面四篇是具体实现。</p>
       </div>
       <div class="detail-links">
-        <a class="detail-card" href="context-os-details.html#thread" data-reveal>
+        <a class="detail-card" href="context-thread.html" data-reveal>
           <div class="dc-num">01</div>
           <h3>对话为什么不会断</h3>
           <p>Session 和上下文段是什么关系；压缩和换段分别做什么；旧消息放在哪。</p>
           <span>看实现 →</span>
         </a>
-        <a class="detail-card" href="context-os-details.html#document" data-reveal data-delay="1">
+        <a class="detail-card" href="document-os.html" data-reveal data-delay="1">
           <div class="dc-num">02</div>
           <h3>长文档怎么不写散</h3>
           <p>文档结构、章节账本、分节任务、引用核验和覆盖检查怎么接起来。</p>
           <span>看实现 →</span>
         </a>
-        <a class="detail-card" href="context-os-details.html#memory" data-reveal data-delay="2">
+        <a class="detail-card" href="memory-graph.html" data-reveal data-delay="2">
           <div class="dc-num">03</div>
           <h3>记忆怎么做到可查</h3>
           <p>一条记忆包含什么；自动提取和手动写入怎么分工；冲突怎么处理。</p>
           <span>看实现 →</span>
         </a>
-        <a class="detail-card" href="context-os-details.html#agents" data-reveal data-delay="3">
+        <a class="detail-card" href="agent-delivery.html" data-reveal data-delay="3">
           <div class="dc-num">04</div>
           <h3>大任务怎么收尾</h3>
           <p>Agent 怎么分工、任务怎么交、代码和文档怎么一起验收，避免「都完成了，但版本对不上」。</p>

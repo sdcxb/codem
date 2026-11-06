@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Codem · 大任务怎么收尾</title>
+<meta name="description" content="Codem 多 Agent 与交付对账实现细节：任务领取、尝试、回滚、产物共享、文档版本核验。">
+<link rel="stylesheet" href="./context-os-detail.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="context-os.html"><img src="./codem-logo.png" alt="Codem"><b>codem</b></a>
+    <div class="nav-meta">
+      <a href="context-os.html">← 返回首页</a>
+      <nav class="tech-links" aria-label="技术线">
+        <a href="context-thread.html">对话</a>
+        <a href="document-os.html">长文档</a>
+        <a href="memory-graph.html">记忆</a>
+        <a class="active" href="agent-delivery.html">交付</a>
+        <a href="context-os-details.html">总览</a>
+      </nav>
+      <span class="nav-tag">技术细节</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div class="eyebrow">04 / 交付对账</div>
+      <h1>大任务一分工，<br>为什么收尾总是散的？</h1>
+      <p>不是 Agent 不会写，是每个 Agent 都只看自己那一小块：代码说完成、文档说完成、测试说通过，合起来却不是同一个版本。Codem 用任务状态、共享产物和统一完成清单来收口。</p>
+      <div class="meta">
+        <span class="status"><i></i> 任务领取/回滚已有基础</span>
+        <span class="status partial"><i></i> 产物协作部分落地</span>
+        <span class="status target"><i></i> 完整交付对账仍在推进</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap layout">
+    <aside class="toc" aria-label="页内目录">
+      <div class="toc-label">本页目录</div>
+      <a href="#problem">01 问题在哪</a>
+      <a href="#tasks">02 任务状态</a>
+      <a href="#artifacts">03 共享产物</a>
+      <a href="#docs">04 文档对账</a>
+      <a href="#verify">05 独立验收</a>
+      <a href="#code">06 边界与代码</a>
+    </aside>
+
+    <article>
+      <section id="problem">
+        <div class="sec-kicker">01 / 问题在哪</div>
+        <h2>不是“各说各话”，是“各自完成、没人对账”。</h2>
+        <p class="lead">多 Agent 最常见的失败不是某个 Agent 不会写，而是分工后没有一张总账：代码在一个手里，文档在另一个手里，测试没人收尾；每个人都只对自己的局部负责。</p>
+        <ul>
+          <li>代码 Agent 说“改完了”，但没更新架构文档；</li>
+          <li>文档 Agent 说“补完了”，但不知道代码已经换了接口；</li>
+          <li>测试 Agent 说“通过了”，但测的是旧版本；</li>
+          <li>任务看板上全是“完成”，交付物却对不上。</li>
+        </ul>
+        <div class="callout warn"><b>所以问题不是“多 Agent 会不会聊天”，而是“有没有统一的完成条件”。</b> 没有完成条件，Agent 越多，版本越容易分叉。</div>
+      </section>
+
+      <section id="tasks">
+        <div class="sec-kicker">02 / 任务状态</div>
+        <h2>任务要有领取、尝试、回滚，不能只说“我在做”。</h2>
+        <p>一个任务被 Agent 领取时，会生成一个尝试编号。这样旧尝试的结果不会覆盖新尝试；领取失败可以回滚，不会把成员永久留在“正在工作”。</p>
+<pre><code><span class="key">Task</span> {
+  id, title, status,          <span class="cm">// pending / running / done / failed</span>
+  owner, attemptId,           <span class="cm">// 谁领的、第几次尝试</span>
+  dependsOn: [<span class="str">"outline"</span>],
+  acceptance: [<span class="str">"代码可跑"</span>, <span class="str">"文档已同步"</span>, <span class="str">"引用已核验"</span>],
+  result: <span class="str">"artifact://..."</span>
+}</code></pre>
+        <ul>
+          <li><strong>领取：</strong>同一任务只允许一个有效领取；重复派发不重复执行。</li>
+          <li><strong>尝试：</strong>旧尝试结果不能覆盖新尝试；失败可重试，但结果不确定时不自动重试。</li>
+          <li><strong>回滚：</strong>领取失败/成员失活时回滚状态，不留下“假工作中”。</li>
+          <li><strong>依赖：</strong>前置任务没完成，后续任务不能假装开始。</li>
+        </ul>
+        <span class="status"><i></i> agent-teams 已有领取/尝试/回滚基础</span>
+      </section>
+
+      <section id="artifacts">
+        <div class="sec-kicker">03 / 共享产物</div>
+        <h2>交接的是文件和任务，不是聊天记录。</h2>
+        <p>把一个任务交给另一个 Agent，不应该靠“我把聊天记录发给你”。Codem 的交接是：目标、输入、产物、验收标准。文档、代码、测试、决定，都是同一种工作产物。</p>
+        <div class="grid-2">
+          <div class="box"><h4>产物</h4><p>文档版本、代码 diff、测试日志、引用清单。每个都有位置、版本和来源。</p></div>
+          <div class="box"><h4>任务</h4><p>谁领的、做到哪、依赖谁、验收条件是什么。任务状态不靠聊天猜。</p></div>
+        </div>
+        <p>Agent 读产物、写产物；共享的是工作台，不是整段上下文。每个 Agent 只拿自己需要的切片，避免把整个项目复制进每个窗口。</p>
+      </section>
+
+      <section id="docs">
+        <div class="sec-kicker">04 / 文档对账</div>
+        <h2>代码完成，不等于任务完成。</h2>
+        <p>大任务最容易漏的是收尾：架构文档、CHANGELOG、接口说明、示例。代码已经往前走，文档还停在上一版；下一个接手的人看到的是旧结论。</p>
+        <p>Codem 把「完成」写成一张清单：</p>
+        <ul>
+          <li>代码：改动、测试、回归结果；</li>
+          <li>文档：相关章节、CHANGELOG、接口说明是否同步；</li>
+          <li>引用：新增/修改的结论是否有来源；</li>
+          <li>版本：文档版本和代码版本是否对齐，差异是否解释。</li>
+        </ul>
+        <div class="callout warn"><b>任一项没同步，任务保持“待补齐”，不能标完成。</b> 这不是让 Agent 多写几句文档，而是把文档更新变成任务状态的一部分。</div>
+      </section>
+
+      <section id="verify">
+        <div class="sec-kicker">05 / 独立验收</div>
+        <h2>写的人不验自己，验的人不参与写。</h2>
+        <p>验收角色独立检查：代码能不能跑、文档有没有同步、引用是否支持结论、覆盖有没有缺口。发现缺口就退回，而不是“整体看起来不错”。</p>
+        <ol class="steps">
+          <li><b>接收产物</b><span>代码 diff、文档版本、测试日志、引用清单。</span></li>
+          <li><b>按清单核验</b><span>完成条件逐项过；未同步的文档、无来源的结论、未跑的测试都算缺口。</span></li>
+          <li><b>退回或通过</b><span>缺口退回给对应 Agent；通过才更新任务完成状态。</span></li>
+          <li><b>留审计</b><span>谁验的、验了哪些、依据什么，都能回看。</span></li>
+        </ol>
+        <div class="callout"><b>为什么独立：</b>写代码的 Agent 容易只验证自己改的部分；独立验收看的是“整体交付”，尤其是文档和版本有没有对齐。</div>
+      </section>
+
+      <section id="code">
+        <div class="sec-kicker">06 / 边界与代码</div>
+        <h2>它不是什么，以及落在哪。</h2>
+        <ul>
+          <li><strong>不是 Agent 越多越好。</strong> 小任务一个 Agent；只有大文档/多角色/并行才值得分工。</li>
+          <li><strong>不是群聊当协调层。</strong> 群聊适合人看；任务状态必须落在任务记录里。</li>
+          <li><strong>不是自动批准。</strong> 高影响动作仍需用户/策略批准；验收不能代替权限。</li>
+        </ul>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>位置</th><th>负责什么</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>agent-teams/engine.ts</td><td>任务、领取、尝试、回滚、邮箱</td><td>已有基础</td></tr>
+              <tr><td>subagent/runtime.ts</td><td>可续聊子会话、状态、恢复</td><td>已有基础</td></tr>
+              <tr><td>goal/runner.ts</td><td>阶段任务、验收证据、受控重规划</td><td>已有基础</td></tr>
+              <tr><td>inbox</td><td>等待/失败/需要人处理的通知</td><td>已有基础</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="end">
+          <h3>分工不是目的，交付才是。</h3>
+          <p>任务状态、共享产物、文档对账、独立验收，四件事同时成立，多 Agent 才不会越帮越乱。</p>
+          <a class="btn primary" href="context-os.html">← 回到首页</a>
+          <a class="btn" href="context-thread.html">对话</a>
+          <a class="btn" href="document-os.html">长文档</a>
+          <a class="btn" href="memory-graph.html">记忆</a>
+        </div>
+      </section>
+    </article>
+  </div>
+</main>
+<footer><div class="wrap" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap"><span>codem · 交付对账</span><span>产品概念页 · 具体能力以版本与验收为准</span></div></footer>
+<script src="./context-os-detail.js"></script>
+</body>
+</html>

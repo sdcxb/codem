@@ -4,6 +4,18 @@
 > 清单：`docs/marketing/context-os.claims.json`
 > 门禁：`tools/marketing/verify-context-os-claims.mjs`
 
+**页面结构**：
+
+- 首页：`context-os.html`（是什么 / 痛点 / 能力 / 四层协作）
+- 技术总览：`context-os-details.html`（四张技术线入口 + 完整说明）
+- 四条技术线：
+  - `context-thread.html`（对话与工作段）
+  - `document-os.html`（长文档）
+  - `memory-graph.html`（记忆）
+  - `agent-delivery.html`（交付对账 / Agent 协作）
+
+首页每个能力块和底部卡片都直接链到对应技术线；claims 门禁只锚定首页的 `data-claim`，详情页不重复声明，避免两套承诺。
+
 ## 0. 先说清楚它不是什么
 
 它不是“跑一遍就能证明产品达标”的测试器。它只防一件事：
