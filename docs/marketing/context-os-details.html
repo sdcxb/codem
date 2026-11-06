@@ -17,7 +17,7 @@
     </a>
     <div class="nav-meta">
       <a href="context-os.html">← 返回首页</a>
-      <nav class="tech-links" aria-label="技术线">
+      <nav class="tech-links" aria-label="技术页面">
         <a href="context-thread.html">对话</a>
         <a href="document-os.html">长文档</a>
         <a href="memory-graph.html">记忆</a>
@@ -32,285 +32,61 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <div class="eyebrow">CODEM / 实现细节</div>
-      <h1>一条对话，<br>背后是怎么接住的。</h1>
-      <p>从一次请求出发，说明 Codem 怎么保存对话、怎么取当前材料、什么时候压缩或换段、旧内容怎么找回来，以及文档、记忆和 Agent 怎么共用这些记录。</p>
+      <div class="eyebrow">CODEM / 技术总览</div>
+      <h1>四个技术点，<br>各看各的实现。</h1>
+      <p>首页讲「是什么」和「解决什么问题」；这里把四个技术点分开，每个都有自己的数据结构、执行流程、边界和代码位置。想先看哪个，直接点进去。</p>
       <div class="meta">
-        <span class="status"><i></i> 已有基础</span>
-        <span class="status partial"><i></i> 部分落地</span>
-        <span class="status target"><i></i> 路线图</span>
-        <span class="anchor-note">页面会标明每部分当前状态，不把目标写成已上线。</span>
+        <span class="status"><i></i> 已有实现</span>
+        <span class="status partial"><i></i> 部分能用</span>
+        <span class="status target"><i></i> 还在做</span>
+        <span class="anchor-note">每页会标明当前状态，不把目标写成已上线。</span>
       </div>
     </div>
   </section>
 
-  <div class="wrap">
+  <div class="wrap" style="padding:36px 0 0">
     <div class="tech-grid">
       <a class="tech-card" href="context-thread.html">
         <div class="tc-num">01 / 对话主线</div>
         <h3>对话为什么不会断</h3>
-        <p>Session、工作段、压缩与换段、旧内容检索。</p>
-        <span>看这条技术线 →</span>
+        <p>Session 和工作段的关系；压缩和换段分别做什么；旧消息放在哪、怎么回读。</p>
+        <span>看实现 →</span>
       </a>
       <a class="tech-card" href="document-os.html">
         <div class="tc-num">02 / 长文档</div>
         <h3>长文档怎么不写散</h3>
-        <p>结构、章节账本、分节任务、引用与版本对账。</p>
-        <span>看这条技术线 →</span>
+        <p>文档结构、章节账本、分节任务、引用核验，以及代码和文档的版本对账。</p>
+        <span>看实现 →</span>
       </a>
       <a class="tech-card" href="memory-graph.html">
         <div class="tc-num">03 / 记忆</div>
         <h3>记忆怎么做到可查</h3>
-        <p>来源、作用范围、有效期、冲突与写入/读取。</p>
-        <span>看这条技术线 →</span>
+        <p>完整原文和记忆索引的关系；来源、范围、有效期；冲突和删除怎么处理。</p>
+        <span>看实现 →</span>
       </a>
       <a class="tech-card" href="agent-delivery.html">
         <div class="tc-num">04 / 交付对账</div>
         <h3>大任务怎么收尾</h3>
-        <p>任务领取、尝试、回滚、共享产物与独立验收。</p>
-        <span>看这条技术线 →</span>
+        <p>任务领取、尝试、回滚；共享产物；代码、文档、测试、引用怎么一起验收。</p>
+        <span>看实现 →</span>
       </a>
     </div>
   </div>
 
-  <div class="wrap layout">
-    <aside class="toc" aria-label="页内目录">
-      <div class="toc-label">实现目录</div>
-      <a href="#thread">01 对话与工作段</a>
-      <a href="#switch" class="sub">02 压缩还是换段</a>
-      <a href="#example" class="sub">03 一次请求拆开看</a>
-      <a href="#history" class="sub">04 旧内容怎么找</a>
-      <a href="#document">05 长文档</a>
-      <a href="#memory">06 记忆</a>
-      <a href="#agents">07 Agent 协作</a>
-      <a href="#reliability">08 可靠性与验收</a>
-      <a href="#limits">09 边界</a>
-      <a href="#map">10 代码地图</a>
-    </aside>
-
-    <article>
-      <section id="thread">
-        <div class="sec-kicker">01 / 对话与工作段</div>
-        <h2>你看到一条对话，模型看到的是一段工作上下文。</h2>
-        <p class="lead">先把两个词说清楚：<strong>对话主线</strong>是你在界面上看到的那一条聊天；<strong>工作段</strong>是模型内部实际拿到的一段上下文。它们不是两个聊天窗口。</p>
-
-        <p>Codem 里，一条对话仍然是一个 <code>Session</code>。当这段上下文接近模型上限时，Codem 不会新建一个对话，而是在同一个 <code>Session</code> 里写一个“上下文检查点”（<code>ContextEpoch</code>），把模型看到的内容换到新的一段。</p>
-
-<pre><code><span class="cm">// 逻辑关系，不是数据库表结构</span>
-<span class="key">Session</span>（对话主线，用户看到的那一条）
-  ├─ <span class="key">ContextEpoch</span> 1  kind=<span class="str">"compact"</span>   <span class="cm">// 段内压缩</span>
-  ├─ <span class="key">ContextEpoch</span> 2  kind=<span class="str">"switch"</span>    <span class="cm">// 换到新工作段</span>
-  └─ <span class="key">ContextEpoch</span> 3  kind=<span class="str">"switch"</span>
-       cutoffMessageId = <span class="str">"msg_..."</span>       <span class="cm">// 从这条消息之后开始看</span></code></pre>
-
-        <p>这里最关键的是 <code>cutoffMessageId</code>：它不是按时间猜，也不是按摘要位置猜，而是按<strong>消息 id</strong> 定位。模型从哪条消息开始看，是可以精确复现的。</p>
-
-        <div class="grid-2">
-          <div class="box">
-            <h4>你看到的（时间线）</h4>
-            <p>所有消息都在，包括被压缩掉的旧消息。可以搜索、可以回读、可以导出。对应 <code>listTimelineMessages</code>。</p>
-          </div>
-          <div class="box">
-            <h4>模型看到的（投影）</h4>
-            <p>只取最新检查点之后的 marker + 尾部消息。对应 <code>listMessages</code> / <code>ContextView</code>。</p>
-          </div>
-        </div>
-
-        <div class="callout"><b>为什么不每次换段都新建 Session？</b> 因为对话记忆、侧边栏、远程查看、分叉都挂在 Session 上。新建 Session 会把“换工作段”变成“换对话”，用户和记忆都会被切断。Codem 的做法是：<strong>Session 不变，只换模型看到的那一段。</strong></div>
-        <span class="status partial"><i></i> 基础已落地：检查点、cutoff、完整时间线；自动换段仍在推进</span>
-      </section>
-
-      <section id="switch">
-        <div class="sec-kicker">02 / 压缩与换段</div>
-        <h2>快满的时候，到底发生什么？</h2>
-        <p>不是“到 80% 就弹窗”，也不是“所有情况都压缩”。Codem 先判断当前任务做到哪，再在两个动作里选一个。</p>
-
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>动作</th><th>什么时候用</th><th>发生什么</th></tr></thead>
-            <tbody>
-              <tr><td>压缩<br>compact</td><td>任务还没做完，但上下文里有很多可以收起来的过程</td><td>写一个检查点摘要；保留最近原文和关键用户消息；旧消息不删，模型从检查点之后继续。</td></tr>
-              <tr><td>换段<br>switch</td><td>任务告一段落，或连续压缩后上下文仍然太满</td><td>写一张交接单；带上最近原文和锚点；在同一个 Session 里开新工作段；旧段仍可查。</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <ol class="steps">
-          <li><b>先量当前占用</b><span>把系统提示、工具定义、输出预留都算进去，而不是只数聊天字数。占用接近上限才进入判断。</span></li>
-          <li><b>看任务是否真的结束</b><span>不是看模型说“完成了”，而是看用户要求、未回答的问题、还在跑的工具和验收条件。没结束，优先压缩；结束，才考虑换段。</span></li>
-          <li><b>写交接单</b><span>目标、限制、已完成、未完成、关键决定、关键文件、下一步、去哪里查。不是只写一句“已完成登录改造”。</span></li>
-          <li><b>保留最近原文</b><span>交接单负责“理解”，最近原文负责“语气、细节、刚说过的话”。两者都要有。</span></li>
-          <li><b>换段，但不换对话</b><span>新工作段从交接单和尾部消息开始；旧消息仍在时间线。用户继续输入，输入不会丢。</span></li>
-        </ol>
-
-        <div class="callout"><b>当前实现状态：</b>压缩路径已有检查点和完整时间线；自动判断“压缩还是换段”属于路线图，当前版本仍以压缩为主。页面不把未完成的能力写成已上线。</div>
-        <span class="status target"><i></i> 自动切换：设计完成，分阶段落地</span>
-      </section>
-
-      <section id="example">
-        <div class="sec-kicker">03 / 一次真实请求</div>
-        <h2>把一次真实请求拆开看。</h2>
-        <p>假设你说：「把年度报告第 4 节改一下，补上回滚方案，别动前面的结论。」</p>
-
-        <ol class="steps">
-          <li><b>先记下这句话</b><span>它进入当前对话主线，成为这一轮的任务描述；当前任务状态从「等待」变成「修改第 4 节」。</span></li>
-          <li><b>只取相关材料</b><span>最近几轮对话 + 第 4 节原文 + 文档账本里第 1～3 节已确认的结论 + 两条相关记忆（格式偏好、必须可回滚）。不会把整本报告塞进来。</span></li>
-          <li><b>模型读和改</b><span>先 <code>doc_read</code> 第 4 节的范围，再生成修改；需要引用时回到页码/段落。改动写进文档，不直接覆盖旧版本。</span></li>
-          <li><b>写回记录</b><span>对话记录、工具结果、文档 diff、第 4 节状态（已改/待核验）都落下来；账本记下这次改动依据的来源。</span></li>
-          <li><b>核验再回复</b><span>核验角色检查：第 4 节有没有漏掉「回滚」、有没有和前面结论冲突、引用是否支持。通过后才把结果和引用一起回复。</span></li>
-        </ol>
-
-        <div class="callout"><b>这一轮里，模型没有「记住整本报告」。</b> 它只需要知道：第 4 节在哪、前面确认了什么、这次改了哪、依据是什么。其余内容留在文档和账本里，下一轮还能查。</div>
-        <span class="status partial"><i></i> 文档读取/账本已有基础；完整的分节编译与核验仍在推进</span>
-      </section>
-
-      <section id="history">
-        <div class="sec-kicker">04 / 旧内容</div>
-        <h2>旧内容没有消失，只是不再全部塞给模型。</h2>
-        <p>这是“长对话”能成立的前提。Codem 保留完整时间线，再提供不同的回读方式：</p>
-        <ul>
-          <li><strong>时间线</strong>：按顺序看所有消息，包括被压缩的旧消息。</li>
-          <li><strong>全文检索</strong>：按关键词找旧对话；中文按字符/词组处理，不要求先分词。</li>
-          <li><strong>锚点</strong>：交接单里记录“第几段、第几条”，需要时直接回到原文。</li>
-          <li><strong>工具结果</strong>：长输出落在磁盘/记录里，模型需要时按定位读取，而不是一直占着上下文。</li>
-        </ul>
-        <p>检索不是“自动把所有旧内容重新注入”。它更像查资料：先搜到，再读那一段，最后把引用带回当前回答。</p>
-        <div class="callout warn"><b>边界：</b>检索依赖关键词和锚点，不是语义上“什么都能想起来”。所以交接单要写清楚“去哪里查”，而不是只写结论。</div>
-      </section>
-
-      <section id="document">
-        <div class="sec-kicker">05 / 长文档</div>
-        <h2>长文档：先拆结构，再分节写，最后对账。</h2>
-        <p>300 页文档不会被塞进一次请求。Codem 先把它变成可定位的结构，再用一本账把“读过什么、写过什么、验过什么”记下来。</p>
-
-        <h3>文档先变成结构</h3>
-        <p>目录、章节、段落、表格、页码、引用，都是可查询的坐标。模型可以先用 <code>doc_outline</code> 看目录，再用 <code>doc_search</code> 找相关段落，最后用 <code>doc_read</code> 只读需要的那几段。</p>
-
-        <h3>再记一本账</h3>
-        <p>每节记录：有没有读过、有没有改过、有没有核验、引用了哪些来源。写第 5 节时，先看账本和前面已确认的事实，而不是重新读完整本。</p>
-
-<pre><code><span class="key">section</span>: {
-  title: <span class="str">"04 实施路径"</span>,
-  status: <span class="str">"drafting"</span>,
-  sources: [<span class="str">"p.12"</span>, <span class="str">"p.18"</span>],
-  claims: <span class="str">3</span>,
-  citations: <span class="str">3 / 3</span>
-}</code></pre>
-
-        <h3>长任务怎么跑</h3>
-        <p>大纲 → 分节任务 → 合并 → 一致性检查 → 引用核验 → 覆盖检查。每一节可以独立做，但共享同一本账和同一组来源。哪节没读、哪句没来源，账本里能看到。</p>
-
-        <h3>完成条件里要有文档</h3>
-        <p>代码任务不能以「测试通过」单独收尾。架构文档、CHANGELOG、接口说明、示例，都要在完成清单里。文档账本记录当前版本和最后一次核验；代码改动后，相关文档若没更新，任务保持「待补齐」，不能标完成。</p>
-        <div class="callout warn"><b>这解决的是版本失配：</b>开发版本已经往前走，文档还停在旧结论。把文档更新做成任务状态，而不是靠人临下班前想起来。</div>
-
-        <div class="callout"><b>不是“向量检索就够了”：</b>向量能找到相似段落，但接不上章节关系、术语和前后结论。结构 + 账本 + 引用，才是长文写作能收口的原因。</div>
-        <span class="status partial"><i></i> 文档结构/检索/账本已有基础；完整编译流水线仍在推进</span>
-      </section>
-
-      <section id="memory">
-        <div class="sec-kicker">06 / 记忆</div>
-        <h2>记忆：一条有出处的记录，而不是一句全局摘要。</h2>
-        <p>“用户喜欢简洁”可能是对的，但如果没有来源、范围和有效期，它就会在别的项目里乱用，或者和后来的要求冲突。</p>
-
-<pre><code><span class="key">MemoryFact</span> {
-  statement: <span class="str">"发布前必须跑全量测试"</span>,
-  scope: <span class="str">"project"</span>,
-  provenance: [<span class="str">"msg_184"</span>],
-  confidence: <span class="str">0.96</span>,
-  status: <span class="str">"approved"</span>,
-  validFrom: <span class="str">"2026-11-01"</span>,
-  usageCount: <span class="str">12</span>
-}</code></pre>
-
-        <h3>写入</h3>
-        <p>自动提取只产生候选；项目级/高影响的写入需要批准；手动写的记忆优先。自动流程不会删除或静默改写手动记忆。合并和归档要留下可撤销的记录。</p>
-
-        <h3>读取</h3>
-        <p>先按作用范围过滤，再按相关度、来源、时效和使用情况排序。回答时带引用；两条记忆冲突时，把双方都摆出来，而不是选一个偷偷覆盖。</p>
-
-        <div class="grid-2">
-          <div class="box"><h4>不会发生</h4><p>自动把“用户可能喜欢 A”写成全局事实，然后在所有项目生效。</p></div>
-          <div class="box"><h4>会发生</h4><p>在某个项目里记下一条有来源的决定；换项目时不带过去；冲突时保留双方。</p></div>
-        </div>
-        <span class="status partial"><i></i> 作用域/审批/检索已有基础；完整记忆图谱与冲突视图仍在建设</span>
-      </section>
-
-      <section id="agents">
-        <div class="sec-kicker">07 / Agent</div>
-        <h2>多 Agent：共享任务和文件，不共享整段聊天。</h2>
-        <p>多 Agent 最容易出的问题，不是“不会写”，而是分工后没人对账：代码、文档、测试各在一个 Agent 手里，谁都说完成了，合起来却对不上。Codem 用任务状态和产物交接：目标、输入、验收标准、结果文件。</p>
-
-        <h3>任务有状态</h3>
-        <p>任务可以领取、开始、完成、取消、转派。每次领取生成一个尝试编号；旧尝试的结果不能覆盖新尝试。领取失败要回滚，不能把成员永远留在“正在工作”。</p>
-
-        <h3>角色分开</h3>
-        <p>负责人拆任务、写作角色产出、核验角色独立检查引用和覆盖。核验不自己批自己；发现缺口就退回，而不是“整体看起来不错”。</p>
-
-        <h3>产物是共享的</h3>
-        <p>文档、代码、测试结果、决定记录，都是同一种工作产物。Agent 读产物、写产物，不靠把整段对话转发来同步。</p>
-        <p>验收时，除了看代码能不能跑，还要看对应文档有没有更新、引用有没有补、版本号有没有对齐。文档没同步，任务就不算完成。</p>
-        <div class="callout"><b>为什么不用群聊当协调层：</b>群聊适合人看，但不适合做精确的任务状态。谁领了、试到第几次、结果有没有交回，必须落在任务记录里。</div>
-        <span class="status partial"><i></i> 任务板/领取/回滚已有基础；群聊和完整产物协作仍在推进</span>
-      </section>
-
-      <section id="reliability">
-        <div class="sec-kicker">08 / 可靠性与验收</div>
-        <h2>怎么防止“说过了，但没做到”。</h2>
-        <p>长任务最怕的不是报错，是静默地漏掉、重复或假装完成。Codem 把关键动作做成可检查的记录：</p>
-        <ul>
-          <li><strong>上下文记录</strong>：这次请求带了哪些来源、哪些版本、哪些被裁掉，能复盘。</li>
-          <li><strong>写入顺序</strong>：先记录意图，再写文件/索引；失败可恢复，不出现“写了一半”。</li>
-          <li><strong>幂等</strong>：同一个任务重复派发，不会执行两次；结果不确定时不自动重试。</li>
-          <li><strong>验收</strong>：文档有覆盖账本，Agent 有独立核验，宣传承诺有 claims gate。代码任务还要检查文档是否同步，避免代码和文档两个版本。</li>
-        </ul>
-        <p>这些不是“让模型更聪明”，而是让错误更早暴露、更容易退回去。</p>
-        <span class="status target"><i></i> Manifest / 幂等 / 验收门禁属于重点建设项</span>
-      </section>
-
-      <section id="limits">
-        <div class="sec-kicker">09 / 边界</div>
-        <h2>它不是什么。</h2>
-        <p>把边界说清楚，比把能力说满更重要。</p>
-        <ul>
-          <li><strong>不是无限注意力。</strong> 单次请求仍然受模型窗口限制；Codem 做的是把旧内容放到可检索的地方，每次只取需要的。</li>
-          <li><strong>不是自动记得一切。</strong> 检索可能漏；所以交接单要写“去哪里查”，关键结论要带锚点。</li>
-          <li><strong>不是零成本。</strong> 压缩、换段、检索、核验都要花时间；省的是用户重新解释和重做的成本。</li>
-          <li><strong>不是所有能力都已上线。</strong> 首页表达目标形态，详情页按“已落地 / 部分落地 / 路线图”标注。</li>
-        </ul>
-        <div class="callout warn"><b>判断标准：</b>不要看它说“支持长任务”，要看它能不能在换段后找回旧事实、在长文档里指出未核验章节、在记忆冲突时保留双方、在任务失败时回滚。</div>
-      </section>
-
-      <section id="map">
-        <div class="sec-kicker">10 / 代码地图</div>
-        <h2>这些能力落在哪些代码上。</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>位置</th><th>负责什么</th><th>状态</th></tr></thead>
-            <tbody>
-              <tr><td>context-view.ts / context-epochs.ts</td><td>检查点、cutoff、完整时间线与模型投影</td><td>已有基础</td></tr>
-              <tr><td>agentic-loop.ts / compaction-budget.ts</td><td>上下文压力、压缩触发、保留预算</td><td>已有基础</td></tr>
-              <tr><td>message.ts / session-search.ts</td><td>时间线、全文检索、旧消息回读</td><td>已有基础</td></tr>
-              <tr><td>document-tools.ts / document/ledger.ts</td><td>文档大纲、检索、定额读取、账本、引用</td><td>部分落地</td></tr>
-              <tr><td>goal/runner.ts</td><td>阶段任务、验收证据、受控重规划</td><td>已有基础</td></tr>
-              <tr><td>memory/memory.ts</td><td>作用域、审批、待批准、注入、记忆管理</td><td>已有基础</td></tr>
-              <tr><td>agent-teams/engine.ts</td><td>任务、领取、尝试、回滚、邮箱</td><td>已有基础</td></tr>
-              <tr><td>prompt/prompt.ts</td><td>稳定前缀、易变尾部、缓存边界</td><td>已有基础</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="anchor-note">代码地图只标职责，不承诺每个分支都已覆盖；具体验收以测试和 claims gate 为准。</p>
-
-        <div class="end">
-          <h3>首页讲“是什么”，这里讲“怎么接”。</h3>
-          <p>如果你只记一件事：Codem 不是让模型记住更多，而是让系统知道东西放在哪、什么时候取、取回来怎么证明。</p>
-          <a class="btn primary" href="context-os.html">← 回到首页</a>
-          <a class="btn" href="context-os.html#details">看四个能力入口</a>
-        </div>
-      </section>
-    </article>
+  <div class="wrap" style="padding:44px 0 70px">
+    <div class="callout"><b>四条线最后都落到同一份记录：</b> 对话和工具结果写进时间线；文档和记忆按索引取用；任务和验收记录状态。只做其中一条，交付不完整。</div>
+    <div class="end">
+      <h3>想先看哪条？</h3>
+      <p>关心「为什么做一步就停」，先看对话主线；关心长文写作，先看长文档；关心记忆可核对，先看记忆；关心多 Agent 收尾，先看交付对账。</p>
+      <a class="btn primary" href="context-os.html">← 回到首页</a>
+      <a class="btn" href="context-thread.html">对话</a>
+      <a class="btn" href="document-os.html">长文档</a>
+      <a class="btn" href="memory-graph.html">记忆</a>
+      <a class="btn" href="agent-delivery.html">交付对账</a>
+    </div>
   </div>
 </main>
+
 
 <footer>
   <div class="wrap" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
@@ -318,19 +94,5 @@
     <span>产品概念页 · 具体能力以版本与验收为准</span>
   </div>
 </footer>
-
-<script>
-(function(){
-  const links = [...document.querySelectorAll('.toc a')];
-  const sections = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (!e.isIntersecting) continue;
-      links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
-    }
-  }, {rootMargin:'-20% 0px -65% 0px', threshold:0});
-  sections.forEach(s => io.observe(s));
-})();
-</script>
 </body>
 </html>

@@ -14,7 +14,7 @@
     <a class="brand" href="context-os.html"><img src="./codem-logo.png" alt="Codem"><b>codem</b></a>
     <div class="nav-meta">
       <a href="context-os.html">← 返回首页</a>
-      <nav class="tech-links" aria-label="技术线">
+      <nav class="tech-links" aria-label="技术页面">
         <a href="context-thread.html">对话</a>
         <a class="active" href="document-os.html">长文档</a>
         <a href="memory-graph.html">记忆</a>
@@ -31,11 +31,11 @@
     <div class="wrap">
       <div class="eyebrow">02 / 长文档</div>
       <h1>300 页文档，<br>怎么写到最后一章还不散？</h1>
-      <p>不是把全文塞进模型，也不是把文档切成互不相干的 chunk。Codem 先把文档变成结构，再用一本账记录读过什么、改过什么、验过什么。</p>
+      <p>Codem 不把全文塞进模型，也不把文档切成互不相干的 chunk。它先把文档拆成结构，再用一本账记录读过什么、改过什么、验过什么。</p>
       <div class="meta">
-        <span class="status"><i></i> 文档读取/检索已有基础</span>
-        <span class="status partial"><i></i> 账本部分落地</span>
-        <span class="status target"><i></i> 完整编译流水线仍在推进</span>
+        <span class="status"><i></i> 文档读取/检索已有实现</span>
+        <span class="status partial"><i></i> 账本部分能用</span>
+        <span class="status target"><i></i> 完整编译流水线还在做</span>
       </div>
     </div>
   </section>
@@ -54,11 +54,11 @@
     <article>
       <section id="structure">
         <div class="sec-kicker">01 / 文档结构</div>
-        <h2>先让文档有“章节”和“页码”，再谈理解。</h2>
+        <h2>文档先有章节和页码，才谈得上理解。</h2>
         <p class="lead">一份 300 页报告，如果只有一整段文本，模型只能看到开头或结尾。Codem 先把目录、章节、段落、表格、页码变成可查询的坐标。</p>
-        <p>模型先用 <code>doc_outline</code> 看目录，再用 <code>doc_search</code> 找相关段落，最后用 <code>doc_read</code> 只读需要的那几段。每次读取都带页码、章节、chunk 引用，不会只给一段没有出处的文本。</p>
+        <p>模型可以先用 <code>doc_outline</code> 看目录，找到相关段落后用 <code>doc_search</code> 定位，再用 <code>doc_read</code> 只读需要的那几段。每次读取都带页码、章节、chunk 引用，不会给一段没有出处的文本。</p>
 
-<pre><code><span class="cm">// 文档不是一坨文本，是一组可定位的片段</span>
+<pre><code><span class="cm">// 文档拆成可定位的片段</span>
 <span class="key">Document</span> {
   id, name, version,
   outline: [<span class="str">"01 背景"</span>, <span class="str">"02 现状"</span>, <span class="str">"03 方案"</span>],
@@ -67,39 +67,39 @@
 }</code></pre>
 
         <div class="grid-2">
-          <div class="box"><h4>结构树</h4><p>目录和章节让模型知道“现在写的是哪一块”，而不是从相似段落里猜上下文。</p></div>
+          <div class="box"><h4>结构树</h4><p>目录和章节让模型知道「现在写的是哪一块」，不用只从相似段落里猜上下文。</p></div>
           <div class="box"><h4>页码/引用</h4><p>每个结论能回到页码、章节、chunk；用户和核验角色都能查。</p></div>
         </div>
-        <span class="status"><i></i> 已有基础：doc_outline / doc_search / doc_read / citation</span>
+        <span class="status"><i></i> 已有实现：doc_outline / doc_search / doc_read / citation</span>
       </section>
 
       <section id="ledger">
         <div class="sec-kicker">02 / 文档账本</div>
         <h2>不靠模型“记得”，靠一本账。</h2>
-        <p>长文写到后面，真正需要跨轮保留的只有三类信息：看过哪些文件、读过哪些片段、确认了哪些带引用的事实。正文随时可以按引用再取。</p>
+        <p>长文写到后面，跨轮需要保留的只有三类信息：看过哪些文件、读过哪些片段、确认了哪些带引用的事实。正文随时可以按引用再取。</p>
 <pre><code><span class="key">DocumentLedger</span> {
   files: [<span class="str">"报告.docx"</span>, <span class="str">"访谈记录.pdf"</span>],
   reads: [{ documentId, chunkNo, page, heading, at }],
   facts: [{ text, citation, at }],
   coverage: { <span class="str">"04 实施路径"</span>: <span class="str">"drafting"</span> }
 }</code></pre>
-        <p>账本放在易变的尾部上下文，不放进稳定系统前缀。否则每改一节，整个提示词前缀都变，缓存失效。账本只记结构化状态，不复制整段正文。</p>
-        <div class="callout"><b>为什么账本重要：</b>模型不需要记住全文，但必须知道“第 4 节写过没有、第 2 节的结论是什么、哪句有引用、哪里还没核验”。这些是账本要回答的。</div>
-        <span class="status partial"><i></i> DocumentLedger 已有基础；覆盖/版本对账仍在补</span>
+        <p>账本放在每轮会变的尾部，不放进稳定的系统前缀。否则每改一节，整个提示词前缀都变，缓存失效。账本只记结构化状态，不复制整段正文。</p>
+        <div class="callout"><b>账本要回答四件事：</b>第 4 节写过没有、第 2 节的结论是什么、哪句有引用、哪里还没核验。模型不用记住全文，但这些状态不能丢。</div>
+        <span class="status partial"><i></i> DocumentLedger 已有实现；覆盖/版本对账仍在补</span>
       </section>
 
       <section id="complete">
         <div class="sec-kicker">03 / 完成条件</div>
         <h2>代码改完，文档没更新，不算完成。</h2>
-        <p>大型任务最常见的失配不是代码写错，而是代码已经往前走，架构文档、CHANGELOG、接口说明还停在上一版。下一个接手的人看到的是旧结论。</p>
-        <p>Codem 把文档更新写进任务完成条件，而不是靠人临下班前想起来：</p>
+        <p>大型任务最常见的失配：代码已经往前走，架构文档、CHANGELOG、接口说明还停在上一版。下一个接手的人看到的是旧结论。</p>
+        <p>Codem 把文档更新写进任务完成条件，不靠人临下班前想起来：</p>
         <ul>
           <li>代码任务：代码、测试、相关文档、CHANGELOG 是否有状态；</li>
           <li>文档任务：章节是否已写、是否已核验、引用是否完整；</li>
           <li>版本对账：文档版本和代码版本是否对齐，差异是否解释；</li>
           <li>没同步：任务保持「待补齐」，不能标完成。</li>
         </ul>
-        <div class="callout warn"><b>这是“多 Agent 收尾就散了”的解药：</b>不是每个 Agent 各自说“我完成了”，而是同一张交付清单上，代码、文档、测试、引用一起验收。</div>
+        <div class="callout warn"><b>对应「多 Agent 收尾就散了」的问题：</b>每个 Agent 各自说「我完成了」不算数；同一张交付清单上，代码、文档、测试、引用一起验收。</div>
       </section>
 
       <section id="pipeline">
@@ -109,11 +109,11 @@
           <li><b>拆结构</b><span>目录、章节、段落、表格、页码；确认文档状态和 OCR/解析质量。</span></li>
           <li><b>列大纲</b><span>先确定每一节写什么、依据哪些来源、完成标准是什么。</span></li>
           <li><b>逐节写</b><span>每次只取当前节相关材料和账本；写完更新该节状态和引用。</span></li>
-          <li><b>合并</b><span>检查术语、数字、交叉引用和前后结论；冲突不静默覆盖。</span></li>
-          <li><b>核验</b><span>每条结论有来源；未读章节、未验段落、无引用结论都要暴露。</span></li>
+          <li><b>合并</b><span>检查术语、数字、交叉引用和前后结论；冲突时保留双方，不偷偷覆盖。</span></li>
+          <li><b>核验</b><span>每条结论有来源；未读章节、未验段落、无引用结论，账本里都要能看到。</span></li>
           <li><b>对账</b><span>文档版本、代码版本、任务状态对齐后才交付。</span></li>
         </ol>
-        <p>这套阶段可以交给 goal runner 或等价阶段机执行：每阶段有验收证据，未完成不冒充完成。</p>
+        <p>这套阶段可以交给 goal runner 或等价阶段机执行：每阶段有验收证据，没做完就不标完成。</p>
       </section>
 
       <section id="example">
@@ -127,31 +127,31 @@
           <li><b>核验</b><span>检查回滚方案是否漏、是否和前面结论冲突、引用是否支持。</span></li>
           <li><b>对账</b><span>文档版本 + 代码/任务状态一致后才回复完成。</span></li>
         </ol>
-        <div class="callout"><b>模型没有“记住整本报告”。</b> 它只需要知道第 4 节在哪、前面确认了什么、这次改了什么、依据是什么。</div>
+        <div class="callout"><b>模型不用记住整本报告。</b> 它只需要知道第 4 节在哪、前面确认了什么、这次改了什么、依据是什么。</div>
       </section>
 
       <section id="limits">
         <div class="sec-kicker">06 / 边界与代码</div>
-        <h2>它不是什么，以及落在哪。</h2>
+        <h2>边界与代码位置。</h2>
         <ul>
-          <li><strong>不是向量检索就够了。</strong> 向量能找到相似段落，但接不上章节关系、术语和前后结论。</li>
-          <li><strong>不是所有格式都一个难度。</strong> PDF、扫描件、表格、PPT 的解析质量不同；OCR/表格失败要显式标出来。</li>
-          <li><strong>不是自动写完整本书。</strong> 分节、合并、引用核验仍需要任务状态和人工/独立验收。</li>
+          <li><strong>向量检索只能解决一部分。</strong> 它能找到相似段落，但接不上章节关系、术语和前后结论。</li>
+          <li><strong>不同格式难度不同。</strong> PDF、扫描件、表格、PPT 的解析质量不一样；OCR/表格失败要显式标出来。</li>
+          <li><strong>不能自动写完整本书。</strong> 分节、合并、引用核验仍需要任务状态和人工/独立验收。</li>
         </ul>
         <div class="table-wrap">
           <table>
             <thead><tr><th>位置</th><th>负责什么</th><th>状态</th></tr></thead>
             <tbody>
-              <tr><td>document-tools.ts</td><td>大纲、检索、定额读取、状态</td><td>已有基础</td></tr>
-              <tr><td>document/ledger.ts</td><td>已读/已改/事实/覆盖账本</td><td>部分落地</td></tr>
-              <tr><td>document/citation.ts</td><td>页码/章节/chunk 引用</td><td>已有基础</td></tr>
-              <tr><td>goal/runner.ts</td><td>阶段任务、证据、受控重规划</td><td>已有基础</td></tr>
+              <tr><td>document-tools.ts</td><td>大纲、检索、定额读取、状态</td><td>已有实现</td></tr>
+              <tr><td>document/ledger.ts</td><td>已读/已改/事实/覆盖账本</td><td>部分能用</td></tr>
+              <tr><td>document/citation.ts</td><td>页码/章节/chunk 引用</td><td>已有实现</td></tr>
+              <tr><td>goal/runner.ts</td><td>阶段任务、证据、受控重规划</td><td>已有实现</td></tr>
             </tbody>
           </table>
         </div>
         <div class="end">
-          <h3>长文档不是“更大的附件”。</h3>
-          <p>它是结构、账本、引用和版本对账的组合。继续看其他技术线：</p>
+          <h3>长文档要当工作区，别当附件。</h3>
+          <p>它是结构、账本、引用和版本对账的组合。继续看其他技术点：</p>
           <a class="btn primary" href="context-os.html">← 回到首页</a>
           <a class="btn" href="context-thread.html">对话</a>
           <a class="btn" href="memory-graph.html">记忆</a>

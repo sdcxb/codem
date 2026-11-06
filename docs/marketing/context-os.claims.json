@@ -1,7 +1,7 @@
 {
   "schema": "codem.context-os.claims.v1",
   "page": "context-os.html",
-  "pageSha256": "0106b72a8b2631f58eb41136ea3e395b4d4a88faf5500356628ce189dded67fa",
+  "pageSha256": "e6d16bde0b9641ebfecde7c141771ecafc681a13c276e8e7c5549ca660b13469",
   "updatedAt": "2026-11-06",
   "purpose": "把宣传页上的承诺变成可追溯的验收条目。页面负责表达，清单负责证明；不能通过改文案来让门禁变绿。",
   "statusMeaning": {
