@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
     private static final String LOCAL_AUTH_FRAGMENT = "#token=";
     private static final String PREFS = "codem";
     private static final String KEY_URL = "host_url";
+    /** 本机项目工作区名（相对 files/data/workspace；空 = 根） */
+    private static final String KEY_WORKSPACE = "workspace_name";
     /** JS 桥的名字：**只有 loopback 页面**能看见（见 {@link NativeBridge}） */
     private static final String BRIDGE_NAME = "CodemNative";
 
@@ -255,11 +257,13 @@ public class MainActivity extends Activity {
                 prefs().getString(LlmSecretStore.KEY_MODEL, ""),
                 LlmSecretStore.hasStoredKey(prefs()),
                 LlmSecretStore.state(prefs()),
+                prefs().getString(KEY_WORKSPACE, ""),
+                new File(getFilesDir(), "data/workspace"),
                 this::applyLlmSettings);
     }
 
     /** 对话框回调：保存 → 重启 Host → 刷新页面（远程页面不动） */
-    private void applyLlmSettings(String baseUrl, String model, String apiKey, boolean clearKey) {
+    private void applyLlmSettings(String baseUrl, String model, String apiKey, boolean clearKey, String workspace) {
         // 清除 Key 时对话框传的是空 base/model：沿用已保存的那份，别把地址一起清掉
         final String base = clearKey ? prefs().getString(LlmSecretStore.KEY_BASE, "") : baseUrl;
         final String targetModel = clearKey ? prefs().getString(LlmSecretStore.KEY_MODEL, "") : model;
@@ -267,6 +271,7 @@ public class MainActivity extends Activity {
         persistConfig(base, targetModel, apiKey, clearKey, new PersistCallback() {
             @Override
             public void onSaved(LlmConfig config) {
+                prefs().edit().putString(KEY_WORKSPACE, workspace == null ? "" : workspace).apply();
                 restartHostAsync(config);
             }
 
@@ -290,6 +295,7 @@ public class MainActivity extends Activity {
             String failure = null;
             try {
                 if (supervisor == null) throw new IOException("本机运行时尚未准备好，请重新打开应用后重试");
+                supervisor.setWorkspace(prefs().getString(KEY_WORKSPACE, ""));
                 supervisor.restart(config, hostLog());
                 if (!supervisor.waitHealthy(120_000)) failure = "新 Host 未在 120s 内就绪（查看 filesDir/host.log）";
             } catch (IOException e) {
@@ -629,6 +635,8 @@ public class MainActivity extends Activity {
             File libs = new File(files, "libs");
             File marker = new File(files, ".runtime-ready");
             File bin = new File(files, "bin");
+            // 手机本机项目工作区：持久数据目录（Host 重启/升级都不清）
+            mkdirs(new File(data, "workspace"));
 
             if (!marker.exists()) {
                 showStatus("解压 Linux 运行时（约 30MB）…");
@@ -667,6 +675,7 @@ public class MainActivity extends Activity {
             LlmConfig config = LlmSecretStore.loadConfig(prefs());
 
             if (supervisor == null) supervisor = new HostSupervisor(files, root, app, data, libs, bin);
+            supervisor.setWorkspace(prefs().getString(KEY_WORKSPACE, ""));
             startKeepAlive();
             showStatus("启动本机 Host…");
             supervisor.ensureStarted(config, hostLog());
@@ -713,7 +722,7 @@ public class MainActivity extends Activity {
         prootDb(root, bin, data, libs, "sessions.upsert",
             "{\"id\":\"welcome\",\"project_id\":\"\",\"title\":\"欢迎使用 Codem\",\"created_at\":" + System.currentTimeMillis() + "}");
         prootDb(root, bin, data, libs, "messages.create",
-            "{\"id\":\"welcome-m1\",\"session_id\":\"welcome\",\"role\":\"assistant\",\"content\":\"这是手机本机上的 Codem。点开这个会话即可使用；模型与凭据在桌面端配置。\",\"timestamp\":" + (System.currentTimeMillis() + 1) + "}");
+            "{\"id\":\"welcome-m1\",\"session_id\":\"welcome\",\"role\":\"assistant\",\"content\":\"这是手机本机上的 Codem。模型与凭据在「信息 → 本机模型设置」里配置；项目文件放在本机工作区。\",\"timestamp\":" + (System.currentTimeMillis() + 1) + "}");
     }
 
     private void prootDb(File root, File bin, File data, File libs, String command, String json) throws IOException {

@@ -1,7 +1,7 @@
 {
   "_note": "由 tools/docs/update-project-guide.mjs --write 生成；发版时用于对齐文档基线。计数类信息只做警告，版本一致性是硬门禁。",
-  "version": "1.18.9",
-  "updatedAt": "2026-11-05",
+  "version": "1.18.10",
+  "updatedAt": "2026-11-06",
   "testFiles": 897,
   "coreDirs": 62,
   "sqliteTables": 45,

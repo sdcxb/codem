@@ -90,6 +90,8 @@ final class HostSupervisor {
     private final Object lock = new Object();
     private Process process;
     private boolean restarting;
+    /** 当前项目工作区名（相对 `data/workspace`；空 = 工作区根） */
+    private volatile String workspaceName = "";
 
     HostSupervisor(File files, File root, File app, File data, File libs, File bin) {
         this.root = root;
@@ -130,6 +132,24 @@ final class HostSupervisor {
             sleep(500);
         }
         return false;
+    }
+
+    /** 切换项目工作区（下次 start/restart 生效）。非法名回落到根工作区。 */
+    void setWorkspace(String name) {
+        String value = name == null ? "" : name.trim();
+        this.workspaceName = value.matches("[\\p{L}\\p{N}._-]{1,64}") ? value : "";
+    }
+
+    private String workspaceGuestPath() {
+        return workspaceName.isEmpty()
+                ? "/opt/data/workspace"
+                : "/opt/data/workspace/" + workspaceName;
+    }
+
+    private File workspacePhoneDir() {
+        return workspaceName.isEmpty()
+                ? new File(data, "workspace")
+                : new File(new File(data, "workspace"), workspaceName);
     }
 
     /** 已经在跑就直接返回；否则拉起一个新 Host（单飞：并发调用只有一个会真的 start） */
@@ -266,6 +286,14 @@ final class HostSupervisor {
     }
 
     private Process launch(LlmConfig config, File log, int port, String token) throws IOException {
+        /*
+         * 本机项目工作区必须是**持久数据目录**，不能再用打包的 web 资源目录：
+         * 后者是 Host 自己服务的页面，用户项目写进去会被升级/重建覆盖，也不是"手机本地项目"。
+         */
+        File workspace = workspacePhoneDir();
+        if (!workspace.exists() && !workspace.mkdirs()) {
+            throw new IOException("无法创建本机工作区：" + workspace.getAbsolutePath());
+        }
         List<String> cmd = new ArrayList<>(Arrays.asList(
                 new File(bin, "proot").getAbsolutePath(),
                 "-0",
@@ -283,7 +311,7 @@ final class HostSupervisor {
                 "/opt/bin/node",
                 "/opt/app/host.mjs", "serve",
                 "--data-home", "/opt/data",
-                "--workspace", "/opt/app/web",
+                "--workspace", workspaceGuestPath(),
                 "--web", "/opt/app/web",
                 "--port", String.valueOf(port)));
         boolean viaStdin = config != null && config.usable();

@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-11-04 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（v1.18.9 已发布）｜ **1.18.8**（2026-11-05 发布，GitHub `Latest`；上一稳定版 1.17.0）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.18.10 已发布）｜ **1.18.8**（2026-11-05 发布，GitHub `Latest`；上一稳定版 1.17.0）
 >
 > 1.18.0 包含：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）+ Flutter 原生 Android 客户端预览 +
 > Tailscale Serve 零配对码 + 远程新建项目/会话 + 交互式命令 stdin 修复；Funnel/公网仍保留配对码。
@@ -14,12 +14,12 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.18.9**（2026-11-05 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.18.9` = **Latest**（2026-11-05） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` = 1.18.9（发布时上传并远端校验） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（v1.18.9 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.9 已提交并推送 | `git status -sb` |
-| 本地 tag | 最新为 **v1.18.9** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.18.10**（2026-11-06 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.18.10` = **Latest**（2026-11-05） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.18.10（发布时上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.18.10 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.10 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.18.10** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：以 `gh release list` 与 `latest.json` 为准。
 
@@ -29,7 +29,7 @@
 
 ```text
 ## master...origin/master
-# v1.18.9 已提交并推送；仅 .codem/ 运行时文件未跟踪
+# v1.18.10 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
 - v1.18.8 的文档任务识别续修、v1.18.4 的水位预热修复、v1.18.2 的继续条对齐与旧会话继续入口修复、v1.18.1 的长任务效率与完成态修复、v1.18.0 的目标模式 / Flutter 客户端 / 零码网关改动均已提交并推送。
@@ -192,7 +192,7 @@
 
 | 文档 | 最后口径 | 问题 |
 |---|---|---|
-| `docs/PROJECT-GUIDE.md` | 823 KB；头部已更新为 2026-11-05（v1.18.9 已发布），正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
+| `docs/PROJECT-GUIDE.md` | 823 KB；头部已更新为 2026-11-05（v1.18.10 已发布），正文“当前状态”仍是 1.16.305 | 版本/测试数/目录树/文档导航都过时；太大，没人通读 |
 | `AGENTS.md` | 2026-11-05，v1.18.8 | 命令/发版规程仍权威；详细状态以本套与 `20` 为准 |
 | `docs/NEW-SESSION-START.md` | 2026-11-04 重写 | 只作短入口，指向 `20`/`00`/`09`；旧 1.16 待办已清除 |
 | `docs/HANDOVER-2026-10-17.md` | 1.16.329 | 三条主动脉仍有效；命令面“全在 lib.rs”等细节过时 |
@@ -208,7 +208,7 @@
 
 ## 8. 建议的下一步（按优先级，供接手者参考）
 
-### P0：v1.18.9 已发布，下一批重型任务先做完整评测
+### P0：v1.18.10 已发布，下一批重型任务先做完整评测
 
 1. v1.18.0 / v1.18.1 / v1.18.8 均已发布，`Latest` 为 1.18.8；工作区应保持干净。
 2. **完整 12 任务跨实现评测**：旧构建 vs 新构建，至少 2 轮；跑批期间不构建、不跑全量测试；用官方 collect/dedupe 口径，区分通过率与 token/墙钟。

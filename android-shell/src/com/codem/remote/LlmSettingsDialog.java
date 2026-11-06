@@ -15,6 +15,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -47,8 +48,9 @@ final class LlmSettingsDialog {
         /**
          * @param apiKey   空字符串 = 保留已保存的 Key（不是"清空"）
          * @param clearKey true = 显式清除已保存的 Key
+         * @param workspace 相对 `data/workspace` 的项目名；空 = 工作区根
          */
-        void onSave(String baseUrl, String model, String apiKey, boolean clearKey);
+        void onSave(String baseUrl, String model, String apiKey, boolean clearKey, String workspace);
     }
 
     private LlmSettingsDialog() { }
@@ -59,6 +61,8 @@ final class LlmSettingsDialog {
             String model,
             boolean hasKey,
             LlmSecretStore.State state,
+            String workspaceName,
+            File workspaceRoot,
             Listener listener) {
         final LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -107,8 +111,66 @@ final class LlmSettingsDialog {
         fetchButton.setOnClickListener(v -> fetchModels(activity, base, key, fetchButton, status, modelField));
         root.addView(fetchButton);
 
+        final String[] selectedWorkspace = { workspaceName == null ? "" : workspaceName };
+        TextView workspaceTitle = new TextView(activity);
+        workspaceTitle.setText("项目工作区（手机本机）");
+        workspaceTitle.setPadding(0, pad / 2, 0, 0);
+        root.addView(workspaceTitle);
+        final TextView workspaceLabel = new TextView(activity);
+        workspaceLabel.setText(workspaceSummary(workspaceRoot, selectedWorkspace[0]));
+        workspaceLabel.setPadding(0, 0, 0, pad / 4);
+        root.addView(workspaceLabel);
+
+        Button chooseWorkspace = new Button(activity);
+        chooseWorkspace.setText("选择项目工作区");
+        chooseWorkspace.setAllCaps(false);
+        chooseWorkspace.setOnClickListener(v -> {
+            List<String> names = new ArrayList<>();
+            names.add("工作区根");
+            File[] dirs = workspaceRoot.listFiles(File::isDirectory);
+            if (dirs != null) {
+                for (File dir : dirs) names.add(dir.getName());
+            }
+            new AlertDialog.Builder(activity)
+                    .setTitle("选择项目工作区")
+                    .setItems(names.toArray(new String[0]), (d, which) -> {
+                        selectedWorkspace[0] = which == 0 ? "" : names.get(which);
+                        workspaceLabel.setText(workspaceSummary(workspaceRoot, selectedWorkspace[0]));
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+        });
+        root.addView(chooseWorkspace);
+
+        Button createWorkspace = new Button(activity);
+        createWorkspace.setText("新建项目目录");
+        createWorkspace.setAllCaps(false);
+        createWorkspace.setOnClickListener(v -> {
+            final EditText nameField = field(activity, "项目名（如 my-app）", "");
+            new AlertDialog.Builder(activity)
+                    .setTitle("新建项目目录")
+                    .setView(nameField)
+                    .setPositiveButton("创建", (d, w) -> {
+                        String name = safeProjectName(nameField.getText().toString());
+                        if (name.isEmpty()) {
+                            status.setText("项目名不能为空，也不能包含 / 或 ..");
+                            return;
+                        }
+                        File dir = new File(workspaceRoot, name);
+                        if (!dir.exists() && !dir.mkdirs()) {
+                            status.setText("创建失败：目录不可写");
+                            return;
+                        }
+                        selectedWorkspace[0] = name;
+                        workspaceLabel.setText(workspaceSummary(workspaceRoot, name));
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+        });
+        root.addView(createWorkspace);
+
         TextView hint = new TextView(activity);
-        hint.setText("保存后会加密存储，并重启本机 Host（会话与工作区保留）。");
+        hint.setText("保存后会加密存储 Key，并重启本机 Host；项目文件保存在手机应用数据的工作区里。");
         hint.setPadding(0, pad / 2, 0, 0);
         root.addView(hint);
 
@@ -136,19 +198,32 @@ final class LlmSettingsDialog {
                     status.setText(error);
                     return;
                 }
-                listener.onSave(baseValue, modelValue, keyValue, false);
+                listener.onSave(baseValue, modelValue, keyValue, false, selectedWorkspace[0]);
                 dialog.dismiss();
             });
             Button neutral = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
             if (!hasKey) {
                 neutral.setVisibility(View.GONE);
             } else {
-                neutral.setOnClickListener(v -> confirmClear(activity, dialog, listener));
+                neutral.setOnClickListener(v -> confirmClear(activity, dialog, listener, selectedWorkspace[0]));
             }
             base.requestFocus();
         });
         dialog.show();
         return dialog;
+    }
+
+    private static String workspaceSummary(File root, String name) {
+        File dir = name == null || name.isEmpty() ? root : new File(root, name);
+        return "当前：" + (name == null || name.isEmpty() ? "工作区根" : name)
+                + "\n" + dir.getAbsolutePath();
+    }
+
+    private static String safeProjectName(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) return "";
+        if (!name.matches("[\\p{L}\\p{N}._-]{1,64}")) return "";
+        return name;
     }
 
     /**
@@ -263,12 +338,12 @@ final class LlmSettingsDialog {
         return null;
     }
 
-    private static void confirmClear(Activity activity, AlertDialog dialog, Listener listener) {
+    private static void confirmClear(Activity activity, AlertDialog dialog, Listener listener, String workspace) {
         new AlertDialog.Builder(activity)
                 .setTitle("清除 API Key")
                 .setMessage("清除后本机 Host 会以“无 Key”启动；模型服务若需要鉴权，请求会失败。")
                 .setPositiveButton("清除", (d, w) -> {
-                    listener.onSave("", "", "", true);
+                    listener.onSave("", "", "", true, workspace);
                     dialog.dismiss();
                 })
                 .setNegativeButton("取消", null)
