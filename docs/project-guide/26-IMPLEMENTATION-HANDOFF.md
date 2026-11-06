@@ -40,20 +40,32 @@
 
 ---
 
-## 2. 已定决策（D1–D10，不可在实现时重开）
+## 2. 已定决策（D1–D11，不可在实现时重开）
 
 | ID | 决策 | 含义 |
 |---|---|---|
-| D1 | **Session = Thread，Epoch = Segment** | 不新建 `threads` 表；不每次 switch 新建 Session；`context_epochs` 加 `segment_seq/kind/handoff` |
-| D2 | **一个 pressure 模型** | 沿用 Codem 0.7 考虑线、0.9 hard；不引入第二套 80%/90%/0.95 阈值 |
-| D3 | **compact 与 switch 分离** | compact 写 checkpoint epoch；switch 写 handoff epoch；旧消息都不删 |
-| D4 | **记忆不自动删改** | 自动只产 candidate/pending/归档；manual/pinned 永不被自动删；不做全局 memory summary |
+| D1 | **Session = Thread，Epoch = Segment** | 不新建 `threads` 表；不每次 switch 新建 Session。epoch 的**权威**是 marker 的 `metadata.contextEpoch`；`context_epochs` 同步加 `segment_seq`/`kind`，但它**仍是派生索引、读路径不依赖它**；`handoff_json` 推 P0-3。灰度开关是 **`codem-context-config.segmentEpochs`，默认 `false`**（不是 `settings.isFeatureEnabled` 独扛；设置面板映射在 `ContextMonitor.tsx` 的上下文设置区）。 |
+| D2 | **一个 pressure 模型（含过渡安全网）** | 沿用 Codem 0.7 考虑线、0.9 hard；不引入第二套 80%/90%/0.95 阈值。**不新增水位压力**：保留现有 ≥90% 紧急提示条作为**过渡安全网**，等 P1 的 Manifest/Eval 落地后再隐藏百分比；P0-4 只加「整理中/继续」状态。 |
+| D3 | **compact 与 switch 分离** | compact 写 checkpoint epoch；switch 写 handoff epoch；旧消息都不删。**switch 只走内部 epoch**：不新增同名工具、**不复用 `handoff_to_new_session`**（该工具只服务用户显式「新开对话」，由「自动 switch 不得调用该工具」的不变量判据守住）。 |
+| D4 | **记忆只读口径（已修正）** | **不自动删除/改写 manual/pinned**；不做全局 memory summary。**「自动只产 candidate/pending」不是本阶段目标**，留到 P1 单独决策；现状即口径：审批开=pending、审批关=active、用户明确要求=active（`src/core/llm/index.ts:2884`）。**不要把它写成已实现的 candidate/pending 制。** |
 | D5 | **复用优先** | Document OS 复用 `document-tools/ledger/citation/vector/OCR`；代码复用 `CodeGraph/zvec`；任务复用 `agent-teams`；阶段复用 `goal runner` |
 | D6 | **一套任务态** | `agent-teams` 的 claim/attempt/rollback 是唯一任务态；Bot 只是身份/记忆/工作区视图 |
 | D7 | **不用 goal mode** | 开发本仓库用 `todo_write`；不用 DSH goal/自动续跑替代向用户提问 |
 | D8 | **先设计门，后代码** | Phase 1 只读审计/文件级计划/测试矩阵；用户说「开工」前不改代码 |
 | D9 | **判据先行** | 每个改动先有能变红的判据；变异自证；`tsc` + 定向 + 全量测试 |
 | D10 | **独立复核** | 实现者不自审；fresh reviewer 只看契约 + diff + 测试；通过后才算完成 |
+| D11 | **switch 兼容判据先行（硬门禁）** | remote `session.get` 与 `fork` 的 switch-epoch 兼容判据**全绿之前**，不得在真实环境打开 `segmentEpochs`。默认 `false` 是**门禁**，不是建议；打开开关需要一条显式判据证明两个读路径已走 DisplayView。 |
+
+### 2.1 已拍板记录（2026-11-06，用户确认；实现时不得重开）
+
+| 分叉 | 结论 |
+|---|---|
+| E1 `handoff_to_new_session` 与新 switch 撞名 | **保留该工具**，它只服务用户显式「新开对话」；自动上下文切换走**内部 epoch switch**，不新增同名工具；补一条**「自动 switch 不得调用该工具」的不变量判据** |
+| E2 片 1 是否连表一起改 | **一起改**：marker metadata 与 `context_epochs` 表都加 `kind` + `segment_seq`；旧行默认 `compact` / `1`；`handoff_json` 推 P0-3；表**仍是派生索引**，读路径不依赖 |
+| E3 灰度开关载体 | 不用 `settings.isFeatureEnabled` 作唯一开关；改用 **`codem-context-config.segmentEpochs`，默认 `false`**；要一条「默认 off」判据 + 设置面板映射（`ContextMonitor.tsx`） |
+| E4 D4 口径 | 本阶段**不改默认**：审批开=pending、审批关=active、explicit=active；D4 按 §2 修正后的写法执行，**不写成已实现** |
+| E5 remote / fork 读法 | 片 1 只加「**存在 switch epoch 时强制读 timeline**」的 guard + 合成判据；默认读法不变；新增 **D11** 作为打开开关的前置门禁 |
+| E6 水位百分比 | **不删**现有 ≥90% 提示；P0-4 只加「整理中/继续」状态；D2 按「过渡安全网」改写 |
 
 ---
 
@@ -64,7 +76,7 @@
 必须交付：
 
 1. **10 行摘要**：当前代码与 24/25 的差异，哪些结论仍成立、哪些已过时。
-2. **D1–D10 合规表**：每条写“已满足/需改动/有冲突”，冲突必须给 path:line。
+2. **D1–D11 合规表**：每条写“已满足/需改动/有冲突”，冲突必须给 path:line。
 3. **P0 切片计划**：
    - 第一片建议：`P0-0 契约`（`context_epochs` 加字段 + `ContextView` 投影 + 兼容 + 测试），**不做 UI、不做 switch 行为**；
    - 第二片：`P0-1 memory_search/read + full timeline extraction + usage`；
@@ -217,3 +229,25 @@ PASS / FAIL / UNKNOWN
 - 第一片 P0-0 的测试矩阵可执行；
 - 用户明确说「开工」后才进入 Phase 2；
 - Phase 2 每片有 fresh reviewer PASS，才进入下一片。
+
+---
+
+## 10. 实现后的宣传页验收（防“说过了但没做到”）
+
+宣传页在 `docs/marketing/context-os.html`，承诺清单在 `docs/marketing/context-os.claims.json`，门禁在 `tools/marketing/verify-context-os-claims.mjs`。
+
+实现完成后追加：
+
+```powershell
+node tools/marketing/verify-context-os-claims.mjs --mode traceability
+node tools/marketing/verify-context-os-claims.mjs --mode gate --tier P0
+```
+
+要求：
+
+- `verification` 报告里 `verified` 必须有真实证据（测试/截图/真机记录）；
+- `target` / `partial` 如实保留，不许为了提高通过率改 status；
+- 不许改页面/清单来绕过门禁；
+- 视觉/文案质量单独做截图复核，不混进功能 verified。
+
+详细规则见 `docs/marketing/CONTEXT-OS-ACCEPTANCE.md`。

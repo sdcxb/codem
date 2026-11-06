@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<script>document.documentElement.classList.add('js');</script>
+<title>Codem · Context OS — 一个对话，装得下整个项目</title>
+<meta name="description" content="Codem Context OS：把上下文从一次性窗口，升级为可检索、可验证、可恢复的工作空间。Context OS、Document OS、Memory Graph、Artifact-centric Agents 四位一体。">
+<style>
+  :root{
+    --bg:#06070d;
+    --bg-2:#0a0c15;
+    --panel:rgba(17,20,33,.72);
+    --panel-strong:rgba(20,23,38,.92);
+    --line:rgba(255,255,255,.09);
+    --line-strong:rgba(255,255,255,.16);
+    --text:#f4f1ff;
+    --muted:#a8a3bd;
+    --faint:#716d87;
+    --violet:#8b7cff;
+    --violet-2:#b8a7ff;
+    --cyan:#6ee7ff;
+    --mint:#8ff0c0;
+    --amber:#f6c86a;
+    --rose:#ff8fae;
+    --radius:24px;
+    --shadow:0 30px 80px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(108,86,255,.22), transparent 62%),
+      radial-gradient(900px 600px at 8% 34%, rgba(67,213,255,.10), transparent 60%),
+      radial-gradient(700px 500px at 90% 72%, rgba(246,200,106,.07), transparent 65%),
+      var(--bg);
+    color:var(--text);
+    font-family:"Inter","SF Pro Display","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size:72px 72px;
+    mask-image:radial-gradient(ellipse at 50% 0%, #000 0%, transparent 72%);
+    opacity:.55;
+    z-index:-1;
+  }
+  ::selection{background:rgba(139,124,255,.35);color:#fff}
+  a{color:inherit;text-decoration:none}
+  button{font:inherit}
+  .wrap{width:calc(100% - 48px);max-width:1180px;margin:0 auto}
+  .mono{font-family:"SFMono-Regular","Cascadia Code","JetBrains Mono",Consolas,monospace}
+  .muted{color:var(--muted)}
+  .grad{
+    background:linear-gradient(100deg,#fff 4%,var(--violet-2) 38%,var(--cyan) 68%,#fff 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--violet-2);
+  }
+  .eyebrow::before{
+    content:"";width:22px;height:1px;
+    background:linear-gradient(90deg,var(--violet),transparent);
+  }
+  .section{position:relative;padding:clamp(76px,9vw,128px) 0}
+  .section-head{max-width:820px;margin-bottom:clamp(36px,5vw,58px)}
+  .section-head h2{
+    margin:14px 0 18px;
+    font-size:clamp(32px,4.4vw,60px);
+    line-height:1.06;letter-spacing:-.045em;font-weight:720;
+  }
+  .section-head p{margin:0;color:var(--muted);font-size:clamp(15px,1.5vw,18px);line-height:1.8;max-width:720px}
+  .kicker{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:7px 12px;border:1px solid var(--line);border-radius:999px;
+    background:rgba(255,255,255,.035);color:var(--muted);
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  }
+  .kicker .dot{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 14px var(--mint)}
+
+  /* nav */
+  .nav{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    border-bottom:1px solid transparent;
+    transition:background .35s,border-color .35s,backdrop-filter .35s;
+  }
+  .nav.scrolled{
+    background:rgba(6,7,13,.72);
+    border-color:var(--line);
+    backdrop-filter:blur(18px) saturate(150%);
+  }
+  .nav-inner{
+    height:74px;display:flex;align-items:center;justify-content:space-between;gap:24px;
+  }
+  .brand{display:flex;align-items:center;gap:12px;min-width:max-content}
+  .brand img{width:38px;height:38px;border-radius:12px;box-shadow:0 10px 26px rgba(110,86,255,.28)}
+  .brand-word{font-size:19px;font-weight:760;letter-spacing:-.04em}
+  .brand-word span{color:var(--violet-2)}
+  .nav-links{display:flex;align-items:center;gap:28px;font-size:13px;color:var(--muted)}
+  .nav-links a{transition:color .2s}
+  .nav-links a:hover{color:var(--text)}
+  .nav-cta{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:10px 16px;border-radius:999px;
+    border:1px solid rgba(139,124,255,.35);
+    background:linear-gradient(180deg,rgba(139,124,255,.22),rgba(139,124,255,.08));
+    color:#fff;font-size:12px;font-weight:650;
+    box-shadow:0 0 0 1px rgba(139,124,255,.06),0 10px 30px rgba(139,124,255,.12);
+  }
+  .nav-cta svg{width:14px;height:14px}
+  .menu-btn{display:none;background:none;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:8px}
+
+  /* hero */
+  .hero{padding:150px 0 58px;position:relative}
+  .hero-grid{
+    display:grid;grid-template-columns:1.04fr .96fr;gap:54px;align-items:center;
+  }
+  .hero-grid > *{min-width:0}
+  .hero h1{
+    margin:20px 0 22px;
+    font-size:clamp(42px,5.4vw,74px);
+    line-height:.98;letter-spacing:-.06em;font-weight:760;
+  }
+  .hero h1 .grad{display:inline-block;white-space:nowrap}
+  .hero-lead{
+    max-width:590px;margin:0 0 28px;color:var(--muted);
+    font-size:clamp(15px,1.65vw,18px);line-height:1.9;
+  }
+  .hero-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    padding:13px 20px;border-radius:14px;border:1px solid var(--line-strong);
+    background:rgba(255,255,255,.04);color:var(--text);
+    font-size:13px;font-weight:650;letter-spacing:.01em;
+    transition:transform .2s,border-color .2s,background .2s;
+  }
+  .btn:hover{transform:translateY(-1px);border-color:rgba(139,124,255,.5);background:rgba(139,124,255,.1)}
+  .btn.primary{
+    border-color:transparent;
+    background:linear-gradient(120deg,#8b7cff,#6f8dff 55%,#67e4ff);
+    color:#080912;
+    box-shadow:0 18px 46px rgba(110,110,255,.25);
+  }
+  .btn.primary:hover{filter:brightness(1.05)}
+  .btn svg{width:15px;height:15px}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:16px 22px;margin-top:28px;color:var(--faint);font-size:11.5px}
+  .hero-meta span{display:inline-flex;align-items:center;gap:7px}
+  .hero-meta i{width:5px;height:5px;border-radius:50%;background:var(--violet);box-shadow:0 0 10px var(--violet)}
+
+  /* hero visual */
+  .hero-visual{position:relative;min-height:570px;perspective:1100px}
+  .thread-card{
+    position:relative;margin-left:auto;width:min(100%,460px);
+    border:1px solid var(--line);border-radius:26px;
+    background:linear-gradient(180deg,rgba(22,25,42,.9),rgba(10,12,22,.92));
+    box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.06);
+    overflow:visible;transform:rotateY(-5deg) rotateX(2deg);
+    transition:transform .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .thread-card::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(400px 220px at 82% 0%,rgba(139,124,255,.20),transparent 68%);
+  }
+  .thread-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:16px 18px;border-bottom:1px solid var(--line);
+    font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+  }
+  .live{display:inline-flex;align-items:center;gap:8px;color:var(--mint)}
+  .live i{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 12px var(--mint);animation:pulse 2.2s infinite}
+  .thread-body{position:relative;padding:24px 22px 26px}
+  .thread-body::before{
+    content:"";position:absolute;left:34px;top:26px;bottom:24px;width:1px;
+    background:linear-gradient(180deg,var(--violet),rgba(110,231,255,.2),transparent);
+    opacity:.5;
+  }
+  .seg{position:relative;display:grid;grid-template-columns:26px 1fr;gap:13px;margin-bottom:15px}
+  .seg-dot{
+    width:11px;height:11px;border-radius:50%;margin:8px 0 0 9px;
+    background:#171a2b;border:2px solid var(--violet);
+    box-shadow:0 0 0 5px rgba(139,124,255,.08);z-index:1;
+  }
+  .seg.done .seg-dot{background:var(--mint);border-color:var(--mint);box-shadow:0 0 0 5px rgba(143,240,192,.07)}
+  .seg.now .seg-dot{background:#fff;border-color:#fff;box-shadow:0 0 0 5px rgba(255,255,255,.08),0 0 26px rgba(139,124,255,.8)}
+  .seg-card{
+    border:1px solid var(--line);border-radius:15px;padding:12px 13px;
+    background:rgba(255,255,255,.035);
+  }
+  .seg.now .seg-card{
+    border-color:rgba(139,124,255,.38);
+    background:linear-gradient(135deg,rgba(139,124,255,.14),rgba(255,255,255,.025));
+    box-shadow:0 12px 30px rgba(0,0,0,.2);
+  }
+  .seg-meta{font-size:8.5px;letter-spacing:.14em;color:var(--faint);margin-bottom:5px}
+  .seg-title{font-size:12.5px;font-weight:650;letter-spacing:-.01em}
+  .seg-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .seg-tags span{
+    font-size:8.5px;color:var(--muted);border:1px solid var(--line);
+    border-radius:999px;padding:3px 6px;background:rgba(0,0,0,.12)
+  }
+  .seg-line{position:absolute;left:14px;top:20px;bottom:-15px;width:1px;background:var(--line);z-index:0}
+  .floating{
+    position:absolute;border:1px solid var(--line);border-radius:16px;
+    background:rgba(13,16,28,.88);backdrop-filter:blur(16px);
+    box-shadow:0 20px 50px rgba(0,0,0,.35);
+  }
+  .float-doc{right:-80px;top:214px;width:170px;padding:13px;transform:rotate(2deg);animation:float 7s ease-in-out infinite}
+  .float-doc .fd-head{display:flex;align-items:center;justify-content:space-between;font-size:8.5px;color:var(--faint);letter-spacing:.12em;text-transform:uppercase}
+  .fd-title{font-size:11px;font-weight:650;margin:8px 0 9px}
+  .fd-bar{height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0}
+  .fd-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--violet),var(--cyan))}
+  .fd-meta{display:flex;justify-content:space-between;font-size:8px;color:var(--faint);margin-top:4px}
+  .float-mem{left:-200px;top:-58px;bottom:auto;width:200px;padding:14px;transform:rotate(-2deg);animation:float 8s ease-in-out -2s infinite}
+  .fm-head{display:flex;align-items:center;justify-content:space-between;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:11px}
+  .fm-row{display:flex;align-items:center;gap:8px;font-size:9.5px;color:var(--muted);margin:7px 0}
+  .fm-row b{font-weight:600;color:var(--text)}
+  .fm-source{font-size:7.5px;color:var(--faint);margin-left:auto}
+  .mem-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px rgba(110,231,255,.7)}
+  .float-art{right:-80px;bottom:-16px;width:160px;padding:12px;transform:rotate(1.5deg);animation:float 6s ease-in-out -1s infinite}
+  .fa-head{font-size:8px;letter-spacing:.13em;color:var(--faint);text-transform:uppercase;margin-bottom:8px}
+  .fa-line{display:flex;gap:5px;align-items:center;margin:5px 0;font-size:8.5px;color:var(--muted)}
+  .fa-line i{width:5px;height:5px;border-radius:50%;background:var(--mint)}
+  .hero-orbit{
+    position:absolute;inset:0;pointer-events:none;
+    background:
+      radial-gradient(circle at 76% 24%, rgba(139,124,255,.18), transparent 28%),
+      radial-gradient(circle at 18% 74%, rgba(110,231,255,.09), transparent 26%);
+    filter:blur(4px);
+  }
+
+  /* signal bar */
+  .signal-bar{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(255,255,255,.018)}
+  .signal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .signal{padding:24px 22px;border-left:1px solid var(--line)}
+  .signal:first-child{border-left:0}
+  .signal strong{display:block;font-size:clamp(22px,2.6vw,32px);letter-spacing:-.05em;font-weight:720;margin-bottom:5px}
+  .signal span{font-size:11.5px;color:var(--faint);line-height:1.5}
+
+  /* problem */
+  .problem-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .problem{
+    position:relative;padding:22px 20px 21px;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+    overflow:hidden;
+  }
+  .problem::before{
+    content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,143,174,.55),transparent);
+    opacity:.7;
+  }
+  .problem .num{font-size:10px;letter-spacing:.16em;color:var(--rose);font-family:monospace}
+  .problem h3{font-size:16px;line-height:1.35;letter-spacing:-.02em;margin:26px 0 9px}
+  .problem p{margin:0;color:var(--muted);font-size:12px;line-height:1.75}
+  .problem .consequence{
+    display:inline-flex;margin-top:18px;padding:5px 8px;border-radius:7px;
+    background:rgba(255,143,174,.08);border:1px solid rgba(255,143,174,.16);
+    color:#ffc3d2;font-size:9px;letter-spacing:.04em;
+  }
+
+  /* pillars */
+  .pillars{display:flex;flex-direction:column;gap:22px}
+  .pillar{
+    display:grid;grid-template-columns:1fr .92fr;gap:42px;align-items:center;
+    padding:clamp(24px,3.4vw,42px);border:1px solid var(--line);border-radius:28px;
+    background:linear-gradient(140deg,rgba(255,255,255,.045),rgba(255,255,255,.012) 58%,rgba(139,124,255,.035));
+    overflow:hidden;position:relative;
+  }
+  .pillar::after{
+    content:"";position:absolute;right:-80px;top:-110px;width:300px;height:300px;border-radius:50%;
+    background:radial-gradient(circle,rgba(139,124,255,.13),transparent 66%);
+    pointer-events:none;
+  }
+  .pillar.reverse{grid-template-columns:.92fr 1fr}
+  .pillar.reverse .pillar-copy{order:2}
+  .pillar.reverse .pillar-visual{order:1}
+  .pillar-index{font-size:10px;letter-spacing:.18em;color:var(--violet-2);font-family:monospace;margin-bottom:14px}
+  .pillar h3{font-size:clamp(24px,3.1vw,38px);line-height:1.12;letter-spacing:-.045em;margin:0 0 14px}
+  .pillar p{margin:0 0 20px;color:var(--muted);font-size:13.5px;line-height:1.85;max-width:500px}
+  .pillar ul{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+  .pillar li{position:relative;padding-left:19px;color:var(--text);font-size:12px;line-height:1.65}
+  .pillar li::before{
+    content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;
+    background:var(--violet);box-shadow:0 0 12px rgba(139,124,255,.6)
+  }
+  .pillar li span{color:var(--faint)}
+  .pillar-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
+  .pillar-tags span{font-size:9px;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:rgba(0,0,0,.12)}
+
+  /* visual mockups */
+  .visual-shell{
+    position:relative;min-height:300px;border:1px solid var(--line);border-radius:20px;
+    background:linear-gradient(180deg,rgba(9,11,20,.86),rgba(15,18,31,.86));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 24px 60px rgba(0,0,0,.25);
+    overflow:hidden;
+  }
+  .visual-bar{display:flex;align-items:center;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .visual-bar i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.16)}
+  .visual-bar i:nth-child(1){background:#ff7b8a}.visual-bar i:nth-child(2){background:#f6c86a}.visual-bar i:nth-child(3){background:#8ff0c0}
+  .visual-label{margin-left:8px;font-size:8.5px;color:var(--faint);letter-spacing:.12em;text-transform:uppercase}
+  .context-stack{padding:18px}
+  .ctx-window{
+    border:1px solid var(--line);border-radius:13px;padding:12px;background:rgba(255,255,255,.025);margin-bottom:9px;
+  }
+  .ctx-window.active{border-color:rgba(139,124,255,.4);background:linear-gradient(135deg,rgba(139,124,255,.13),rgba(255,255,255,.015))}
+  .ctx-line{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-bottom:8px}
+  .ctx-bar{height:5px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .ctx-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan));border-radius:99px}
+  .ctx-note{font-size:8.5px;color:var(--faint);margin-top:7px}
+  .ctx-arrow{display:flex;justify-content:center;margin:3px 0;color:var(--violet-2);font-size:12px}
+
+  .doc-mock{padding:16px}
+  .doc-outline{display:grid;gap:7px}
+  .doc-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.025);font-size:9px;color:var(--muted)}
+  .doc-row b{color:var(--text);font-weight:600}
+  .doc-row .check{margin-left:auto;width:14px;height:14px;border-radius:50%;display:grid;place-items:center;background:rgba(143,240,192,.12);color:var(--mint);font-size:8px}
+  .doc-row .check.pending{background:rgba(246,200,106,.12);color:var(--amber)}
+  .doc-cite{margin-top:10px;padding:8px 9px;border-left:2px solid var(--cyan);background:rgba(110,231,255,.05);font-size:8.5px;line-height:1.55;color:var(--muted)}
+  .doc-cite b{color:var(--cyan);font-weight:600}
+
+  .mem-mock{padding:16px;position:relative;min-height:300px}
+  .mem-core{
+    position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+    width:100px;height:100px;border-radius:50%;border:1px solid rgba(139,124,255,.35);
+    background:radial-gradient(circle,rgba(139,124,255,.2),rgba(139,124,255,.03));
+    display:grid;place-items:center;text-align:center;font-size:9px;color:var(--violet-2);
+    box-shadow:0 0 50px rgba(139,124,255,.12);
+  }
+  .mem-core b{display:block;font-size:15px;color:var(--text);margin-bottom:2px}
+  .mem-node{
+    position:absolute;padding:7px 9px;border:1px solid var(--line);border-radius:9px;
+    background:rgba(13,16,28,.9);font-size:8px;color:var(--muted);white-space:nowrap;
+  }
+  .mem-node b{color:var(--text);font-weight:600}
+  .mn1{left:18px;top:42px}.mn2{right:16px;top:66px}.mn3{left:22px;bottom:52px}.mn4{right:20px;bottom:38px}
+  .mem-line{position:absolute;height:1px;background:linear-gradient(90deg,rgba(139,124,255,.55),transparent);transform-origin:left;opacity:.5}
+  .ml1{left:100px;top:80px;width:70px;transform:rotate(18deg)}
+  .ml2{left:250px;top:104px;width:66px;transform:rotate(-20deg)}
+  .ml3{left:110px;top:230px;width:76px;transform:rotate(-15deg)}
+  .ml4{left:255px;top:240px;width:62px;transform:rotate(22deg)}
+
+  .agent-mock{padding:16px;display:grid;gap:9px}
+  .agent-row{display:grid;grid-template-columns:86px 1fr 44px;align-items:center;gap:9px;padding:9px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.025)}
+  .agent-role{font-size:8.5px;font-weight:650;color:var(--text)}
+  .agent-task{height:5px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .agent-task i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--violet),var(--cyan))}
+  .agent-state{font-size:7.5px;text-align:right;color:var(--mint)}
+  .agent-state.wait{color:var(--amber)}
+
+  /* architecture */
+  .arch-wrap{display:grid;grid-template-columns:1fr 236px;gap:18px;align-items:stretch}
+  .layers{display:grid;gap:10px}
+  .layer{
+    display:grid;grid-template-columns:160px 1fr auto;gap:18px;align-items:center;
+    padding:17px 18px;border:1px solid var(--line);border-radius:15px;
+    background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.012));
+    position:relative;overflow:hidden;
+  }
+  .layer::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--layer-color,var(--violet));opacity:.8}
+  .layer .ln{font-size:9px;letter-spacing:.16em;color:var(--faint);font-family:monospace}
+  .layer .lt{font-size:13px;font-weight:650;letter-spacing:-.01em}
+  .layer .ld{font-size:10px;color:var(--muted);line-height:1.55}
+  .layer .chip{font-size:8px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 7px;white-space:nowrap}
+  .layer.l1{--layer-color:var(--cyan)}.layer.l2{--layer-color:var(--violet)}.layer.l3{--layer-color:var(--mint)}.layer.l4{--layer-color:var(--amber)}
+  .layer-connector{height:18px;display:flex;justify-content:center;align-items:center;color:var(--faint);font-size:11px;opacity:.6}
+  .trust-rail{
+    border:1px solid rgba(246,200,106,.22);border-radius:20px;padding:18px;
+    background:linear-gradient(180deg,rgba(246,200,106,.08),rgba(255,255,255,.015));
+    display:flex;flex-direction:column;gap:12px;
+  }
+  .trust-rail .tr-label{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+  .trust-rail h3{font-size:16px;line-height:1.3;margin:0;letter-spacing:-.02em}
+  .trust-rail p{font-size:10px;line-height:1.7;color:var(--muted);margin:0}
+  .trust-item{display:flex;gap:8px;align-items:flex-start;font-size:9.5px;color:var(--muted);line-height:1.5}
+  .trust-item i{width:5px;height:5px;border-radius:50%;background:var(--amber);margin-top:5px;flex:0 0 auto}
+
+  /* tabs */
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:5px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.025);width:max-content;max-width:100%}
+  .tab{
+    border:0;background:transparent;color:var(--muted);padding:9px 13px;border-radius:9px;
+    font-size:11.5px;font-weight:600;cursor:pointer;transition:.2s;white-space:nowrap;
+  }
+  .tab:hover{color:var(--text)}
+  .tab.active{background:rgba(139,124,255,.16);color:#fff;box-shadow:inset 0 0 0 1px rgba(139,124,255,.24)}
+  .tab-panel{display:none;animation:fade .35s ease}
+  .tab-panel.active{display:block}
+  .panel-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:28px;align-items:stretch;margin-top:22px}
+  .panel-card{border:1px solid var(--line);border-radius:20px;padding:22px;background:rgba(255,255,255,.025)}
+  .panel-card h3{font-size:20px;letter-spacing:-.03em;margin:0 0 10px}
+  .panel-card p{font-size:12px;line-height:1.8;color:var(--muted);margin:0 0 16px}
+  .checklist{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+  .checklist li{display:flex;gap:9px;font-size:11px;line-height:1.6;color:var(--text)}
+  .checklist li::before{content:"✓";color:var(--mint);font-weight:700;flex:0 0 auto}
+  .mini-code{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.28);padding:13px;font-family:"SFMono-Regular","Cascadia Code",monospace;font-size:9.5px;line-height:1.7;color:#c9c5e8;overflow:auto}
+  .mini-code .cm{color:var(--faint)}.mini-code .key{color:var(--cyan)}.mini-code .str{color:var(--mint)}.mini-code .fn{color:var(--violet-2)}
+
+  /* document section */
+  .doc-section{
+    display:grid;grid-template-columns:.9fr 1.1fr;gap:44px;align-items:center;
+    border:1px solid var(--line);border-radius:28px;padding:clamp(24px,4vw,48px);
+    background:
+      radial-gradient(600px 300px at 80% 0%,rgba(110,231,255,.08),transparent 65%),
+      linear-gradient(135deg,rgba(255,255,255,.04),rgba(255,255,255,.012));
+  }
+  .pipeline{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:26px}
+  .pipe{
+    position:relative;padding:12px 8px;border:1px solid var(--line);border-radius:10px;
+    background:rgba(0,0,0,.18);text-align:center;
+  }
+  .pipe:not(:last-child)::after{content:"";position:absolute;right:-8px;top:50%;width:8px;height:1px;background:var(--line-strong)}
+  .pipe .pnum{font-size:8px;color:var(--violet-2);font-family:monospace;margin-bottom:6px}
+  .pipe .pname{font-size:9px;color:var(--text);line-height:1.35}
+  .ledger-card{border:1px solid var(--line);border-radius:20px;background:rgba(9,11,20,.72);padding:18px;box-shadow:var(--shadow)}
+  .ledger-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .ledger-head b{font-size:11px;letter-spacing:.02em}.ledger-head span{font-size:8px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase}
+  .ledger-row{display:grid;grid-template-columns:1fr 58px 54px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:9px;color:var(--muted)}
+  .ledger-row b{font-size:9px;color:var(--text);font-weight:550}
+  .ledger-row .status{font-size:7.5px;text-align:right;color:var(--mint)}
+  .ledger-row .status.warn{color:var(--amber)}
+  .ledger-row .pct{height:4px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden}
+  .ledger-row .pct i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan))}
+  .ledger-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+  .chip-mini{font-size:7.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 6px}
+
+  /* trust */
+  .trust-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .trust-card{padding:20px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.025)}
+  .trust-card .icon{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:rgba(143,240,192,.09);color:var(--mint);margin-bottom:18px}
+  .trust-card h3{font-size:14px;margin:0 0 7px;letter-spacing:-.02em}
+  .trust-card p{font-size:10.5px;line-height:1.7;color:var(--muted);margin:0}
+
+  /* compare */
+  .compare-wrap{overflow:auto;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.02)}
+  .compare{width:100%;border-collapse:collapse;min-width:760px}
+  .compare th,.compare td{padding:16px 18px;text-align:left;border-bottom:1px solid rgba(255,255,255,.055);font-size:11.5px;line-height:1.6}
+  .compare th{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;background:rgba(255,255,255,.02)}
+  .compare td:first-child{color:var(--muted);width:18%}
+  .compare td.old{color:#9b96ad;width:36%}
+  .compare td.new{color:var(--text);width:46%}
+  .compare td.new b{color:var(--violet-2);font-weight:600}
+  .compare tr:last-child td{border-bottom:0}
+
+  /* final */
+  .final{
+    position:relative;padding:clamp(66px,9vw,118px) 0;overflow:hidden;
+    border-top:1px solid var(--line);
+    background:
+      radial-gradient(800px 400px at 50% 110%,rgba(139,124,255,.2),transparent 70%),
+      radial-gradient(500px 240px at 18% 0%,rgba(110,231,255,.08),transparent 70%);
+  }
+  .final-inner{text-align:center;max-width:860px;margin:0 auto}
+  .final h2{font-size:clamp(34px,5.2vw,68px);line-height:1.06;letter-spacing:-.055em;margin:18px 0 18px}
+  .final p{max-width:560px;margin:0 auto 28px;color:var(--muted);font-size:14px;line-height:1.8}
+  .final-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:10px}
+  .final-note{margin-top:18px;font-size:9px;color:var(--faint);letter-spacing:.08em}
+
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:28px 0 38px;background:rgba(0,0,0,.18)}
+  .footer-grid{display:flex;justify-content:space-between;align-items:center;gap:22px;flex-wrap:wrap}
+  .footer-brand{display:flex;align-items:center;gap:10px}
+  .footer-brand img{width:28px;height:28px;border-radius:8px}
+  .footer-brand b{font-size:13px;letter-spacing:-.02em}
+  .footer-brand span{display:block;font-size:8px;color:var(--faint);letter-spacing:.12em;text-transform:uppercase;margin-top:2px}
+  .footer-links{display:flex;gap:18px;flex-wrap:wrap;font-size:10px;color:var(--faint)}
+  .footer-links a:hover{color:var(--text)}
+  .footer-meta{font-size:8.5px;color:var(--faint);letter-spacing:.04em}
+
+  /* reveal */
+  .js [data-reveal]{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.8,.2,1),transform .7s cubic-bezier(.2,.8,.2,1)}
+  .js [data-reveal].in{opacity:1;transform:none}
+  .delay-1{transition-delay:.08s}.delay-2{transition-delay:.16s}.delay-3{transition-delay:.24s}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(var(--r,0deg))}50%{transform:translateY(-9px) rotate(var(--r,0deg))}}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  @media (max-width: 1350px){
+    .float-doc,.float-mem,.float-art{display:none}
+  }
+  @media (max-width: 1050px){
+    .hero-grid{gap:28px;grid-template-columns:1fr .9fr}
+    .hero-visual{min-height:520px}
+    .float-doc{right:-2px}.float-mem{left:-2px}
+    .problem-grid{grid-template-columns:repeat(2,1fr)}
+    .trust-grid{grid-template-columns:repeat(2,1fr)}
+    .arch-wrap{grid-template-columns:1fr}
+    .trust-rail{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .trust-rail h3,.trust-rail .tr-label{grid-column:1/-1}
+    .trust-rail p{grid-column:1/-1}
+  }
+  @media (max-width: 860px){
+    .nav-links{display:none}
+    .nav-links.open{
+      display:flex;position:absolute;left:15px;right:15px;top:64px;
+      flex-direction:column;align-items:stretch;gap:2px;padding:10px;
+      border:1px solid var(--line);border-radius:16px;
+      background:rgba(9,11,20,.96);backdrop-filter:blur(20px);
+      box-shadow:0 24px 60px rgba(0,0,0,.45);
+    }
+    .nav-links.open a{padding:11px 12px;border-radius:9px}
+    .nav-links.open a:hover{background:rgba(255,255,255,.06)}
+    .menu-btn{display:block}
+    .nav-cta{padding:9px 12px}
+    .hero{padding-top:124px}
+    .hero-grid{grid-template-columns:1fr}
+    .hero-visual{min-height:520px;margin-top:2px}
+    .thread-card{margin:0 auto}
+    .float-doc{right:0;top:30px;width:168px}
+    .float-mem{left:0;bottom:22px;width:184px}
+    .float-art{display:none}
+    .pillar,.pillar.reverse{grid-template-columns:1fr;gap:26px}
+    .pillar.reverse .pillar-copy,.pillar.reverse .pillar-visual{order:initial}
+    .section-head{max-width:100%}
+    .panel-grid,.doc-section{grid-template-columns:1fr}
+    .pipeline{grid-template-columns:repeat(3,1fr)}
+    .pipe:nth-child(3)::after{display:none}
+    .signal-grid{grid-template-columns:repeat(2,1fr)}
+    .signal:nth-child(3){border-left:0;border-top:1px solid var(--line)}
+    .signal:nth-child(4){border-top:1px solid var(--line)}
+  }
+  @media (max-width: 600px){
+    .wrap{width:calc(100% - 30px);max-width:1180px}
+    .nav-inner{height:64px}
+    .brand-word{font-size:17px}
+    .hero h1{font-size:clamp(32px,9.6vw,42px);line-height:1.03}
+    .hero h1 .grad{white-space:normal}
+    .hero-copy,.hero-visual{min-width:0;max-width:100%;width:100%}
+    .hero-actions{display:grid;grid-template-columns:1fr}
+    .hero-actions .btn{width:100%;min-width:0}
+    .thread-card{width:100%;max-width:100%}
+    .thread-head span:last-child{display:none}
+    .section-head h2,.final h2{overflow-wrap:anywhere;font-size:clamp(28px,8vw,38px)}
+    .section-head p,.hero-lead{overflow-wrap:anywhere;max-width:100%}
+    .hero-visual{min-height:560px}
+    .thread-card{transform:none}
+    .float-doc{right:-2px;top:64px;width:178px}
+    .float-mem{left:-4px;bottom:22px;width:190px}
+    .float-art{right:10px;bottom:-8px;width:160px}
+    .problem-grid,.trust-grid{grid-template-columns:1fr}
+    .signal-grid{grid-template-columns:1fr}
+    .signal{border-left:0;border-top:1px solid var(--line)}
+    .signal:first-child{border-top:0}
+    .pipeline{grid-template-columns:repeat(2,1fr)}
+    .pipe:nth-child(2n)::after{display:none}
+    .layer{grid-template-columns:1fr;gap:7px}
+    .layer .chip{justify-self:start}
+    .trust-rail{grid-template-columns:1fr}
+    .compare th,.compare td{padding:13px 12px}
+    .final-actions .btn{width:100%}
+    .footer-grid{flex-direction:column;align-items:flex-start}
+  }
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    .js [data-reveal]{opacity:1;transform:none;transition:none}
+    .float-doc,.float-mem,.float-art,.live i{animation:none}
+  }
+</style>
+</head>
+<body>
+<div class="hero-orbit" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Codem 首页">
+      <img src="./codem-logo.png" alt="Codem">
+      <div class="brand-word">codem<span>.</span></div>
+    </a>
+    <nav class="nav-links" aria-label="页面导航">
+      <a href="#problem">问题</a>
+      <a href="#system">四个平面</a>
+      <a href="#architecture">架构</a>
+      <a href="#documents">长文档</a>
+      <a href="#trust">可控性</a>
+    </nav>
+    <a class="nav-cta" href="#final">看看它如何工作
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+    <button class="menu-btn" id="menuBtn" aria-label="打开导航">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy" data-reveal>
+        <div class="eyebrow">Codem · Context OS</div>
+        <h1 data-claim="C01">一个对话，<br><span class="grad">装得下整个项目。</span></h1>
+        <p class="hero-lead" data-claim="C03">
+          长任务不必重开，大文档不必反复投喂，记忆不再靠猜。
+          Codem 把上下文从一次性的窗口，升级为可检索、可验证、可恢复的工作空间。
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#system">看懂四个平面
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+          </a>
+          <a class="btn" href="#architecture">查看架构
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </div>
+        <div class="hero-meta" data-claim="C11 C12">
+          <span><i></i> 一个连续 Thread</span>
+          <span><i></i> 原文可追溯</span>
+          <span><i></i> 本地优先</span>
+          <span><i></i> 多模型可选</span>
+        </div>
+      </div>
+
+      <div class="hero-visual" data-reveal data-delay="1">
+        <div class="thread-card" id="threadCard">
+          <div class="thread-head">
+            <span class="live"><i></i> Live thread</span>
+            <span>Session 01 · 连续中</span>
+          </div>
+          <div class="thread-body">
+            <div class="seg done">
+              <div class="seg-line"></div><div class="seg-dot"></div>
+              <div class="seg-card">
+                <div class="seg-meta">SEGMENT 01 · 已归档</div>
+                <div class="seg-title">理解需求与约束</div>
+                <div class="seg-tags"><span>12 facts</span><span>3 sources</span><span>handoff ready</span></div>
+              </div>
+            </div>
+            <div class="seg done">
+              <div class="seg-line"></div><div class="seg-dot"></div>
+              <div class="seg-card">
+                <div class="seg-meta">SEGMENT 02 · 已归档</div>
+                <div class="seg-title">拆解实现路径</div>
+                <div class="seg-tags"><span>8 decisions</span><span>2 risks</span></div>
+              </div>
+            </div>
+            <div class="seg now">
+              <div class="seg-line"></div><div class="seg-dot"></div>
+              <div class="seg-card">
+                <div class="seg-meta">SEGMENT 03 · 当前工作集</div>
+                <div class="seg-title">写实现，保持全局一致</div>
+                <div class="seg-tags"><span>only what's needed</span><span>source-linked</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="floating float-doc">
+            <div class="fd-head"><span>Document ledger</span><span>62%</span></div>
+            <div class="fd-title">年度技术报告 · v3</div>
+            <div class="fd-bar"><i style="width:62%"></i></div>
+            <div class="fd-meta"><span>18 / 29 sections verified</span><span>cited</span></div>
+          </div>
+          <div class="floating float-mem">
+            <div class="fm-head"><span>Memory graph</span><span>scoped</span></div>
+            <div class="fm-row"><i class="mem-dot"></i><b>偏好</b><span>中文 · 简洁</span><span class="fm-source">source</span></div>
+            <div class="fm-row"><i class="mem-dot" style="background:var(--violet)"></i><b>决定</b><span>不使用轮询</span><span class="fm-source">event</span></div>
+            <div class="fm-row"><i class="mem-dot" style="background:var(--amber)"></i><b>约束</b><span>必须可回滚</span><span class="fm-source">user</span></div>
+          </div>
+          <div class="floating float-art">
+            <div class="fa-head">Artifacts</div>
+            <div class="fa-line"><i></i> spec.md <span style="margin-left:auto;color:var(--faint)">v4</span></div>
+            <div class="fa-line"><i style="background:var(--violet)"></i> report.docx <span style="margin-left:auto;color:var(--faint)">v3</span></div>
+            <div class="fa-line"><i style="background:var(--amber)"></i> tests.log <span style="margin-left:auto;color:var(--faint)">passed</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="signal-bar" aria-label="核心特征">
+    <div class="wrap signal-grid">
+      <div class="signal" data-claim="C01"><strong>1 个</strong><span>用户看到的连续对话</span></div>
+      <div class="signal" data-claim="C13"><strong>0 次</strong><span>因窗口满被迫重开</span></div>
+      <div class="signal" data-claim="C02"><strong>100%</strong><span>旧消息原文保留</span></div>
+      <div class="signal" data-claim="C03"><strong>4 层</strong><span>上下文 / 文档 / 记忆 / 协作</span></div>    </div>
+  </section>
+
+  <section class="section" id="problem">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">The old way</div>
+        <h2>传统 Agent 的四个断点。</h2>
+        <p>问题从来不是“模型不够聪明”。是上下文、文档、记忆和协作，各自停在了一次性窗口里。</p>
+      </div>
+      <div class="problem-grid">
+        <article class="problem" data-reveal>
+          <div class="num">01 / WINDOW</div>
+          <h3>窗口一满，对话就断。</h3>
+          <p>长任务做到一半，只能压缩、重开、再解释一遍。用户被迫管理上下文，而不是解决问题。</p>
+          <span class="consequence">后果：长任务天然碎片化</span>
+        </article>
+        <article class="problem" data-reveal data-delay="1">
+          <div class="num">02 / COMPRESSION</div>
+          <h3>压缩之后，细节就没了。</h3>
+          <p>摘要保住了“大意”，却丢掉了路径、数字、失败尝试和那句关键的原话。</p>
+          <span class="consequence">后果：越压越像，越像越错</span>
+        </article>
+        <article class="problem" data-reveal data-delay="2">
+          <div class="num">03 / MEMORY</div>
+          <h3>记忆是黑盒，错了也不知道。</h3>
+          <p>一条偏好从哪来、什么时候过期、和另一条是否冲突，用户看不见，模型也说不清。</p>
+          <span class="consequence">后果：越用越不信任</span>
+        </article>
+        <article class="problem" data-reveal data-delay="3">
+          <div class="num">04 / ARTIFACTS</div>
+          <h3>文档、代码、任务，各活各的。</h3>
+          <p>文档在附件里，代码在仓库里，任务在聊天里。Agent 每换一个窗口，就重新认识一次项目。</p>
+          <span class="consequence">后果：协作靠转发，不靠事实</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="system">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">The Codem answer</div>
+        <h2>不是更大的窗口，<br><span class="grad">是一套 Context OS。</span></h2>
+        <p>把上下文拆成四个协作平面。模型只带当前需要的 1%，其余都在可检索、可验证的工作空间里。</p>
+      </div>
+
+      <div class="pillars">
+        <article class="pillar" data-reveal data-claim="C01 C03">
+          <div class="pillar-copy">
+            <div class="pillar-index">01 / CONTEXT OS</div>
+            <h3>一个 Thread，<br>多个 Segment。</h3>
+            <p>对话是连续的，上下文是分段的。Codem 在后台判断“继续压缩”还是“换一段”，用户看到的始终是一个对话。</p>
+            <ul>
+              <li>不显示水位，不让用户做压缩决策</li>
+              <li>旧消息原文保留，随时可按锚点回读</li>
+              <li>每次只取当前任务的最小充分上下文</li>
+            </ul>
+            <div class="pillar-tags"><span>Working Set</span><span>Segment</span><span>Handoff</span><span>Source Anchor</span></div>
+          </div>
+          <div class="pillar-visual">
+            <div class="visual-shell">
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">context projection</span></div>
+              <div class="context-stack">
+                <div class="ctx-window">
+                  <div class="ctx-line"><span>原始窗口</span><span>接近上限</span></div>
+                  <div class="ctx-bar"><i style="width:92%"></i></div>
+                  <div class="ctx-note">旧方案：到顶 → 压缩 / 重开</div>
+                </div>
+                <div class="ctx-arrow">↓</div>
+                <div class="ctx-window active">
+                  <div class="ctx-line"><span>当前工作集</span><span>只带需要的</span></div>
+                  <div class="ctx-bar"><i style="width:28%"></i></div>
+                  <div class="ctx-note">Codem：按任务取用，旧段仍可检索</div>
+                </div>
+                <div class="ctx-arrow">↓</div>
+                <div class="ctx-window">
+                  <div class="ctx-line"><span>Thread 全量</span><span>原文保留</span></div>
+                  <div class="ctx-bar"><i style="width:100%;opacity:.55"></i></div>
+                  <div class="ctx-note">不丢历史，也不把历史全塞给模型</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="pillar reverse" data-reveal data-claim="C05 C06 C07">
+          <div class="pillar-copy">
+            <div class="pillar-index">02 / DOCUMENT OS</div>
+            <h3>文档不是附件，<br>是可编辑的工作区。</h3>
+            <p>章节、表格、引用、版本、覆盖状态，都是可查询的结构。模型不必“记住全文”，但必须知道写到哪、依据是什么。</p>
+            <ul>
+              <li>大纲 / 段落 / 表格 / 引用，多粒度索引</li>
+              <li>Document Ledger 记录读过、改过、验证过</li>
+              <li>分节写作 + 合并 + 一致性检查 + 引用验证</li>
+            </ul>
+            <div class="pillar-tags"><span>Outline</span><span>Ledger</span><span>Citation</span><span>Coverage</span></div>
+          </div>
+          <div class="pillar-visual">
+            <div class="visual-shell">
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">document compiler</span></div>
+              <div class="doc-mock">
+                <div class="doc-outline">
+                  <div class="doc-row"><b>01</b> 背景与目标 <span class="check">✓</span></div>
+                  <div class="doc-row"><b>02</b> 现状与约束 <span class="check">✓</span></div>
+                  <div class="doc-row"><b>03</b> 方案对比 <span class="check">✓</span></div>
+                  <div class="doc-row"><b>04</b> 实施路径 <span class="check pending">…</span></div>
+                  <div class="doc-row"><b>05</b> 风险与回滚 <span class="check pending">…</span></div>
+                </div>
+                <div class="doc-cite"><b>[source: 访谈记录 · p.12]</b><br>“先保证可回滚，再谈自动化。”<br><span style="color:var(--faint)">— 已引用，可回到原文</span></div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="pillar" data-reveal data-claim="C08 C09">
+          <div class="pillar-copy">
+            <div class="pillar-index">03 / MEMORY GRAPH</div>
+            <h3>记忆不是提示词，<br>是可验证的数据库。</h3>
+            <p>每条记忆都带来源、作用域、有效期和状态。冲突不覆盖，过期可识别，手动记忆永远优先。</p>
+            <ul>
+              <li>事实 / 偏好 / 决定 / 约束，分型存储</li>
+              <li>来源、置信度、使用次数，全部可查</li>
+              <li>不自动删除，不静默改写；合并要可撤销</li>
+            </ul>
+            <div class="pillar-tags"><span>Provenance</span><span>Validity</span><span>Conflict</span><span>Scope</span></div>
+          </div>
+          <div class="pillar-visual">
+            <div class="visual-shell">
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">memory graph</span></div>
+              <div class="mem-mock">
+                <div class="mem-line ml1"></div><div class="mem-line ml2"></div><div class="mem-line ml3"></div><div class="mem-line ml4"></div>
+                <div class="mem-core"><div><b>Memory</b>scoped · sourced</div></div>
+                <div class="mem-node mn1"><b>偏好</b> 中文 · 简洁</div>
+                <div class="mem-node mn2"><b>决定</b> 不引入新依赖</div>
+                <div class="mem-node mn3"><b>约束</b> 必须可回滚</div>
+                <div class="mem-node mn4"><b>事实</b> v1.18.13</div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="pillar reverse" data-reveal data-claim="C10">
+          <div class="pillar-copy">
+            <div class="pillar-index">04 / ARTIFACT-CENTRIC AGENTS</div>
+            <h3>Agent 共享工件，<br>不共享一整段聊天。</h3>
+            <p>Conductor 负责目标，Curator 负责上下文和记忆，Specialist 负责执行，Verifier 负责验收。它们通过任务图和工件协作。</p>
+            <ul>
+              <li>任务、依赖、领取、回滚，都有明确状态</li>
+              <li>文档 / 代码 / 测试 / 决策，都是同一种 artifact</li>
+              <li>群聊只是界面；协调靠账本，不靠刷屏</li>
+            </ul>
+            <div class="pillar-tags"><span>Conductor</span><span>Verifier</span><span>Task Graph</span><span>Artifact Store</span></div>
+          </div>
+          <div class="pillar-visual">
+            <div class="visual-shell">
+              <div class="visual-bar"><i></i><i></i><i></i><span class="visual-label">artifact board</span></div>
+              <div class="agent-mock">
+                <div class="agent-row"><span class="agent-role">Conductor</span><span class="agent-task"><i style="width:100%"></i></span><span class="agent-state">done</span></div>
+                <div class="agent-row"><span class="agent-role">Retrieval</span><span class="agent-task"><i style="width:84%"></i></span><span class="agent-state">done</span></div>
+                <div class="agent-row"><span class="agent-role">Writer</span><span class="agent-task"><i style="width:56%"></i></span><span class="agent-state">working</span></div>
+                <div class="agent-row"><span class="agent-role">Verifier</span><span class="agent-task"><i style="width:18%"></i></span><span class="agent-state wait">waiting</span></div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="architecture">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">Architecture</div>
+        <h2>四个平面，<br>一套工作流。</h2>
+        <p>交互、上下文、知识、编排彼此独立，又通过同一份事件与工件连接。任何一层都可以替换模型，而不用重做整套系统。</p>
+      </div>
+
+      <div class="arch-wrap" data-reveal data-claim="C04 C11 C12">
+        <div class="layers">
+          <div class="layer l1">
+            <div><div class="ln">01 / INTERACTION</div><div class="lt">一个 Thread</div></div>
+            <div class="ld">用户只看到连续对话。没有水位，没有“请开新会话”。</div>
+            <div class="chip">user-facing</div>
+          </div>
+          <div class="layer-connector">↓</div>
+          <div class="layer l2">
+            <div><div class="ln">02 / CONTEXT</div><div class="lt">Working Set / Pager</div></div>
+            <div class="ld">按任务取最小充分上下文；冷数据换出，热数据预取；段边界自动调度。</div>
+            <div class="chip">model-facing</div>
+          </div>
+          <div class="layer-connector">↓</div>
+          <div class="layer l3">
+            <div><div class="ln">03 / KNOWLEDGE</div><div class="lt">Event Log · Document Graph · Memory Graph</div></div>
+            <div class="ld">所有消息、工具结果、文档版本、记忆事实，都可检索、可引用、可恢复。</div>
+            <div class="chip">source of truth</div>
+          </div>
+          <div class="layer-connector">↓</div>
+          <div class="layer l4">
+            <div><div class="ln">04 / ORCHESTRATION</div><div class="lt">Conductor · Curators · Specialists · Verifier</div></div>
+            <div class="ld">共享任务图与工件，不共享整段上下文；每个角色有自己的工作集。</div>
+            <div class="chip">artifact-centric</div>
+          </div>
+        </div>
+        <aside class="trust-rail">
+          <div class="tr-label">Cross-cutting / Trust</div>
+          <h3>强大，<br>但不失控。</h3>
+          <p>每一层都受同一套来源、权限、审批与回滚约束。</p>
+          <div class="trust-item"><i></i><span>来源可查：每条结论回到原文</span></div>
+          <div class="trust-item"><i></i><span>变更可审：写入有 diff / 审批</span></div>
+          <div class="trust-item"><i></i><span>失败可回：任务与工件可回滚</span></div>
+          <div class="trust-item"><i></i><span>数据本地：默认不离开你的机器</span></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="capabilities">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">What changes</div>
+        <h2>你不再需要，<br>替模型管理上下文。</h2>
+        <p>四个平面带来的不是“更多按钮”，而是更少的上下文管理动作。</p>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="能力面板" data-reveal>
+        <button class="tab active" data-tab="tab-context" role="tab" aria-selected="true" aria-controls="panel-context">Context</button>
+        <button class="tab" data-tab="tab-document" role="tab" aria-selected="false" aria-controls="panel-document">Document</button>
+        <button class="tab" data-tab="tab-memory" role="tab" aria-selected="false" aria-controls="panel-memory">Memory</button>
+        <button class="tab" data-tab="tab-agents" role="tab" aria-selected="false" aria-controls="panel-agents">Agents</button>
+      </div>
+
+      <div class="tab-panels" data-reveal>
+        <article class="tab-panel active" id="panel-context" role="tabpanel">
+          <div class="panel-grid">
+            <div class="panel-card">
+              <h3>长任务，不再被窗口切成碎片。</h3>
+              <p>上下文管理从“用户手动压缩”变成“系统按任务调度”。你继续说话，Codem 在后台决定带什么、换什么、留什么。</p>
+              <ul class="checklist">
+                <li>不因接近上限而要求你开新会话</li>
+                <li>旧消息不删除，可按段、按锚点回读</li>
+                <li>每次请求只带当前任务需要的材料</li>
+                <li>换段对用户透明，对模型有明确交接</li>
+              </ul>
+            </div>
+            <div class="mini-code">
+<span class="cm">// 用户看到的</span>
+<span class="key">thread</span>: <span class="str">"一个连续对话"</span>
+
+<span class="cm">// 模型实际拿到的</span>
+<span class="fn">workingSet</span> = {
+  task: <span class="str">"继续写第 4 节"</span>,
+  recent: <span class="str">"最近 8 轮"</span>,
+  sources: [<span class="str">"doc#42"</span>, <span class="str">"decision#7"</span>],
+  memory: [<span class="str">"偏好：中文"</span>]
+}
+
+<span class="cm">// 其余仍在</span>
+<span class="key">eventLog</span> · <span class="key">documentGraph</span> · <span class="key">memoryGraph</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="tab-panel" id="panel-document" role="tabpanel">
+          <div class="panel-grid">
+            <div class="panel-card">
+              <h3>300 页文档，不是 300 次复制粘贴。</h3>
+              <p>文档被解析成结构，任务被拆成章节。每一节都有来源、状态和验收，不需要把全文塞进一次请求。</p>
+              <ul class="checklist">
+                <li>先大纲，再分节；每节独立阅读/写作</li>
+                <li>合并时检查术语、数字、交叉引用</li>
+                <li>引用可回到页码、章节、chunk</li>
+                <li>覆盖账本明确“哪节还没读/没验”</li>
+              </ul>
+            </div>
+            <div class="mini-code">
+<span class="cm">// 不是一次 prompt</span>
+<span class="fn">plan</span> = [<span class="str">"背景"</span>, <span class="str">"现状"</span>, <span class="str">"方案"</span>, <span class="str">"路径"</span>]
+
+<span class="cm">// 每节都有账本</span>
+<span class="key">section</span>: {
+  status: <span class="str">"verified"</span>,
+  sources: [<span class="str">"p.12"</span>, <span class="str">"p.18"</span>],
+  claims: <span class="str">3</span>,
+  citations: <span class="str">3/3</span>
+}
+
+<span class="cm">// 缺口不会被“摘要”吞掉</span>
+<span class="key">coverage</span>: <span class="str">"18 / 29 sections"</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="tab-panel" id="panel-memory" role="tabpanel">
+          <div class="panel-grid">
+            <div class="panel-card">
+              <h3>记得对，比记得多更重要。</h3>
+              <p>记忆是带来源、作用域和有效期的数据库。它不替你“猜”，而是让你能查、能改、能撤销。</p>
+              <ul class="checklist">
+                <li>事实、偏好、决定、约束分开存储</li>
+                <li>冲突保留双方，不静默覆盖</li>
+                <li>手动记忆优先，自动提取只做候选</li>
+                <li>跨项目隔离，不把 A 项目偏好带进 B 项目</li>
+              </ul>
+            </div>
+            <div class="mini-code">
+<span class="cm">// 一条可验证的记忆</span>
+<span class="key">fact</span>: {
+  statement: <span class="str">"发布前必须跑全量测试"</span>,
+  scope: <span class="str">"project"</span>,
+  provenance: [<span class="str">"msg#184"</span>],
+  confidence: <span class="str">0.96</span>,
+  status: <span class="str">"approved"</span>,
+  usage: <span class="str">12</span>
+}
+
+<span class="cm">// 冲突不覆盖</span>
+<span class="key">conflict</span>: [<span class="str">"v1: 先跑定向"</span>, <span class="str">"v2: 先跑全量"</span>]
+            </div>
+          </div>
+        </article>
+
+        <article class="tab-panel" id="panel-agents" role="tabpanel">
+          <div class="panel-grid">
+            <div class="panel-card">
+              <h3>多 Agent，不是多开几个窗口。</h3>
+              <p>Agent 通过任务图和工件协作，而不是互相转发聊天记录。每个角色拿自己需要的那一小份上下文。</p>
+              <ul class="checklist">
+                <li>Conductor 负责目标、预算、停止和汇总</li>
+                <li>Specialist 只拿任务 + 相关切片 + 记忆</li>
+                <li>Verifier 独立检查引用、覆盖、一致性</li>
+                <li>任务有领取、尝试、回滚，不重复执行</li>
+              </ul>
+            </div>
+            <div class="mini-code">
+<span class="cm">// 共享的是工件，不是上下文</span>
+<span class="key">artifactStore</span>: [<span class="str">"report.docx"</span>, <span class="str">"tests.log"</span>]
+<span class="key">taskGraph</span>: [
+  { id: <span class="str">"outline"</span>, owner: <span class="str">"conductor"</span> },
+  { id: <span class="str">"draft-4"</span>, owner: <span class="str">"writer"</span>, deps: [<span class="str">"outline"</span>] },
+  { id: <span class="str">"verify-4"</span>, owner: <span class="str">"verifier"</span> }
+]
+
+<span class="cm">// 群聊只是 UI</span>
+<span class="key">coordination</span> = <span class="str">"ledger + task graph"</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="documents">
+    <div class="wrap">
+      <div class="doc-section" data-reveal data-claim="C05 C06 C07">
+        <div>
+          <div class="eyebrow">Document OS</div>
+          <h2 style="font-size:clamp(30px,4vw,52px);line-height:1.06;letter-spacing:-.045em;margin:14px 0 16px">一份长文档，<br><span class="grad">应该越写越稳。</span></h2>
+          <p style="color:var(--muted);font-size:13px;line-height:1.85;margin:0 0 0;max-width:440px">
+            不是把全文塞进模型，而是让模型知道：写到哪、依据是什么、还差什么。
+            结构、版本、引用、覆盖，四件事同时成立，长文才不会越写越散。
+          </p>
+          <div class="pipeline" aria-label="长文档流水线">
+            <div class="pipe"><div class="pnum">01</div><div class="pname">解析<br>Ingest</div></div>
+            <div class="pipe"><div class="pnum">02</div><div class="pname">大纲<br>Outline</div></div>
+            <div class="pipe"><div class="pnum">03</div><div class="pname">分节<br>Draft</div></div>
+            <div class="pipe"><div class="pnum">04</div><div class="pname">合并<br>Merge</div></div>
+            <div class="pipe"><div class="pnum">05</div><div class="pname">验证<br>Verify</div></div>
+            <div class="pipe"><div class="pnum">06</div><div class="pname">交付<br>Diff</div></div>
+          </div>
+        </div>
+        <div class="ledger-card">
+          <div class="ledger-head"><b>Document Ledger</b><span>live coverage</span></div>
+          <div class="ledger-row"><b>01 背景与目标</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
+          <div class="ledger-row"><b>02 现状与约束</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
+          <div class="ledger-row"><b>03 方案对比</b><span class="pct"><i style="width:100%"></i></span><span class="status">verified</span></div>
+          <div class="ledger-row"><b>04 实施路径</b><span class="pct"><i style="width:64%"></i></span><span class="status warn">drafting</span></div>
+          <div class="ledger-row"><b>05 风险与回滚</b><span class="pct"><i style="width:22%"></i></span><span class="status warn">queued</span></div>
+          <div class="ledger-foot">
+            <span class="chip-mini">18 / 29 sections</span>
+            <span class="chip-mini">47 citations</span>
+            <span class="chip-mini">0 unsupported claims</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="trust">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">Trust by design</div>
+        <h2>强大，不等于失控。</h2>
+        <p>越是长任务、越多 Agent，越需要来源、审批、回滚和审计。Codem 把这些做成底座，而不是事后补丁。</p>
+      </div>
+      <div class="trust-grid" data-claim="C12 C11">
+        <article class="trust-card" data-reveal>
+          <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></svg></div>
+          <h3>来源可查</h3>
+          <p>每个结论都能回到消息、页码、文件或提交；不是“模型记得”，是“这里有证据”。</p>
+        </article>
+        <article class="trust-card" data-reveal data-delay="1">
+          <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4Z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>变更可审</h3>
+          <p>文档改动、记忆写入、Agent 任务都有 diff / 审批 / 审计记录，重要动作不静默发生。</p>
+        </article>
+        <article class="trust-card" data-reveal data-delay="2">
+          <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></div>
+          <h3>失败可回</h3>
+          <p>上下文段、任务、工件都可回滚；崩溃或重启后，按事件恢复，而不是从零再来。</p>
+        </article>
+        <article class="trust-card" data-reveal data-delay="3">
+          <div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg></div>
+          <h3>本地优先</h3>
+          <p>会话、文档、记忆默认留在本机；模型可选，数据边界由你决定。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="compare">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <div class="eyebrow">Why it feels different</div>
+        <h2>和传统 harness /<br>通用 Agent 平台相比。</h2>
+        <p>不是多一个功能，而是把“上下文、文档、记忆、协作”从聊天记录里拆出来，变成可管理的基础设施。</p>
+      </div>
+      <div class="compare-wrap" data-reveal data-claim="C01 C03 C05 C08 C10 C12">
+        <table class="compare">
+          <thead><tr><th>维度</th><th>传统 harness / 通用 Agent 平台</th><th>Codem Context OS</th></tr></thead>
+          <tbody>
+            <tr><td>上下文</td><td class="old">一次性窗口；满了就压缩或重开；细节随摘要流失。</td><td class="new"><b>一个 Thread，多个 Segment</b>；按任务取工作集，旧原文保留。</td></tr>
+            <tr><td>长文档</td><td class="old">当附件上传，切成 chunk 检索；跨节结论容易散。</td><td class="new"><b>Document Graph + Ledger</b>；分节写作、合并、引用验证、覆盖检查。</td></tr>
+            <tr><td>记忆</td><td class="old">一段摘要或全局偏好；来源、有效期、冲突都不可见。</td><td class="new"><b>可验证 Memory Graph</b>；来源、作用域、有效期、冲突、使用信号。</td></tr>
+            <tr><td>协作</td><td class="old">多开窗口 / 多个 Agent 转发聊天记录；重复、冲突、难验收。</td><td class="new"><b>Artifact-centric Agents</b>；任务图 + 工件 + 独立 Verifier。</td></tr>
+            <tr><td>控制</td><td class="old">黑盒自动压缩 / 自动写入；出错难定位、难回滚。</td><td class="new"><b>来源、审批、审计、回滚</b>；本地优先，多模型可选。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="final" id="final">
+    <div class="wrap final-inner" data-reveal data-claim="C01 C13">
+      <div class="kicker"><span class="dot"></span> Codem Context OS</div>
+      <h2>让下一次长任务，<br><span class="grad">从第一句到最后一句都不丢。</span></h2>
+      <p>不重开、不反复解释、不把整篇文档塞给模型。让上下文成为工作空间，而不是消耗品。</p>
+      <div class="final-actions">
+        <a class="btn primary" href="#top">回到顶部，再看一遍
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </a>
+        <a class="btn" href="#architecture">阅读架构
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+      <div class="final-note">Context OS · Document OS · Memory Graph · Artifact-centric Agents</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <img src="./codem-logo.png" alt="Codem">
+      <div><b>codem</b><span>Local-first AI coding workspace</span></div>
+    </div>
+    <div class="footer-links">
+      <a href="#system">四个平面</a>
+      <a href="#architecture">架构</a>
+      <a href="#documents">长文档</a>
+      <a href="#trust">可控性</a>
+    </div>
+    <div class="footer-meta">产品概念页 · 具体能力随版本演进</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 12);
+  onScroll(); window.addEventListener('scroll', onScroll, {passive:true});
+
+  const menuBtn = document.getElementById('menuBtn');
+  menuBtn?.addEventListener('click', () => {
+    document.querySelector('.nav-links')?.classList.toggle('open');
+    document.querySelector('.nav-links')?.scrollIntoView({block:'nearest'});
+  });
+
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, {threshold:.12, rootMargin:'0px 0px -8% 0px'});
+  document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
+  // Headless / slow-observer fallback: above-the-fold content must never stay invisible.
+  const revealAboveFold = () => {
+    document.querySelectorAll('[data-reveal]:not(.in)').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight * 1.15) el.classList.add('in');
+    });
+  };
+  requestAnimationFrame(revealAboveFold);
+  window.addEventListener('load', () => setTimeout(revealAboveFold, 120));
+
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.tab;
+      document.querySelectorAll('.tab').forEach(b => {
+        const on = b === btn;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === id));
+    });
+  });
+
+  const card = document.getElementById('threadCard');
+  const visual = card?.closest('.hero-visual');
+  if (visual && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    visual.addEventListener('pointermove', (e) => {
+      const r = visual.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - .5;
+      const y = (e.clientY - r.top) / r.height - .5;
+      card.style.transform = `rotateY(${(-5 + x * 5).toFixed(2)}deg) rotateX(${(2 + y * 3).toFixed(2)}deg) translateY(${(-y * 4).toFixed(2)}px)`;
+    });
+    visual.addEventListener('pointerleave', () => { card.style.transform = ''; });
+  }
+})();
+</script>
+</body>
+</html>
