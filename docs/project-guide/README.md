@@ -93,6 +93,7 @@
 | `23-SUPER-AGENT-VALIDITY-REVIEW.md` | **反向审查：22 号建议真的有效吗、原文理论成立吗、会不会弄坏 Codem**：5 维红队（理论/收益/稳定性/产品安全/实验设计）、正反例、Top 10 风险、24 条裁决、A/B gate、n<5 规则；**H1 当前单用户先修 4 个真问题，H2 多用户协同用任务生命周期/事件归属/权限审计做基础** | 长 | **决定是否施工、怎么验证时优先读这份** |
 | `24-MEMORY-BENCHMARK-AND-ROADMAP.md` | **Codex CLI 源码级记忆对标与 Codem 全量审计**：Phase1/2、summary+memory/history/notes 工具、Token Budget 纠偏、Codem 200 字注入/20 条创建序/压缩后提取源/面板预算分叉/中文整合/归属孤儿，P0–P2 路线与判据 | 长 | **规划记忆系统、判断「为什么偶尔记不住」时读** |
 | `25-INFINITE-CONTEXT-AND-BOT-TEAM.md` | **DS-Bot ICM / 长期 Bot / 群聊源码对标 + 与 24 号文的融合裁决 + Context OS 终极方案 + 开工前评审**：Session=Thread、Epoch=Segment、Steward compact/switch、handoff、thread history、Bot Team/群聊/派活树；§10 Context OS；§11 必须补的 Manifest/Eval/Security/Durability/Artifact Graph | 长 | **做无限上下文/长期 Bot 前先读；最终以 24 §9 为准** |
+| `26-IMPLEMENTATION-HANDOFF.md` | **新会话交接单**：24/25 的阅读顺序、D1–D10 不可重开决策、Phase 1 只读设计门、P0 切片、测试矩阵、防走偏规则、可直接粘贴的开场白/复核提示 | 短 | **新开对话做 Context OS 时，先把这份和开场白交给它** |
 
 > 说明：本目录在 `docs/` 的子目录下，不受仓库根 `.gitignore` 的 `docs/*.md` 规则影响（已用 `git check-ignore` 验证），可以直接入库。
 
