@@ -1199,6 +1199,7 @@ P2 规模化：物理分片、混合检索、跨设备、自动归档（仅 pend
 > **Codem 的最优方案不是“Codex 的 window”加“DS-Bot 的 segment”，而是：一个 Session 作为用户线程，用 `compact` / `switch` 两种 epoch 管理上下文；旧消息永不删；记忆/历史按需检索；长期 Bot 复用同一 Thread/Team 模型。**
 >
 > 无预算约束下的终极形态（Context OS + Document OS + Memory Graph + Artifact-centric Agents）见 25 号文 §10；本节的 P0 是它的第一版可落地子集。
+> 开工前必须补的 Manifest/Eval/Security/Durability 等评审见 25 号文 §11。
 
 ---
 

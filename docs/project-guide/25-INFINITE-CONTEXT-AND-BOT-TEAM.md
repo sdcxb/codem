@@ -1196,6 +1196,104 @@ Document
 
 ---
 
+## 11. 开工前设计评审：Context OS 还缺的 10 个正向点
+
+> 结论：**方向正向，但不能直接开工。** 缺的不是“再多一个功能”，而是让 Context OS **可验证、可信、可恢复、可控制**的四条底座；另外，Codem 已经有不少零件，方案不应该重造。
+
+### 11.1 必须补的 10 个点（按优先级）
+
+| # | 缺口 | 为什么对 Codem 是正向的 | 优先级 |
+|---|---|---|---|
+| 1 | **Context Manifest / Replay** | 每次请求记录 sources/版本/分数/预算/淘汰/前缀 hash；否则“为什么忘了/为什么答错”无法复盘，Context OS 不可调试 | P0 |
+| 2 | **Context Quality Lab** | 10M 文档、1000 轮、代码仓库、记忆冲突、跨文档引用；没有评测，检索/pager 只是感觉 | P0 |
+| 3 | **Artifact Graph（代码+文档+数据统一）** | Codem 是编程 Agent，不能只做 Document OS；代码符号/测试/git diff/日志/表格/PPT 都是 artifact | P0 |
+| 4 | **Trust / Security Plane** | 检索内容/记忆/工具结果不可信；需要 sandbox/exec policy/审批/ACL/注入防护/密钥脱敏 | P0 |
+| 5 | **Durable Write / Idempotency** | Event Log、artifact、index 三写必须一致；崩溃/重试不能丢/重；消息/工具要有 requestId | P0 |
+| 6 | **Cache-aware Context Assembly** | 稳定前缀、volatile 尾部、memory freeze/recall、document ledger 放 trailing；否则 pager 把缓存打碎 | P0 |
+| 7 | **Tool Result Cache / Freshness** | 避免重复跑测试/命令；按 git/文件 hash 失效；工具结果可回放/引用 | P1 |
+| 8 | **Human Review / Control** | 文档 diff 接受/拒绝、记忆冲突裁决、来源查看、停止/审批；否则自动化不可信 | P1 |
+| 9 | **Data Lifecycle / Retention** | append-only 与用户删除/导出/备份/加密/保留期要统一；“永不自动删”不等于“永不清” | P1 |
+| 10 | **Task/Goal Graph + Latency SLO** | 复用 goal/agent-teams；任务/工件所有权、deadline、并行；无限 token 不等于无限等待 | P1 |
+
+另外两个 P2：**Skills/Procedural Memory**（Codem 已有 skill 系统）；**Entity Resolution/Negative Memory**（别名、合并、“不要做”的约束）。
+
+### 11.2 三条系统里“正向但没被采纳”的机制
+
+#### Codex
+
+- **sandboxing + execpolicy + approval**：`codex-rs/sandboxing`、`codex-rs/execpolicy`、`core` 的审批/执行策略。Context OS 有工具但没有执行安全模型，这是最大遗漏。
+- **skills / hooks / AGENTS.md**：`codex-rs/skills`、`codex-rs/hooks`。技能是 procedural memory 的天然载体；hooks 是生命周期审计/自动化入口。
+- **MCP / deferred tools / tool search**：Codem 已有 defer/tool_search，但 Context OS 应把“工具发现/加载”纳入 manifest，避免全量 schema 进上下文。
+- **feature flags / telemetry / cost**：实验能力默认关、可回滚；Context OS 需要同样灰度，而不是一次切换。
+- **评测/回放**：Codex 的测试/场景回放思路，应该升级为 Context Quality Lab。
+
+#### DS-Bot
+
+- **journal / pending / torn 恢复**：`memory.js` 的 pending→写文件→journal→删 pending，半行进 `journal.torn`。这比“直接写 Memory Graph”可靠。
+- **request_id + 回执先落盘**：`requests.js` 的三段身份（Bot+场合+名字）+ 内容指纹 + 先写回执再发；消息/工具/工件都需要。
+- **handoff-results 独立文件**：`handoffs.js` 结果全文落文件，主 JSON 只存开头；大结果/大工件不要塞 state。
+- **memory freeze + recall**：提示词冻结保 prefix cache，新记忆用 `recall` 取最新；Codem 的 memory index + read 应吸收这个缓存语义。
+- **status 不进系统提示**：`list_bots`/UI 查状态，保系统提示稳定；Context OS 也应按需查状态，不要每轮注入。
+- **group memory 快照**：群记忆放在会话开头而非 system，保群/私聊前缀一致；这是 cache-aware 的好例子。
+
+#### Codem
+
+- **DocumentLedger / Citation / vector-index / OCR**：`src/core/document/ledger.ts`、`citation.ts`、`vector-index.ts`、`ocr.ts`。方案里的 Document OS 不应从零造；先把这些扩成 Document Graph + 版本/覆盖账本。
+- **CodeGraph / zvec-grep**：`src/core/llm/tools/codegraph-tool.ts`、`zvec-tool.ts`；代码符号/调用链/语义检索是 Codem 的核心，不应只做文档 RAG。
+- **agent-teams / SubagentRuntime / goal / inbox / session bus**：任务、依赖、mailbox、attempt、阶段证据、通知；Context OS 的 Agent 平面应复用，不另造。
+- **spill / context_epochs / session_search**：工具正文永久、epoch 投影、FTS 历史；thread history 的原料已经存在。
+- **prompt cache boundary / skills / hooks / plugins / remote**：缓存边界、技能、生命周期、扩展、手机 Host；都是 Context OS 的现成接入点。
+
+### 11.3 方案里应“减掉/降级”的部分
+
+1. **不要重造 Event Log**：Codem 已有 JSONL 权威日志 + SQLite 索引；先加 manifest/outbox，不要换存储。
+2. **不要重造 Document OS**：先扩 DocumentLedger/Citation/vector/OCR；Document Graph 是增量，不是新项目。
+3. **不要重造 Code Graph**：CodeGraph/zvec 已有；补“代码 artifact 的版本/测试/引用”，不是重写检索。
+4. **不要默认 Agent Team**：小任务单 Agent；只有超大文档/多角色/并行才上 Conductor + Specialists。
+5. **不要纯 RAG**：必须有 Document Ledger/覆盖账本/全局一致性；纯 chunk 检索会丢跨节结论。
+6. **不要只靠向量**：BM25 + dense + metadata + graph + 精确锚点；向量只是其中一路。
+7. **不要隐藏全部诊断**：用户不看到水位，但高级诊断/来源/为什么没读到必须可查。
+8. **不要承诺“绝对不上下文满”**：定义降级/澄清/分段行为；否则就是新的假承诺。
+9. **不要自动删除**：但必须给用户删除/导出/保留期；否则“永不删”会变成无限膨胀。
+10. **不要“无限 token”当不建索引/不做验证的理由**：token 无限，注意力和用户时间仍有限。
+
+### 11.4 修订后的开工顺序
+
+```text
+P-1 可靠性底座（先于 Context OS）：
+  Context Manifest + event/outbox + idempotency + crash recovery
+  Context Quality Lab（先有量尺）
+  Trust/Security（sandbox/execpolicy/ACL/注入）
+  Cache-aware assembly（稳定前缀/volatile 尾部）
+
+P0  Context OS 最小闭环：
+  Working Set Builder/Pager + Memory Graph + Artifact Graph
+  （复用 DocumentLedger/Citation/CodeGraph/zvec/agent-teams）
+
+P1  Document Compiler / Agents / Human Review：
+  section jobs + coverage ledger + verifier + diff/accept
+  Conductor/curators/specialists；不是所有任务都上
+
+P2  规模化/多端/高级记忆：
+  实体消解、negative memory、跨设备、混合检索、成本优化
+```
+
+**最重要的顺序修正**：**先有 Manifest + Eval + Security + Durability，再做 Pager/Document OS/Agents。** 否则系统会很“聪明”，但无法证明、无法回滚、无法信任。
+
+### 11.5 最终判断
+
+Context OS + Document OS + Memory Graph + Artifact-centric Agents **方向正确**，但要加三层：
+
+- **Reliability**：Manifest/Replay、outbox/idempotency、durability；
+- **Trust**：sandbox/execpolicy/ACL/注入防护/人工审批；
+- **Evaluation**：Context Quality Lab + SLO。
+
+再把 **Artifact Graph 从“文档”扩成“代码+文档+数据+工具结果”**，并**复用 Codem 已有的 DocumentLedger/CodeGraph/agent-teams/goal/inbox/spill**。
+
+这样它才是“比 Codex/DS-Bot 更强”的 Context OS，而不是一个更复杂的 RAG + 多 Agent 拼装。
+
+---
+
 ## 附录 A：DS-Bot 源码索引
 
 - `ds-bot/src/host/steward.js`：阈值、steward prompt、checkpoint、parseDecision、checkpointCount/Text
