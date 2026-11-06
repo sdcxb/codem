@@ -2,6 +2,13 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.12] - 2026-11-06
+
+### 新增
+
+- Android 本机模式支持从系统文件选择器导入项目：递归复制到 `/storage/emulated/0/codem/workspace/<项目名>`，导入后自动切换并重启 Host。
+- 导入上限 5000 文件 / 512MB，只读源目录。
+
 ## [1.18.11] - 2026-11-06
 
 ### 变更

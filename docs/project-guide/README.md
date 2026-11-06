@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-11-04 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（v1.18.11 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.18.8**（2026-11-05 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（v1.18.12 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.18.8**（2026-11-05 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -100,10 +100,10 @@
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.18.11**（2026-11-06 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.18.11` = `Latest`（2026-11-05） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（v1.18.11 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.11 已提交并推送 | `git status -sb` |
+| 版本 | **1.18.12**（2026-11-06 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.18.12` = `Latest`（2026-11-05） | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（v1.18.12 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.12 已提交并推送 | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-04 实测 exit 0） |
 | 全量测试 | **880 文件 / 9551 用例：9605 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-04 实测，约 181 秒） |
 | 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |

@@ -1,6 +1,7 @@
 package com.codem.remote;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.app.AlertDialog;
 import android.text.InputType;
 import android.view.View;
@@ -169,8 +170,22 @@ final class LlmSettingsDialog {
         });
         root.addView(createWorkspace);
 
+        Button importWorkspace = new Button(activity);
+        importWorkspace.setText("从手机文件夹导入项目");
+        importWorkspace.setAllCaps(false);
+        importWorkspace.setOnClickListener(v -> {
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            try {
+                activity.startActivityForResult(pick, MainActivity.REQUEST_IMPORT_PROJECT);
+            } catch (Throwable t) {
+                status.setText("系统文件选择器不可用：" + t.getClass().getSimpleName());
+            }
+        });
+        root.addView(importWorkspace);
+
         TextView hint = new TextView(activity);
-        hint.setText("保存后会加密存储 Key，并重启本机 Host；项目文件保存在手机应用数据的工作区里。");
+        hint.setText("保存后会加密存储 Key，并重启本机 Host；项目文件保存在共享目录 codem/workspace。");
         hint.setPadding(0, pad / 2, 0, 0);
         root.addView(hint);
 

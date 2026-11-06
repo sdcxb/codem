@@ -2,6 +2,8 @@ package com.codem.remote;
 
 import android.Manifest;
 import android.content.Intent;
+import android.database.Cursor;
+import android.provider.DocumentsContract;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Environment;
@@ -37,6 +39,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -82,6 +85,7 @@ public class MainActivity extends Activity {
     private static final String KEY_WORKSPACE = "workspace_name";
     /** JS 桥的名字：**只有 loopback 页面**能看见（见 {@link NativeBridge}） */
     private static final String BRIDGE_NAME = "CodemNative";
+    static final int REQUEST_IMPORT_PROJECT = 2001;
 
     private WebView webView;
     /** 深链目标（loopback 时要等本机 Host 起来再打开） */
@@ -134,9 +138,113 @@ public class MainActivity extends Activity {
         startInitial();
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_IMPORT_PROJECT && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            importProjectFromTree(data.getData());
+        }
+    }
+
+    /**
+     * 从系统文件选择器的目录树导入项目：递归复制到共享工作区，成功后设为当前项目并重启 Host。
+     * 只读源目录；不做删除/移动。
+     */
+    private void importProjectFromTree(Uri treeUri) {
+        Toast.makeText(this, "正在导入项目…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String message;
+            String projectName = null;
+            try {
+                File root = WorkspacePaths.root(this);
+                String baseName = sanitizeName(treeDisplayName(treeUri));
+                if (baseName.isEmpty()) baseName = "imported";
+                File dest = new File(root, baseName);
+                int n = 2;
+                while (dest.exists()) dest = new File(root, baseName + "-" + n++);
+                if (!dest.mkdirs()) throw new IOException("无法创建目标目录");
+                int[] count = {0};
+                long[] bytes = {0};
+                copyTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri), dest, count, bytes);
+                projectName = dest.getName();
+                message = "已导入 " + count[0] + " 个文件（" + (bytes[0] / 1024) + " KB）→ " + projectName;
+            } catch (Throwable t) {
+                message = "导入失败：" + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
+            }
+            final String msg = message;
+            final String project = projectName;
+            ui.post(() -> {
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+                if (project == null) return;
+                // 导入成功后直接切到新项目；用户可在设置里再换
+                prefs().edit().putString(KEY_WORKSPACE, project).apply();
+                if (supervisor != null) restartHostAsync(LlmSecretStore.loadConfig(prefs()));
+            });
+        }, "codem-import-project").start();
+    }
+
+    private String treeDisplayName(Uri treeUri) {
+        try {
+            Uri doc = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+            try (Cursor c = getContentResolver().query(doc,
+                    new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) return c.getString(0);
+            }
+        } catch (Throwable ignored) {
+            // fallback imported
+        }
+        return "";
+    }
+
+    private void copyTree(Uri treeUri, String parentDocId, File dest, int[] count, long[] bytes) throws IOException {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId);
+        try (Cursor c = getContentResolver().query(children, new String[]{
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+        }, null, null, null)) {
+            if (c == null) return;
+            while (c.moveToNext()) {
+                if (count[0] >= 5000 || bytes[0] >= 512L * 1024 * 1024) {
+                    throw new IOException("项目超过导入上限（5000 文件 / 512MB）");
+                }
+                String docId = c.getString(0);
+                String name = sanitizeName(c.getString(1));
+                if (name.isEmpty()) continue;
+                String mime = c.getString(2);
+                File out = new File(dest, name);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    if (!out.exists() && !out.mkdirs()) continue;
+                    copyTree(treeUri, docId, out, count, bytes);
+                } else {
+                    Uri fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
+                    try (InputStream in = getContentResolver().openInputStream(fileUri);
+                         OutputStream os = new FileOutputStream(out)) {
+                        if (in == null) continue;
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) > 0) {
+                            os.write(buf, 0, n);
+                            bytes[0] += n;
+                        }
+                    } catch (IOException e) {
+                        throw new IOException("复制 " + name + " 失败：" + e.getMessage());
+                    }
+                    count[0]++;
+                }
+            }
+        }
+    }
+
+    private static String sanitizeName(String raw) {
+        if (raw == null) return "";
+        String name = raw.replace('/', '_').replace('\\', '_').trim();
+        if (name.equals(".") || name.equals("..")) return "";
+        return name.length() > 128 ? name.substring(0, 128) : name;
+    }
+
     /** 首次启动的入口：有配置/运行时就直接起本机 Host，否则显示开始页 */
-    private void startInitial() {
-        boolean configured = !prefs().getString(LlmSecretStore.KEY_BASE, "").isEmpty();
+    private void startInitial() {        boolean configured = !prefs().getString(LlmSecretStore.KEY_BASE, "").isEmpty();
         boolean ready = new File(getFilesDir(), ".runtime-ready").exists();
         if (configured || ready) {
             startLocal();

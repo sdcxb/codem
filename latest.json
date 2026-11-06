@@ -1,15 +1,15 @@
 {
-  "version": "1.18.11",
-  "notes": "Android 本机项目目录迁到共享存储 /storage/emulated/0/codem/workspace",
-  "pub_date": "2026-11-06T01:00:30Z",
+  "version": "1.18.12",
+  "notes": "Android 本机模式支持从手机文件夹导入项目到共享工作区",
+  "pub_date": "2026-11-06T01:41:12Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2MySXJpM2FocGd6bDNLd29IaS9NeGlDeDhUTkRxcU43b2pQRFYzV1dCano0YnJ1YjByZ2NGRGlrS0RSQ0ZIMUpwaU9wM3dpSnpYMXd4ZXRSam9OZEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTI2NzkwCWZpbGU6Q29kZW1fMS4xOC4xMV94NjQtc2V0dXAuZXhlCm5yc25KejRuUDRLZ3lFTmFlVWxVZnpRRG9OQ2U3K3IrYk93eVpYSU1xNjBUajJYQnNJbU1RaUFCOVFvSWVzTDA4Wi9kL0hISlU4N1dPUGZ6b0owWkRRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.11/Codem_1.18.11_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JvZ1pDUlRBQXhPUmhzUEM3dVZmZnFrSFBsY1FEbU9NZFVKdkd2eVExK0IxMDZNcTV5V21GZUlzSkxlc25VcXkxM2dkYmRodjlsVGY1R0VRbEoyU3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTI5MTgyCWZpbGU6Q29kZW1fMS4xOC4xMl94NjQtc2V0dXAuZXhlCmFnaGRmdlFlVmluR3VCNXpYRTBueDU0enljcTR5NGF6cmdVMUl3ZkFjOGxZazRPSjY0aTEvMWU1RXljS2dBUUVuZzRMYzl3Q1hmSUZsUG5HSjNaSkNRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.12/Codem_1.18.12_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2MySXJpM2FocGd6bDNLd29IaS9NeGlDeDhUTkRxcU43b2pQRFYzV1dCano0YnJ1YjByZ2NGRGlrS0RSQ0ZIMUpwaU9wM3dpSnpYMXd4ZXRSam9OZEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTI2NzkwCWZpbGU6Q29kZW1fMS4xOC4xMV94NjQtc2V0dXAuZXhlCm5yc25KejRuUDRLZ3lFTmFlVWxVZnpRRG9OQ2U3K3IrYk93eVpYSU1xNjBUajJYQnNJbU1RaUFCOVFvSWVzTDA4Wi9kL0hISlU4N1dPUGZ6b0owWkRRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.11/Codem_1.18.11_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JvZ1pDUlRBQXhPUmhzUEM3dVZmZnFrSFBsY1FEbU9NZFVKdkd2eVExK0IxMDZNcTV5V21GZUlzSkxlc25VcXkxM2dkYmRodjlsVGY1R0VRbEoyU3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTI5MTgyCWZpbGU6Q29kZW1fMS4xOC4xMl94NjQtc2V0dXAuZXhlCmFnaGRmdlFlVmluR3VCNXpYRTBueDU0enljcTR5NGF6cmdVMUl3ZkFjOGxZazRPSjY0aTEvMWU1RXljS2dBUUVuZzRMYzl3Q1hmSUZsUG5HSjNaSkNRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.12/Codem_1.18.12_x64-setup.exe"
     }
   }
 }
