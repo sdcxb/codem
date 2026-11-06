@@ -950,6 +950,252 @@ P2    物理分片、混合检索、跨设备、自动归档（pending/archive�
 
 ---
 
+## 10. 无预算约束下的最佳方案：Codem Context OS
+
+> 这一节是 **North Star**，不是当前 P0。P0 的 `Session=Thread / Epoch=Segment` 是它在 Codem 现有架构里的第一版实现；如果经费、token、工程量都不是约束，应该直接按这一节建目标架构。
+
+### 10.1 一句话
+
+> **不要把更大的窗口当成答案；把上下文做成操作系统。**
+
+四个原则：
+
+1. **Context is a cache**：模型上下文是工作集缓存，不是存储；
+2. **Memory is a database**：长期记忆是可查询、可验证、可版本化的数据，不是一段提示词；
+3. **Documents are workspaces**：超大文档是带索引/版本/覆盖账本的工作区，不是附件；
+4. **Agents share artifacts, not context**：Agent 共享文档/任务/账本，不共享一整个聊天记录。
+
+### 10.2 五个平面
+
+```text
+交互平面
+  一个 Thread（用户只看到一个连续对话；没有水位、没有手动换会话）
+        │
+上下文平面
+  Working Set Builder / Pager / Segment Scheduler
+  （按当前任务挑“最小充分上下文”，冷数据自动换出）
+        │
+知识平面
+  Event Log（全部消息/工具/决策，append-only）
+  Document Graph（章节/段落/表格/图/引用/版本）
+  Memory Graph（事实/偏好/决定/技能，带来源/有效期/置信度）
+  Hybrid Index（BM25 + dense + metadata + graph）
+        │
+编排平面
+  Conductor / Context Curator / Memory Curator /
+  Document & Retrieval Service / Specialists / Verifier
+        │
+信任与观测
+  来源引用、冲突检测、覆盖率、成本/延迟、回放/评测
+```
+
+### 10.3 每个回合的真实循环
+
+```text
+用户消息
+  → 识别意图/任务状态（goal、open loops、文档位置）
+  → 检索：memory + document + thread history（并行）
+  → 组工作集：系统规则 + 当前任务 + 相关片段 + 最近对话 + 工具
+  → 模型推理 / 工具调用（必要时 map-reduce、分段读文档）
+  → 写 Event Log / Artifact / 任务状态
+  → 验证：引用、覆盖率、矛盾、格式
+  → 更新 memory candidates（不自动删改）
+  → 流式回复
+```
+
+关键：
+
+- **没有“上下文 70% 弹窗”**；工作集由任务和检索决定，不由一个全局百分比决定。
+- **没有“请开新对话”**；单次请求装不下，就分段读/分层汇总/工具查，不把用户赶走。
+- **没有“摘要即事实”**；摘要是缓存，Event Log 和原文才是权威。
+- **没有“每轮都压缩”**；冷数据在后台换出，热数据按需换入。
+
+### 10.4 Memory OS：让记忆“有效”，而不是“很多”
+
+四层记忆：
+
+| 层 | 内容 | 存哪 | 读法 |
+|---|---|---|---|
+| Working | 当前任务状态、临时变量、待办 | 任务/线程状态 | 直接注入 |
+| Episodic | 某轮发生了什么、工具结果、决策 | Event Log | 按 thread/时间/锚点 |
+| Semantic | 偏好、事实、约束、决定、实体 | Memory Graph | 检索 + 重排 + 引用 |
+| Procedural | 技能、playbook、检查清单 | Skill/文档 | 按任务加载 |
+
+**Semantic Memory 的条目必须是“可验证断言”，不是一段话**：
+
+```ts
+interface MemoryFact {
+  id: string;
+  statement: string;             // 一句可验证的事实/偏好/决定
+  scope: "platform" | "project" | "thread" | "bot" | "group" | "team";
+  provenance: string[];          // 来源 event/message/文档锚点
+  validFrom?: number;
+  validTo?: number;
+  confidence: number;
+  status: "candidate" | "approved" | "disputed" | "archived";
+  supersedes?: string[];
+  usageCount: number;
+  lastUsedAt?: number;
+}
+```
+
+写路径：
+
+- 自动提取只产生 **candidate**；高影响/跨项目写需用户批准；
+- **永不自动删除**；合并/归档要 diff + 可撤销；
+- 冲突不覆盖：保留双方，检索时标注“两个来源冲突”，让模型/用户裁决；
+- 每条记忆必须能回到来源；无来源的“模型总结”不能升级为事实；
+- 文档内容**不进 Memory Graph**，留在 Document Graph；记忆只存跨任务仍有用的偏好/决定/事实，避免污染。
+
+读路径：
+
+- 混合检索：BM25 + dense + metadata（scope/time/entity）+ graph 扩展；
+- 重排：相关度 + 信任/来源 + 时效 + 使用 + scope；
+- 返回 **citation + 全文入口**，不是只给一句摘要；
+- 回答前 Verifier 检查：引用是否存在、是否支持结论、是否与当前用户消息冲突。
+
+这样“记忆有效性”不是靠模型记性，而是靠：**来源、有效期、冲突、使用、验证**。
+
+### 10.5 Document OS：承受超大文档连续任务
+
+#### 文档不是 chunk 集合，是图
+
+```text
+Document
+  ├─ metadata / versions / source hash
+  ├─ outline（章节树）
+  ├─ sections（段落/表格/图/公式）
+  ├─ references（交叉引用/引用文献/术语）
+  └─ revisions（每次编辑的 diff / 作者 / 依据）
+```
+
+索引粒度：文档 → 章节 → 段落/表格行 → 句子；同时保留 **page/paragraph/anchor**，支持精确引用。
+
+#### 文档账本（Document Ledger）
+
+每个长任务维护：
+
+- 目录/章节状态（未读/已读/已改/已验）；
+- 关键事实/数字/术语/风格约束；
+- 用户决定/否决方案；
+- 未解决问题/待补引用；
+- 当前版本/差异/覆盖情况。
+
+这不是“摘要”，是**可核查的覆盖账本**：模型不需要记住整篇，但必须知道“哪节读过、哪节没读、哪句有引用”。
+
+#### 长任务流水线
+
+```text
+ ingest → outline → section jobs（并行）
+   → draft each section（检索原文 + 账本 + 风格）
+   → merge（冲突/术语/交叉引用）
+   → consistency pass（数字/实体/时态/格式）
+   → citation verification（每个 claim 有来源）
+   → coverage check（没有未读章节/未验段落）
+   → final diff + 用户审阅
+```
+
+- 单节超出模型窗口：**分层 map-reduce**（段落摘要 → 节摘要 → 章摘要），但每层保留锚点；
+- 跨节一致性：共享 **Document Ledger**，不是共享整个上下文；
+- 编辑：`doc_read(range)` / `doc_search` / `doc_diff` / `doc_patch` / `doc_cite` / `doc_verify`；所有改动版本化；
+- 用户随时可以问“第 37 页那个数字从哪来”，系统按锚点回读，不靠模型记忆。
+
+#### 什么时候用长上下文模型
+
+- 单节推理/跨段对照可以用长上下文；
+- 但**不把整篇 10M token 文档塞进去**：长上下文模型仍有 lost-in-the-middle、成本、延迟、不可引用问题；
+- 长上下文是加速器，不是存储。
+
+### 10.6 Agent Team：共享 artifact，不共享上下文
+
+| 角色 | 职责 | 上下文 |
+|---|---|---|
+| Conductor | 对用户负责；任务图/预算/停止/汇总 | 用户 thread + 任务状态 + 账本 |
+| Context Curator | 组工作集、预取、换出、分段 | 索引/任务，不写答案 |
+| Memory Curator | 候选记忆/冲突/归档 | 来源与记忆图 |
+| Document/Retrieval | 解析、索引、检索、引用 | 文档图 |
+| Specialists | 写作/研究/编辑/领域角色 | 只拿任务 + 相关文档切片 + 记忆 |
+| Verifier | 引用/覆盖/一致性/格式 | 产物 + 来源，不参与生成 |
+
+关键：
+
+- **共享 artifact store + task graph + ledger**；不是每个 Agent 复制一份聊天记录；
+- 每个 Agent 有独立上下文，避免“一个 Bot 的上下文爆炸”；
+- 默认 **admin/conductor 路由**，不 fan-out 全员；有 deadline、预算、停止、审批；
+- 群聊只是人类可见的协作界面；底层仍是 Team/Work/Artifact，不是靠聊天记录协调；
+- Bot 长期身份保留，但它的价值是“专业角色 + 记忆 + 工件”，不是“永远在线的大上下文”。
+
+这比 DS-Bot 的群聊更适用于超大文档：文档任务需要**分工 + 账本 + 验证**，不是所有 Bot 互相聊天。
+
+### 10.7 如何做到“聊天不受水位压力”
+
+1. **移除用户可见的水位百分比**：只保留内部预算；UI 显示“正在读取/已引用 N 个来源”，不显示 70%/90%。
+2. **请求级工作集**：每次请求按任务挑最小充分集；不是“把历史全带上再压缩”。
+3. **后台 curator 持续工作**：索引、摘要、embedding、预取在空闲/后台做；用户发消息不等待全量整理。
+4. **分段是内部调度**：任务边界/模型窗口/检索需求触发；用户无感，不产生新对话。
+5. **硬上限的兜底**：单请求装不下就分层读/工具查/map-reduce；极端情况请用户缩小范围，但**不丢 thread、不要求开新会话**。
+6. **可恢复**：所有事件/工件持久化；崩溃/重启后按 event id 恢复，不靠内存态。
+
+这不是“永远不压缩”，而是“**永远不让用户为上下文付费/做选择**”。
+
+### 10.8 为什么这比三者都强
+
+| 系统 | 强项 | 根本限制 |
+|---|---|---|
+| Codex | 编码 agent、工具、token budget、history/notes | 新窗口/摘要仍是上下文容器；记忆全局且实验性 |
+| DS-Bot | Thread 分段、steward、handoff、长期 Bot/群聊 | 每段仍有限；FTS 不索引工具结果；自动记忆删改；无超时 |
+| Codem 现状 | 本地、可信、审批、完整历史、审计 | 静态注入 200 字、无 switch、无文档工作区、无上下文 pager |
+| **Context OS** | 线程无限、检索优先、文档原生、记忆可验证、Agent 分工 | 工程复杂；检索/索引/验证必须做对 |
+
+它同时吸收：
+
+- Codex 的 **工具化检索 + 使用信号 + 完整 rollout 提取**；
+- DS-Bot 的 **Thread/段/handoff + steward + 长期 Bot/群聊**；
+- Codem 的 **本地信任/审批/审计/完整历史**；
+- 额外加上 **Document OS + Memory Graph + Verifier**，这是前两者都没有的。
+
+### 10.9 必须放弃的旧习惯
+
+- 把“上下文窗口”当存储；
+- 把“摘要”当事实；
+- 用固定百分比/水位驱动用户体验；
+- 用“开新会话”解决上下文满；
+- 把整篇文档塞进 prompt；
+- 用全局 memory summary 代替作用域记忆；
+- 自动删除/改写记忆；
+- 让 Agent 靠群聊记录协作，而不是 artifact/task graph；
+- 只用向量 RAG 处理长文档（缺结构/覆盖/引用）；
+- 用“无限 token”当不建索引/不做验证的理由。
+
+### 10.10 建设顺序（无预算约束也建议）
+
+虽然可以并行，接口要按这个顺序锁：
+
+1. **Event Log + Thread 契约**：append-only、event id、artifact id、segment id；先保证“什么都不丢”。
+2. **Working Set Builder / Pager**：请求级选材、预算、预取、换出；先做到“用户不看到水位”。
+3. **Memory Graph + Hybrid Retrieval + Verifier**：先保证“记得对、可引用、不冲突”。
+4. **Document Graph + Ledger + 文档工具**：先保证“超大文档可读/可改/可验”。
+5. **Agent Team / Conductor**：在 artifact/task graph 上分工；最后做群聊 UI。
+6. **评测/回放/成本**：长文档、千轮对话、记忆冲突、引用、恢复。
+
+### 10.11 验收指标（North Star）
+
+- 10M token 级文档：跨章节问答/编辑，引用可回到原文；
+- 1000+ 轮连续对话：无“上下文满”、无手动换会话、无重复旧任务；
+- 记忆：事实召回/冲突识别/过期识别/引用准确率；
+- 文档：章节覆盖率、编辑一致性、引用支持率、回归 diff；
+- 体验：用户从未看到水位；p95 首 token/完成时间可接受；
+- 可靠性：崩溃/重启/换模型后 thread 连续；
+- 成本：即使 token 无限，也要可预测（缓存/预取/并行）。
+
+### 10.12 最终判断
+
+> **最佳方案不是“比谁窗口更大”，而是让 Codem 成为唯一一个“模型不需要携带全部历史，却永远能拿到正确一小部分”的系统。**
+>
+> DS-Bot 的 ICM 是很好的 v1，Codex 的 tools 是很好的检索层，Codem 的信任/审计是很好的底座；三者融合后的终极形态，是 **Context OS + Document OS + Memory Graph + Artifact-centric Agents**，而不是一个更大的聊天窗口。
+
+---
+
 ## 附录 A：DS-Bot 源码索引
 
 - `ds-bot/src/host/steward.js`：阈值、steward prompt、checkpoint、parseDecision、checkpointCount/Text
