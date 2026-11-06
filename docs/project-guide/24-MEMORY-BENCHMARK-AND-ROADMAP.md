@@ -6,7 +6,10 @@
 > **证据等级**：A = 源码路径 + 测试/真机读数可核；B = 源码代码阅读，未在当前机器跑完整链路；C = 由代码结构推出的风险；D = 未知 / 需实测。
 > **目标**：解释「为什么 Codem 的记忆会时好时坏」，并把 Codex 真正值得借鉴的机制拆成可施工、可验收、可回滚的路线；不把 Codex 当默认成熟的模板。
 
-**目录**：0 一页结论 · 1 Codex 源码事实 · 2 Codem 全景 · 3 差距/根因 · 4 目标架构 · 5 路线图 · 6 验收判据 · 7 风险/不可照搬 · 8 结论 · 附录 A–D。
+**目录**：0 一页结论 · 1 Codex 源码事实 · 2 Codem 全景 · 3 差距/根因 · 4 目标架构 · 5 路线图 · 6 验收判据 · 7 风险/不可照搬 · 8 结论 · 9 与 DS-Bot 的融合裁决 · 附录 A–D。
+
+> **续篇**：[25-INFINITE-CONTEXT-AND-BOT-TEAM.md](docs/project-guide/25-INFINITE-CONTEXT-AND-BOT-TEAM.md)（DS-Bot ICM / 长期 Bot / 群聊源码对标）。
+> **最终方案以本文 §9 为准**；25 号文提供执行细节，若两文冲突，以 §9 为准。
 
 ---
 
@@ -819,7 +822,7 @@ score = manual/pinned 优先
 - 摘要 marker 保留，但改为「模型视图已折叠」而非「已移除」；
 - 摘要最大 4–6K 字符（或 2.5K token），细节由 history 承担；
 - 保留最近 3 轮 / 40% 预算；阈值可从 70% 调到 75–80%，但必须有实测；
-- `contextEpoch` 增加 `windowId` / `threadHint` / `notesRef`，不破坏现有 cutoff 语义；
+- `contextEpoch` 增加 `segmentSeq` / `handoffRef` / `notesRef`，不破坏现有 cutoff 语义；
 - 旧消息永不删除；历史面板仍显示完整时间线。
 
 ### 4.6 信任与安全边界
@@ -861,6 +864,8 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 先做 P0-1/P0-2/P0-3，再做 P0-4；不要把所有事情捆成一次发布。
 
 ### P0：先修「取不回」和「提取不到」（最高 ROI）
+
+> **施工顺序看 §9**：P0-1..P0-5 是能力组，不是五个独立项目。先锁 `Session=Thread / Epoch=Segment` 契约，再按 §9 的顺序推进。
 
 **先量基线（不做这个就没有“优化”只有“感觉”）**：
 
@@ -991,9 +996,9 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 
 - 摘要 prompt 保留结构化，但加「历史仍可用 history_read / session_search 查」；
 - 摘要最大 4–6K 字符；不要出现「已移除」这种与实际不符的措辞；
-- 调整压缩阈值（75–80%）并实测；压缩后目标 ≤ 35–40%；
+- **只维护一个 pressure 模型**：沿用当前阈值（默认 0.7）作为考虑线；实测微调可以，但不要引入第二套 80%/90% 阈值；`switch` 由 §9 的 context manager 决定，不是另一个自动压缩器；
 - 连续压缩最多 2 次；
-- `contextEpoch` 写 `windowId` / `threadHint` / `notesRef`；
+- `contextEpoch` 写 `segmentSeq` / `handoffRef` / `notesRef`；
 - 不删除旧消息；历史面板/模型视图分离保持。
 
 #### P1-3 可选 consolidation
@@ -1079,7 +1084,7 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 2. auto 记忆是否一律标为 untrusted，manual/approved 才用权威性 note？
 3. `conversation` 级自动记忆是否继续直接生效，还是也需审批（安全 vs 打扰）？
 4. history 是否允许跨 session 搜索（默认否）？
-5. 压缩阈值是否从 70% 调到 75–80%？必须先有 P0 检索能力再调；
+5. 压缩阈值是否在同一 pressure 模型内微调（**不引入第二套 80%/90% 阈值**）？必须先有 P0 检索能力再调；
 6. 是否允许后台 consolidation（默认仅用户触发）？
 7. 记忆独立表迁移的时机/兼容策略。
 
@@ -1102,9 +1107,96 @@ Codem 的记忆系统不是「缺一张表」或「提示词不够好」。它�
 
 这几件事做完，Codem 的「零星记忆问题」才会从不可解释的模型行为，变成可观测、可复现、可优化的检索/排序问题。
 
+> 以上是**能力优先级**；实际施工顺序已由 §9 融合裁决调整为：`契约 → memory 检索 → thread history → context manager → UI`。不要按本节的三件事单独排期，否则会先按 `sessionId` 造完再迁移。
+
 Codex 的 Token Budget / History / Notes 值得借鉴，但应按 Codem 的信任模型改造：
 
 > **保留检查点与完整历史，增加索引与按需读取；不自动删除，不把摘要当唯一记忆。**
+
+---
+
+## 9. 与 DS-Bot 对标的融合裁决（最终方案）
+
+> 本节是 24 / 25 两轮对标的**唯一裁决**；25 号文提供 DS-Bot/ICM 的实现细节，若与本节冲突，以本节为准。
+> 目标不是把 Codex 的 window 和 DS-Bot 的 segment 各做一套，而是合成一个 Codem 原生机制。
+
+### 9.1 唯一模型：Session = Thread，Epoch = Segment
+
+第一版**不要新建 Thread 表，也不要每次换段新建 Session**。直接复用 Codem 已有的三层：
+
+```text
+Session（用户看到的一个对话 = Thread）
+  └─ ContextEpoch（一次上下文边界）
+       ├─ kind=compact：原地压缩，旧消息保留，模型看 marker + 尾部
+       └─ kind=switch：换段，写 handoff marker，模型看 handoff + 尾部
+```
+
+- **Thread** 是产品概念，不是新存储实体；`session.id` 就是 thread id。
+- **Segment** 是逻辑段：两次 `kind=switch` 之间的 epoch 序列；不是新 Session。
+- **Compact** 是段内压缩；**Switch** 是段边界；两者都写 `context_epochs`，旧消息永不删。
+- `DisplayView = listTimelineMessages` 始终完整；`ContextView` 只投影最新 epoch。
+- 这样 `conversation` 记忆仍然按 `sessionId` 生效，不需要把 5000 条记忆迁到新 `threadId`；`session_search` 的跨会话语义不变，但 **remote / fork / 导出必须改读 `listTimelineMessages`**（否则 switch 后手机会少一段，fork 的旧 cutoff id 会 fail-open）。
+- 如果将来单 Session 的 JSONL/索引真的过大，再把“物理分片”藏到存储层（一个逻辑 thread 映射多个物理 session），但**不要在第一版引入这个复杂度**。
+
+**为什么这是最优融合**：
+
+- Codex 的 Token Budget 新窗口 = 我们的 `kind=switch` epoch；
+- DS-Bot 的换段新 Session = 我们的 `kind=switch` epoch（语义相同，物理实现更轻）；
+- Codem 现有 checkpoint = `kind=compact` epoch；
+- 不需要 Thread/Session 双身份，不会出现“换段后对话记忆丢了”“侧边栏多出会话”“fork 复制两份历史”；
+- 仍然能做到用户一个窗口无限对话。
+
+### 9.2 冲突裁决表
+
+| 两轮对标的拉扯 | 如果各做一套的后果 | 融合裁决 |
+|---|---|---|
+| Codex TokenBudget 新窗口 vs DS-Bot 换新 Session | 两套切上下文逻辑、两套恢复/缓存 | **只保留一种 `switch` epoch**；不实现第二个 window 机制 |
+| Codex 64K retained vs DS-Bot 16K recent | 上下文预算失控/两套 handoff | handoff 用 **16–24K recent + 用户原话 + 锚点**；不默认保留 64K 原始消息 |
+| Codex summary 2.5K vs DS-Bot handoff note 8 段 | 每次压缩都写两份摘要 | `compact` 用 checkpoint summary；`switch` 用 handoff note；**每个事件只写一种** |
+| Codex 90% 自动切 vs DS-Bot 0.8/0.95 vs Codem 0.7/0.4 | 三套阈值互相打架 | **一个 pressure 模型**：沿用 Codem 现有阈值（默认 0.7）作为“考虑线”；hard 线 0.9；连续压缩 ≥2 倾向 switch；不把 90% 当自动压缩线 |
+| Codex 自动 consolidation vs DS-Bot 自动 memory review vs Codem 不自动删改 | 记忆被静默删/改 | 自动只做**候选提取 + pending/归档**；manual/pending 永不被自动删改 |
+| Codex 全局 memory summary vs Codem 三级 scope | 跨项目泄漏/作用域失效 | **不做全局 summary**；用 scoped memory index + `memory_read/search` |
+| DS-Bot `read_own_chat` FTS vs Codex history/notes 工具 | 两套历史工具、两套截断 | **一个 `thread_history_*`**：FTS + 锚点 + spill；现有 `session_search` 作兜底；notes 独立 |
+| DS-Bot 长期 Bot vs Codem agent-teams 子代理 | 两套团队/两套状态 | **一个 Bot 身份层**，架在 agent-teams 任务/邮箱之上；不另造团队系统 |
+| DS-Bot 群聊 vs Codem 任务板 | 群聊/任务板各说一套状态 | **一个 Team/Work 模型**：群聊是 UI/传输，任务板是协调视图 |
+| DS-Bot 隐藏段 vs Codem 水位条 | 用户被误导或被打扰 | **默认安静，可检查**：不显示百分比，但保留段/决策/成本诊断 |
+| 两轮都默认关闭的实验能力 | 误以为生产可用 | Thread/Segment 与 Bot Team 都走 feature flag；先影子/灰度 |
+
+### 9.3 融合后的施工顺序（覆盖 24/25 的小节顺序）
+
+```text
+P0-0 契约：Session=Thread；context_epochs 加 segment_seq/kind/handoff；
+      DisplayView 用 listTimelineMessages；remote/export/fork 统一读 DisplayView。
+P0-1 记忆检索：memory index + memory_search/read；full timeline extraction；
+      usageCount/lastUsedAt；修面板/真实注入预算分叉。
+P0-2 Thread History：thread_history_search/read（FTS + 锚点 + spill）；
+      保留 session_search 作跨会话兜底。
+P0-3 Context Manager：回合结束规则版 compact/switch + thread notes；
+      规则稳定后再上小模型影子；单飞/超时/回退；handoff 写 switch epoch。
+P0-4 UI/恢复：段分隔卡、诊断、重启恢复；不显示默认百分比。
+P1 Bot Team：Bot 身份 + 持久恢复；群聊 admin 路由；peer message/handoff tree。
+P2 规模化：物理分片、混合检索、跨设备、自动归档（仅 pending/archive）。
+```
+
+**顺序理由**：
+
+- 先锁 `Session=Thread / Epoch=Segment` 契约，避免先按 `sessionId` 做完记忆/检索再迁移；
+- 先做记忆/历史检索，再做 switch；否则换段后模型只能“失忆”，会重跑工具；
+- 先规则版 Context Manager，再上小模型；否则无法判断小模型是否真的比规则好；
+- Bot Team 最后做，因为它依赖稳定的 thread/segment/handoff 和审计。
+
+### 9.4 对 24 号文原有 P0/P1 的修订
+
+- 24 的 P0-1（memory tools）、P0-3（完整时间线提取）、P0-4（usage 排序）**仍然成立**，但都挂在“当前 Session/Thread”上；`conversation` scope 不需要迁移到新 thread id。
+- 24 的 P0-2 改为 **thread_history**，不是另造一个与 `session_search` 平行的系统；现有 `session_search` / `session_event_*` 保留为兜底。
+- 24 的 P1-1 notes：**基础版（压缩前提醒 + handoff 读取）并入 P0-3**；P1-1 只保留更完整的 notes UI/可编辑能力。
+- 24 的 P1-2 的“调阈值/摘要”只在 `compact` epoch 内做；**不要再实现 Codex 式 new window**。
+- 24 的 P1-3 consolidation 仍然只做可撤销归档，不采用 Codex 自动改写或 DS-Bot 自动 review 的删除路径。
+- 24 的 P2（独立存储/跨会话）保留；但第一版不为了“无限”拆 Session。
+
+### 9.5 最终一句话
+
+> **Codem 的最优方案不是“Codex 的 window”加“DS-Bot 的 segment”，而是：一个 Session 作为用户线程，用 `compact` / `switch` 两种 epoch 管理上下文；旧消息永不删；记忆/历史按需检索；长期 Bot 复用同一 Thread/Team 模型。**
 
 ---
 
