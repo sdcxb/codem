@@ -1,5 +1,6 @@
 package com.codem.remote;
 
+import android.os.Environment;
 import android.util.Log;
 
 import java.io.File;
@@ -84,6 +85,7 @@ final class HostSupervisor {
     private final File root;
     private final File app;
     private final File data;
+    private final File workspaceBase;
     private final File libs;
     private final File bin;
     private final File tmp;
@@ -93,10 +95,11 @@ final class HostSupervisor {
     /** 当前项目工作区名（相对 `data/workspace`；空 = 工作区根） */
     private volatile String workspaceName = "";
 
-    HostSupervisor(File files, File root, File app, File data, File libs, File bin) {
+    HostSupervisor(File files, File root, File app, File data, File workspaceBase, File libs, File bin) {
         this.root = root;
         this.app = app;
         this.data = data;
+        this.workspaceBase = workspaceBase;
         this.libs = libs;
         this.bin = bin;
         this.tmp = new File(files, "tmp");
@@ -141,15 +144,14 @@ final class HostSupervisor {
     }
 
     private String workspaceGuestPath() {
-        return workspaceName.isEmpty()
-                ? "/opt/data/workspace"
-                : "/opt/data/workspace/" + workspaceName;
+        String root = WorkspacePaths.guestRoot(workspaceBase);
+        return workspaceName.isEmpty() ? root : root + "/" + workspaceName;
     }
 
     private File workspacePhoneDir() {
         return workspaceName.isEmpty()
-                ? new File(data, "workspace")
-                : new File(new File(data, "workspace"), workspaceName);
+                ? workspaceBase
+                : new File(workspaceBase, workspaceName);
     }
 
     /** 已经在跑就直接返回；否则拉起一个新 Host（单飞：并发调用只有一个会真的 start） */
@@ -314,6 +316,15 @@ final class HostSupervisor {
                 "--workspace", workspaceGuestPath(),
                 "--web", "/opt/app/web",
                 "--port", String.valueOf(port)));
+        /*
+         * 共享存储：把 /storage/emulated/0 原样 bind 进 PRoot，Host 的 workspace 才能直接落在
+         * 用户文件管理器可见的 `/storage/emulated/0/codem/workspace`，而不是只在应用沙箱里。
+         */
+        if (WorkspacePaths.isShared(workspaceBase)) {
+            String external = Environment.getExternalStorageDirectory().getAbsolutePath();
+            cmd.add(2, "-b");
+            cmd.add(3, external + ":" + external);
+        }
         boolean viaStdin = config != null && config.usable();
         if (viaStdin) {
             // Key 走 stdin：进程环境里没有 CODEM_LLM_*，`/proc/<pid>/environ` 与工具子进程都拿不到

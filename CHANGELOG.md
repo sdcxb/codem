@@ -2,6 +2,13 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.11] - 2026-11-06
+
+### 变更
+
+- Android 本机项目目录改为共享存储 `/storage/emulated/0/codem/workspace`；首次启动引导「所有文件访问」，拒绝回退应用私有目录。
+- PRoot 绑定 `/storage/emulated/0`，Host 的 `--workspace` 直接使用共享路径；文件管理器可直接放入项目。
+
 ## [1.18.10] - 2026-11-06
 
 ### 新增

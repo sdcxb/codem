@@ -1,7 +1,7 @@
 # 00 · AI 接手手册（任何模型 / Agent 平台先读这份）
 
 > **目标**：只读这份手册 + `02-CODE-MAP.md` + `08-ENGINEERING-GATES.md`，就能在 **30–40 分钟**内安全地改第一行代码，并且知道“什么不能做、做完怎么证明”。
-> **基线**：2026-11-05 ｜ `master` @ 代码提交见 `git log -1`（v1.18.10 已发布）｜ **1.18.8**（GitHub `Latest`；上一稳定版 1.17.0）｜ Node 24.19 / rustc 1.97.1。
+> **基线**：2026-11-05 ｜ `master` @ 代码提交见 `git log -1`（v1.18.11 已发布）｜ **1.18.8**（GitHub `Latest`；上一稳定版 1.17.0）｜ Node 24.19 / rustc 1.97.1。
 > **适用范围**：`C:\mimo-gui` 这个仓库（Codem 桌面 AI 编程助手）。大富翁 / Godot 实验线见 `10-GAME-AND-PROTOTYPE.md`。
 
 ---
@@ -17,7 +17,7 @@
 7. **凭据是封存的**：库里 `providers[].apiKey` 是空串、`apiKeySealed` 是 `dsh1:…` 密文；不要据此判断“用户没填 Key”。
 8. **插件“注册 ≠ 生效”**：`builtin-registry.ts` 只填注册表；真正装配在 `config/codem.base.yml` → `loadFromEntries()`。只注册不写 YAML = 功能永不生效但单测可能全绿。
 9. **发布必须先问用户**；评测/构建有互斥纪律；不要整树 `git` 操作。
-10. **当前工作区应是干净的**：v1.18.10 已提交并推送；若 `git status` 有改动，先判断是不是自己的，不要整树 `git add -A`。`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪目录不属于发布内容。
+10. **当前工作区应是干净的**：v1.18.11 已提交并推送；若 `git status` 有改动，先判断是不是自己的，不要整树 `git add -A`。`art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪目录不属于发布内容。
 
 ---
 
@@ -119,8 +119,8 @@ Codem = 对话 → 计划 → 工具调用（读写文件/跑命令/终端）→
 | 项 | 值 |
 |---|---|
 | 版本 | **1.18.8**（`package.json` / `tauri.conf.json` / `Cargo.toml` 一致） |
-| 发布 | GitHub `Codem v1.18.10` = `Latest`（2026-11-05）；上一稳定版 1.17.0 |
-| HEAD | 以 `git log -1` 为准（v1.18.10 发布提交） |
+| 发布 | GitHub `Codem v1.18.11` = `Latest`（2026-11-05）；上一稳定版 1.17.0 |
+| HEAD | 以 `git log -1` 为准（v1.18.11 发布提交） |
 | `tsc --noEmit` | **0 错误**（2026-11-04 实测） |
 | 全量测试 | **880 文件 / 9551 用例：9605 通过、17 跳过、0 失败**（约 181 秒，2026-11-04 实测） |
 | 变异波次 | 65+ 波（`node tools/mutate/check-artifacts.mjs`） |

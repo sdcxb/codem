@@ -1,7 +1,12 @@
 package com.codem.remote;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Environment;
 import android.net.ConnectivityManager;
+import android.net.Uri;
 import android.net.LinkProperties;
 import android.net.Network;
 
@@ -13,6 +18,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
+import android.provider.Settings;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -92,6 +98,8 @@ public class MainActivity extends Activity {
     private final AtomicBoolean setupRunning = new AtomicBoolean(false);
     private AlertDialog settingsDialog;
     private AlertDialog busyDialog;
+    /** 首次启动前申请共享存储权限；结果回来后再决定用共享目录还是私有回退 */
+    private boolean pendingStorageStart;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -122,12 +130,72 @@ public class MainActivity extends Activity {
         // 自动化/深链可带配置：**只有 debuggable 构建**才接受（见方法注释）
         applyConfigExtrasIfDebuggable();
 
+        if (!ensureStorageAccess()) return;
+        startInitial();
+    }
+
+    /** 首次启动的入口：有配置/运行时就直接起本机 Host，否则显示开始页 */
+    private void startInitial() {
         boolean configured = !prefs().getString(LlmSecretStore.KEY_BASE, "").isEmpty();
         boolean ready = new File(getFilesDir(), ".runtime-ready").exists();
         if (configured || ready) {
             startLocal();
         } else {
             showStartScreen();
+        }
+    }
+
+    /**
+     * 共享目录 `/storage/emulated/0/codem/workspace` 需要「所有文件访问」。
+     * 没授权时不阻塞应用：用户拒绝就回退应用私有工作区。
+     */
+    private boolean ensureStorageAccess() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            if (Environment.isExternalStorageManager()) return true;
+            if (pendingStorageStart) return false;
+            pendingStorageStart = true;
+            new AlertDialog.Builder(this)
+                    .setTitle("项目目录授权")
+                    .setMessage("Codem 需要「所有文件访问」权限，才能把项目放在 /storage/emulated/0/codem/workspace（文件管理器可见）。\n\n拒绝也可以使用应用私有目录，但外部文件管理器看不到。")
+                    .setPositiveButton("去授权", (d, w) -> {
+                        try {
+                            startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                    Uri.parse("package:" + getPackageName())));
+                        } catch (Throwable t) {
+                            startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                        }
+                    })
+                    .setNegativeButton("暂不", (d, w) -> {
+                        pendingStorageStart = false;
+                        startInitial();
+                    })
+                    .setCancelable(false)
+                    .show();
+            return false;
+        }
+        if (needsStoragePermission()) {
+            pendingStorageStart = true;
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE}, 1001);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean needsStoragePermission() {
+        // Android 13+ 的 WRITE_EXTERNAL_STORAGE 已不再授予；targetSdk28 依赖 legacy 行为，
+        // 这里只在 23..32 主动申请，13+ 由 WorkspacePaths 探测/回退。
+        if (Build.VERSION.SDK_INT < 23 || Build.VERSION.SDK_INT > 32) return false;
+        return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != 1001) return;
+        // 拒绝也不阻塞：WorkspacePaths 会回退到应用私有工作区
+        if (pendingStorageStart) {
+            pendingStorageStart = false;
+            startInitial();
         }
     }
 
@@ -258,7 +326,7 @@ public class MainActivity extends Activity {
                 LlmSecretStore.hasStoredKey(prefs()),
                 LlmSecretStore.state(prefs()),
                 prefs().getString(KEY_WORKSPACE, ""),
-                new File(getFilesDir(), "data/workspace"),
+                WorkspacePaths.root(this),
                 this::applyLlmSettings);
     }
 
@@ -674,7 +742,7 @@ public class MainActivity extends Activity {
             LlmSecretStore.migrate(prefs());
             LlmConfig config = LlmSecretStore.loadConfig(prefs());
 
-            if (supervisor == null) supervisor = new HostSupervisor(files, root, app, data, libs, bin);
+            if (supervisor == null) supervisor = new HostSupervisor(files, root, app, data, WorkspacePaths.root(this), libs, bin);
             supervisor.setWorkspace(prefs().getString(KEY_WORKSPACE, ""));
             startKeepAlive();
             showStatus("启动本机 Host…");
@@ -1139,6 +1207,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (pendingStorageStart && Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()) {
+            pendingStorageStart = false;
+            startInitial();
+            return;
+        }
         String url = takeUrlIntent();
         if (url == null) return;
         if (isLoopback(url) && !HostSupervisor.healthy()) {

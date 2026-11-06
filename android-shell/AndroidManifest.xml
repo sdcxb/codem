@@ -17,6 +17,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 项目目录：/storage/emulated/0/codem/workspace（targetSdk 28 走 legacy 存储） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Android 11+ 访问 /storage/emulated/0/codem/workspace 需要「所有文件访问」；sideload 应用自行引导 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!--
       allowBackup=false / fullBackupContent=false：
