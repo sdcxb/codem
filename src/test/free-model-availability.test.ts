@@ -194,8 +194,14 @@ describe("AVAIL：已知不可用的模型要从列表里消失（第 218 波）
     const now = Date.now();
     setFreeModelIds(["ling-3.1-flash-free"]);
     markFreeModelUnavailableFromError("ling-3.1-flash-free", "Endpoint is unavailable.");
+    /**
+     * 用**写入之后**的时钟算过期：`markFreeModelUnavailableFromError` 内部自己取
+     * `Date.now()`，全量并行满载时它与上面的 `now` 可差 >1ms ⇒ 用 `now + TTL + 1`
+     * 会落回新鲜期内（计时敏感抖动，与业务无关）。
+     */
+    const markedAt = Date.now();
     expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", now), "刚失败 ⇒ 隐藏").toBe(true);
-    expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", now + HEALTH_TTL_MS + 1), "过期 ⇒ 放回来").toBe(false);
+    expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", markedAt + HEALTH_TTL_MS + 1), "过期 ⇒ 放回来").toBe(false);
   });
 });
 

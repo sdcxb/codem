@@ -1,8 +1,8 @@
 {
   "wave": "memory-rejection-200",
   "description": "第 200 波：用户拒绝过的同类记忆不再自动写入、也不再请求批准；用户主动要求记住的放行（且直接生效）。判据 REJ-1..8 + MEM-CHECK-REJ-1：拒绝留痕（含批量拒绝/删除待批准）、全局按文本匹配挡住同类、explicit 放行、不同事实不误伤、删已生效不算拒绝、记录有界且落库仍在、可清空退路。",
-  "runAt": "2026-10-15T04:23:53.601Z",
-  "specFingerprint": "243f651ee8b8f3ded3d5e9cf0133cee2e62907c5",
+  "runAt": "2026-11-08T01:44:14.108Z",
+  "specFingerprint": "ebaa5cc0b1f9036f4a85d9f12ed29e18fdfcb486",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -20,13 +20,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);\n      this.save();",
-          "to": "      this.save();"
+          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);\n      /* 24 号文 P2-A：删除要留**墓碑**，否则另一台设备手里的旧副本会把它写回来 */\n      this.recordTombstone(entry);\n      this.save();",
+          "to": "      /* 24 号文 P2-A：删除要留**墓碑**，否则另一台设备手里的旧副本会把它写回来 */\n      this.recordTombstone(entry);\n      this.save();"
         },
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
-          "to": "      this.entries.delete(id);"
+          "from": "      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);",
+          "to": "      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);"
         }
       ],
       "tests": [
@@ -37,7 +37,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4636
+      "ms": 9384
     },
     {
       "id": "MUT-2 提取循环不再查拒绝记录",
@@ -57,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4542
+      "ms": 11410
     },
     {
       "id": "MUT-3 用户主动要求也不放行（连 explicit 一起挡）",
@@ -77,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4521
+      "ms": 10947
     },
     {
       "id": "MUT-4 用户主动要求的条目仍然按审批走（放行了但还要批准）",
@@ -97,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4561
+      "ms": 10239
     },
     {
       "id": "MUT-5 拒绝匹配扩成「永远命中」（把所有自动记忆都挡掉）",
@@ -117,7 +117,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4709
+      "ms": 9728
     },
     {
       "id": "MUT-6 删除已生效的记忆也记成拒绝（过度）",
@@ -137,7 +137,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4486
+      "ms": 9705
     },
     {
       "id": "MUT-7 拒绝记录没有退路（清空不生效）",
@@ -157,7 +157,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4878
+      "ms": 10119
     },
     {
       "id": "MUT-8 体检里不再显示已拒绝记录（用户看不到它为何不再问）",
@@ -177,7 +177,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5200
+      "ms": 9527
     },
     {
       "id": "MUT-9 反向对照：只改一行说明注释",
@@ -198,7 +198,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4933
+      "ms": 10032
     }
   ]
 }

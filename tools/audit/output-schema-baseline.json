@@ -1,17 +1,29 @@
 {
-  "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。",
+  "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。 ⚠️ \toolCountAtBaseline 必须是**真实 registry 数**（静态扫描会偏大），脚本写完请按判据提示手动校正。",
   "covered": [
     "bash",
+    "doc_compile",
     "doc_cross_search",
+    "doc_ledger",
     "doc_outline",
     "doc_read",
     "doc_search",
     "doc_status",
     "glob",
     "grep",
+    "memory_read",
+    "memory_search",
+    "notes_append",
+    "notes_delete",
+    "notes_list",
+    "notes_read",
+    "notes_update",
     "read",
     "stack_market",
+    "thread_history_read",
+    "thread_history_search",
+    "thread_segment_list",
     "web_fetch"
   ],
-  "toolCountAtBaseline": 59
+  "toolCountAtBaseline": 71
 }

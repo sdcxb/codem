@@ -20,6 +20,8 @@ pub mod engine;
 pub mod fts;
 pub mod error;
 pub mod migrate;
+/// 记忆独立表 + FTS 镜像（24 §P2；**权威仍是 settings 的 `memory` 字段**，见模块头）
+pub mod memories;
 pub mod repo;
 pub mod schema;
 /// 常驻 stdio 行协议（`codem-db serve`）：给 `codem-host` 这类长驻进程用。
@@ -92,6 +94,15 @@ pub const COMMANDS: &[&str] = &[
     "mcp_servers.remove",
     "memory.get",
     "memory.set",
+    // ===== 记忆独立表 + FTS 镜像（24 §P2；settings 仍是权威）=====
+    // `replace_all` 是渲染侧在记忆保存成功路径后台发的**全量**镜像写；
+    // `search` 是跨作用域检索的唯一读面（**必须**带 projectId 或 sessionId，否则拒绝）。
+    // `upsert_embeddings` / `vector_search` 是 24 号文 P2-C 的**持久化向量**读写
+    // （24 号文写作 `memories_upsert_embeddings` / `memories_vector_search`；本仓命令名统一用点号）。
+    "memories.replace_all",
+    "memories.search",
+    "memories.upsert_embeddings",
+    "memories.vector_search",
     "config_warmup",
     // ===== 通用仓储命令（P3 第 10 段：表定义驱动，覆盖剩余域）=====
     "crud.list",
@@ -240,6 +251,10 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "mcp_servers.remove" => config::mcp_servers_remove(engine, params),
         "memory.get" => config::memory_get(engine, params),
         "memory.set" => config::memory_set(engine, params),
+        "memories.replace_all" => memories::replace_all(engine, params),
+        "memories.search" => memories::search(engine, params),
+        "memories.upsert_embeddings" => memories::upsert_embeddings(engine, params),
+        "memories.vector_search" => memories::vector_search(engine, params),
         "config_warmup" => config::config_warmup(engine, params),
         // ===== 通用仓储命令（P3 第 10 段）=====
         "crud.list" => crud::crud_list(engine, params),

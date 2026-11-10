@@ -82,6 +82,14 @@ type ToolSideEffectScope =
   | "network"
   | "system"
   | "session"
+  /**
+   * **记忆库**（长期记忆条目的持久化内容/使用计数）。
+   *
+   * 为什么单列：`memory_read` 读正文时会把 `usageCount` / `lastUsedAt` 写回记忆库
+   * （P0-1 的使用信号）——它不是「只读」，也不该被归到 workspace/session：
+   * 记忆是跨会话的长期数据，归错会让快照/并发/计划模式三处各自得出相反结论。
+   */
+  | "memory"
   | "userInteraction";
 
 /**

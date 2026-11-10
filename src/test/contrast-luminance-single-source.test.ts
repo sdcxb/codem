@@ -228,6 +228,14 @@ describe("CR-CONTRAST-1 亮度阈值单一来源（GAP-LIST O-39，第 191 波�
     expect(CORRECT).not.toBe(STALE);
   });
 
+  /**
+   * ⚠️ 显式 30s 超时（与 `preview-shot-syntax.test.ts` 的 PS-1 同一形态，不是放宽判据）
+   *
+   * 这条要遍历 `src/**` 与 `tools/**` 的**全部**代码文件（实测 1600+ 个、逐个读盘），
+   * 单跑约 0.8s。默认 5s 是空载预算：8 worker 满载时读盘排队会把它顶穿，于是
+   * 同一份代码整批红、单跑绿。扫描面与「字面量只许出现在唯一来源」的断言一条未改
+   * （下面还有 `paths.length > 1000` 与 `strippingTouched > 0` 两道防恒绿）。
+   */
   it("CR-1b：src/** 与 tools/** 的**代码**里，阈值字面量只许出现在唯一来源文件", () => {
     const paths = collectCodePaths();
     /* 防恒绿：扫描面窄了（遍历写坏）这条就变成"什么都没扫、所以干净" */
@@ -265,7 +273,7 @@ describe("CR-CONTRAST-1 亮度阈值单一来源（GAP-LIST O-39，第 191 波�
       .filter((h) => !ALLOWED_CODE.some((e) => e.file === h.file))
       .map((h) => `${h.file}:${h.line} 出现 ${h.value} —— ${h.text}`);
     expect(outside, "阈值字面量逃出了唯一来源（代码里多出了一份实现）").toEqual([]);
-  });
+  }, 30_000);
 
   it("CR-1c（反向对照）：夹具里的旧值必须被扫出来 —— 扫描器不是恒绿的", () => {
     const fake = [

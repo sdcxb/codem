@@ -643,10 +643,10 @@ const DAY_LITERAL_EXCEPTIONS: DayLiteralException[] = [
   {
     file: "src/core/memory/memory.ts",
     literal: "24 * 60 * 60 * 1000",
-    occurrences: 2,
+    occurrences: 3,
     kind: "elapsed",
     reason:
-      "两处都是时长：maxAgeMs = maxAgeDays * 24h（条目最长存活期 = retention）与 oldestAge = (now - oldest) / 24h（「多少天前」的展示）",
+      "三处都是时长：maxAgeMs = maxAgeDays * 24h（条目最长存活期 = retention）、oldestAge = (now - oldest) / 24h（「多少天前」的展示），以及 MEMORY_CONSOLIDATION_UNDO_TTL_MS（整合撤销窗口 24h，纯经过时长，与日历日无关）",
   },
   {
     file: "src/core/knowledge/flashcard-store.ts",
@@ -686,6 +686,14 @@ const DAY_LITERAL_EXCEPTIONS: DayLiteralException[] = [
     kind: "elapsed",
     reason:
       "perHour 分桶口径是「**近 24 小时**内」（滚动时长），不是「今天这个本地日」；按天分格的 perDay 补齐已改走 localDayWindows（同文件）",
+  },
+  {
+    file: "src/core/remote/gateway-sync.ts",
+    literal: "24 * 60 * 60 * 1000",
+    occurrences: 1,
+    kind: "elapsed",
+    reason:
+      "HOST_SYNC_RETENTION_MS（多设备同步账本在没有设备游标时保留 7 天）：**保留期**（retention），按入账时间删「多久以前」的条目，与本地日历日无关",
   },
 ];
 

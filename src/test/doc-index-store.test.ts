@@ -50,7 +50,7 @@ describe("DOCI-1 索引库落地（独立库，可重建）", () => {
   it("主库 tables.json 不含文档表（索引库与主库隔离）", () => {
     const tables = JSON.parse(read("src-tauri/codem-db/sql/tables.json")) as { tables: string[] };
     expect(Array.isArray(tables.tables)).toBe(true);
-    expect(tables.tables).toHaveLength(45);
+    expect(tables.tables).toHaveLength(46);
     for (const t of tables.tables) {
       expect(t.startsWith("document"), `主库不许出现文档表 ${t}`).toBe(false);
     }

@@ -4,8 +4,17 @@
  * 当 LLM 需要使用某个 deferred 工具时，先调用 tool_search 获取完整 schema，
  * 下一轮迭代时 LLM 就能看到完整参数定义并调用目标工具。
  *
+ * ## 命中之后必须「真的可调用」（Bug 1 修复）
+ *
+ * 旧实现只把 schema 当文本返回，**不改变后续请求的 `tools` 列表** —— 模型搜到了
+ * `doc_compile`，下一轮却仍看不到它，于是反复搜索、原地打转（真机取证见
+ * `docs/marketing/evidence/bot-peer-real.txt` §3）。现在命中后会调用
+ * `deferred-activation.ts` 把工具记进**本会话**的激活表；`agentic-loop` 在构造
+ * 下一轮请求时把这些工具的完整定义追加进去。常驻 schema 预算不受影响：
+ * `ToolDef.shouldDefer` 没有被改写，只是请求侧多带了被搜索到的工具。
+ *
  * 使用方式：
- *   tool_search({ query: "lsp" })      → 按名称搜索，返回完整 schema
+ *   tool_search({ query: "lsp" })      → 按名称搜索，返回完整 schema 并激活
  *   tool_search({ query: "select:lsp" }) → 同上，Claude Code 兼容语法
  *   tool_search({ query: "code navigation" }) → 按关键词模糊搜索 searchHint
  *
@@ -17,6 +26,7 @@
 
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { ToolRegistry } from "../tools";
+import { DEFERRED_ACTIVATION_LIMIT, activateDeferredTool } from "../deferred-activation";
 
 interface ToolSearchInput {
   query: string;
@@ -60,6 +70,13 @@ const TOOL_ALIASES: Record<string, string[]> = {
   image_gen: ["生成图片", "画图", "图像生成", "image generation", "draw", "image"],
   generate_ppt: ["ppt", "幻灯片", "演示文稿", "slides"],
   project_report: ["项目报告", "项目工作台", "汇报进度", "交报告", "project report"],
+  /**
+   * P1-1：会话笔记（session notes）。中文用户/模型说「记笔记」「会话笔记」时也要能召回；
+   * 三个工具各自列别名（`scoreTool` 按工具名取别名表）。
+   */
+  notes_append: ["笔记", "会话笔记", "记笔记", "写笔记", "notes", "thread notes"],
+  notes_read: ["笔记", "会话笔记", "读笔记", "查看笔记", "notes", "thread notes"],
+  notes_list: ["笔记", "会话笔记", "笔记列表", "有哪些笔记", "notes", "thread notes"],
   cordis_define: ["动态插件", "cordis", "自定义插件"],
   cordis_inspect: ["动态插件", "cordis", "插件列表"],
   cordis_run: ["动态插件", "cordis", "运行插件"],
@@ -109,10 +126,40 @@ function scoreTool(query: string, tool: { name: string; searchHint: string }): n
 }
 
 
+/**
+ * 命中后的激活：把工具记进本会话的激活表，并给模型一句「它已经在后续请求里」。
+ *
+ * 日志是给人看的（真机排查「这次到底激活了哪些」），不是给模型的提示词；
+ * 同一工具重复搜索时不再重复打印（幂等）。
+ */
+function activationNote(ctx: ToolContext, toolName: string): string {
+  const result = activateDeferredTool(ctx.sessionId, toolName);
+  if (result.activated) {
+    const evicted = result.evicted === undefined ? "" : `（上限淘汰：${result.evicted}）`;
+    console.log(
+      `[tool_search] activated deferred tool "${toolName}" for session ${ctx.sessionId}` +
+        ` (${result.names.length}/${DEFERRED_ACTIVATION_LIMIT})${evicted}`,
+    );
+  }
+  return (
+    `\n\n[deferred-activation] ${toolName} is now included in this session's tools list ` +
+    `for subsequent requests (${result.names.length}/${DEFERRED_ACTIVATION_LIMIT} deferred tools active` +
+    `${result.activated ? "" : ", already active"}).`
+  );
+}
+
 export function createToolSearchTool(registry: ToolRegistry): ToolDef {
   return {
     id: "tool_search",
-    contract: { sideEffectScope: "session", accessScope: "session" },
+    /**
+     * 只读契约：它不写工作区、不写库，只查注册表并把命中的工具记进**进程内**激活表。
+     *
+     * 为什么必须显式声明：`PlanModeGuard` 按 `contract.readOnly` 判定（不是按名字），
+     * 缺省会当成「非只读」拦下 —— 计划模式里 `tool_search` 直接被拒，模型看不到任何
+     * 延迟工具的 schema，只能反复重试（真机 §3 的原地打转有一半来自这里）。
+     * 不变式：`readOnly: true` 必须配 `sideEffectScope: "none"`（见 tool-contract-invariants）。
+     */
+    contract: { readOnly: true, sideEffectScope: "none", accessScope: "none" },
     guidance: "Use tool_search to load the full schema of a deferred tool (e.g. lsp). Some tools are not loaded by default to save tokens. Call this before using a tool you haven't seen in the available tools list.",
     description:
       "Search for and load a deferred tool's full schema. " +
@@ -135,7 +182,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
       },
       required: ["query"],
     },
-    async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
+    async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecuteResult> {
       const input = args as unknown as ToolSearchInput;
       const query = (input.query || "").trim();
 
@@ -175,6 +222,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
               `Tool "${exactMatch.name}" schema loaded successfully.\n\n` +
               `You can now call this tool. Here is the full schema:\n\n` +
               JSON.stringify(fullDef, null, 2) +
+              activationNote(ctx, exactMatch.name) +
               `\n\nCall ${exactMatch.name} with the appropriate parameters in your next response.`, isError: false,
           };
         }
@@ -204,6 +252,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
               `Tool "${fuzzyMatches[0].name}" schema loaded successfully.\n\n` +
               `You can now call this tool. Here is the full schema:\n\n` +
               JSON.stringify(fullDef, null, 2) +
+              activationNote(ctx, fuzzyMatches[0].name) +
               `\n\nCall ${fuzzyMatches[0].name} with the appropriate parameters in your next response.`, isError: false,
           };
         }

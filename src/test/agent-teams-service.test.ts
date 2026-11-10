@@ -50,13 +50,22 @@ describe("agent-teams 服务层", () => {
     expect(r.attempt).toBe(1);
     expect(r.attemptId).toBeTruthy();
 
-    // 更新：in_progress → completed
-    const { task: t2 } = svc().update(team.id, "t1", {
-      status: "in_progress", attemptId: r.attemptId, by: "研究员",
+    // 更新：in_progress（C10：完成需要四类证据 + 独立 Verifier）
+    const evidence = [
+      { kind: "code" as const, ref: "src/report.ts" },
+      { kind: "doc" as const, ref: "docs/report.md" },
+      { kind: "test" as const, ref: "npx vitest run src/test/report.test.ts", status: "pass" as const },
+      { kind: "reference" as const, ref: "issue#7" },
+    ];
+    const { task: t2 } = await svc().update(team.id, "t1", {
+      status: "in_progress", attemptId: r.attemptId, by: "研究员", evidence,
     });
     expect(t2.status).toBe("in_progress");
-    const { task: t3 } = svc().update(team.id, "t1", {
-      status: "completed", attemptId: r.attemptId, by: "研究员", output: "完成",
+    // 独立 Verifier（不能是实现者）
+    const { verification } = await svc().verify(team.id, "t1", "验收员");
+    expect(verification.verdict).toBe("pass");
+    const { task: t3 } = await svc().update(team.id, "t1", {
+      status: "completed", attemptId: r.attemptId, by: "研究员", output: "完成", evidence,
     });
     expect(t3.status).toBe("completed");
     expect(t3.output).toBe("完成");

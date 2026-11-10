@@ -149,10 +149,12 @@ export function useDraftPersistence(draftKey: string | null) {
     }, 500);
     return () => {
       clearTimeout(timer);
-      const keyChanged = storedKeyRef.current !== keyWhenScheduled;
-      if (worthWriting() && (keyChanged || draftKeyRef.current === keyWhenScheduled)) {
-        flushDraft();
-      }
+      /*
+       * 2026-11-09 修：冲刷必须写回**调度时的旧 key**。
+       * 旧实现调用 flushDraft()，它读的是 draftKeyRef.current（切换后已经是新 key），
+       * 于是把旧会话的字写进新会话，切回旧会话就空了。
+       */
+      if (worthWriting()) writeDraft(keyWhenScheduled, draftRef.current);
     };
   }, [draft, draftKey, flushDraft, writeDraft]);
 

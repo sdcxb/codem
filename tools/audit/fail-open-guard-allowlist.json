@@ -101,6 +101,11 @@
       "site": "src/core/ui/sound-cues.ts::isSoundCuesEnabled",
       "direction": "conservative",
       "reason": "提示音开关读取：读设置失败⇒当作关闭（不发声）。这是纯装饰能力，不涉及安全/写入/放行；失败方向是「更安静」，与 C-18 沙箱开关那类「失败⇒放行」正好相反。"
+    },
+    {
+      "site": "src/core/memory/auto-consolidation.ts::isAutoConsolidationEnabled",
+      "direction": "conservative",
+      "reason": "25 §P2 自动整合开关（默认关）的读取：配置读不到 ⇒ 当作关（return false），后果是这一轮**不排任何自动整合批次**、不动用户记忆；下一回合会再读。方向是安全侧（宁可不动，也不在配置未知时替用户归档），与 C-18 那类「失败⇒放行」相反。"
     }
   ]
 }

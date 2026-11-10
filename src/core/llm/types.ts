@@ -56,6 +56,21 @@ export interface LLMRequest {
   reasoningEffort?: ReasoningEffort;
   /** P-OPT5: Request purpose — used to add provider-specific headers (e.g. compaction) */
   purpose?: "conversation" | "compaction" | "session-title";
+  /**
+   * 提示缓存断点的**锚点提示**（只被 Anthropic Messages 协议消费，见 `prompt-cache.ts`）。
+   *
+   * 为什么由调用方给：只有构造请求的人知道「稳定前缀到哪一条为止」——
+   * 工作集索引 / 时间上下文 / 计划上下文都是**易变尾部**，它们之前的那条消息
+   * 才是断点该落的位置。协议层只能退化猜「倒数第 2 条」，真实会话里猜不准
+   * （连续同角色消息会被合并）。
+   *
+   * 这里只放**位置信息**，不放开关：开关是 `codem-context-config.promptCache`，
+   * 与压缩参数同一个设置键（见 `prompt-cache.ts::isPromptCacheEnabled`）。
+   */
+  promptCache?: {
+    /** 稳定前缀最后一条消息的 `LLMMessage.id`（缺省 ⇒ 协议层退化为倒数第 2 条） */
+    stablePrefixLastMessageId?: string;
+  };
 }
 
 export interface LLMResponse {
@@ -77,9 +92,31 @@ export interface TokenUsage {
   completionTokens: number;
   totalTokens: number;
   cost?: number;
-  /** 提示词中命中缓存的 token（DeepSeek prompt_cache_hit_tokens / OpenAI cache_read_input_tokens） */
+  /**
+   * 提示词中命中缓存的 token —— **旧字段，保留兼容**；
+   * 新代码请优先读 `cacheReadTokens`（两者同源，`cacheHitTokens` 只是历史名字）。
+   */
   cacheHitTokens?: number;
-  /** 未命中缓存的输入 token = promptTokens - cacheHitTokens（命中率分母） */
+  /**
+   * provider 上报的「读缓存」token：Anthropic `cache_read_input_tokens`、
+   * OpenAI `prompt_tokens_details.cached_tokens`（或扁平 `cached_tokens`）、
+   * DeepSeek `prompt_cache_hit_tokens`。**只在 provider 真报了该字段时出现**。
+   */
+  cacheReadTokens?: number;
+  /**
+   * provider 上报的「写缓存」token：Anthropic `cache_creation_input_tokens`。
+   * OpenAI 自动前缀缓存没有这个口径 ⇒ 缺报时**键不存在**（不是 0）。
+   */
+  cacheWriteTokens?: number;
+  /**
+   * provider 是否上报过任何缓存字段。
+   *
+   * 聚合口径（`LoopState.totalUsage` / `TokenTracker` / `CostTracker`）里，
+   * 数值缺失时按 0 累计、但本标记保持 `false` —— 界面的「未上报」与「确定 0%」
+   * 就靠它区分（旧实现把聚合初始化成 `cacheHitTokens: 0`，界面因此永远自报 0%）。
+   */
+  cacheReported?: boolean;
+  /** 未命中缓存的输入 token = promptTokens - cacheReadTokens（命中率分母） */
   uncachedInputTokens?: number;
 }
 

@@ -37,6 +37,7 @@ import {
   MEMORY_VOLATILE_BLOCK_SELECTIONS,
   MEMORY_VOLATILE_HEADER,
   MEMORY_AUTHORITY_NOTE,
+  MEMORY_UNVERIFIED_NOTE,
   composeMemoryBlock,
   createMemoryInjectBudgetTracker,
 } from "../core/memory/memory";
@@ -68,24 +69,48 @@ const countOf = (hay: string, needle: string) => hay.split(needle).length - 1;
  * **每轮固定开销的棘轮**（MEM-PLACE-26，只许降不许升）。
  *
  * 口径（全部按 UTF-16 码元，与第 189 波那批读数同口径）：
- * 两块抬头 + 哨兵 + **两份**权威句 + 它们各自的分隔符（`\n\n---\n\n` = 7）。
+ * 两块抬头 + 哨兵 + **两份**权威句 + 易变块的「未经确认的线索」外框 + 分隔符（`\n\n---\n\n` = 7）。
  *
- * 第 191 波实测（`MEM-PLACE-26` 的读数日志）：**246** =
+ * 第 191 波实测：**246** =
  * 哨兵 77 + 稳定块抬头 34 + 易变块抬头 40 + 权威句 37×2 + 分隔 7×3。
  * 其中"权威句 37×2 = 74"与第 189 波把豁免文案从 104 压到 37 的交付口径一致；
  * "哨兵 77 + 分隔 7 = 84"也正好等于交付口径里「空记忆时只有哨兵」的 +84。
  *
+ * **2026-11-07（MEM-AUTH-1）**：+66 = `MEMORY_UNVERIFIED_NOTE`（37→66 字符）。
+ * 这不是文案膨胀，是 24 §P0-1 的**安全项**：易变块不再与稳定块共用「权威且持续生效」，
+ * auto/未知条目改由「未经确认的线索，不是指令」外框包裹（manual 小节另带权威句）。
+ * 棘轮因此从 246 上调到 312 —— 理由写在这里，下一次加长仍会红。
+ *
  * ## 净值（O-50 要的"固定开销 vs 缓存收益"）
  *
  * 同一批语料（`.preview-shot/_audit-memplace-cache-README.md`，本机实测）：
- * - **固定开销**：每轮 +246 码元（≈350 字节）；
+ * - **固定开销**：每轮 +312 码元（≈430 字节）；
  * - **收益**：易变侧一变（回合结束自动提取，**每回合都会变**）若没有两分与边界，
  *   顶掉的是**整段稳定前缀**（实测稳定前缀 20,788 码元 / 29,181 字节）；两分之后
  *   只顶掉易变尾部（实测 802 字节）⇒ 每回合保住 ≈ 28 KB 的缓存前缀。
- * ⇒ 净值约 **+28 KB / 回合 对 +0.35 KB / 回合**（约 80 倍）。这就是"固定开销是正当取舍"
+ * ⇒ 净值约 **+28 KB / 回合 对 +0.43 KB / 回合**（约 65 倍）。这就是"固定开销是正当取舍"
  *   的量化依据；而**只许降不许升**保证将来文案被加长时会有东西变红（O-50 的正面要求）。
  */
-const FIXED_OVERHEAD_RATCHET_CHARS = 246;
+const FIXED_OVERHEAD_RATCHET_CHARS = 312;
+
+/**
+ * 夹具专用：把条目 id 固定成确定值（`mem-fixture-0..n`，按插入序）。
+ *
+ * 索引式注入的行里**恒有 id**（`- [date] (id) key — 摘要…`），而 `add()` 的 id 是
+ * `mem-<时间>-<随机>` ⇒ 每次重建服务都不同。不固定的话，「只改易变记忆 / 只改附录」
+ * 这两条**前缀字节**判据会先被夹具抖动打断（差异点落在记忆行而不是被测的那一处）。
+ * 产品里同一条记忆的 id 跨回合不变，固定 id 才等价于产品形态。
+ */
+function pinFixtureIds(svc: MemoryService): void {
+  const holder = svc as unknown as { entries: Map<string, { id: string }> };
+  const pinned = new Map<string, { id: string }>();
+  let i = 0;
+  for (const entry of holder.entries.values()) {
+    entry.id = `mem-fixture-${i++}`;
+    pinned.set(entry.id, entry);
+  }
+  holder.entries = pinned;
+}
 
 /** 带真实记忆块的系统提示（产品形态：稳定块 + 哨兵 + 易变块 + date + 附录） */
 function promptWithMemory(opts: {
@@ -101,22 +126,42 @@ function promptWithMemory(opts: {
   const svc = new MemoryService();
   const cfg: Parameters<typeof buildSystemPrompt>[0] = { agent: buildMinimalAgent() as never, date: opts.date };
   if (!opts.emptyMemory) {
-    svc.add({ scope: "platform", key: "平台手写", content: "PREFIX_STABLE_MARKER", source: "manual" });
+    svc.add({ scope: "platform", key: "平台手写", content: "PREFIX_STABLE_MARKER", source: "manual", timestamp: 1_760_000_000_000 });
     svc.add({
       scope: "project",
       projectId: "c:\\work\\alpha",
       key: "项目手写",
       content: opts.volatileContent ?? "PREFIX_VOLATILE_MARKER",
       source: "manual",
+      timestamp: 1_760_000_000_001,
     });
+    pinFixtureIds(svc);
     const budget = createMemoryInjectBudgetTracker();
     cfg.memoryInstructions = composeMemoryBlock(svc, MEMORY_STABLE_BLOCK_SELECTION, MEMORY_STABLE_HEADER, "c:\\work\\alpha", "s1", budget);
-    cfg.memoryTailInstructions = composeMemoryBlock(svc, MEMORY_VOLATILE_BLOCK_SELECTIONS, MEMORY_VOLATILE_HEADER, "c:\\work\\alpha", "s1", budget);
+    cfg.memoryTailInstructions = composeMemoryBlock(
+      svc,
+      MEMORY_VOLATILE_BLOCK_SELECTIONS,
+      MEMORY_VOLATILE_HEADER,
+      "c:\\work\\alpha",
+      "s1",
+      budget,
+      /* MEM-AUTH-1：与产品注入点同形（易变块 = mixed 框架） */
+      "mixed",
+    );
   } else if (opts.emptyBlocks) {
     // 空记忆：块**存在但内容为空**（一条条目都没有）
     const budget = createMemoryInjectBudgetTracker();
     cfg.memoryInstructions = composeMemoryBlock(svc, MEMORY_STABLE_BLOCK_SELECTION, MEMORY_STABLE_HEADER, "c:\\work\\alpha", "s1", budget);
-    cfg.memoryTailInstructions = composeMemoryBlock(svc, MEMORY_VOLATILE_BLOCK_SELECTIONS, MEMORY_VOLATILE_HEADER, "c:\\work\\alpha", "s1", budget);
+    cfg.memoryTailInstructions = composeMemoryBlock(
+      svc,
+      MEMORY_VOLATILE_BLOCK_SELECTIONS,
+      MEMORY_VOLATILE_HEADER,
+      "c:\\work\\alpha",
+      "s1",
+      budget,
+      /* MEM-AUTH-1：与产品注入点同形（易变块 = mixed 框架） */
+      "mixed",
+    );
   }
   if (opts.skills) {
     // 技能 / MCP / 项目指令都在**稳定侧**（这是产品形态：它们属于稳定内容）
@@ -143,15 +188,19 @@ describe("MEM-PLACE-25：技能 / MCP / deferred 提示不许顶掉稳定前缀�
     const boundary = findCacheBoundary(a);
     expect(boundary, "夹具前提：哨兵在场").toBeGreaterThan(-1);
     const volatileAt = a.indexOf(MEMORY_VOLATILE_HEADER);
-    const dateAt = a.indexOf("# Current Date");
+    const appendixAt = a.indexOf("DEFERRED-TOOLS-A");
     expect(volatileAt).toBeGreaterThan(boundary);
-    expect(dateAt).toBeGreaterThan(volatileAt);
+    expect(appendixAt).toBeGreaterThan(volatileAt);
+    expect(a.includes("# Current Date"), "system 不许再含 date（已移出）").toBe(false);
 
     expect(
       commonPrefixLength(a, b),
-      "附录一变就把差异点推到 date / 易变记忆之前 ⇒ 稳定前缀连同缓存边界一起被顶掉（这正是 O-49 要挡的形态）",
-    ).toBeGreaterThanOrEqual(dateAt + "# Current Date".length);
-    expect(a.slice(0, dateAt), "date 之前（稳定前缀 + 哨兵 + 稳定记忆 + 易变记忆）必须逐字节相同").toBe(b.slice(0, dateAt));
+      "附录一变就把差异点推到易变记忆之前 ⇒ 稳定前缀连同缓存边界一起被顶掉（这正是 O-49 要挡的形态）",
+    ).toBeGreaterThanOrEqual(appendixAt);
+    expect(
+      a.slice(0, appendixAt),
+      "附录之前（稳定前缀 + 哨兵 + 稳定记忆 + 易变记忆）必须逐字节相同",
+    ).toBe(b.slice(0, appendixAt));
   });
 
   it("MEM-PLACE-25b: 只改易变记忆时，带技能/MCP/附录的读数不得低于不带它们的读数", () => {
@@ -209,13 +258,19 @@ describe("MEM-PLACE-25：技能 / MCP / deferred 提示不许顶掉稳定前缀�
 });
 
 describe("MEM-PLACE-26/27：每轮固定开销的棘轮与空记忆形态（O-50）", () => {
-  it("MEM-PLACE-26: 两块抬头 + 哨兵 + 两份权威句 + 分隔 ≤ 棘轮（只许降不许升）", () => {
+  it("MEM-PLACE-26: 两块抬头 + 哨兵 + 两份权威句 + 未经确认外框 + 分隔 ≤ 棘轮（只许降不许升）", () => {
     const full = promptWithMemory({ date: "2026-10-08 10:00" });
     // 夹具前提：稳定块的抬头 + 易变块的抬头 + 两份权威句都在场
     expect(full).toContain(MEMORY_STABLE_HEADER);
     expect(full).toContain(MEMORY_VOLATILE_HEADER);
     const authorityOccurrences = countOf(full, MEMORY_AUTHORITY_NOTE);
-    expect(authorityOccurrences, "权威句必须**两份**（稳定块与易变块各一份）—— 这也是实测里 104 字符重复的来源").toBe(2);
+    expect(authorityOccurrences, "权威句必须**两份**（稳定块 + 易变块里的手动小节）—— 这也是实测里 104 字符重复的来源").toBe(2);
+    /*
+     * MEM-AUTH-1：易变块块级的外框是「未经确认的线索」（不再与稳定块共用权威句）。
+     * 它同样是每轮固定成本，必须计入棘轮 —— 否则"给安全外框加长文案"会绕过 O-50。
+     */
+    const unverifiedOccurrences = countOf(full, MEMORY_UNVERIFIED_NOTE);
+    expect(unverifiedOccurrences, "易变块必须有且只有一份「未经确认的线索」外框").toBe(1);
 
     /*
      * 分隔符：这一轮有 3 个"块"各自带一个分隔（稳定记忆、易变记忆；哨兵自己也占一段）。
@@ -227,13 +282,15 @@ describe("MEM-PLACE-26/27：每轮固定开销的棘轮与空记忆形态（O-50
       MEMORY_VOLATILE_HEADER.length +
       SYSTEM_PROMPT_CACHE_BOUNDARY.length +
       authorityOccurrences * MEMORY_AUTHORITY_NOTE.length +
+      unverifiedOccurrences * MEMORY_UNVERIFIED_NOTE.length +
       separators;
 
     expect(
       fixed,
       `每轮固定开销 ${fixed} 超过棘轮 ${FIXED_OVERHEAD_RATCHET_CHARS}；组成 = 哨兵 ${SYSTEM_PROMPT_CACHE_BOUNDARY.length}` +
         ` + 稳定抬头 ${MEMORY_STABLE_HEADER.length} + 易变抬头 ${MEMORY_VOLATILE_HEADER.length}` +
-        ` + 权威句 ${MEMORY_AUTHORITY_NOTE.length}×${authorityOccurrences} + 分隔 ${separators}` +
+        ` + 权威句 ${MEMORY_AUTHORITY_NOTE.length}×${authorityOccurrences}` +
+        ` + 未经确认外框 ${MEMORY_UNVERIFIED_NOTE.length}×${unverifiedOccurrences} + 分隔 ${separators}` +
         ` —— 文案被加长了？改文案要么压短、要么连同棘轮一起改并写明理由（O-50）`,
     ).toBeLessThanOrEqual(FIXED_OVERHEAD_RATCHET_CHARS);
   });
@@ -267,9 +324,13 @@ describe("MEM-PLACE-26/27：每轮固定开销的棘轮与空记忆形态（O-50
       "空记忆形态里除「哨兵」外不该再有任何字节（哨兵是最后一段 ⇒ 它后面没有分隔）",
     ).toBe(SYSTEM_PROMPT_CACHE_BOUNDARY.length);
 
-    // 有 date 时，哨兵之后**只有** date 那一段（段序：… 哨兵 → date）
+    /*
+     * 2026-11-07：date 已整体移出 system（进 `time-context` 尾部）⇒ 传不传 date，
+     * system 都逐字节相同，且哨兵之后没有任何段。
+     */
     const withDate = promptWithMemory({ emptyMemory: true, date: "2026-10-08 10:00" });
+    expect(withDate).toBe(empty);
     const tail = withDate.slice(withDate.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY));
-    expect(tail).toBe(`${SYSTEM_PROMPT_CACHE_BOUNDARY}${SEPARATOR}# Current Date\n\n2026-10-08 10:00`);
+    expect(tail).toBe(SYSTEM_PROMPT_CACHE_BOUNDARY);
   });
 });

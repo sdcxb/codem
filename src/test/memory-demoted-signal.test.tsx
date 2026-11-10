@@ -139,6 +139,8 @@ describe("MEM-DEMOTE：本会话被自动降级的条目必须有可见信号", 
     /* 换成一个只有 3 条待批准、没有任何降级条目的库
        ⚠️ 先 saveMemory("") 把记忆域清空：假端口是共享的，上一个 service 的 add 已经落库，
        直接 new MemoryService() 会把那 7 条（含 2 条降级）**读回来** —— 本判据第一版就这么假红过 */
+    /* 24 号文 P2-A 之后保存链的异步尾巴更长：先让上一条用例的写入落定，再清库 */
+    await svc.flushPendingPersist();
     saveMemory("");
     const plain = new MemoryService();
     for (let i = 1; i <= 3; i++) {

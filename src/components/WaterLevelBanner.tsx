@@ -447,13 +447,9 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
             : `About ${remain.toLocaleString()} tokens left. Beyond this point the oldest messages and tool results are dropped silently and answer quality degrades — the model is not getting worse.`}
         </span>
         {/*
-          C 项：两个出口的代价不一样，分开写清楚，并给出建议。
+          2026-11-09：不再把「开新对话」当成水位出口。
+          用户可见的只有压缩入口；会话连续由自动压缩/显式 segmentEpochs 负责。
         */}
-        <span className="water-level-choice">
-          {zh
-            ? "「压缩」保留一份摘要 + 最近若干条，在**本对话**继续（老对话细节变成摘要）；「开启新对话（交接当前工作）」窗口干净、速度最快，但**本对话的全部上下文离开**，所以平台会把当前工作（改过哪些文件、定过什么结论、卡在哪）整理成一份交接交给新对话。"
-            : `Compact keeps a summary plus recent turns in this conversation. Handing off to a new conversation gives a clean, fast window and carries the current work over as a written handover (files touched, decisions, blockers).`}
-        </span>
         {note && (
           <span className={`water-level-note ${note.ok ? "is-ok" : "is-error"}`} data-testid="water-level-note">
             {note.text}
@@ -485,17 +481,6 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         )}
       </div>
       <div className="water-level-actions">
-        <button
-          type="button"
-          className="water-level-btn is-primary"
-          onClick={handleHandoff}
-          disabled={busy !== null}
-          data-testid="water-level-handoff"
-          title={zh ? "新建会话并把当前工作交接过去" : "Create a new conversation and hand the current work over"}
-        >
-          <ArrowRight className="icon-sm" />
-          {busy === "handoff" ? (zh ? "交接中…" : "Handing over…") : zh ? "开启新对话（交接当前工作）" : "New conversation (hand off work)"}
-        </button>
         <button
           type="button"
           className="water-level-btn"

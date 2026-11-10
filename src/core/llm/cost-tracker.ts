@@ -73,6 +73,14 @@ export interface UsageRecord {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  /**
+   * 这条调用 provider 是否上报过缓存字段。
+   *
+   * 为什么必须单独记：`cacheReadTokens` 缺报时**键不存在**（不是 0），
+   * 而聚合（会话/模型/总计）要求「缺失=0 且标 cacheReported:false」——
+   * 有这个显式标记，老记录（没有该字段）与新记录（明确 false）都能被消费方读对。
+   */
+  cacheReported?: boolean;
   cost: number;
   duration: number; // API call duration in ms
   toolCalls: number;
@@ -113,11 +121,23 @@ export interface SessionCost {
    * 「本会话有 N 次调用的费用未知，成本上限可能未生效」。
    */
   uncostedCalls: number;
+  /** 会话级「读缓存」token 累计（provider 未上报时为 0，见 `cacheReported`） */
+  cacheReadTokens: number;
+  /** 会话级「写缓存」token 累计（Anthropic 口径；OpenAI 无此桶 ⇒ 0） */
+  cacheWriteTokens: number;
+  /** 本会话是否有过「provider 上报缓存字段」的调用（false ⇒ 上面两个 0 是未知） */
+  cacheReported: boolean;
   modelBreakdown: Record<string, {
     cost: number;
     inputTokens: number;
     outputTokens: number;
     calls: number;
+    /** 该模型在本会话内的读缓存累计 */
+    cacheReadTokens: number;
+    /** 该模型在本会话内的写缓存累计 */
+    cacheWriteTokens: number;
+    /** 该模型是否有过上报缓存字段的调用 */
+    cacheReported: boolean;
   }>;
 }
 
@@ -195,6 +215,48 @@ const MODEL_COSTS: Record<string, ModelCost> = {
 };
 
 // ========== Cost Tracker ==========
+/**
+ * 旧数据迁移：会话聚合里的缓存桶与 `uncostedCalls` 缺字段时补 0。
+ *
+ * 为什么要逐字段归一（而不是 `{...value, uncostedCalls: ...}`）：新增字段参与
+ * `+=` 累加，缺字段会变成 `undefined + n = NaN`，而 NaN 会一路污染
+ * 「会话缓存读/写」与「费用未知的调用次数」两个读数（界面显示 NaN）。
+ * 同一类坑在 `COST-MIG-1` 里已经踩过一次，这里把缓存桶一并纳入。
+ */
+function normalizeModelBreakdown(raw: unknown): SessionCost["modelBreakdown"] {
+  if (!raw || typeof raw !== "object") return {};
+  const out: SessionCost["modelBreakdown"] = {};
+  for (const [model, value] of Object.entries(raw as Record<string, any>)) {
+    out[model] = {
+      cost: Number(value?.cost) || 0,
+      inputTokens: Number(value?.inputTokens) || 0,
+      outputTokens: Number(value?.outputTokens) || 0,
+      calls: Number(value?.calls) || 0,
+      cacheReadTokens: Number(value?.cacheReadTokens) || 0,
+      cacheWriteTokens: Number(value?.cacheWriteTokens) || 0,
+      cacheReported: value?.cacheReported === true,
+    };
+  }
+  return out;
+}
+
+function normalizeSessionCost(value: any, id: string): SessionCost {
+  return {
+    sessionId: value?.sessionId || id,
+    totalCost: Number(value?.totalCost) || 0,
+    totalInputTokens: Number(value?.totalInputTokens) || 0,
+    totalOutputTokens: Number(value?.totalOutputTokens) || 0,
+    totalDuration: Number(value?.totalDuration) || 0,
+    apiCalls: Number(value?.apiCalls) || 0,
+    toolCalls: Number(value?.toolCalls) || 0,
+    uncostedCalls: Number(value?.uncostedCalls) || 0,
+    cacheReadTokens: Number(value?.cacheReadTokens) || 0,
+    cacheWriteTokens: Number(value?.cacheWriteTokens) || 0,
+    cacheReported: value?.cacheReported === true,
+    modelBreakdown: normalizeModelBreakdown(value?.modelBreakdown),
+  };
+}
+
 export class CostTracker {
   private config: CostTrackerConfig;
   private records: UsageRecord[] = [];
@@ -231,7 +293,7 @@ export class CostTracker {
          */
         const restored = (parsed.sessionCosts || []) as Array<[string, any]>;
         this.sessionCosts = new Map(
-          restored.map(([id, value]) => [id, { ...value, uncostedCalls: Number(value?.uncostedCalls) || 0 }]),
+          restored.map(([id, value]) => [id, normalizeSessionCost(value, id)]),
         );
       }
     } catch (e) { console.warn('[cost-tracker.ts]', e) }
@@ -269,6 +331,25 @@ export class CostTracker {
   }): UsageRecord {
     const cost = this.calculateCost(params.model, params.usage);
 
+    /**
+     * 缓存桶落库：**只在 provider 真报了对应字段时才写键**（缺报 ≠ 0，
+     * 否则 `UsageStats` 的「有没有上报过」判据就失效了）；
+     * 另带显式 `cacheReported`，聚合层用它区分「未上报」与「确定 0」。
+     *
+     * ⚠️ 上报与否**优先信显式布尔**：`LoopState.totalUsage` 的聚合形状永远带
+     * `cacheReadTokens: 0`（初始化成 0，见 `createInitialState`），按「键存在」判
+     * 会把它读成「已上报」，于是未上报的回合被落库成 `cacheReported: true` + 0/0
+     * —— 真机 A/B 正是这样把 UI 又变成了「缓存命中 0%」。
+     * 只有调用方完全没给标记时（单条 usage 的老路径），才退回按字段存在性判断。
+     */
+    const reported =
+      typeof params.usage.cacheReported === "boolean"
+        ? params.usage.cacheReported
+        : params.usage.cacheReadTokens !== undefined ||
+          params.usage.cacheHitTokens !== undefined ||
+          params.usage.cacheWriteTokens !== undefined;
+    const cacheReadTokens = reported ? (params.usage.cacheReadTokens ?? params.usage.cacheHitTokens) : undefined;
+    const cacheWriteTokens = reported ? params.usage.cacheWriteTokens : undefined;
     const record: UsageRecord = {
       id: `usage-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sessionId: params.sessionId,
@@ -277,9 +358,9 @@ export class CostTracker {
       provider: params.provider,
       inputTokens: params.usage.promptTokens,
       outputTokens: params.usage.completionTokens,
-      ...(params.usage.cacheHitTokens !== undefined
-        ? { cacheReadTokens: params.usage.cacheHitTokens }
-        : {}),
+      ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+      ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
+      cacheReported: reported,
       cost,
       duration: params.duration,
       toolCalls: params.toolCalls || 0,
@@ -337,8 +418,8 @@ export class CostTracker {
 
     // 缓存计价：未命中输入按 inputCostPer1k，命中输入按 cacheCostPer1k
     // （DeepSeek 缓存命中输入显著更便宜——成本精确性对标 dsh billed input 口径）
-    const uncachedInput = Math.max(0, usage.promptTokens - (usage.cacheHitTokens ?? 0));
-    const cacheRead = usage.cacheHitTokens ?? 0;
+    const cacheRead = usage.cacheReadTokens ?? usage.cacheHitTokens ?? 0;
+    const uncachedInput = Math.max(0, usage.promptTokens - cacheRead);
     const totalInput = uncachedInput + cacheRead;
 
     /**
@@ -409,6 +490,9 @@ export class CostTracker {
         apiCalls: 0,
         toolCalls: 0,
         uncostedCalls: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReported: false,
         modelBreakdown: {},
       };
       this.sessionCosts.set(record.sessionId, sessionCost);
@@ -422,6 +506,13 @@ export class CostTracker {
     sessionCost.toolCalls += record.toolCalls;
     // 第 184 波（G4）：费用未知的调用要计数 —— 它让"上限可能未生效"变成可读事实
     if (record.costUnknown) sessionCost.uncostedCalls++;
+    /*
+     * 缓存桶：数值缺报按 0 累计（聚合口径），`cacheReported` 一旦置 true 就保持 ——
+     * 「本会话有没有过可用的缓存读数」是会话级的稳定事实，不该被后续未上报的调用抹掉。
+     */
+    sessionCost.cacheReadTokens += record.cacheReadTokens ?? 0;
+    sessionCost.cacheWriteTokens += record.cacheWriteTokens ?? 0;
+    if (record.cacheReported === true) sessionCost.cacheReported = true;
 
     // Update model breakdown
     if (!sessionCost.modelBreakdown[record.model]) {
@@ -430,6 +521,9 @@ export class CostTracker {
         inputTokens: 0,
         outputTokens: 0,
         calls: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReported: false,
       };
     }
 
@@ -438,6 +532,9 @@ export class CostTracker {
     modelBreakdown.inputTokens += record.inputTokens;
     modelBreakdown.outputTokens += record.outputTokens;
     modelBreakdown.calls++;
+    modelBreakdown.cacheReadTokens += record.cacheReadTokens ?? 0;
+    modelBreakdown.cacheWriteTokens += record.cacheWriteTokens ?? 0;
+    if (record.cacheReported === true) modelBreakdown.cacheReported = true;
   }
 
   /** Check cost limits */
@@ -548,6 +645,15 @@ export class CostTracker {
      * 消费方：`UsageStats.tsx` 在总费用旁边显示一行提示。
      */
     uncostedCalls: number;
+    /**
+     * 全局「读缓存」token 累计（来自 `sessionCosts` 的累加值，不受 `records` 窗口裁剪影响）。
+     * provider 未上报时为 0，消费方必须结合 `cacheReported` 判断这是「未知」还是「确定 0」。
+     */
+    cacheReadTokens: number;
+    /** 全局「写缓存」token 累计（Anthropic 口径；OpenAI 自动缓存无此桶） */
+    cacheWriteTokens: number;
+    /** 是否有过「provider 上报缓存字段」的调用 */
+    cacheReported: boolean;
   } {
     const totalCost = this.getTotalCost();
     const totalSessions = new Set(this.records.map((r) => r.sessionId)).size;
@@ -575,6 +681,19 @@ export class CostTracker {
       0,
     );
 
+    /*
+     * 缓存桶与 `uncostedCalls` 同源：读 `sessionCosts` 的**全量累加**，
+     * 不用会被裁剪的 `records`（否则「一共命中多少」会随着历史窗口收缩而变小）。
+     */
+    const cacheTotals = Array.from(this.sessionCosts.values()).reduce(
+      (acc, s) => ({
+        read: acc.read + (Number(s.cacheReadTokens) || 0),
+        write: acc.write + (Number(s.cacheWriteTokens) || 0),
+        reported: acc.reported || s.cacheReported === true,
+      }),
+      { read: 0, write: 0, reported: false },
+    );
+
     return {
       totalRecords: this.records.length,
       totalCost,
@@ -586,7 +705,30 @@ export class CostTracker {
       averageCostPerCall: this.records.length > 0 ? totalCost / this.records.length : 0,
       averageDuration: this.records.length > 0 ? totalDuration / this.records.length : 0,
       uncostedCalls,
+      cacheReadTokens: cacheTotals.read,
+      cacheWriteTokens: cacheTotals.write,
+      cacheReported: cacheTotals.reported,
     };
+  }
+
+  /**
+   * 按模型聚合缓存读 / 写（跨会话，来自 `sessionCosts.modelBreakdown` 的全量累加）。
+   *
+   * 与 `getCostByModel` 的区别：费用按 `records` 窗口聚合（历史页口径），
+   * 缓存按不裁剪的会话累加（「这个模型到底命中过多少」的口径）。
+   */
+  getCacheByModel(): Record<string, { cacheReadTokens: number; cacheWriteTokens: number; cacheReported: boolean }> {
+    const out: Record<string, { cacheReadTokens: number; cacheWriteTokens: number; cacheReported: boolean }> = {};
+    for (const sessionCost of this.sessionCosts.values()) {
+      for (const [model, breakdown] of Object.entries(sessionCost.modelBreakdown)) {
+        const entry = out[model] ?? { cacheReadTokens: 0, cacheWriteTokens: 0, cacheReported: false };
+        entry.cacheReadTokens += breakdown.cacheReadTokens ?? 0;
+        entry.cacheWriteTokens += breakdown.cacheWriteTokens ?? 0;
+        if (breakdown.cacheReported === true) entry.cacheReported = true;
+        out[model] = entry;
+      }
+    }
+    return out;
   }
 
   /** Clear all records */

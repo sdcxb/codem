@@ -394,6 +394,16 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         hidden: Number(p.hidden ?? base.hidden ?? 0),
         generated_files: p.generated_files ?? null,
         retrieved_sources: p.retrieved_sources ?? null,
+        /**
+         * `metadata`：真引擎在 `messages.upsert_index` 的**两条分支**都写这一列
+         * （`repo.rs` 的 insert 列出 `metadata`；update 分支是 `COALESCE(?13, metadata)`）。
+         *
+         * 假端口早先**没有**这一列 ⇒ 消息上的结构化事实（上下文检查点 epoch、
+         * P1-4 群消息的 `metadata.groupMessage`）在测试里永远读不回来，
+         * 「写了却读不到」这类缺陷于是**结构上不可见**（替身比实现更狭窄）。
+         * 这里按 COALESCE 语义补上：`p.metadata` 为 null/undefined 时保留旧值。
+         */
+        metadata: p.metadata ?? base.metadata ?? null,
       };
       if (idx >= 0) target[idx] = merged;
       else target.push(merged);
@@ -1196,6 +1206,213 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         }
         return { removed, added, refreshed, session_id: sid } as unknown as T;
       }
+      /*
+       * `memories.replace_all`（P2-C，**写**）：记忆独立表 + FTS 镜像的全量替换。
+       *
+       * 真实现见 `codem-db/src/memories.rs::replace_all`（单事务清空 + 重建）。
+       * 假端口按同一语义落到 `memories` 表：整批替换、空数组 = 清空。
+       * 走 `persist` 是为了与真机同形：它记 `__writes()`、并支持 `failCommands` 注入失败
+       * （"镜像失败不阻断保存"那条判据需要一个能精确失败的替身）。
+       *
+       * ⚠️ 假端口**不做 CJK 切分**：`memories.search` 用"逐词子串 AND"近似 FTS 的 AND 语义
+       * （见下面那条分支的说明）。切分/BM25 的真实语义由 Rust 用例守住
+       * （`engine_tests.rs::memories_search_hits_cjk_and_ascii`），这里只证明**接线**。
+       */
+      if (command === "memories.replace_all") {
+        const written = writeCommand(command, params);
+        const list = (params?.memories as Row[] | undefined) ?? [];
+        /*
+         * 24 号文 P2-C：`embedding` / `embedding_dim` 两列**必须按 id 且有条件地保留**。
+         *
+         * 真实现（`memories.rs::replace_all`）在同一事务里先把旧行的这两列读出来，
+         * 只有当 `key` 与 `content` 都没变时（向量仍然描述这段正文）才带回新行 ——
+         * 否则任何一次记忆保存都会把已持久化的向量整批抹掉（"重启后向量检索还在"就成了假绿）。
+         * 假端口必须同形：无条件保留会把"内容变了却还用旧向量"也变成绿的。
+         */
+        const previous = new Map(table("memories").map((r) => [String(r.id), r] as const));
+        tables.set(
+          "memories",
+          list.map((row) => {
+            const next = cloneRow(row);
+            const prev = previous.get(String(row.id));
+            if (
+              prev &&
+              String(prev.key ?? "") === String(row.key ?? "") &&
+              String(prev.content ?? "") === String(row.content ?? "")
+            ) {
+              if (prev.embedding !== undefined) next.embedding = prev.embedding;
+              if (prev.embedding_dim !== undefined) next.embedding_dim = prev.embedding_dim;
+            }
+            return next;
+          }),
+        );
+        return { written, fts_rows: list.length, table: "memories" } as unknown as T;
+      }
+      /*
+       * `memory.get`（**只读**）：并发写合并（24 号文 P2-A）的"读-改-写"读那一半。
+       * 真实现见 `codem-db/src/config.rs::memory_get`（单行 `memory` 表 `id='default'`）。
+       * 只读 ⇒ 不进 `writeLog`（`__writes()` 是"确实写穿了"的判据）。
+       */
+      if (command === "memory.get") {
+        if ((opts.failCommands ?? []).includes(command)) {
+          throw new Error(`fake-port: 读取失败（${command}）`);
+        }
+        const row = table("memory").find((r) => r.id === "default");
+        const content = typeof row?.content === "string" ? row.content : "";
+        return { content, present: !!row } as unknown as T;
+      }
+      /*
+       * `memories.upsert_embeddings`（P2-C，**写**）：按 id 写向量 / 维度。
+       *
+       * 真实现是"先整批校验、再单事务写入"（`memories.rs::upsert_embeddings`）：
+       * 非法向量整批拒绝；id 不存在的行**跳过并计数**（镜像允许滞后，不该整批失败）。
+       * 假端口按同一语义落到 `memories.embedding` / `embedding_dim`（用数组代替 BLOB）。
+       */
+      if (command === "memories.upsert_embeddings") {
+        writeLog.push({ command, params });
+        if ((opts.failCommands ?? []).includes(command)) {
+          throw new Error(`fake-port: 落库失败（${command}）`);
+        }
+        const list = Array.isArray(params?.embeddings) ? (params?.embeddings as Row[]) : null;
+        if (!list) throw new Error("fake-port: memories.upsert_embeddings 缺少 embeddings 数组");
+        const validated: Array<{ id: string; vector: number[] }> = [];
+        for (const item of list) {
+          const id = String(item?.id ?? "");
+          const vector = item?.vector;
+          if (!id) throw new Error("fake-port: 向量写入缺少 id");
+          if (
+            !Array.isArray(vector) ||
+            vector.length === 0 ||
+            !vector.every((n) => typeof n === "number" && Number.isFinite(n))
+          ) {
+            throw new Error(`fake-port: 向量形状非法（id=${id}）`);
+          }
+          validated.push({ id, vector: vector as number[] });
+        }
+        let writtenCount = 0;
+        let skipped = 0;
+        const target = table("memories");
+        for (const item of validated) {
+          const row = target.find((r) => String(r.id) === item.id);
+          if (!row) {
+            skipped += 1;
+            continue;
+          }
+          row.embedding = [...item.vector];
+          row.embedding_dim = item.vector.length;
+          writtenCount += 1;
+        }
+        return { written: writtenCount, skipped } as unknown as T;
+      }
+      /*
+       * `memories.vector_search`（P2-C，**只读**）：余弦检索。
+       *
+       * 可见性/状态过滤与 `memories.search` 逐条对齐（platform 恒可见、project/session 相等才可见、
+       * archived/pending 不返回）。**维度不符**的行直接跳过（两个向量空间的余弦是噪声），
+       * 而不是当成 0 分参与排序 —— 与 Rust 侧同一条判据。
+       */
+      if (command === "memories.vector_search") {
+        if ((opts.failCommands ?? []).includes(command)) {
+          throw new Error(`fake-port: 读取失败（${command}）`);
+        }
+        const projectId = String(params?.projectId ?? "").trim();
+        const sessionId = String(params?.sessionId ?? "").trim();
+        const teamId = String(params?.teamId ?? "").trim();
+        if (!projectId && !sessionId && !teamId) {
+          throw new Error("fake-port: memories.vector_search 必须给出 projectId、sessionId 或 teamId（fail-closed）");
+        }
+        const queryVector = params?.query_embedding;
+        if (!Array.isArray(queryVector) || queryVector.length === 0) {
+          throw new Error("fake-port: memories.vector_search 的 query_embedding 必须是非空数组");
+        }
+        const dim = queryVector.length;
+        const limit = Number(params?.limit ?? 25);
+        const cosine = (a: number[], b: number[]): number => {
+          let dot = 0;
+          let na = 0;
+          let nb = 0;
+          for (let i = 0; i < a.length; i += 1) {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+          }
+          if (na === 0 || nb === 0) return Number.NaN;
+          return dot / (Math.sqrt(na) * Math.sqrt(nb));
+        };
+        const hits = table("memories")
+          .filter((r) => {
+            if (Number(r.archived ?? 0) === 1) return false;
+            if (String(r.status ?? "") === "pending") return false;
+            if (!Array.isArray(r.embedding) || Number(r.embedding_dim) !== dim) return false;
+            const scope = String(r.scope ?? "");
+            return (
+              scope === "platform" ||
+              (scope === "project" && projectId !== "" && String(r.project_id ?? "") === projectId) ||
+              (scope === "team" &&
+                teamId !== "" &&
+                String(r.team_id ?? "") === teamId &&
+                /* 25:668 项目收窄：两边都按「空 = 没有项目」比较（与 MemoryService.visibleIn 逐条对齐） */
+                String(r.project_id ?? "") === projectId) ||
+              (scope === "conversation" && sessionId !== "" && String(r.session_id ?? "") === sessionId)
+            );
+          })
+          .map((r) => ({ row: r, score: cosine(queryVector as number[], r.embedding as number[]) }))
+          .filter((hit) => Number.isFinite(hit.score))
+          .sort((a, b) => b.score - a.score || String(a.row.id).localeCompare(String(b.row.id)))
+          .slice(0, Math.max(1, limit))
+          .map((hit) => ({ ...cloneRow(hit.row), score: hit.score }));
+        return { items: hits, has_more: false, next_cursor: null } as unknown as T;
+      }
+      /*
+       * `memories.search`（P2-C，**只读**）：跨作用域检索。
+       *
+       * 可见性口径与 `memories.rs::search` / `MemoryService.visibleIn` 对齐（含 25:668 的 team 轴与项目收窄）：
+       * platform 恒可见；project 只在 `projectId` **相等**时可见；team 只在 `teamId` **相等**、且条目 project_id 与请求项目**都为空或相等**时可见；conversation 只在
+       * `sessionId` **相等**时可见；`archived` / `pending` 一律不可见。
+       * 一个过滤都不给 ⇒ 抛错（fail-closed，与真引擎同一个契约）。
+       *
+       * 匹配规则是**逐词子串 AND**（不是 FTS 的 bigram/BM25）：对测试足够，
+       * 且比 FTS 更严格（要求词连续出现），不会把"实现搜不到"掩盖成"搜到了"。
+       */
+      if (command === "memories.search") {
+        if ((opts.failCommands ?? []).includes(command)) {
+          throw new Error(`fake-port: 落库失败（${command}）`);
+        }
+        const projectId = String(params?.projectId ?? "").trim();
+        const sessionId = String(params?.sessionId ?? "").trim();
+        const teamId = String(params?.teamId ?? "").trim();
+        if (!projectId && !sessionId && !teamId) {
+          throw new Error("fake-port: memories.search 必须给出 projectId、sessionId 或 teamId（fail-closed）");
+        }
+        const terms = String(params?.query ?? "")
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(Boolean);
+        const limit = Number(params?.limit ?? 25);
+        const hits = table("memories")
+          .filter((r) => {
+            if (Number(r.archived ?? 0) === 1) return false;
+            if (String(r.status ?? "") === "pending") return false;
+            const scope = String(r.scope ?? "");
+            const visible =
+              scope === "platform" ||
+              (scope === "project" && projectId !== "" && String(r.project_id ?? "") === projectId) ||
+              (scope === "team" &&
+                teamId !== "" &&
+                String(r.team_id ?? "") === teamId &&
+                String(r.project_id ?? "") === projectId) ||
+              (scope === "conversation" && sessionId !== "" && String(r.session_id ?? "") === sessionId);
+            if (!visible) return false;
+            const haystack = `${String(r.key ?? "")}\n${String(r.content ?? "")}`.toLowerCase();
+            return terms.length > 0 && terms.every((t) => haystack.includes(t));
+          })
+          .map((r) => ({ ...cloneRow(r), score: terms.length }));
+        return {
+          items: hits.slice(0, Math.max(1, limit)),
+          has_more: hits.length > limit,
+          next_cursor: null,
+        } as unknown as T;
+      }
       writeLog.push({ command, params });
       /**
        * `messages.delete`（**结构化回报**）—— 第 45 轮线协议审计 P2-4。
@@ -1576,9 +1793,15 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         return { written: 1, id: row.id } as unknown as T;
       }
       if (command === "context_epochs.list") {
+        /**
+         * 排序必须与真引擎逐字同口径（`repo.rs::context_epochs_list`）：
+         * `created_at DESC, seq DESC`。`seq` 对 compact 路径是进程内计数器，
+         * 重启归零后新 epoch 的 seq 可能比老的小 —— 先比 seq 会把老 epoch 当"最新"。
+         * 测试双比实现更宽松就等于没测（本仓既有纪律）。
+         */
         const rows = table("context_epochs")
           .filter((r) => String(r.session_id) === String((params as Record<string, unknown>).session_id))
-          .sort((a, b) => Number(b.seq ?? 0) - Number(a.seq ?? 0) || Number(b.created_at ?? 0) - Number(a.created_at ?? 0))
+          .sort((a, b) => Number(b.created_at ?? 0) - Number(a.created_at ?? 0) || Number(b.seq ?? 0) - Number(a.seq ?? 0))
           .slice(0, Number((params as Record<string, unknown>).limit ?? 100));
         return { items: rows } as unknown as T;
       }
@@ -1850,6 +2073,26 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       messages,
       events,
       configDomain,
+      /**
+       * 遥测的**按需查询**（与真端口 `RustStoragePort.queryTelemetry` 同形：
+       * 一页拉完、查完即弃、不驻留镜像）。
+       *
+       * 为什么必须补：`TelemetryCollector.query()` 只读 `refreshTelemetryProjection()`
+       * 生成的投影，而投影的唯一来源就是这个方法。假端口原来没有它 ⇒
+       * `refreshTelemetryProjection()` 直接返回 0 行 ⇒ **任何遥测读取在测试里恒为空**
+       * （审计类判据只能改写成「看 flush 计数」，看不到事件内容）。
+       *
+       * 排序取 `timestamp` 升序：真端口走 `crud.list`（按行序/主键返回），
+       * 投影的「尾部 = 最新」假设对两种实现都成立；这里不声称与真引擎逐字同序。
+       */
+      async queryTelemetry(options: { limit?: number; offset?: number } = {}) {
+        const rows = [...table("telemetry_events")].sort(
+          (a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0),
+        );
+        const offset = Math.max(0, Number(options.offset ?? 0));
+        const limit = options.limit === undefined ? rows.length : Math.max(0, Number(options.limit));
+        return rows.slice(offset, offset + limit).map(cloneRow);
+      },
       applyMessageWrite: (row: Row) => messages.applyWrite(row),
       applyMessageDelete: (sid: string, ids: string[]) => messages.removeByIds(sid, ids),
       applyMessageTrim: (sid: string, ids: string[]) => messages.applyTrim(sid, ids),

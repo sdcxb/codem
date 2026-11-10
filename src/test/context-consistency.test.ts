@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { getMemoryService } from "../core/memory/memory";
 import { buildCompactionInstruction, buildCompactionSystemPrompt } from "../core/llm/agentic-loop";
+import { COMPACTION_SUMMARY_MAX_CHARS } from "../core/llm/compaction-budget";
 
 // ========== 辅助函数 ==========
 
@@ -568,7 +569,7 @@ describe("COMPACT-MEM-1：压缩摘要提示词带记忆权威性豁免", () => 
 
     // 反向（防"两处都只是复述同一个空壳句子"）：两条提示词是**各自独立**的文档
     expect(instruction).not.toBe(systemPrompt);
-    expect(systemPrompt).toContain("总长度不超过 1500 字符");
+    expect(systemPrompt).toContain(`总长度不超过 ${COMPACTION_SUMMARY_MAX_CHARS} 字符`);
     expect(instruction).toContain("只输出检查点文本，不调用任何工具");
   });
 });

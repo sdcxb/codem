@@ -48,6 +48,31 @@ export interface TurnOutcome {
 
 const zhOr = (zh: boolean, zhText: string, enText: string) => (zh ? zhText : enText);
 
+/**
+ * 归一化「文档同步」事实（C06 硬闸在结果上带的两个字段）。
+ *
+ * 只认**非空**的 changed/unknown：空数组等于「没拦/没标」，不能凭空造出「未完成」。
+ * 与 `regressionRedTests` 同一纪律：呈现层只消费循环已经算好的事实，不自己再判一遍。
+ */
+function documentSyncFacts(value: unknown): { changed: string[]; unknown: string[] } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const pick = (list: unknown): string[] =>
+    Array.isArray(list) ? list.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+  const changed = pick(record.changed);
+  const unknown = pick(record.unknown);
+  if (changed.length === 0 && unknown.length === 0) return null;
+  return { changed, unknown };
+}
+
+/** 文档事实的人读列表（`报告.docx、设计.md`） */
+function documentSyncList(facts: { changed: string[]; unknown: string[] }): string {
+  const parts: string[] = [];
+  if (facts.changed.length > 0) parts.push(facts.changed.join("、"));
+  if (facts.unknown.length > 0) parts.push(`${facts.unknown.join("、")}（读不到）`);
+  return parts.join("；");
+}
+
 export function describeTurnOutcome(
   result: unknown,
   opts: { lang?: string } = {},
@@ -75,7 +100,7 @@ export function describeTurnOutcome(
     case "overflow": {
       const msg =
         (typeof r.message === "string" && r.message) ||
-        zhOr(zh, "上下文窗口已满，请开启新对话。", "The context window is full. Start a new conversation.");
+        zhOr(zh, "上下文窗口已满，本轮未完成；可以重试。", "The context window is full; this turn did not finish. You can retry.");
       return {
         kind: "overflow",
         notice: `⚠️ ${msg}`,
@@ -158,7 +183,82 @@ export function describeTurnOutcome(
         ? (r.regressionRedTests as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
         : [];
 
-      // 唯一的"真完成"：显示完成卡、照旧报喜气泡 —— 但**有回归时绝不走这里** ✗
+      /**
+       * ★★ C06 边界②：**文档同步硬闸**（从「提醒」升级成「不允许标记完成」）。
+       *
+       * 循环在收尾时发现「代码改动 + 账本里带版本的相关文档版本落后（或读不到）」，
+       * 会把事实放进 `documentSyncBlocked` 并以 `reason: "document_sync_required"` 结束。
+       * 这里必须**如实呈现「这不是完成」**并给出修法 —— 绝不允许它掉进「任务完成」。
+       *
+       * 顺序放在回归门**之前**：这条结果的 `reason` 本身就不是 completed，
+       * 而文档事实是这一轮被拦下的**直接原因**（回归门是另一类事实）。
+       */
+      const documentBlocked = documentSyncFacts(r.documentSyncBlocked);
+      if (documentBlocked) {
+        const list = documentSyncList(documentBlocked);
+        const msg = zhOr(
+          zh,
+          `**这不是完成**：你改过文件，而文档账本里带版本的文档与当前版本不同步 —— ${list}。` +
+            `引用可能已经对不上原文。请重新读这些文档并核对引用的章节/结论，` +
+            `或用 doc_ledger 说明为什么本次不需要动，然后再收尾。`,
+          `**This is NOT a completion**: the code changed while the versioned document(s) in the ledger ` +
+            `are no longer in sync — ${list}. Re-read them and re-check the citations, or explain via the ` +
+            `document ledger why they need no change, then finish again.`,
+        );
+        return {
+          kind: "stopped",
+          notice: `⚠️ ${msg}`,
+          petPhase: errorPhase,
+          petMessage: msg,
+          completionCard: false,
+          suppressTaskBubble: true,
+          turnStatus: {
+            kind: "error",
+            message: `Document sync blocked the completion: ${list}`,
+            code: "DOCUMENT_SYNC_REQUIRED",
+          },
+          messageStatus: "error",
+        };
+      }
+
+      /**
+       * C06 边界②的**放行分支**：同一（文档 + 版本）已经拦过、或本会话拦截次数达到上限，
+       * 同一状态再来时不无限拦（否则会话永远完不成）—— 但结果上带着
+       * `documentSyncUnverified`，所以这一轮**也不许**显示「任务完成」，必须让用户看见「未验证」。
+       *
+       * ⚠️ 必须排在「唯一的真完成」分支**之前**：那一支只看 `reason === "completed"`，
+       * 放行形态的 reason 正是 completed（这一版的拦截额度用完了）—— 顺序反了就等于没标。
+       */
+      const documentUnverified = documentSyncFacts(r.documentSyncUnverified);
+      if (reason === "completed" && documentUnverified) {
+        const list = documentSyncList(documentUnverified);
+        const msg = zhOr(
+          zh,
+          `本轮**标记为未验证**：文档账本里带版本的文档仍未与当前版本同步 —— ${list}。` +
+            `（同一份文档的同一版本已拦过 / 或本会话拦截次数已达上限，本次不再阻塞收尾；` +
+            `但这一轮不算干净完成。）请重新读这些文档并核对引用后再宣布完成。`,
+          `This turn is **marked unverified**: the versioned document(s) in the ledger are still out of ` +
+            `sync — ${list}. (This document+version was already blocked, or the per-session block limit ` +
+            `was reached, so it is not blocked again — but this is not a clean completion.) ` +
+            `Re-read them and re-check citations before declaring completion.`,
+        );
+        return {
+          kind: "stopped",
+          notice: `⚠️ ${msg}`,
+          petPhase: errorPhase,
+          petMessage: msg,
+          completionCard: false,
+          suppressTaskBubble: true,
+          turnStatus: {
+            kind: "error",
+            message: `Document sync still pending (released, unverified): ${list}`,
+            code: "DOCUMENT_SYNC_UNVERIFIED",
+          },
+          messageStatus: "error",
+        };
+      }
+
+      // 唯一的「真完成」：显示完成卡、照旧报喜气泡 —— 但**有回归时绝不走这里** ✗
       if (reason === "completed" && regressions.length === 0) {
         return {
           kind: "completed",
@@ -194,6 +294,11 @@ export function describeTurnOutcome(
           messageStatus: "error",
         };
       }
+
+      /**
+       * C06 边界②的**放行分支**已在上方（「唯一的真完成」之前）处理完毕 ——
+       * 它必须排在 `reason === "completed"` 的早退分支之前，否则永远走不到。
+       */
 
       // 连续错误到上限：与循环里那条可见文案同义（这一条原来被死判据挡着，从未显示过）。
       if (reason === "too_many_errors") {

@@ -1,0 +1,42 @@
+C01 / C13 当前构建真机验收（2026-11-09）
+================================================
+
+构建：Codem 1.18.13，NSIS 2026-11-09 19:46:33
+安装包 sha256：8D435D99A13AC689707653A6C68A4EF5EC7A469BDACECBA37D0723D454EDA601
+运行：安装版 + WebView2 CDP（127.0.0.1:9222），数据目录 %APPDATA%\com.codem.app
+
+1) 默认配置长历史（segmentEpochs 缺省 = false）
+session：real-c01-default-20261109-3
+- 61 条预置长消息；真实回合（fixture provider）完成
+- context_epochs：2 条，均为 kind=compact，switch=0
+- 消息 metadata 中 switch marker=0
+- 页面文本不含「开启新对话 / 请开启新对话 / 新建对话 / 新会话」
+- 截图：docs/marketing/evidence/c01-default-current.png
+结论：**通过**（未自动切段；未出现劝退；同一 Session 继续）
+
+2) 显式开启 segmentEpochs=true，完成态达到阈值产生 switch
+session：real-c01-switch-20261109
+- context-config：segmentEpochs=true，compactionThreshold=0.7
+- 31 条预置长消息；真实回合完成
+- context_epochs：1 条，kind=compact，removed=12/kept=20，switch=0
+- 消息 metadata 中 switch marker=0
+结论：**未通过**。真机自动压缩先于完成出口触发，只产生 compact；没有 switch。
+（SEG-WIRE-3 在 enableCompaction:false 下通过，但装机版没有这个开关。）
+
+3) 切换会话输入不丢
+- 真机操作：输入草稿 → 切到「对话 65」→ 切回原会话
+- 结果：输入框为空；settings 表没有 composer-draft-* 行
+结论：**未通过**（自动化注入也可能影响；但真机现象是丢）
+- 单测：renderer-robustness-a RA-5a..e 22 条通过（含切换冲刷）
+
+4) 手机端读完整历史
+结论：**未做**。本机没有可用的已配对手机/网关会话；未伪造通过。
+
+5) C13 当前构建页面
+- 页面文本不含「开启新对话 / 请开启新对话 / 新建对话 / 新会话」
+- 截图：docs/marketing/evidence/c13-current-build.png
+结论：**通过**（用户可见的新对话劝退已移除）
+
+限制：
+- fixture provider 是本机 127.0.0.1:18939 的受控 OpenAI-compatible SSE，不是真实公网模型。
+- 显式 switch 真机失败是行为事实，不通过改 claims 掩盖。

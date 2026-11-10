@@ -198,7 +198,11 @@ export async function registerRustStoragePort(
      */
     try {
       const { hasMemoryServiceInstance, getMemoryService } = await import("../memory/memory");
-      if (hasMemoryServiceInstance()) getMemoryService().reload();
+      /*
+       * RELOAD-1：`reload()` 现在是异步的（先等在途写入落定、再读最新确认内容）——
+       * 这里必须 `await`，否则紧随其后的启动流程会在"还没读回来"的窗口里读到空内存态。
+       */
+      if (hasMemoryServiceInstance()) await getMemoryService().reload();
     } catch (e) {
       /*
        * F2：这里**只留日志**是**刻意的**，但理由与修复前不同（原理由"失败不改变任何结论"

@@ -103,7 +103,7 @@ describe("契约不变量：声明之间不得自相矛盾", () => {
   });
 
   it("所有工具的 accessScope / sideEffectScope 都在允许的枚举内", () => {
-    const SIDE = new Set(["none", "workspace", "git", "network", "system", "session", "userInteraction"]);
+    const SIDE = new Set(["none", "workspace", "git", "network", "system", "session", "memory", "userInteraction"]);
     const ACCESS = new Set(["none", "workspace", "git", "network", "system", "session"]);
     for (const t of tools) {
       const c = registry.getContract(t.id);

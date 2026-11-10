@@ -7,13 +7,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);\n      this.save();",
-          "to": "      this.save();"
+          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);\n      /* 24 号文 P2-A：删除要留**墓碑**，否则另一台设备手里的旧副本会把它写回来 */\n      this.recordTombstone(entry);\n      this.save();",
+          "to": "      /* 24 号文 P2-A：删除要留**墓碑**，否则另一台设备手里的旧副本会把它写回来 */\n      this.recordTombstone(entry);\n      this.save();"
         },
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
-          "to": "      this.entries.delete(id);"
+          "from": "      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);",
+          "to": "      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);"
         }
       ],
       "tests": [

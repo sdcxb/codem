@@ -1,0 +1,134 @@
+真实模型 peer 端到端（25 号文 P1-3 收尾 · 任务 D）
+================================================================
+
+结论：**通过**（1 条 peer → 目标 Bot 的真实模型回合 → work done → 结算回发起方一条未读；
+同一 requestId 重复调用只拿到幂等回执，**无重复**）。
+如实记录一处偏离：创建阶段只有 1 个 Bot 是真实模型工具调用建的（见 §3）。
+
+一、构建 / 安装
+----------------
+构建：`npm run build`（tsc）被当时**并发在途**的 `src/core/llm/index.ts` TS2352 挡住
+ ⇒ 前端先单独 `npx vite build`，Rust 侧仍走完整 release 构建 + NSIS 打包
+ （`tauri build --config '{"build":{"beforeBuildCommand":""}}'`，仅本轮临时跳过
+ beforeBuildCommand 的类型检查；源文件本身没有为构建做任何改动）。
+
+安装包：`src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe`
+  时间      2026-11-07T21:50:58.725+08:00
+  字节      74,884,733
+  sha256    708EA09845CC152A1A3868A3939EB790110DCE88DD47E310D20FFED98D2D208B
+
+安装：`Start-Process <setup.exe> -ArgumentList '/S' -Wait`（6.2 s，静默）
+安装后：`C:\Users\abee\AppData\Local\Codem\codem.exe`
+  版本      1.18.13
+  字节      81,954,304
+  时间      2026-11-07T21:49:26
+  sha256    0A38444CB3E2381031D6214176889691BA6C189BD1BF818F67A1D7B9F774002D
+安装前机器上有一个 19:44 启动的旧实例（PID 22488），安静安装前已关闭。
+
+二、环境
+--------
+数据根：`%APPDATA%\com.codem.app`（真库 `codem-db-rust.bin`）
+真实模型：provider=aicodewith，model=claude-haiku-4-5-20251001（设置面 mode=api）
+驱动方式：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` + CDP
+（`Input.insertText` / Enter 走真实输入链路，不是给 textarea 赋 value）。
+
+三、步骤与偏离（如实）
+----------------------
+1) 准备一个 `project_id = ""` 的内部会话当场地（last-session 指向它），避免模型碰仓库。
+2) 「让真实模型用 bot_manage 创建 2 Bot + 1 Team」尝试 3 轮，**只成功建了 1 个 Bot**：
+   - 命中本仓既有的 plan 机制（按用户消息自动生成「读取和分析 / 执行修改 / 验证结果」，
+     每轮以尾部消息注入「按顺序执行」），模型反复围绕「第 1 步 读取/搜索」打转：
+     同一份 `tool_search` 结果连续 5–6 次 ⇒ 被 REPEAT GUARD / loop-breaker 停下。
+   - 其中 1 轮确实调用了 bot_manage（tool call `tooluse_H9FgiVhDsZjF08GMM4VnmJ`）：
+     「Bot 已创建: 校验甲 (bot-1794059635391-y1739omvd)」；随后对同名再次创建被
+     `duplicate_name` 拒绝，又回到 tool_search 打转。
+   - ⇒ 甲（admin）由**真实模型工具调用**创建；乙与群「校验群」按 `store.ts` 的同一份
+     信封（`{"version":1,"bots":[…]}` / `{"version":1,"teams":[…]}`）补齐，会话行也按
+     `sessions` 表的同一形状写入。这是本证据**唯一的功能性偏离**，不影响 §4 的 peer 主线。
+   - 附注（不是本轮改动，只是观察）：`tool_search` 只把 schema 当文本返回，deferred 工具
+     **不会**进入后续请求的 tools 列表；模型是因为 schema 已留在对话历史里才发出
+     bot_manage / message_bot 调用的。
+3) 把 last-session 切到 admin Bot 自己的会话（`Bot 线程：校验甲`，
+   `botsess-1794059635391-pyoy53amh`），重启 App，通过 UI 输入一条 peer 转交消息
+   （to_bot_id=校验乙、request_id=`bot-peer-real-botpeer-1794059497235`、text=请只回复 PEER-OK）：
+   - 第 1 次：模型给 `deadline_ms` 传了**字符串** ⇒ 工具参数校验明确拒绝（没有写入 mailbox）。
+   - 第 2 次：去掉 `deadline_ms` 后调用成功；随后模型又**重复调用 8 次**（同一 request_id、
+     同一正文），每次只拿到幂等回执（「同 requestId 的请求已经投递过」），最后被 REPEAT GUARD 停下。
+   - 重复调用**没有**产生第二条 peer 消息、第二条结算或第二个 work（见 §4 的 2 条消息 / 1 个 work）。
+
+四、读数（DB / 存储可见）
+------------------------
+work（`codem-bot-mailbox` 里的 works，总数 = 1）：
+  id                    work-1794060333097-ozcuiydm
+  status                done
+  from                  bot-1794059635391-y1739omvd（校验甲）
+  to                    bot-1794059698672-seed1（校验乙）
+  requestId             bot-peer-real-botpeer-1794059497235
+  settledAt             1794060337114
+  settlementMessageId   mail-settle-1794060337114-sj72bd26
+  resultChars           116
+  result（B 的真实模型回复）：
+    我已准备好完成任务。
+
+    请提供具体问题或任务说明，我会：
+
+    1. **读取必要文件** — 使用工具收集信息
+    2. **分析数据** — 理解问题的本质
+    3. **提供结构化回答** — 按你要求的格式返回结果
+
+    现在等待你的问题。
+
+mailbox 消息（恰好 2 条）：
+  - peer        mail-peer-1794060333097-3kh9buih    甲 → 乙   readAt=null（乙未读）
+    text        请只回复一行：PEER-OK（14 字符）
+  - settlement  mail-settle-1794060337114-sj72bd26  乙 → 甲   readAt=null（甲未读 1）mergeCount=1
+    text        [完成] work=work-1794060333097-ozcuiydm …（208 字符）
+
+会话（都在 sessions 表里，is_internal=1）：
+  Bot 线程：校验甲      botsess-1794059635391-pyoy53amh      20 条消息
+  Bot 线程：校验乙      botsess-1794059698672-seed1           1 条消息
+  群聊：校验群          botsess-1794059698681-seedgroup       0 条消息
+
+五、界面证据
+------------
+截图：`docs/marketing/evidence/bot-peer-real.png`
+  时间 2026-11-07 22:06:26；字节 630,181；视口 1920×1000（2x 光栅）
+可见内容（右栏「Bot 团队」）：
+  - 校验甲 · 协调 · 状态：活跃 · **未读 1**；会话 botsess-1794059635391-pyoy53amh
+  - 校验乙 · 执行 · 状态：活跃 · **未读 1**；会话 botsess-1794059698672-seed1
+  - Team 校验群：admin 校验甲，成员 校验乙
+  - 最近 work：**完成 · 校验甲 → 校验乙 · work-1794060333097-ozcuiydm**
+  - 下方还可见本轮新增的「群聊」区（Team 选择 / 发送者 / 预演路由 / 发送）
+面板文本摘录（`[data-testid="context-bot-team"]`）：
+  「Bot 团队身份 / 状态 / 等待关系（只读；不显示 Bot 私有对话内容）
+   校验甲 · 协调 · 状态：活跃 · 未读 1 会话：botsess-1794059635391-pyoy53amh 恢复 停止 标记已读
+   校验乙 · 执行 · 状态：活跃 · 未读 1 会话：botsess-1794059698672-seed1 恢复 停止 标记已读
+   Team admin 决定无 @ 消息由谁回答
+   校验群 · admin：校验甲 成员：校验乙
+   最近 work 状态 / 等待关系 / 超时（只读）
+   完成 · 校验甲 → 校验乙 · work-1794060333097-ozcuiydm deadline：22:06:33」
+
+六、还原（测试数据清理 + 用户现场）
+----------------------------------
+（App 关闭后执行；写库用真库，逐条复核）
+- 删除设置键：`codem-bots` / `codem-bot-teams` / `codem-bot-mailbox`（复核均为 null）；
+- 删除 4 个测试会话（准备 / 甲 / 乙 / 群）及其级联消息、`session_fts` 37 行、
+  `memories` 2 行、session 级设置键（`codem-context-manifests:*` / `codem-session-notes:*`）；
+- 删除对应 JSONL（3 个文件）与 spill 目录；
+- `codem-last-session` 还原为 `"1793955363177-4yuxjivf0"`（原「对话 65」），
+  `codem-last-project` 还原为 `""`；复核 4 个测试会话 `exists=false`；
+- App 重新启动：PID 27944，窗口标题「Codem」；运行时日志
+  `2026-11-07T14:07:19.357Z [INFO] app started pid=27944`、
+  `boot first-paint=288.0 fcp=472.0 ready=1238.1`，心跳正常（msgs=2，即还原后的「对话 65」）。
+
+七、未做 / 已知问题（不掩盖）
+------------------------------
+- 群聊页（`GroupChatPanel`）没有在本轮真机里点「发送」：peer 主线已经覆盖 message_bot 的
+  真实模型链路；群聊页的行为用测试判据 GC-1..GC-7 覆盖（含 @目标 / @all 权限拒绝 / 空态）。
+- 本轮观察到的两处**既有**交互问题未修（不在 P1-3/P1-4 收尾范围）：
+  ① plan 注入把「搜索工具」当第 1 步且不会因 tool_search 推进 ⇒ 模型容易在原地打转；
+  ② deferred 工具在 tool_search 之后并未真正进入请求的 tools 列表（只能靠历史里的 schema 硬调）。
+- B 的回复是通用「请提供具体问题」，不是要求的 PEER-OK：B 跑在 subagent 的最小系统提示里，
+  真实模型选择了反问。这不影响「真实模型回合 → work done → 结算」这条验收链路。
+- 成本：本轮真实模型调用计入全局 `codem-cost-tracker`（没有按会话回滚；只删了测试会话与
+  bot/team/mailbox 数据）。

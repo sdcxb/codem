@@ -16,3 +16,12 @@ export {
   BLOB_CHUNK_BYTES,
 } from "./client";
 export { __resetDocumentLedgerForTests } from "./ledger";
+/*
+ * C07：流水线持久化的两条判据缝 ——
+ * `__resetDocumentPipelinesForTests` 模拟「重启/新实例」（只清进程内镜像，持久化留在设置里），
+ * `flushDocumentPipelinePersistence` 把去抖窗口里的待写内容立刻落盘（否则判据要等真实计时）。
+ */
+export {
+  __resetDocumentPipelinesForTests,
+  flushDocumentPipelinePersistence,
+} from "./pipeline";

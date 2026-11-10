@@ -21,15 +21,22 @@
  * 所以按构造不可能在这里跑第二套 Agent 循环或绕过桌面存储直读库
  * （判据：`src/test/remote-gateway-skeleton.test.ts` 的 GW-5）。
  *
- * ## 当前能力（M3 文件面 + 变更面）
+ * ## 当前能力（M3 文件面 + 变更面 + 多设备同步面）
  *
- * 13 个方法：4 个只读会话 + `prompt.send` / `run.cancel` + `approval.list` /
+ * 17 个方法：4 个只读会话 + `prompt.send` / `run.cancel` + `approval.list` /
  * `approval.respond` + `workspace.list` / `workspace.read` / `workspace.diff` +
- * `session.changes` / `session.change.diff`。
+ * `session.changes` / `session.change.diff` + `sync.pull` / `sync.push` / `sync.memory` /
+ * `sync.snapshot`。
  * 事件流 `/events` 不是 RPC 方法，因此不出现在 capabilities 的两张表里
  * （判据 GW-W9 钉住这条形状）。
- * **仍未开放**：`run.guidance`、`session.create`、`attachment.put` —— 共享 UI 按
- * capabilities 隐藏这些入口，网关层也拒绝（不依赖界面自觉）。
+ * **仍未开放**：`run.guidance`、`session.create`（有，见下）、`attachment.put` ——
+ * 共享 UI 按 capabilities 隐藏这些入口，网关层也拒绝（不依赖界面自觉）。
+ *
+ * ## 多设备同步（25 号文 P2）
+ *
+ * `sync.*` 四条的数据面**不在本文件**：本文件只做参数形状、`deviceId` 校验与错误码，
+ * 真正的账本/事件/快照/记忆合并由注入的 `deps.sync`（生产 = `gateway-sync-host.ts`）回答。
+ * 这是同一条结构约束的延续（本文件不 import storage，见 GW-5）。
  */
 
 import type {
@@ -39,6 +46,13 @@ import type {
   WorkspaceListResult,
   WorkspaceReadResult,
 } from "../../../packages/protocol/src/index";
+import type {
+  GatewaySyncApi,
+  GatewaySyncPullResult,
+  GatewaySyncPushResult,
+  GatewaySyncMemoryOutcome,
+  GatewaySyncSnapshotResult,
+} from "./gateway-sync";
 
 /** 网关在 body 里自报的服务名（排障时用来确认连的是桌面网关，而不是 Host sidecar）。 */
 export const GATEWAY_SERVICE_NAME = "codem-gateway";
@@ -48,6 +62,16 @@ export const GATEWAY_HOST_ID = "codem-desktop";
 
 export const GATEWAY_HEALTH_PATH = "/health";
 export const GATEWAY_RPC_PATH = "/rpc";
+
+/**
+ * 网关把**已鉴权设备**的身份带给渲染层时用的查询参数名。
+ *
+ * 为什么要有它：`/rpc` 的 cookie 鉴权在 Rust（唯一真相），而同步面必须知道
+ * "这条请求是哪台设备发的" —— 渲染层拿不到 cookie，也不能相信 body 里自称的
+ * `deviceId`（那等于让任何已配对设备替别人写事件）。Rust 在转发前把**鉴权结果**
+ * 塞进 query，这里只读它（与 Rust `GATEWAY_DEVICE_QUERY` 同名）。
+ */
+export const GATEWAY_DEVICE_QUERY_PARAM = "__deviceId";
 
 /** 网关当前开放的方法白名单（与 Rust `RPC_ALLOWED_METHODS` 一一对应）。 */
 export const GATEWAY_RPC_METHODS = [
@@ -67,6 +91,10 @@ export const GATEWAY_RPC_METHODS = [
   "workspace.diff",
   "session.changes",
   "session.change.diff",
+  "sync.pull",
+  "sync.push",
+  "sync.memory",
+  "sync.snapshot",
 ] as const;
 
 /** 协议里有、但网关**还没实现**的方法（如实列给共享 UI，不画假按钮）。 */
@@ -239,6 +267,11 @@ export interface GatewayDataDeps {
   listProjects?: () => GatewayProjectSummary[];
   createProject?: (input: { name: string; path: string }) => Promise<GatewayCreateOutcome<GatewayProjectSummary>>;
   createSession?: (input: { title?: string; projectId?: string }) => Promise<GatewayCreateOutcome<GatewaySessionSummary>>;
+  /**
+   * 多设备同步面（25 号文 P2）。数据在宿主侧（`gateway-sync-host.ts`），
+   * 网关只转发；缺它 ⇒ `host.hello` 不报 `sync.*`（不给手机画"点了必失败"的入口）。
+   */
+  sync?: GatewaySyncApi;
 }
 
 /** 变更面注入契约（生产接线见 `desktop-engine.ts`）。 */
@@ -350,6 +383,10 @@ const RPC_CODES = {
   engineUnavailable: -32016,
   approvalNotPending: -32021,
   approvalInvalidAction: -32022,
+  /** 同步请求自称的设备与已鉴权设备不是同一台（不能替别人写事件） */
+  deviceMismatch: -32023,
+  /** 同步请求被宿主**按业务理由**拒绝（记忆未就绪 / payload 损坏），重试同一份不会变好 */
+  syncRefused: -32024,
 } as const;
 
 const SEND_FAILURE_CODES: Record<GatewaySendPromptFailure, number> = {
@@ -411,12 +448,20 @@ function rpcError(
  * 就把它列进 unsupported —— 手机据此**不画**那个按钮（"点了必失败"是禁止形态）。
  */
 export function gatewaySupportedMethods(
-  deps: Pick<GatewayDataDeps, "listProjects" | "createProject" | "createSession">,
+  deps: Pick<GatewayDataDeps, "listProjects" | "createProject" | "createSession" | "sync">,
 ): string[] {
   return GATEWAY_RPC_METHODS.filter((method) => {
     if (method === "project.list") return Boolean(deps.listProjects);
     if (method === "project.create") return Boolean(deps.createProject);
     if (method === "session.create") return Boolean(deps.createSession);
+    if (
+      method === "sync.pull" ||
+      method === "sync.push" ||
+      method === "sync.memory" ||
+      method === "sync.snapshot"
+    ) {
+      return Boolean(deps.sync);
+    }
     return true;
   });
 }
@@ -511,6 +556,101 @@ function changesErrorReply(id: JsonRpcId, e: unknown): Record<string, unknown> {
 }
 
 /**
+ * 一次 `/rpc` 的**鉴权上下文**（由 Rust 在转发前塞进 query，见 {@link GATEWAY_DEVICE_QUERY_PARAM}）。
+ *
+ * 生产：`desktop-engine` 从 `req.query` 读出来传进来；判据：直接构造。
+ * 缺省 = "不知道调用方是谁"（旧路径/单测），此时同步面要求 body 里带 `deviceId`。
+ */
+export interface GatewayRpcContext {
+  deviceId?: string;
+}
+
+/** 同步面的调用方设备：要么是 Rust 鉴权结果，要么是 body 自称（二者都有时必须一致）。 */
+function resolveCallerDevice(
+  params: Record<string, unknown>,
+  context: GatewayRpcContext | undefined,
+): { ok: true; deviceId: string } | { ok: false; claimed: string; authenticated: string } {
+  const claimed = readString(params.deviceId);
+  const authenticated = readString(context?.deviceId);
+  if (authenticated && claimed && claimed !== authenticated) {
+    return { ok: false, claimed, authenticated };
+  }
+  return { ok: true, deviceId: authenticated || claimed };
+}
+
+/** `sync.*` 的共用前置：数据面在、调用方设备已知、且不是冒充。 */
+function syncPreflight(
+  id: JsonRpcId,
+  deps: GatewayDataDeps,
+  params: Record<string, unknown>,
+  context: GatewayRpcContext | undefined,
+  method: string,
+): { ok: true; deviceId: string } | { reply: Record<string, unknown> } {
+  if (!deps.sync) {
+    return {
+      reply: rpcError(id, RPC_CODES.unsupported, "该桌面版本未开放多设备同步", "UNSUPPORTED", { method }),
+    };
+  }
+  const caller = resolveCallerDevice(params, context);
+  if (!caller.ok) {
+    /*
+     * 冒充：body 自称 B 设备，而 cookie 是 A 设备。
+     * 这里**必须拒绝**（不是"以 cookie 为准照做"）：一旦放行，B 的事件就会被记成 A 推的，
+     * 两台设备的来源字段永久错位，而"谁写的"正是冲突排查唯一的线索。
+     */
+    return {
+      reply: rpcError(
+        id,
+        RPC_CODES.deviceMismatch,
+        "同步请求里的 deviceId 与已鉴权设备不一致",
+        "DEVICE_MISMATCH",
+        { claimed: caller.claimed },
+      ),
+    };
+  }
+  if (!caller.deviceId) {
+    return {
+      reply: rpcError(id, RPC_CODES.invalidParams, "deviceId 必填", "INVALID_PARAMS", { method }),
+    };
+  }
+  return { ok: true, deviceId: caller.deviceId };
+}
+
+function readSessionIdList(value: unknown): { ok: true; list: string[] } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, list: [] };
+  if (!Array.isArray(value)) return { ok: false };
+  if (value.length > 50) return { ok: false };
+  const list: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") return { ok: false };
+    const id = item.trim();
+    if (!id || id.length > 256) return { ok: false };
+    list.push(id);
+  }
+  return { ok: true, list };
+}
+
+/**
+ * 项目 allowlist（`sync.*` 的范围参数）。
+ *
+ * 空的显式数组 = **全部**（与"不传"等价）；非空 = 只允许这些项目。
+ * 校验失败返回 `ok:false`（网关答 INVALID_PARAMS），不把畸形数组"猜"成全部。
+ */
+function readProjectIdList(value: unknown): { ok: true; list: string[] } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, list: [] };
+  if (!Array.isArray(value)) return { ok: false };
+  if (value.length > 50) return { ok: false };
+  const list: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") return { ok: false };
+    const id = item.trim();
+    if (!id || id.length > 256) return { ok: false };
+    if (!list.includes(id)) list.push(id);
+  }
+  return { ok: true, list };
+}
+
+/**
  * 处理一条已经通过 Rust 鉴权的 `/rpc` body。
  *
  * 永远返回 JSON-RPC 应答（HTTP 状态由 Rust 决定，这里不碰 HTTP）。
@@ -519,6 +659,7 @@ function changesErrorReply(id: JsonRpcId, e: unknown): Record<string, unknown> {
 export async function gatewayRpcReply(
   body: string,
   deps: GatewayDataDeps,
+  context?: GatewayRpcContext,
 ): Promise<Record<string, unknown>> {
   let payload: unknown;
   try {
@@ -927,11 +1068,165 @@ export async function gatewayRpcReply(
           return changesErrorReply(id, e);
         }
       }
+      case "sync.pull": {
+        /**
+         * 多设备同步：拉宿主账本里 `hostSeq > sinceSeq` 的事件。
+         *
+         * `deviceId` 既是**游标的归属**（宿主按它记住"这台设备拉到了哪"），也是账本
+         * 修剪的依据（只删所有设备都拉过的前缀）。`projectIds` 是这台设备的项目范围
+         * （空 = 全部）：宿主按 `projectIdOfSession` 过滤，范围外/无映射的会话不返回。
+         */
+        const pre = syncPreflight(id, deps, params, context, "sync.pull");
+        if ("reply" in pre) return pre.reply;
+        const sessionIds = readSessionIdList(params.sessionIds);
+        if (!sessionIds.ok) {
+          return rpcError(
+            id,
+            RPC_CODES.invalidParams,
+            "sessionIds 必须是字符串数组（≤50 条，每条 1–256 字）",
+            "INVALID_PARAMS",
+          );
+        }
+        const projectIds = readProjectIdList(params.projectIds);
+        if (!projectIds.ok) {
+          return rpcError(
+            id,
+            RPC_CODES.invalidParams,
+            "projectIds 必须是字符串数组（≤50 条，每条 1–256 字；空数组 = 全部）",
+            "INVALID_PARAMS",
+          );
+        }
+        const sinceSeq = Math.max(0, readInteger(params.sinceSeq, 0));
+        const limit = clampLimit(params.limit, 200, 500);
+        const result: GatewaySyncPullResult = await deps.sync!.pull({
+          deviceId: pre.deviceId,
+          sinceSeq,
+          ...(sessionIds.list.length > 0 ? { sessionIds: sessionIds.list } : {}),
+          projectIds: projectIds.list,
+          limit,
+        });
+        return rpcResult(id, result);
+      }
+      case "sync.push": {
+        /**
+         * 多设备同步：把本机新事件推给宿主（幂等：同一 `eventId` 只入账一次）。
+         *
+         * 逐条的合法性（形状/长度/是否替别的设备写/内容是否被改写/项目是否在范围内）
+         * 由宿主数据面判，结果里带 `accepted` / `duplicates` / `rejected[]` —— 网关
+         * **不**替它"猜着接受"，也不会把范围外的会话收下再说。
+         */
+        const pre = syncPreflight(id, deps, params, context, "sync.push");
+        if ("reply" in pre) return pre.reply;
+        if (!Array.isArray(params.events)) {
+          return rpcError(id, RPC_CODES.invalidParams, "events 必须是数组", "INVALID_PARAMS");
+        }
+        if (params.events.length > 200) {
+          return rpcError(id, RPC_CODES.invalidParams, "单次最多 200 条事件", "INVALID_PARAMS");
+        }
+        const projectIds = readProjectIdList(params.projectIds);
+        if (!projectIds.ok) {
+          return rpcError(
+            id,
+            RPC_CODES.invalidParams,
+            "projectIds 必须是字符串数组（≤50 条，每条 1–256 字；空数组 = 全部）",
+            "INVALID_PARAMS",
+          );
+        }
+        const result: GatewaySyncPushResult = await deps.sync!.push({
+          deviceId: pre.deviceId,
+          events: params.events,
+          projectIds: projectIds.list,
+        });
+        return rpcResult(id, result);
+      }
+      case "sync.snapshot": {
+        /**
+         * 多设备同步：**会话消息快照**（冷启动 / 游标落后时重建本机消息用）。
+         *
+         * 与 `session.get` 的区别（别把两者混成一套读法）：
+         * - `session.get` 是**显示投影**（`listDisplayMessages`，默认视图、有截断）；
+         * - `sync.snapshot` 是**完整时间线**（含旧段与工具结果，分页 ≤200 条/≤2MB），
+         *   返回 `nextBefore` 让客户端往更早翻页，`hasMore` 如实标。
+         *
+         * 范围与 pull/push 同一套 ACL（空 = 全部；范围外/无映射 ⇒ `filteredSessions:1`
+         * 且 `messages` 为空，fail-closed）。
+         */
+        const pre = syncPreflight(id, deps, params, context, "sync.snapshot");
+        if ("reply" in pre) return pre.reply;
+        const sessionId = readString(params.sessionId);
+        if (!sessionId || sessionId.length > 256) {
+          return rpcError(
+            id,
+            RPC_CODES.invalidParams,
+            "sessionId 必填且不超过 256 字",
+            "INVALID_PARAMS",
+          );
+        }
+        const projectIds = readProjectIdList(params.projectIds);
+        if (!projectIds.ok) {
+          return rpcError(
+            id,
+            RPC_CODES.invalidParams,
+            "projectIds 必须是字符串数组（≤50 条，每条 1–256 字；空数组 = 全部）",
+            "INVALID_PARAMS",
+          );
+        }
+        const sinceTimestamp = Math.max(0, readInteger(params.sinceTimestamp, 0));
+        if (params.before !== undefined && params.before !== null) {
+          const before = Number(params.before);
+          if (!Number.isFinite(before) || before < 0) {
+            return rpcError(id, RPC_CODES.invalidParams, "before 必须是非负数", "INVALID_PARAMS");
+          }
+        }
+        const result: GatewaySyncSnapshotResult = await deps.sync!.snapshot({
+          deviceId: pre.deviceId,
+          sessionId,
+          projectIds: projectIds.list,
+          ...(sinceTimestamp > 0 ? { sinceTimestamp } : {}),
+          ...(params.before !== undefined && params.before !== null
+            ? { before: Math.floor(Number(params.before)) }
+            : {}),
+          limit: clampLimit(params.limit, 200, 200),
+        });
+        return rpcResult(id, result);
+      }
+      case "sync.memory": {
+        /**
+         * 多设备同步：把本机整份记忆交给宿主**合并**（rev/墓碑/冲突，双方内容都留）。
+         *
+         * 宿主返回**合并后的整份 payload**：客户端据此收敛到同一份内容。
+         * `ok:false` 是业务拒绝（记忆未就绪 / payload 形状不认识），不是网络失败 ——
+         * 重发同一份不会变好，所以映射成 `SYNC_REFUSED`（不 retryable）。
+         */
+        const pre = syncPreflight(id, deps, params, context, "sync.memory");
+        if ("reply" in pre) return pre.reply;
+        if (typeof params.payload !== "string" || !params.payload.trim()) {
+          return rpcError(id, RPC_CODES.invalidParams, "payload 必填（记忆整份 JSON 字符串）", "INVALID_PARAMS");
+        }
+        const outcome: GatewaySyncMemoryOutcome = await deps.sync!.mergeMemory({
+          deviceId: pre.deviceId,
+          payload: params.payload,
+        });
+        if (!outcome.ok) {
+          return rpcError(
+            id,
+            RPC_CODES.syncRefused,
+            outcome.reason || "宿主拒绝合并记忆",
+            "SYNC_REFUSED",
+          );
+        }
+        return rpcResult(id, {
+          payload: outcome.payload ?? "",
+          entries: outcome.entries ?? 0,
+          conflicts: outcome.conflicts ?? [],
+          changed: outcome.changed === true,
+        });
+      }
       default:
         return rpcError(
           id,
           RPC_CODES.unsupported,
-          "网关未开放该方法（M3 开放只读会话 + 写 + 审批 + 工作区文件 + 变更记录，共 13 条）",
+          "网关未开放该方法（M3 开放只读会话 + 写 + 审批 + 工作区文件 + 变更记录 + 多设备同步，共 17 条）",
           "UNSUPPORTED",
           { method },
         );
@@ -950,7 +1245,7 @@ export async function gatewayRpcReply(
  * @returns `true` = 已应答（调用方不要再走 `/api/*` 路由）；`false` = 不是网关路径
  */
 export async function handleGatewayRequest(
-  req: { method: string; path: string; body?: string },
+  req: { method: string; path: string; body?: string; query?: Record<string, string> },
   respond: (status: number, body: unknown) => Promise<void>,
   deps?: GatewayDataDeps,
 ): Promise<boolean> {
@@ -972,6 +1267,11 @@ export async function handleGatewayRequest(
     await respond(500, rpcError(null, -32603, "网关数据层未装配", "INTERNAL"));
     return true;
   }
-  await respond(200, await gatewayRpcReply(req.body ?? "", deps));
+  /*
+   * 设备身份来自 Rust（cookie 鉴权结果），**不来自 body**：
+   * 这里只把那个值原样带进 RPC 上下文，剩下的"必须一致"判定在 `syncPreflight`。
+   */
+  const deviceId = req.query?.[GATEWAY_DEVICE_QUERY_PARAM];
+  await respond(200, await gatewayRpcReply(req.body ?? "", deps, deviceId ? { deviceId } : undefined));
   return true;
 }

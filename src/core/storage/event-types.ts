@@ -102,6 +102,25 @@ export type SessionEventType =
    * 同一个门禁扫出来的第二个未注册类型 —— 它同样一直在被结构自检报成"未知事件类型"。
    */
   | "loop_stopped"
+  /**
+   * P0-3：段式上下文的**决策记录**（`段式上下文` 开关打开时由 `storage/context-switch.ts` 写入）。
+   *
+   * 为什么是一等事件而不是 `console.log`：`switch` 会改变"模型从哪条消息往后看"，
+   * 事后复盘必须能回答「第几次、为什么、cutoff 是哪条、移出多少条」——
+   * 这些正是本仓反复强调的"决定要有取证"，日志文件不算取证。
+   */
+  | "context_steward_decision"
+  /**
+   * 25 号文 P2：自适应 steward 策略的**调整审计**（`agentic-loop.ts::stewardPolicyFor` 写入）。
+   *
+   * 写什么：本次用的 consider / hard / keepRecent、窗口、单轮观测、连压次数与**人话 reason**。
+   * 为什么必须是一等事件：P2 的承诺是「所有调整都可解释」——只写 console 的话，
+   * 事后无法回答「这次为什么比以前早压了 8 个百分点」。
+   * 默认（不调整）不写：默认路径的事件库与改前逐条一致。
+   */
+  | "steward_policy"
+  /** C04：每次请求的上下文清单（消息 id 集合 + 四类来源字符 + 预算） */
+  | "context_manifest"
   ;
 
 // ========== R3-3.1: Runtime Event Type Registry ==========
@@ -125,6 +144,11 @@ const BUILTIN_EVENT_TYPES = new Set<SessionEventType>([
   // 第 68 轮补：两个**一等公民代码一直在写、却不在集合里**的类型。
   // 真机后果 = 7360 条假报警把结构自检变成噪声机（详见上面联合类型处的长注释）。
   "trajectory_step", "loop_stopped",
+  /* P0-3：段切换决策（见联合类型处的说明） */
+  "context_steward_decision",
+  /* 25 §P2：自适应 steward 策略调整审计（见联合类型处的说明） */
+  "steward_policy",
+  "context_manifest",
 ]);
 
 /** Registered custom event types */

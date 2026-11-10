@@ -59,6 +59,10 @@ export function UsageStats({ onClose }: UsageStatsProps) {
   const { currentSession } = useProjectStore();
   const [stats, setStats] = useState<ReturnType<typeof getCostTracker.prototype.getStats> | null>(null);
   const [costByModel, setCostByModel] = useState<Record<string, number>>({});
+  /** 按模型的缓存累加（`getCacheByModel`；与费用不同，它来自不裁剪的会话累计） */
+  const [cacheByModel, setCacheByModel] = useState<
+    Record<string, { cacheReadTokens: number; cacheWriteTokens: number; cacheReported: boolean }>
+  >({});
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "models" | "history" | "limits">("overview");
   const [limits, setLimits] = useState<LimitDraft | null>(null);
@@ -75,6 +79,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     const tracker = getCostTracker();
     setStats(tracker.getStats());
     setCostByModel(tracker.getCostByModel());
+    setCacheByModel(tracker.getCacheByModel());
     setLimits(tracker.getLimits());
     /*
      * 历史页：**滚动 7 × 24 小时**内的最近 50 条 —— 这是「多久以前」的口径（一张按时间倒序的
@@ -190,6 +195,18 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 <span className="usage-stat-value is-success">{cacheAgg.pct}%</span>
               </div>
             )}
+            {/*
+              C03 可观测性：缓存读 / 写**累计值**。
+              未上报时显示「未上报」而不是 0 —— 0 只在 provider 明确报过 0 时才是事实。
+            */}
+            <div className="usage-stat-card" data-testid="usage-cache-tokens">
+              <span className="usage-stat-label">缓存读 / 写</span>
+              <span className="usage-stat-value">
+                {stats.cacheReported
+                  ? `${stats.cacheReadTokens.toLocaleString()} / ${stats.cacheWriteTokens.toLocaleString()}`
+                  : "provider 未上报"}
+              </span>
+            </div>
             <div className="usage-stat-card">
               <span className="usage-stat-label">输入 Tokens</span>
               <span className="usage-stat-value">{stats.totalInputTokens.toLocaleString()}</span>
@@ -240,6 +257,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                     <span className="usage-model-name">{model}</span>
                     <span className="usage-model-cost">${cost.toFixed(4)}</span>
                   </div>
+                  {cacheByModel[model]?.cacheReported && (
+                    <div className="usage-stat-note" data-testid="usage-model-cache">
+                      缓存读 {cacheByModel[model].cacheReadTokens.toLocaleString()} / 写{" "}
+                      {cacheByModel[model].cacheWriteTokens.toLocaleString()}
+                    </div>
+                  )}
                   <div className="usage-model-bar">
                     <div
                       className="usage-model-fill"

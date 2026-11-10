@@ -186,6 +186,16 @@ export function createSettingsMock(opts: SettingsMockOptions = {}): Record<strin
       store.raw.set("memory", content);
       return { ok: true };
     }),
+    /**
+     * 24 号文 P2-A：并发合并的"读-改-写"里**读**那一半（走引擎的结构化读命令）。
+     *
+     * 基座的语义与其它记忆读写同一条：未预热 ⇒ 读不到（不是"读到空"）；已预热 ⇒ 返回 store
+     * 里那一份。**必须是读**（不进 store）：它替身的是引擎的只读单行查询。
+     */
+    readMemoryFresh: vi.fn(async (): Promise<{ ok: boolean; data?: string; reason?: string }> => {
+      if (!ready) return { ok: false, reason: "配置面记忆域尚未预热（mock）" };
+      return { ok: true, data: readRaw(store, "memory") ?? "" };
+    }),
     MEMORY_DOMAIN_NOT_WARMED: "配置面记忆域尚未预热（读到/写回的都会是兜底值，不是真实数据）",
     MEMORY_DOMAIN_NO_PORT: "没有可用的存储端口（本次既读不到也写不了记忆）",
 

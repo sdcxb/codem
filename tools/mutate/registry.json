@@ -62,9 +62,13 @@
     "raw-context-metric": "水位/面板/引擎折叠读数改用 estimateRawContextTokens（选择前）：选择后口径在长会话里恒 ~100%，折叠不降反升、永远提示将满。判据 RAWCTX-1..4；3 条变异",
     "water-banner-stability": "水位提示条防抖：连续 2 拍 ≥70% 才显示、连续 2 拍低于才隐藏、读不到不改可见性（修打开 Codem 时提示条闪 1-2 秒）。判据 STAB-1..5；3 条变异",
     "compaction-headroom": "压缩余量：自动压缩阈值降到 70%（与提示线一致、>= 比较），保留预算降到窗口 40%（留 30% 余量），避免「压完下一轮又满」。判据 HEADROOM-1..3；3 条变异",
-    "fold-tool-args": "旧工具参数折叠：write/edit/multi_edit 的旧调用只留 path、正文换「可用 read 重读」标记；最近 2 次调用不动、只读视图。判据 ARGSFOLD-1..4；3 条变异"
+    "fold-tool-args": "旧工具参数折叠：write/edit/multi_edit 的旧调用只留 path、正文换「可用 read 重读」标记；最近 2 次调用不动、只读视图。判据 ARGSFOLD-1..4；3 条变异",
+    "context-p0-handoff-236": "第 236 波·上下文契约（2026-11-07 独立复核）：25 P0-0 要求 `context_epochs.handoff_json` 可空、switch 时写 handoff 摘要、8KB 截断并标注；补 schema/迁移/Rust 读写/TS 投影/旧行兼容。3 条变异（投影不写 / 去截断 / 旧行归一退化）",
+    "context-invariants-236": "第 236 波·不变量与 notes/memory：D3 自动 switch 不得调用 handoff_to_new_session；手动压缩 marker 拼 notes；混合检索语义权重。3 条变异（switch 调移交工具 / notes 置空 / 权重归零）"
   },
   "waves": [
+    "context-invariants-236",
+    "context-p0-handoff-236",
     "batch-prune-log-only-232",
     "demoted-signal-merge-leak-231",
     "memory-pending-scroll-231",

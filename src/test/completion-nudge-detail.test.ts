@@ -31,6 +31,14 @@ import { setStoragePort } from "../core/storage/port";
 import { getEventLog } from "../core/storage/event-log";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { ScriptedProvider } from "./helpers/scripted-provider";
+import { describeTurnOutcome } from "../core/llm/turn-outcome";
+import { recordDocumentOutline } from "../core/document/ledger";
+import {
+  __resetDocumentBackendForTests,
+  __resetDocumentLedgerForTests,
+  setDocumentBackend,
+} from "../core/document/test-seams";
+import { createFakeDocumentBackend, makeDoc } from "./helpers/documents-fake";
 
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
@@ -119,7 +127,18 @@ function finalIteration(text: string): any[] {
   return [{ type: "text_delta", text }, { type: "end", finishReason: "stop" }];
 }
 
-/** 与 NR-1 同一个夹具 ✓：**只**触发"第 176 波合并的那三条"里的两条 ✓（零产出 + 改完又还原 ✓） */
+/** 造一轮 `write` 工具调用（路径决定「改的是代码还是文档」） */
+function writeIteration(id: string, path: string): any[] {
+  const input = { path, content: "// 改动" };
+  return [
+    { type: "tool_use_start", id, name: "write" },
+    { type: "tool_use_delta", id, input: JSON.stringify(input) },
+    { type: "tool_use_end", id, input },
+    { type: "end", finishReason: "tool_use" },
+  ];
+}
+
+/** 与 NR-1 同一个夹具 ✓：**只**触发「第 176 波合并的那三条」里的两条 ✓（零产出 + 改完又还原 ✓） */
 function registryWithFakeReadAndBash() {
   const registry = createDefaultToolRegistry();
   registry.register({
@@ -143,6 +162,52 @@ function registryWithFakeReadAndBash() {
   return { registry };
 }
 
+/**
+ * C06 硬闸用的夹具：假 `write` + 假 `bash`。
+ *
+ * `write` 到 `src/…` ⇒ `sessionModifiedAnything/turnTouchedCode` 起来；
+ * 紧跟一条 `npx tsc --noEmit`（`looksLikeVerificationCommand` 认它）⇒ 不会误触
+ * 「改了没验证」那条老守卫（否则它先 `continue`，轮不到文档硬闸）。
+ */
+function registryWithFakeWriteAndBash() {
+  const registry = createDefaultToolRegistry();
+  registry.register({
+    id: "write",
+    description: "假 write",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      required: ["path"],
+    },
+    contract: { sideEffectScope: "session", accessScope: "system" },
+    async execute() {
+      return { title: "write", output: "" };
+    },
+  } as any);
+  registry.register({
+    id: "bash",
+    description: "假 bash",
+    parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+    contract: { sideEffectScope: "system", accessScope: "system" },
+    async execute() {
+      return { title: "bash", output: "" };
+    },
+  } as any);
+  return { registry };
+}
+
+/** 驱动一个循环直到结束，收集出口结果与可见文本（text_delta） */
+async function driveLoop(loop: AgenticLoop, provider: ScriptedProvider, sessionId: string) {
+  const endResults: any[] = [];
+  const deltas: string[] = [];
+  for await (const ev of loop.run(sessionId, "把这件事做完", ROOT, "system")) {
+    if ((ev as any).type === "end") endResults.push((ev as any).result);
+    else if ((ev as any).type === "text_delta") deltas.push(String((ev as any).text ?? ""));
+  }
+  await flush();
+  return { result: endResults[endResults.length - 1], endResults, deltas, provider };
+}
+
 /** 跑一个脚本化的循环，返回**每个出口的结果**与 provider（请求次数 = 多要了几轮 ✓） */
 async function runLoop(script: any[][], sessionId = SID) {
   const provider = new ScriptedProvider();
@@ -157,12 +222,7 @@ async function runLoop(script: any[][], sessionId = SID) {
    * `completionNudges` 已经清空 ✓ ⇒ 它的 `detail` 是 `undefined` ✓。
    * 只看最后一个 ⇒ 恰好看到**没有**字段的那一个 ✗（而数据其实好好地在日志里 ✓）。
    */
-  const endResults: any[] = [];
-  for await (const ev of loop.run(sessionId, "把这件事做完", ROOT, "system")) {
-    if ((ev as any).type === "end") endResults.push((ev as any).result);
-  }
-  await flush();
-  return { result: endResults[endResults.length - 1], endResults, provider };
+  return driveLoop(loop, provider, sessionId);
 }
 
 beforeEach(() => {
@@ -419,5 +479,309 @@ describe("nudge-4 催促必须落进事件日志（`.jsonl` 里的 `loopStops` �
     await runLoop([finalIteration("不用改")], "nudge-detail-clean");
     const stops = loopStopPayloads("nudge-detail-clean");
     expect(stops.filter((p) => p.phase === "nudges")).toEqual([]);
+  });
+});
+
+// ========== C06 边界②：文档同步硬闸（从提醒升级为不允许标记完成） ==========
+
+describe("C06-G 文档同步硬闸", () => {
+  /**
+   * 判据（先写判据，再改实现）：
+   *
+   * | 判据 | 钉什么 | 变异（改回提醒 ⇒） |
+   * |---|---|---|
+   * | G-1 | 代码改 + 文档版本落后 ⇒ 出口 `reason` **不是 completed**，且用户可见原因 | 只提醒不拦 ⇒ 回合以 completed 收尾 ⇒ 红 |
+   * | G-2 | 文档已同步（账本记的就是当前版本）⇒ 正常 completed | 无条件拦 ⇒ 红 |
+   * | G-3 | 无文档引用/无账本 ⇒ 不拦 | 无账本也拦 ⇒ 红 |
+   * | G-4 | 同一份文档同一版本第二次 ⇒ **放行但标未验**（绝不无限拦） | 每次都拦 ⇒ 第二次拿不到出口 ⇒ 红 |
+   * | G-5 | 额度按（文档 + 版本）：A 拦过之后，**B 新 stale 仍能拦** | 额度改回会话级布尔 ⇒ B 不再被拦 ⇒ 红 |
+   * | G-6 | 每会话总上限 3：第 4 份文档 stale ⇒ 放行但标未验 | 不设总上限 ⇒ 第 4 次仍拦，回合拿不到 completed ⇒ 红 |
+   */
+  beforeEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+  afterEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+
+  /** 账本里记的是 100，文档现在是 200 ⇒ 版本落后 */
+  function seedStaleDocument(collectionId: string): void {
+    setDocumentBackend(
+      createFakeDocumentBackend({ documents: [makeDoc({ id: "doc_1", name: "报告.docx", updated_at: 200 })] }).backend,
+    );
+    recordDocumentOutline({
+      collectionId,
+      documentId: "doc_1",
+      documentName: "报告.docx",
+      headings: ["第二章 迁移"],
+      updatedAt: 100,
+    });
+  }
+
+  /**
+   * 多文档夹具：账本记下每份文档的版本（默认 100），当前版本由 `setDocuments` 决定。
+   * 通过「把某份文档的当前版本调高」制造**同一文档的新版本**，而不是改账本。
+   */
+  function seedDocuments(
+    collectionId: string,
+    docs: Array<{ id: string; name: string; recordedAt?: number }>,
+  ): void {
+    for (const doc of docs) {
+      recordDocumentOutline({
+        collectionId,
+        documentId: doc.id,
+        documentName: doc.name,
+        headings: ["第一章"],
+        updatedAt: doc.recordedAt ?? 100,
+      });
+    }
+  }
+
+  /** 换掉文档索引的当前版本（账本不动 ⇒ 形成「读过之后变了」） */
+  function setDocuments(docs: Array<{ id: string; name: string; currentAt: number }>): void {
+    setDocumentBackend(
+      createFakeDocumentBackend({
+        documents: docs.map((doc) =>
+          makeDoc({ id: doc.id, name: doc.name, updated_at: doc.currentAt }),
+        ),
+      }).backend,
+    );
+  }
+
+  it("G-4: 同一文档同一版本第二次 ⇒ 不再拦，放行但标未验（不死循环）", async () => {
+    const sid = "doc-gate-cap";
+    const collectionId = `session:${sid}`;
+    seedStaleDocument(collectionId);
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+      finalIteration("说明：这份文档本次不用动"),
+    ]);
+    const first = await driveLoop(loop, provider, sid);
+    expect(first.result?.reason, "第一次必须拦").toBe("document_sync_required");
+
+    // 同一会话第二轮：同一份文档的同一版本，不再拦（否则用户会永远完不成）
+    provider.setScript([finalIteration("我还是不改文档，继续做别的")]);
+    const second = await driveLoop(loop, provider, sid);
+    expect(second.result?.reason, "同一（文档 + 版本）第二次必须放行").toBe("completed");
+    expect(second.result?.documentSyncUnverified?.changed, "放行时必须标未验").toEqual(["报告.docx"]);
+    const outcome = describeTurnOutcome(second.result, { lang: "zh" });
+    expect(outcome.completionCard, "放行也不许显示「任务完成」").toBe(false);
+    expect(outcome.notice, "必须让用户看见「未验证」").toContain("未验证");
+    expect(outcome.turnStatus?.code).toBe("DOCUMENT_SYNC_UNVERIFIED");
+  });
+
+  it("G-5: 另一份文档新 stale ⇒ 仍能拦（证明不是会话级一次性）", async () => {
+    const sid = "doc-gate-per-doc";
+    const collectionId = `session:${sid}`;
+    seedDocuments(collectionId, [
+      { id: "doc_a", name: "A.md" },
+      { id: "doc_b", name: "B.md" },
+    ]);
+    setDocuments([
+      { id: "doc_a", name: "A.md", currentAt: 200 },
+      { id: "doc_b", name: "B.md", currentAt: 100 },
+    ]);
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+      finalIteration("说明：A 这份文档本次不用动"),
+    ]);
+    const first = await driveLoop(loop, provider, sid);
+    expect(first.result?.reason, "文档 A stale ⇒ 拦").toBe("document_sync_required");
+    expect(first.result?.documentSyncBlocked?.changed, "点名 A").toEqual(["A.md"]);
+
+    // 第二轮：A 还是同一版本 ⇒ 放行（这一份的额度已经用完），但结果标未验
+    provider.setScript([finalIteration("A 这份文档本次不用动")]);
+    const second = await driveLoop(loop, provider, sid);
+    expect(second.result?.reason, "同一文档同一版本第二次必须放行").toBe("completed");
+    expect(second.result?.documentSyncUnverified?.changed).toEqual(["A.md"]);
+
+    // 第三轮：B 变成**新的 stale** ⇒ 仍要能拦 —— 会话级一次性额度会在这里放行（变异点）
+    setDocuments([
+      { id: "doc_a", name: "A.md", currentAt: 200 },
+      { id: "doc_b", name: "B.md", currentAt: 300 },
+    ]);
+    provider.setScript([finalIteration("B 我也不改")]);
+    const third = await driveLoop(loop, provider, sid);
+    expect(third.result?.reason, "另一份文档新 stale ⇒ 仍能拦").toBe("document_sync_required");
+    expect(third.result?.documentSyncBlocked?.changed, "本轮 stale 的两份都点名，含 B").toEqual(["A.md", "B.md"]);
+
+    // 第四轮：两份都是「已经拦过的同一版本」⇒ 放行并标未验
+    provider.setScript([finalIteration("都不改")]);
+    const fourth = await driveLoop(loop, provider, sid);
+    expect(fourth.result?.reason).toBe("completed");
+    expect(fourth.result?.documentSyncUnverified?.changed).toEqual(["A.md", "B.md"]);
+    expect(describeTurnOutcome(fourth.result, { lang: "zh" }).completionCard).toBe(false);
+  });
+
+  it("G-6: 每会话总上限 3 —— 第 4 份文档 stale 时放行并标未验（防死循环）", async () => {
+    const sid = "doc-gate-total-cap";
+    const collectionId = `session:${sid}`;
+    const names = ["A.md", "B.md", "C.md", "D.md"];
+    seedDocuments(
+      collectionId,
+      names.map((name, index) => ({ id: `doc_${index}`, name })),
+    );
+    setDocuments(names.map((name, index) => ({ id: `doc_${index}`, name, currentAt: index === 0 ? 200 : 100 })));
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+      finalIteration("说明：A 这份文档本次不用动"),
+    ]);
+    const first = await driveLoop(loop, provider, sid);
+    expect(first.result?.reason, "第 1 份文档 stale ⇒ 拦").toBe("document_sync_required");
+
+    // 每次把下一份文档调成 stale（前一份保持 stale）⇒ 前三次都应拦，第四次到上限
+    for (let index = 1; index < 3; index++) {
+      setDocuments(names.map((name, i) => ({ id: `doc_${i}`, name, currentAt: i <= index ? 200 + i : 100 })));
+      provider.setScript([finalIteration(`第 ${index + 1} 份我也不改`)]);
+      const blocked = await driveLoop(loop, provider, sid);
+      expect(blocked.result?.reason, `第 ${index + 1} 份仍应拦（总上限未到）`).toBe("document_sync_required");
+    }
+
+    // 第 4 份：会话总上限 3 已经用完 ⇒ 放行但标未验（绝不无限拦）
+    setDocuments(names.map((name, i) => ({ id: `doc_${i}`, name, currentAt: 200 + i })));
+    provider.setScript([finalIteration("第 4 份我也不改")]);
+    const capped = await driveLoop(loop, provider, sid);
+    expect(capped.result?.reason, "达到总上限后必须放行").toBe("completed");
+    expect(capped.result?.documentSyncUnverified?.changed, "放行时四份都标未验").toEqual(names);
+    expect(describeTurnOutcome(capped.result, { lang: "zh" }).completionCard).toBe(false);
+
+    /** 台账：硬闸一共只落 3 条（第 4 次是 release，不是 block） */
+    const gateRecords = loopStopPayloads(sid).filter((p) => p.reason === "document_sync_required");
+    expect(gateRecords.length, "总上限 3 生效").toBe(3);
+  });
+
+  it("G-1: 代码改 + 文档版本落后 ⇒ 回合不以 completed 收尾，原因与修法可见", async () => {
+    const sid = "doc-gate-block";
+    const collectionId = `session:${sid}`;
+    seedStaleDocument(collectionId);
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+      finalIteration("说明：这份文档本次不用动"),
+    ]);
+    const { result, deltas } = await driveLoop(loop, provider, sid);
+
+    expect(result?.type, "必须是 stop 出口").toBe("stop");
+    expect(result?.reason, "**不允许**以 completed 收尾").not.toBe("completed");
+    expect(result?.reason).toBe("document_sync_required");
+    expect(result?.documentSyncBlocked?.changed, "结构化事实：哪份文档落后").toEqual(["报告.docx"]);
+    expect(deltas.join("\n"), "用户必须看到「不能算完成」").toContain("不能算完成");
+
+    const outcome = describeTurnOutcome(result, { lang: "zh" });
+    expect(outcome.completionCard, "绝不显示「任务完成」").toBe(false);
+    expect(outcome.suppressTaskBubble, "也不许报喜").toBe(true);
+    expect(outcome.notice, "用户可见原因必须存在").toBeTruthy();
+    expect(outcome.notice, "原因里要点名文档与修法").toContain("报告.docx");
+    expect(outcome.turnStatus?.code).toBe("DOCUMENT_SYNC_REQUIRED");
+
+    /** 台账里必须留下「拦过」的记录（跑批记录读的就是它） */
+    const stops = loopStopPayloads(sid);
+    const blocked = stops.filter((p) => p.reason === "document_sync_required");
+    expect(blocked.length, "硬闸必须落一条 loop_stopped").toBe(1);
+    expect(blocked[0].phase).toBe("document-sync-gate");
+    expect(blocked[0].changed).toEqual(["报告.docx"]);
+  });
+
+  it("G-2: 文档已同步 ⇒ 正常 completed（不是无条件拦）", async () => {
+    const sid = "doc-gate-synced";
+    const collectionId = `session:${sid}`;
+    setDocumentBackend(
+      createFakeDocumentBackend({ documents: [makeDoc({ id: "doc_1", name: "报告.docx", updated_at: 200 })] }).backend,
+    );
+    // 账本记的就是**当前**版本 ⇒ 已同步
+    recordDocumentOutline({
+      collectionId,
+      documentId: "doc_1",
+      documentName: "报告.docx",
+      headings: ["第二章 迁移"],
+      updatedAt: 200,
+    });
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+    ]);
+    const { result } = await driveLoop(loop, provider, sid);
+
+    expect(result?.reason, "同步后必须能正常收尾").toBe("completed");
+    expect(result?.documentSyncBlocked).toBeUndefined();
+    expect(describeTurnOutcome(result, { lang: "zh" }).completionCard).toBe(true);
+    expect(provider.requests.length, "同步后不该多要一轮").toBe(3);
+  });
+
+  it("G-3: 无文档引用/无账本 ⇒ 不拦（低误报）", async () => {
+    const sid = "doc-gate-nodoc";
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+    ]);
+    const { result } = await driveLoop(loop, provider, sid);
+
+    expect(result?.reason, "没有账本 ⇒ 文档与这件事无关").toBe("completed");
+    expect(result?.documentSyncBlocked).toBeUndefined();
+    expect(describeTurnOutcome(result, { lang: "zh" }).completionCard).toBe(true);
+  });
+
+  it("G-4: 同一文档状态只拦一次 —— 达到上限后放行但标未验（不死循环）", async () => {
+    const sid = "doc-gate-cap";
+    const collectionId = `session:${sid}`;
+    seedStaleDocument(collectionId);
+
+    const provider = new ScriptedProvider();
+    const { registry } = registryWithFakeWriteAndBash();
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    provider.setScript([
+      writeIteration("w1", "src/core/a.ts"),
+      bashIteration("b1", "npx tsc --noEmit"),
+      finalIteration("做完了"),
+      finalIteration("说明：这份文档本次不用动"),
+    ]);
+    const first = await driveLoop(loop, provider, sid);
+    expect(first.result?.reason, "第一次必须拦").toBe("document_sync_required");
+
+    // 同一会话第二轮：同一份文档状态，不再拦（否则用户会永远完不成）
+    provider.setScript([finalIteration("我还是不改文档，继续做别的")]);
+    const second = await driveLoop(loop, provider, sid);
+    expect(second.result?.reason, "达到上限后必须放行").toBe("completed");
+    expect(second.result?.documentSyncUnverified?.changed, "放行时必须标未验").toEqual(["报告.docx"]);
+    const outcome = describeTurnOutcome(second.result, { lang: "zh" });
+    expect(outcome.completionCard, "放行也不许显示「任务完成」").toBe(false);
+    expect(outcome.notice, "必须让用户看见「未验证」").toContain("未验证");
+    expect(outcome.turnStatus?.code).toBe("DOCUMENT_SYNC_UNVERIFIED");
   });
 });

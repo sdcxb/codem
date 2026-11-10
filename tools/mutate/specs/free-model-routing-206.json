@@ -67,8 +67,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/model-index.ts",
-          "from": "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
-          "to": "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
+          "from": "  if (isFreeModelId(model)) {",
+          "to": "  if (false && isFreeModelId(model)) {"
         }
       ],
       "tests": [

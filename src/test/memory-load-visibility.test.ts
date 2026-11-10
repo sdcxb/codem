@@ -129,7 +129,7 @@ describe("MEM-LOAD-QUIET：启动期的暂时性失败不许弹用户可见错�
 
     // ③ 系统随后自动恢复：端口就绪 + 重读（真机上就是 bootstrap 的"端口注册后 reload"）
     await warmupDomain(port);
-    svc.reload();
+    await svc.reload();
     expect(svc.getLoadState().ok, "端口就绪之后自动重读必须成功").toBe(true);
     expect(svc.listAll({ includePending: true, includeUnscoped: true, showAllProjects: true }), "存量记忆读得出来").toHaveLength(2);
   });
@@ -152,7 +152,7 @@ describe("MEM-LOAD-QUIET：启动期的暂时性失败不许弹用户可见错�
     expect(loadEntry(), "第 1 次失败如实留痕").toBeTruthy();
 
     await warmupDomain(port);
-    svc.reload();
+    await svc.reload();
 
     expect(svc.getLoadState().ok).toBe(true);
     expect(loadEntry(), "恢复之后 `memory.load` 不许留在失败表里（那就是陈旧横幅的来源）").toBeUndefined();
@@ -234,7 +234,7 @@ describe("MEM-LOAD-VISIBLE：该让用户看到的失败仍然必须可见且可
 
     // 第 2 次：端口就绪、重读 ⇒ 形状仍不认识 ⇒ 结论性
     await warmupDomain(port);
-    svc.reload();
+    await svc.reload();
 
     expect(loadEntry()!.kind, "结论性失败不许被'暂时性那条已经展示过'挡住").toBe("action");
     expect(loadEntry()!.lastMessage).toMatch(/形状|entries/);

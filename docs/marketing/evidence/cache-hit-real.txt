@@ -1,0 +1,168 @@
+真实 provider 缓存命中 A/B（C03 可观测性取证）
+================================================
+
+结论（先看这里）
+----------------
+1. **链路已支持解析缓存字段，但本机默认 provider 本轮没有上报缓存字段。**
+   - 默认 provider（`aicodewith`，Anthropic Messages 协议）连续 3 次真实调用里，
+     `usage` 里一个缓存字段都没有（无 `cache_read_input_tokens` / `cache_creation_input_tokens` /
+     `prompt_tokens_details.cached_tokens` / `prompt_cache_hit_tokens`）。
+   - 因此**不能**声称「第二轮命中前缀缓存」——本轮没有可用的真实命中读数。
+     本文只证明：**解析链路可用、未上报时界面不再自报 0%**（旧实现正是自报 0%）。
+2. 每轮落库的形状是 `cacheReported:false`、读/写桶 **键不存在**（不是 0），
+   会话累计 `cacheReadTokens=0 / cacheWriteTokens=0 / cacheReported=false`。
+3. UI 两种状态：
+   - 真实机（未上报）：ContextMonitor 显示 `provider 未上报缓存字段`（`data-cache-reported=false`）；
+   - 夹具（上报）：`CACHE-UI-1` 断言 `缓存命中：66.7%（读 1200 / 写 300）`。
+4. 判据（fixture，含变异自证）证明解析与两态显示可用：
+   - `src/test/cache-hit-observability.test.ts`（11 条：Anthropic/OpenAI 形状、缺报、非法值、
+     TokenTracker/CostTracker/Loop 累计、`streamAnthropic`/OpenAI 兼容流、聚合误报回归）；
+   - `src/test/context-monitor-cache.test.tsx`（2 条：上报态 / 未上报态）。
+   - 变异：去掉 `prompt_tokens_details.cached_tokens` 分支 ⇒ CACHE-OBS-2 红；
+     去掉 `streamAnthropic` 的 `mergeUsage(message.usage)` ⇒ CACHE-OBS-7 红；
+     把未上报文案改成 `缓存命中：0%（读 0 / 写 0）` ⇒ CACHE-UI-2 红。均已实测红后还原。
+
+构建 / 安装
+-----------
+- 安装包：`src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe`
+  - sha256 = `A68041598D7B7DB56CD787EE3A015891F9DCF3E712D95300CB2B7E511D785C20`
+  - LastWriteTime = 2026-11-07 09:58:22（+08:00）
+  - `tauri build` exit=0；签名环境变量按规程注入，`.sig` 同步产物
+- 安装后：`C:\Users\abee\AppData\Local\Codem\codem.exe`
+  - sha256 = `27F946F06CABD393D8A509591B924D8816AC31045E6DFD2B7D998497038347E7`
+  - LastWriteTime = 2026-11-07 09:57:10；ProductVersion = 1.18.13
+  - 静默安装：`Start-Process <setup.exe> -ArgumentList '/S' -Wait`，exit=0
+- 首轮构建（09:50:49，sha256 `457BF987…`）的 A/B 抓出一个**聚合误报**：
+  `LoopState.totalUsage` 永远带 `cacheReadTokens: 0`，而 `CostTracker.recordUsage` 按「键存在」
+  判上报 ⇒ 未上报被落库成 `cacheReported:true` + 0/0，UI 又显示 `缓存命中：0%`。
+  已修为「显式布尔优先」并补回归判据 `CACHE-OBS-6b`，用第二版（上面的 sha256）重新取证。
+
+环境 / 配置（未改任何设置）
+--------------------------
+- `mode = "api"`、`provider = "aicodewith"`、`model = "claude-haiku-4-5-20251001"`
+- baseUrl = `https://api.aicodewith.ai/v1`（Anthropic Messages / `streamAnthropic` 路径）
+- 启动：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`
+
+场景
+----
+- 新会话：`1794016749868-52204hyfi`（标题「对话 64」；3 轮真实调用，共 6 条消息）
+- 第 1 轮：预置一段 9193 字符的**固定背景**（60 段编号资料 + 「只回复 OK」指令），
+  请求 prompt=40,164 tokens（含系统提示），助手回复 `OK`；
+- 第 2 轮：`只回复 OK`（prompt=39,362）；
+- 第 3 轮：同样的 `只回复 OK`（prompt=39,375）——第 2/3 轮的前缀包含第 1 轮的全部历史，
+  若 provider 支持并上报前缀缓存，第 3 轮应有 `cache_read` 读数；实际没有。
+
+渲染侧 console（CDP 捕获，原文）
+-------------------------------
+```
+[runAgenticLoop] provider=aicodewith, model=claude-haiku-4-5-20251001, mode=api
+[LLMEngine.getAgenticLoop] … provider.id=aicodewith, provider.baseUrl=https://api.aicodewith.ai/v1
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 3, tools: 64
+[prompt-cache] hit=? miss=? prompt=40164 ratio=?（provider 本次未上报缓存字段）
+[agent-loop] Iteration 1: LLM stream ended. finishReason: stop, toolCalls: 0, text length: 2
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 5, tools: 64
+[prompt-cache] hit=? miss=? prompt=39362 ratio=?（provider 本次未上报缓存字段）
+[agent-loop] Iteration 1: LLM stream ended. finishReason: stop, toolCalls: 0, text length: 2
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 7, tools: 64
+[prompt-cache] hit=? miss=? prompt=39375 ratio=?（provider 本次未上报缓存字段）
+[agent-loop] Iteration 1: LLM stream ended. finishReason: stop, toolCalls: 0, text length: 2
+```
+判定口径：`hit=?` 是 `formatPromptCacheLog` 的**未上报**分支；它绝不写成 `hit=0`
+（写成 0 会把「不知道」伪装成「确定全未命中」）。
+
+数据库读数（App 自己的仓储接口 / 只读查库，逐字）
+------------------------------------------------
+3 条 assistant 消息的 `metadata.usage`（`messages` 表）：
+```
+assistant-1794016751417  {"turnEndTime":1794016755373,"turnOutcome":"completed","usage":{"cacheHitTokens":0,"cacheReadTokens":0,"cacheReported":false,"cacheWriteTokens":0,"completionTokens":4,"cost":0,"promptTokens":40164,"totalTokens":40168,"uncachedInputTokens":40164}}
+assistant-1794016757878  {"turnEndTime":1794016760497,"turnOutcome":"completed","usage":{"cacheHitTokens":0,"cacheReadTokens":0,"cacheReported":false,"cacheWriteTokens":0,"completionTokens":4,"cost":0,"promptTokens":39362,"totalTokens":39366,"uncachedInputTokens":39362}}
+assistant-1794016762351  {"turnEndTime":1794016764306,"turnOutcome":"completed","usage":{"cacheHitTokens":0,"cacheReadTokens":0,"cacheReported":false,"cacheWriteTokens":0,"completionTokens":4,"cost":0,"promptTokens":39375,"totalTokens":39379,"uncachedInputTokens":39375}}
+```
+`codem-cost-tracker` 里本会话的 3 条成本记录（注意：**没有** `cacheReadTokens` /
+`cacheWriteTokens` 键 —— 缺报 ≠ 0）：
+```
+{"id":"usage-1794016755372-kqodxyr9p","sessionId":"1794016749868-52204hyfi","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":40164,"outputTokens":4,"cacheReported":false,"cost":0,"duration":3883,"toolCalls":0,"success":true,"costUnknown":true}
+{"id":"usage-1794016760496-6ciy2hajv","sessionId":"1794016749868-52204hyfi","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":39362,"outputTokens":4,"cacheReported":false,"cost":0,"duration":2562,"toolCalls":0,"success":true,"costUnknown":true}
+{"id":"usage-1794016764305-rufe11ewg","sessionId":"1794016749868-52204hyfi","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":39375,"outputTokens":4,"cacheReported":false,"cost":0,"duration":1891,"toolCalls":0,"success":true,"costUnknown":true}
+```
+会话级累计（`sessionCosts`）：
+```
+{"sessionId":"1794016749868-52204hyfi","totalCost":0,"totalInputTokens":118901,"totalOutputTokens":12,
+ "apiCalls":3,"uncostedCalls":3,"cacheReadTokens":0,"cacheWriteTokens":0,"cacheReported":false,
+ "modelBreakdown":{"claude-haiku-4-5-20251001":{"cost":0,"inputTokens":118901,"outputTokens":12,
+ "calls":3,"cacheReadTokens":0,"cacheWriteTokens":0,"cacheReported":false}}}
+```
+
+UI 读数（ContextMonitor，真实机）
+--------------------------------
+打开「上下文监控」后，缓存那一行的 DOM 文本与属性：
+```
+[data-testid="context-cache-stat"]  text = "缓存用量provider 未上报缓存字段"
+[data-cache-reported]               = "false"
+```
+同一会话的助手消息统计行（StatsLine）：
+```
+1 轮 · 1 步|40.2K 入 / 4 出
+1 轮 · 1 步|39.4K 入 / 4 出
+1 轮 · 1 步|39.4K 入 / 4 出
+```
+——**没有**「缓存命中 0%」这一组（未上报就不显示缓存读数）。
+
+截图：`docs/marketing/evidence/cache-hit-real.png`
+- sha256 = `B8AAF2BAFD650E801BE56BCD810D4C6B2DB0614E5EC12D9F8A2AF36EEDD042BC`
+- 画面：会话「对话 64」、两轮 `OK`、右侧「上下文状态」面板中
+  「缓存用量 / provider 未上报缓存字段」，以及「上次请求真实 39,375」。
+
+为什么不能归因于「provider 不缓存」
+----------------------------------
+- 本仓的 Anthropic Messages 请求（`aicodewith-protocols.ts::toAnthropicMessages`）**没有**
+  发送 `cache_control` 断点，只做消息形状转换；若上游要求显式断点才创建/复用前缀缓存，
+  那它本来就不会产生可读的缓存桶。
+- 本轮响应里也确实没有任何缓存字段（message_start / message_delta 的 usage 都只有
+  `input_tokens` / `output_tokens`）。
+- 因此本文只声明**观察结果**：「该 provider 在本次调用中未上报缓存字段」。
+  **不**声称「provider 没有缓存能力」，也不伪造命中率/命中数。
+
+判据（fixture，不依赖真实网络）
+------------------------------
+命令：
+```
+npx vitest run src/test/cache-hit-observability.test.ts src/test/context-monitor-cache.test.tsx
+```
+- CACHE-OBS-1 Anthropic 形状 `input_tokens=1000 + cache_read=700 + cache_creation=100`
+  → 读 700 / 写 100 / prompt=1700 / uncached=1000 / cacheReported=true；
+- CACHE-OBS-2 OpenAI 形状 `prompt_tokens_details.cached_tokens=600`（含扁平 `cached_tokens`）
+  → 读 600 / uncached=400 / 无写缓存键；
+- CACHE-OBS-3 缺报 → 不产出缓存键；`TokenTracker` 累计 0 + `cacheReported=false`；
+- CACHE-OBS-4 负数 / 字符串 → 不抛、坏值不挡合法值、全坏 = 0 + false；
+- CACHE-OBS-5 两轮不同形状 → `TokenTracker` 累计读 2200 / 写 100 / reported=true；
+- CACHE-OBS-6 CostTracker 会话/模型/全局三处累计一致，未上报会话 false；
+- CACHE-OBS-6b（真机回归）聚合形状（0 值 + `cacheReported:false`）不许被落库成已上报；
+- CACHE-OBS-7 `streamAnthropic` 的 usage 事件带缓存读/写（旧实现整段丢）；
+- CACHE-OBS-8 OpenAI 兼容流式/非流式都带缓存桶；
+- CACHE-OBS-9 真循环 `result.usage` 累计读/写/上报标记；9b 未上报时 false；
+- CACHE-UI-1 上报态显示 `缓存命中：66.7%（读 1200 / 写 300）`；
+- CACHE-UI-2 未上报态显示 `provider 未上报缓存字段`，且不含 `缓存命中：0%`。
+
+清理 / 还原
+-----------
+App 关闭后按会话 id 删库（先 FTS，再 `sessions` 主表；业务子表由 `ON DELETE CASCADE` 带走），
+同时删权威日志 JSONL、清掉 `codem-cost-tracker` 里该会话的记录、恢复 `codem-last-session`：
+```
+会话 1794016749868-52204hyfi
+删除前: sessions=1 messages=6 session_events=18 context_epochs=0 session_fts=6
+删除后: sessions=0 messages=0 session_events=0 context_epochs=0 session_fts=0
+JSONL: sessions\1794016749868-52204hyfi.jsonl existed=true removed=true
+cost-tracker: recordsRemoved=3 sessionCostsRemoved=1
+codem-last-session: 恢复为 "1793955363177-4yuxjivf0"（与 A/B 前逐字相同）
+```
+App 正常启动（不带调试参数）：
+- `codem` 进程 running=true / responding=true；
+- 9222 端口无监听（`no-cdp-9222`）；
+- 复读库：`sessions=0`、`messages=0`、`last-session="1793955363177-4yuxjivf0"`。
+
+边界
+----
+- 单次 A/B、单模型（Claude Haiku 4.5 via aicodewith）、单会话，不能外推为「所有 provider 都不上报」。
+- 未验证「显式 cache_control 后上游会不会返回缓存桶」；那是请求侧行为改动，不在本波范围。
+- 真实命中率/省钱的结论需要 provider 上报缓存字段后才成立；本波只把「能不能看见」接通并如实显示。

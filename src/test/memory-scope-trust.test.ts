@@ -224,12 +224,15 @@ describe("MEM-TRUST：自动流程不得改写/覆盖/删除手动条目", () =>
     ).toHaveLength(0);
   });
 
-  it("MEM-TRUST-1c：自动提取**无归属项目**时写入的条目任何项目都不注入（宁可不注入也不猜项目）", async () => {
+  it("MEM-TRUST-1c（MEM-EXTRACT-4 新契约）：无项目身份 ⇒ 不写孤儿 project 条目，降级为对话级（内容不丢）", async () => {
     const svc = new MemoryService();
     /*
      * ⚠️ 第 196 波：同样显式写 `"scope": "project"` —— 这条用例的形态是
-     * "**项目级**条目但没有 projectId"（无归属）。不带 scope 时它会落成对话级（有 sessionId ⇒ 有归属），
-     * 那正是这条用例**不该**覆盖的另一种形态。
+     * "**项目级**候选但没有 projectId"。
+     *
+     * 24 §6 `MEM-EXTRACT-4` 的契约变更（本轮）：这种候选**不再**写成
+     * `scope:"project" + projectId:undefined` 的孤儿条目（可见但永不注入、白占容量/待批准名额），
+     * 而是降级为 `conversation`：内容不丢、在本会话里真的生效、面板仍可见。
      */
     const engine = engineForExtraction(
       svc,
@@ -238,10 +241,18 @@ describe("MEM-TRUST：自动流程不得改写/覆盖/删除手动条目", () =>
     );
     await engine.extractMemoriesFromSession("s1");
 
-    const all = svc.listAll({ projectId: PROJ_A });
+    const all = svc.listAll({ projectId: PROJ_A, sessionId: "s1" });
     expect(all, "条目仍然写入（可在界面看到）").toHaveLength(1);
-    expect(all[0].projectId).toBeUndefined();
-    expect(svc.buildMemoryPrompt("project", PROJ_A)).not.toContain("NO_OWNER");
+    expect(all[0].scope, "无项目身份时**不许**写 project 作用域的孤儿条目").toBe("conversation");
+    expect(all[0].sessionId, "归属当前会话 ⇒ 真的能进本会话上下文").toBe("s1");
+    expect(all[0].projectId, "不许拿任何路径临时当 projectId").toBeUndefined();
+    expect(all[0].demotedFrom, "原作用域要留痕（面板要说明它本来想写项目级）").toBe("project");
+    expect(all[0].demotedReason, "降级原因与积压降级分开记").toBe("no-project-identity");
+    expect(svc.buildMemoryPrompt("project", PROJ_A), "项目作用域里看不到它（没有归属）").not.toContain("NO_OWNER");
+    expect(
+      svc.buildMemoryPrompt("conversation", PROJ_A, "s1"),
+      "内容不丢：在本会话的对话级注入里真的出现",
+    ).toContain("NO_OWNER");
   });
 });
 
@@ -398,7 +409,7 @@ describe("MEM-CAP：达到上限时可见地失败，不静默驱逐", () => {
 
     const result = svc.consolidate({ maxEntriesPerScope: 2 });
 
-    expect(result.capacityTrimmed, "手动条目不许被自动裁剪").toBe(0);
+    expect(result.capacityArchived, "手动条目不许被自动归档/裁剪").toBe(0);
     expect(result.capacityBlocked, "拒绝必须如实上报").toBeGreaterThan(0);
     expect(svc.listAll({ includePending: true })).toHaveLength(3);
   });

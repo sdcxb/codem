@@ -1,11 +1,11 @@
 {
   "note": "knip 棘轮的基线：数字只许降不许升。改这个文件必须在提交信息里写明理由。",
-  "recordedAt": "2026-11-04",
+  "recordedAt": "2026-11-08",
   "command": "npx knip --reporter json --no-exit-code",
   "previous": {
-    "exports": 45,
+    "exports": 47,
     "duplicates": 10,
-    "types": 29
+    "types": 30
   },
   "mustBeZero": [
     "files",
@@ -23,7 +23,7 @@
     "namespaceMembers"
   ],
   "counts": {
-    "exports": 47,
+    "exports": 46,
     "duplicates": 10,
     "types": 30
   }

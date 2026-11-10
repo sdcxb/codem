@@ -78,7 +78,14 @@ describe("AICODEWITH-4 Anthropic Messages", () => {
     expect((init.headers as Record<string, string>)["x-api-key"]).toBe("sk-acw-test");
     expect((init.headers as Record<string, string>)["anthropic-version"]).toBe("2023-06-01");
     const body = JSON.parse(String(init.body));
-    expect(body.system).toBe("你是助手");
+    /**
+     * 提示缓存默认开（`codem-context-config.promptCache` 缺键 = true）⇒ system 从字符串
+     * 变成「一个 text block + cache_control」的数组。断点位置与开关的判据在
+     * `prompt-cache-breakpoints.test.ts`，这里只钉 wire 形状没被改坏。
+     */
+    expect(body.system).toEqual([
+      { type: "text", text: "你是助手", cache_control: { type: "ephemeral" } },
+    ]);
     expect(body.messages.some((m: any) => m.content?.some?.((b: any) => b.type === "tool_result"))).toBe(true);
     expect(body.tools[0].input_schema).toBeTruthy();
 
@@ -86,6 +93,55 @@ describe("AICODEWITH-4 Anthropic Messages", () => {
     const toolEnd = events.find((e) => e.type === "tool_use_end") as any;
     expect(toolEnd).toMatchObject({ id: "tool_1", name: "read", input: { path: "a.txt" } });
     expect(events.at(-1)).toEqual({ type: "end", finishReason: "tool_use" });
+  });
+
+  it("历史 assistant 的 OpenAI 形状 tool_calls 必须转成 tool_use（否则 tool_result 孤立，模型重发调用）", async () => {
+    const fetchMock = vi.fn(async () => sseResponse([
+      `event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+      `event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"好"}}`,
+      `event: message_stop\ndata: {"type":"message_stop"}`,
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await collect(streamAnthropic(
+      { apiKey: "sk-acw-test", baseUrl: "https://api.aicodewith.ai/v1" },
+      {
+        model: "claude-sonnet-4-6",
+        messages: [
+          { id: "u", role: "user", content: "读取 a.txt" },
+          /**
+           * 消息表重建出来的 assistant 行就是这种形状：`content` 为空、调用在
+           * `tool_calls`（OpenAI 形状）。Anthropic 不接受它，必须在这里转成 tool_use。
+           */
+          {
+            id: "a",
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              { id: "tool_1", type: "function", function: { name: "read", arguments: '{"path":"a.txt"}' } },
+            ],
+          } as never,
+          { id: "t", role: "tool", toolCallId: "tool_1", name: "read", content: "hello" },
+        ],
+      },
+    ));
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    const assistant = body.messages.find((m: any) => m.role === "assistant");
+    expect(assistant, "assistant 消息必须存在（不能被空 content 丢掉）").toBeTruthy();
+    expect(assistant.content).toContainEqual(
+      expect.objectContaining({
+        type: "tool_use",
+        id: "tool_1",
+        name: "read",
+        input: { path: "a.txt" },
+      }),
+    );
+    const toolResult = body.messages
+      .flatMap((m: any) => (Array.isArray(m.content) ? m.content : []))
+      .find((b: any) => b.type === "tool_result");
+    expect(toolResult?.tool_use_id, "tool_result 必须指向同一条 tool_use").toBe("tool_1");
   });
 });
 

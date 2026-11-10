@@ -7506,8 +7506,9 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   从 `run()` 真跑出压缩；断言 `compaction_start/end`、`messagesRemoved > 0`、摘要 `complete()` 被调用、
   历史出现压缩标记、压缩后请求更小。变异（禁用触发条件）⇒ 红。**真机（打包应用横幅/重载）仍未验**。
 - **压缩请求的 usage 读数**：`generateCompactionSummaryCacheAware` 打一行
-  `[compact] usage prompt=… completion=… cacheHit=… miss=… model=… convChars=…`；provider 没报的字段打 `?`。
-  端到端用例断言这行存在且不伪造 `cacheHit=0`。仍**没有**把压缩 usage 计入 `totalUsage`（评测口径取舍）。
+  `[compact] usage prompt=… completion=… cacheRead=… cacheWrite=… miss=… model=… convChars=…`；
+  provider 没报的字段打 `?`。
+  端到端用例断言这行存在且不伪造 `cacheRead=0` / `cacheWrite=0`。仍**没有**把压缩 usage 计入 `totalUsage`（评测口径取舍）。
 - **配对/折叠不变量**：剥离逻辑抽成唯一实现 + 纯函数 `src/core/llm/tool-pairing.ts`（孤儿 tool、悬空/部分 tool_calls），
   新增 `tool-pairing.test.ts` 7 条（折叠不拆对 + 三种非法形状 + 消息/调用/结果都在）。
   顺带发现并修掉一个**真缺陷**：折叠的 `protectedFromIndex` / `protectedFromIndexForTurns` 是**死参数**

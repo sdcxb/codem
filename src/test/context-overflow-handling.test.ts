@@ -60,7 +60,8 @@ describe("上下文超限识别（第 69 波）", () => {
     const msg = describeContextOverflow(DEEPSEEK_OVERFLOW);
     expect(msg).toMatch(/超出模型上限/);
     expect(msg, "要给出具体数字").toMatch(/1,048,735|1048735/);
-    expect(msg, "并给出可执行的下一步").toMatch(/开一个新对话/);
+    expect(msg, "不得再建议开新对话").not.toMatch(/开一个新对话|新建对话|开新对话|新会话/);
+    expect(msg, "给出可执行的下一步").toMatch(/重试|上下文更大的模型|删掉/);
   });
 
   it("OFLOW-3: 循环里改用语义匹配（旧的两个字符串判定已不存在）", () => {

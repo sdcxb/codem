@@ -6,6 +6,16 @@
  * - `shouldNudgeZeroOutput`：**一个字节都没改**、而**判据还是红的就收尾** ✓（模式 A ✓，本波新增）。
  */
 
+import { getContextManager } from "../context/context";
+import { warnOnce } from "../debug";
+import {
+  DEFAULT_DOCUMENT_SYNC_MAX_BLOCKS,
+  judgeDocumentSyncGate as judgeDocumentSyncGatePure,
+  normalizeDocumentSyncMaxBlocks,
+  type DocumentSyncGateDecision,
+  type JudgeDocumentSyncGateArgs,
+} from "./document-sync-gate";
+
 /**
  * **模式 C：改完又还原** ✓（第 169 波）。
  *
@@ -229,5 +239,207 @@ export function buildRedTestNudgeText(args: {
      *   且结果里带 `regressionRedTests` ⇒ **界面绝不显示"任务完成"** ✓。
      */
     "不允许把这次收尾写成「已完成」而不提这些红。"
+  );
+}
+
+/**
+ * **C06：代码改完之后检查文档版本是否同步**（文档任务与代码任务交叉时才触发）。
+ *
+ * ## 为什么这条要放在收尾段
+ *
+ * 长文档任务的失败形态很安静：模型把代码/结论改完了，**引用与章节覆盖却停在改之前** ——
+ * 它自己不会回去看账本，收尾时也没有任何东西问它一句「你引用过的文档还是你读的那一版吗」。
+ * 账本（`document/ledger.ts`）已经记下了读它那一刻的 `updated_at`/章节覆盖；收尾段只需要
+ * 把这三种事实摆出来（文档变了 / 章节没验 / 结论没引用验证），由模型决定补哪一步。
+ *
+ * ## 触发条件刻意保守（低误报）
+ *
+ * 1. 本轮**真的改过文件**（只读任务不该被催文档）；
+ * 2. 账本里**有文档覆盖**（没读过任何文档的代码任务与文档无关）；
+ * 3. 存在「文档版本变过」**或**「章节/结论未验」。
+ */
+export function shouldNudgeDocumentSync(args: {
+  /** 本轮改过文件/代码（没改动的任务不催） */
+  codeEdited: boolean;
+  /** 账本里有文档覆盖（读过/引过文档） */
+  hasDocumentCoverage: boolean;
+  /** 读过之后版本发生变化的文档数 */
+  changedDocuments: number;
+  /** 已读但未验的章节数 */
+  unverifiedSections: number;
+  /** 待验证的 claim 数 */
+  unverifiedClaims: number;
+  /**
+   * 带版本、但当前**读不到**的文档数（C06 硬闸补的同一批事实）。
+   *
+   * 为什么并进来：旧提醒只看 `changed / unverified`，于是「文档被删了/索引不可用」
+   * 这种同样无法确认引用的形态**一次都不会被提醒**（而硬闸会拦它）——
+   * 提醒与硬闸看的必须是同一批事实，否则「没提醒就被拦」显得莫名其妙。
+   */
+  unreadableDocuments?: number;
+  /** 每会话只提醒一次 */
+  alreadyNudged: boolean;
+}): boolean {
+  if (args.alreadyNudged) return false;
+  if (!args.codeEdited || !args.hasDocumentCoverage) return false;
+  return (
+    args.changedDocuments > 0 ||
+    (args.unreadableDocuments ?? 0) > 0 ||
+    args.unverifiedSections > 0 ||
+    args.unverifiedClaims > 0
+  );
+}
+
+/** `shouldNudgeDocumentSync` 命中时的提醒文案（事实 + 下一步，不施压）。 */
+export function buildDocumentSyncNudge(args: {
+  changedDocuments: string[];
+  unverifiedSections: number;
+  unverifiedClaims: number;
+  unreadSections: number;
+}): string {
+  const facts: string[] = [];
+  if (args.changedDocuments.length > 0) {
+    facts.push(
+      `- 你读过这些文档之后它们**变了**：${args.changedDocuments.join("、")}（引用可能已经对不上原文）`,
+    );
+  }
+  if (args.unverifiedSections > 0) facts.push(`- 已读但**未验**的章节：${args.unverifiedSections} 个`);
+  if (args.unreadSections > 0) facts.push(`- 大纲里**未读**的章节：${args.unreadSections} 个`);
+  if (args.unverifiedClaims > 0) facts.push(`- **待验证**的结论：${args.unverifiedClaims} 条`);
+  return (
+    "[SYSTEM] 这一轮你改过文件，而文档账本里还有未同步的状态（一条事实）：\n" +
+    facts.join("\n") +
+    "\n你可以用 doc_ledger 查明细。收尾前请二选一：\n" +
+    "① 把这些章节/结论核对到「已验证」，并在回执里写明结论与引用；\n" +
+    "② 明确说明哪些文档本次不需要动、为什么（例如只改了实现、文档描述的是另一层）。"
+  );
+}
+
+/* ═══════════════════ C06 边界②：文档同步是**硬闸**，不是收尾提醒 ═══════════════════ */
+
+/**
+ * 同一个会话最多拦**几次**「文档版本未同步」的**默认值**。
+ *
+ * 为什么必须有上限：`sessionModifiedAnything` / 文档版本都是**会话级**事实，
+ * 一次代码改动之后它们不会自己消失。若每次收尾都拦，用户会陷入「永远完不成」的死循环
+ * （这正是任务里点名的风险）。所以额度有两层：
+ *
+ * 1. **每（文档 id + 版本）只拦一次** —— 同一份文档的同一版被拦过之后再出现，放行；
+ * 2. **整个会话最多拦 N 次（默认 {@link MAX_DOCUMENT_SYNC_BLOCKS}）** —— 另一份文档 stale、
+ *    或同一份文档变了新版本时仍有拦截机会；但次数到顶后一律放行。
+ *
+ * ## 额度可配置（`codem-context-config.documentSyncMaxBlocks`）
+ *
+ * 默认 3 只是**历史行为的默认值**，不再是写死的常量：读取点统一走
+ * {@link resolveDocumentSyncMaxBlocks} / {@link documentSyncMaxBlocks}，配置源是
+ * `codem-context-config`（经 `ContextManager` 的配置 API，**不在这里直读 settings**）。
+ * - `1..10`（整数）⇒ 原值；
+ * - `0` ⇒ **不限**（第二层额度取消，但第一层「同一文档同一版本只拦一次」仍在 ⇒ 不会死循环）；
+ * - 缺省 / 非法 ⇒ 回到默认 3，非法值只 `warnOnce` 一次，不静默改口径。
+ *
+ * 放行时把结果标成**未验证**（`documentSyncUnverified`），界面仍然不显示「任务完成」——
+ * 是「标未验」而不是「假完成」。
+ */
+const MAX_DOCUMENT_SYNC_BLOCKS = DEFAULT_DOCUMENT_SYNC_MAX_BLOCKS;
+
+/** 配置允许的**最大**额度：再大就等于没有上限，不如显式用 `0`（不限）表达意图。 */
+const DOCUMENT_SYNC_MAX_BLOCKS_CEILING = 10;
+
+/**
+ * 把 `codem-context-config.documentSyncMaxBlocks` 归一成判定用的额度。
+ *
+ * 约定的输入域（越界一律回默认 + warn，**不允许**静默钳制 —— 钳制会让人以为配置生效了）：
+ * - `undefined` ⇒ 默认 3（旧配置没有这个键）；
+ * - 整数 `1..10` ⇒ 原值；
+ * - `0` ⇒ `Infinity`（不限）；
+ * - 其余（负数 / 小数 / 超过 10 / NaN / 字符串…）⇒ 默认 3。
+ */
+function resolveDocumentSyncMaxBlocks(raw: unknown): number {
+  if (raw === undefined) return MAX_DOCUMENT_SYNC_BLOCKS;
+  if (typeof raw === "number" && Number.isInteger(raw)) {
+    if (raw === 0) return Number.POSITIVE_INFINITY;
+    if (raw >= 1 && raw <= DOCUMENT_SYNC_MAX_BLOCKS_CEILING) return normalizeDocumentSyncMaxBlocks(raw);
+  }
+  warnOnce(
+    `document-sync-max-blocks:${String(raw)}`,
+    `[completion-guards] codem-context-config.documentSyncMaxBlocks=${String(raw)} 不合法` +
+      `（合法范围 1..${DOCUMENT_SYNC_MAX_BLOCKS_CEILING} 的整数，0=不限，缺省 ${MAX_DOCUMENT_SYNC_BLOCKS}）` +
+      ` ⇒ 按默认 ${MAX_DOCUMENT_SYNC_BLOCKS} 处理`,
+  );
+  return MAX_DOCUMENT_SYNC_BLOCKS;
+}
+
+/**
+ * **唯一读取点**：额度来自 `codem-context-config`，经 `ContextManager` 的配置 API 取。
+ *
+ * 不在这里 `getSettingJSON("codem-context-config")`：那会绕开 `ContextManager` 的
+ * 加载/合并逻辑，造出第二个口径（本仓出现过的「面板改了、引擎不认」形态）。
+ * 配置读取本身失败时按默认额度处理并留痕（不因为读配置失败就永远不拦）。
+ */
+function documentSyncMaxBlocks(): number {
+  try {
+    return resolveDocumentSyncMaxBlocks(getContextManager().getConfig().documentSyncMaxBlocks);
+  } catch (e) {
+    warnOnce("document-sync-max-blocks:read", "[completion-guards] 读取上下文配置失败（按默认额度处理）", e);
+    return MAX_DOCUMENT_SYNC_BLOCKS;
+  }
+}
+
+/**
+ * **C06 硬闸判定（配置包装）**：读一次额度，然后交给零依赖的纯判定
+ * （`document-sync-gate.ts::judgeDocumentSyncGate`）。
+ *
+ * ## 为什么拆成两层
+ *
+ * 判定本身必须能在**不启动应用**的回放脚本里跑（25 §P2 的评测/回放要求），
+ * 而配置读取要拉 `ContextManager`（连带存储）。所以：
+ * - 纯判定在 `document-sync-gate.ts`（零 import，回放脚本 import 的就是产品同一份）；
+ * - 本函数只负责「额度从哪来」——**唯一读取点**仍然是这里，没有第二个配置口径。
+ *
+ * ## 判定语义（详见纯模块）
+ *
+ * 触发条件刻意保守（低误报）：本轮真的改过文件 + 账本里有带版本的文档 +
+ * 存在 `changed` / `unreadable` 的硬事实。额度两层：同一（文档 + 版本）只拦一次；
+ * 每会话最多 N 次（`0` = 不限），到顶后一律放行但标未验，**绝不无限拦**。
+ */
+export function judgeDocumentSyncGate(args: JudgeDocumentSyncGateArgs): DocumentSyncGateDecision {
+  return judgeDocumentSyncGatePure({ ...args, maxBlocks: documentSyncMaxBlocks() });
+}
+
+/* 判定结果类型继续从本模块再导出：`agentic-loop.ts` 等调用方只 import 这一个门面。 */
+export type { DocumentSyncGateDecision } from "./document-sync-gate";
+
+
+/**
+ * 硬闸拦下时给用户/模型看的文案：**为什么不能算完成** + **怎么修**。
+ *
+ * 口径：只陈述机器比对出来的事实（哪几份文档变了 / 读不到），不施压、不猜原因；
+ * 修复方式给出两条真实可行的路（重新读并核对引用；或说明本次确实不需要动）。
+ */
+export function buildDocumentSyncBlockedText(args: {
+  changedDocuments: string[];
+  unreadableDocuments: string[];
+}): string {
+  const facts: string[] = [];
+  if (args.changedDocuments.length > 0) {
+    facts.push(
+      `- 这些文档在你读过之后**变了**：${args.changedDocuments.join("、")}` +
+        "（引用可能已经对不上原文）",
+    );
+  }
+  if (args.unreadableDocuments.length > 0) {
+    facts.push(`- 这些文档现在**读不到**（已删除 / 索引不可用）：${args.unreadableDocuments.join("、")}`);
+  }
+  return (
+    "[SYSTEM] 这一轮**不能算完成** —— 你改过文件，而文档账本里**带版本**的文档与当前版本不同步" +
+    "（一条机器比对出来的事实，不是猜测）：\n" +
+    facts.join("\n") +
+    "\n修复方式（二选一）：\n" +
+    "① 重新 `doc_read` 这些文档并核对受影响的引用，需要时把相关章节/结论更新到「已验证」；\n" +
+    "② 如果确认这些文档本次**不需要动**（例如只改了实现、文档描述的是另一层），" +
+    "请说明是哪些文档、为什么不需要动，然后继续收尾。\n" +
+    "（本轮已记录一次「文档同步」拦截；同一份文档的同一版本不会再拦，" +
+    "整个会话的拦截次数有额度（默认 3，可在上下文配置里调整）—— " +
+    "这一轮**不会**被标成完成。）"
   );
 }

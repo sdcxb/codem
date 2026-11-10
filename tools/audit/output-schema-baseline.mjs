@@ -59,7 +59,13 @@ function scanCovered() {
     const text = fs.readFileSync(f, "utf8");
     const lines = text.split(/\r?\n/);
     // 只在「这个文件里有 ToolDef 工厂」时才算它的 id（排除 plugin/config 等）
-    const hasToolFactory = /export function create\w*Tool\s*\(\s*\)\s*:\s*ToolDef/.test(text);
+    /**
+     * 工厂名允许以 `Tool` 或 `Tools` 结尾：一个模块聚合多个工具时惯例是
+     * `createXxxTools(): ToolDef[]`（如 notes-tools / memory-tools）。
+     * 旧正则只认 `Tool`，于是**只导出聚合工厂**的文件（notes-tools 就是）被整文件跳过，
+     * `--update` 会把它们的 outputSchema 从基线里删掉 ⇒ 「只许增长」的棘轮反而倒退。
+     */
+    const hasToolFactory = /export function create\w*Tools?\s*\(\s*\)\s*:\s*ToolDef/.test(text);
     if (!hasToolFactory) continue;
 
     for (let i = 0; i < lines.length; i++) {
@@ -106,7 +112,8 @@ const payload = {
   _note:
     "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；" +
     "判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；" +
-    "若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。",
+    "若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。" +
+    "⚠️ `toolCountAtBaseline` 必须是**真实 registry 数**（静态扫描会偏大），脚本写完请按判据提示手动校正。",
   covered,
   toolCountAtBaseline: toolCount,
 };

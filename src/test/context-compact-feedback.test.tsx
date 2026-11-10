@@ -22,6 +22,7 @@ import { createElement } from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ContextMonitor } from "../components/ContextMonitor";
+import { getContextManager } from "../core/context/context";
 
 const listVisibleMessagesMock = vi.fn();
 const deleteMessagesByIdsMock = vi.fn();
@@ -59,6 +60,12 @@ async function letFramePass() {
 }
 
 beforeEach(() => {
+  /**
+   * C13 灰度口径：手动压缩入口只在**显式关闭**段式上下文时保留。
+   * 本文件守的是那条灰度入口的可见反馈，所以每个用例先把开关显式关掉；
+   * 默认（开启）配置下入口不存在，判据见 `context-monitor-manual-entry.test.tsx`。
+   */
+  getContextManager().updateConfig({ segmentEpochs: false });
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   listVisibleMessagesMock.mockReset().mockReturnValue(makeMessages(30));
   deleteMessagesByIdsMock.mockReset();
@@ -219,6 +226,11 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
 });
 
 describe("FC-D5k（第 228 波审计）：锁被占而跳过的回执", () => {
+  beforeEach(() => {
+    /* 同上：手动入口只在显式关闭段式上下文时保留 */
+    getContextManager().updateConfig({ segmentEpochs: false });
+  });
+
   it("必须说清是「没有压缩：另一次压缩正在进行」，不许说成「本次没有可移除的消息」", async () => {
     /*
      * 被守的缺陷：manualCompact 返回值里的 skipped 被 state 类型丢掉 ⇒ 面板走 removed>0 的 else 分支，

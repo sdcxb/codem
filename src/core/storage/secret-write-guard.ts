@@ -43,7 +43,7 @@
 
 import { cachedSealedBlob, cachedSealedKey } from "./secret-cache";
 
-export const SETTINGS_KEY = "codem-settings";
+const SETTINGS_KEY = "codem-settings";
 const PLAINTEXT_FIELD = "apiKey";
 export const SEALED_FIELD = "apiKeySealed";
 

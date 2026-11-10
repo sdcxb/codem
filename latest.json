@@ -1,15 +1,15 @@
 {
-  "version": "1.18.13",
-  "notes": "Flutter Android 内置本机 Host：不依赖电脑、共享工作区、本机模型",
-  "pub_date": "2026-11-06T02:30:48Z",
+  "version": "1.18.14",
+  "notes": "Codem v1.18.14：Context OS 段式上下文、分层记忆与团队记忆、文档/Goal/多设备同步；修复显式换段被压缩抢先、切换草稿丢失与溢出劝退。",
+  "pub_date": "2026-11-10T11:09:11Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VhcFlYd3VIUmFJaUxOZTRFUUxvYUdoY0xhNC9BSGh2WFpiajRpQVZYVHVXSHJwOHM2cHViN0lKZGFuMzBmdVZvem9TSXVNOUJiMEM3UWY1NERUZUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTMyMjQ0CWZpbGU6Q29kZW1fMS4xOC4xM194NjQtc2V0dXAuZXhlClNZMXVlelVTNktMNCtNek5QUWR2OTN6WkMrZGo4MmpBdHBSM1V5emhQV1VjTVFscVZnUW1ORGgwc21UbS8wUlhpdE1EbHMvNnpwVU5sbm50dGhUUUJ3PT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.13/Codem_1.18.13_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dRT29LdXQ1anZCQ1d5NXQ2czM3aWN5akhMOW5uai9QZnFqV3A3b3R0UnRIVnF3cEdJcStrUmQ1bnJndWp1bllSMno4YnBVM0Z3dXF0eWZnK252dlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzA4OTQ2CWZpbGU6Q29kZW1fMS4xOC4xNF94NjQtc2V0dXAuZXhlCmkyUm8zTEZUSHNZYW1Kd3JZb3prL2FRNEdvdmF1cjdHNTU4U1VkK1pZajZadHFwUGh0Z3I4QlFSMU90c1VzcFZjeE5nbng3RW54VWZWa3NMV2FvOENBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.14/Codem_1.18.14_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VhcFlYd3VIUmFJaUxOZTRFUUxvYUdoY0xhNC9BSGh2WFpiajRpQVZYVHVXSHJwOHM2cHViN0lKZGFuMzBmdVZvem9TSXVNOUJiMEM3UWY1NERUZUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTMyMjQ0CWZpbGU6Q29kZW1fMS4xOC4xM194NjQtc2V0dXAuZXhlClNZMXVlelVTNktMNCtNek5QUWR2OTN6WkMrZGo4MmpBdHBSM1V5emhQV1VjTVFscVZnUW1ORGgwc21UbS8wUlhpdE1EbHMvNnpwVU5sbm50dGhUUUJ3PT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.13/Codem_1.18.13_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dRT29LdXQ1anZCQ1d5NXQ2czM3aWN5akhMOW5uai9QZnFqV3A3b3R0UnRIVnF3cEdJcStrUmQ1bnJndWp1bllSMno4YnBVM0Z3dXF0eWZnK252dlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzA4OTQ2CWZpbGU6Q29kZW1fMS4xOC4xNF94NjQtc2V0dXAuZXhlCmkyUm8zTEZUSHNZYW1Kd3JZb3prL2FRNEdvdmF1cjdHNTU4U1VkK1pZajZadHFwUGh0Z3I4QlFSMU90c1VzcFZjeE5nbng3RW54VWZWa3NMV2FvOENBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.14/Codem_1.18.14_x64-setup.exe"
     }
   }
 }

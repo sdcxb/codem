@@ -557,8 +557,42 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     ).toBeGreaterThan(300_000);
   });
 
+  it("CMP-P-4（行为）：marker-only 视图不写回近等长标记、不假报「窗口已满」（自动 + 手动）", async () => {
+    /*
+     * 24 §P0-5 / §6 `CMP-P-4` 的现场形态：稳态会话 = 「旧标记 + 最近 20 条」，
+     * `keepCount=20` ⇒ 待删集只剩那条旧标记。旧实现把标记正文算进 `removedChars`
+     * ⇒ 写回一条近等长的新标记（净变化≈0）、压力不降 ⇒ 连压到上限 ⇒ 假报「窗口已满」。
+     *
+     * 本判据的变异：把 `compressibleMessages` 的排除去掉（或把 -5 改回 -4）⇒
+     * `createMessageMock` 会被调用（写了新标记）/ 返回码变成 -4 ⇒ 下面两条当场红。
+     */
+    const messages = makeMessages(10); // 20 条真实消息
+    messages.unshift({
+      id: "marker-only",
+      role: "user",
+      content: "[上下文已自动压缩]\n\n## 检查点摘要\n\n" + "旧摘要内容。".repeat(400),
+      timestamp: -1,
+    });
+    listMessagesMock.mockReturnValue(messages);
+
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    const code = await loop.compactMessages("s-cmp-p4");
+    expect(code, "marker-only ⇒ -5（无可压；-4 会被计成连压、最后仍推出「窗口已满」）").toBe(-5);
+    expect(createMessageMock, "不许写回近等长标记（净变化≈0 的空转）").not.toHaveBeenCalled();
+    expect(deleteMessagesByIdsMock, "什么都没压 ⇒ 更不许删/隐藏任何历史").not.toHaveBeenCalled();
+
+    /* 手动路径必须同一口径：旧标记不是「这次新压掉的内容」 */
+    const { manualCompact } = await import("../components/ContextMonitor");
+    const manual = manualCompact("s-cmp-p4-manual");
+    expect(manual.removed, "手动压缩同样不许写回近等长标记").toBe(0);
+    expect(manual.skipped, "必须给出真实原因（不是「另一次压缩正在进行」）").toContain("只有压缩摘要标记");
+    expect(createMessageMock, "手动路径也不许写新标记").not.toHaveBeenCalled();
+  });
+
   it("CA-15（反向对照）：这些修复不许把「压缩无效」路径删掉（仍要如实上报）", () => {
     const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
-    expect(src, "压不动仍要顶到上限并给用户可执行的结论").toContain("this.state.consecutiveCompactions = 3;");
+    expect(src, "压不动仍要顶到上限并给用户可执行的结论").toContain(
+      "this.state.consecutiveCompactions = MAX_CONSECUTIVE_COMPACTIONS;",
+    );
   });
 });

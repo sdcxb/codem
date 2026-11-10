@@ -251,6 +251,12 @@ describe("O-46：项目身份在 executor / 后台路径上必须来自 session 
 
     const provider = new ScriptedProvider();
     const engine = new LLMEngine();
+    /**
+     * ★ 24 §P0-3（空闲批次）：回合结束不再**立即**提取，而是排一个 30–120s 的延迟批次。
+     * 本判据钉的是"写入侧的项目身份"，不是"提取时机" ⇒ 把延迟压到 0（计时器仍异步），
+     * 再用 `vi.waitFor` 等它落定；不靠 sleep。
+     */
+    engine.setMemoryExtractionIdleDelay(0);
     (engine as unknown as { memory: MemoryService }).memory = svc;
     engine.providers.register(provider as never);
     (engine as unknown as { config: { defaultProvider?: string; defaultModel?: string } }).config.defaultProvider = "id191-provider";
@@ -281,6 +287,10 @@ describe("O-46：项目身份在 executor / 后台路径上必须来自 session 
       expect(got, "注入侧的项目身份必须是**项目根**，不是 worktree 目录").toBe(PROJECT_IDENTITY);
     }
 
+    /* 空闲批次是异步的（`setTimeout(0)`）：等它真的跑起来再说"写入侧拿到了什么" */
+    await vi.waitFor(() => {
+      expect(extractSpy.mock.calls.length, "延迟批次必须真的触发一次提取").toBeGreaterThan(0);
+    }, { timeout: 5000 });
     const writeIds = extractSpy.mock.calls.map((c) => c[1]);
     expect(writeIds.length, "必须真的走到了写入侧（提取回调）").toBeGreaterThan(0);
     for (const got of writeIds) {

@@ -88,6 +88,78 @@ export interface PromptCacheReading {
 }
 
 /**
+ * 会话 / 全局汇总出来的缓存读数（`TokenTracker.getCumulative()` 与
+ * `CostTracker.getSessionCost()/getStats()` 共用同一套展示口径）。
+ *
+ * `reported=false` 时 `read/write` 的 0 **不是**「确定没命中」，而是「provider 没报」——
+ * 界面必须显示「未上报」，绝不能显示 0%（旧实现正是把聚合初始化成 0，才让 UI 自报 0%）。
+ */
+export interface CacheUsageInput {
+  promptTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  cacheReported?: boolean;
+}
+
+export interface CacheUsageSummary {
+  reported: boolean;
+  read: number;
+  write: number;
+  /** 未命中输入（命中率分母的 uncached 部分） */
+  uncached: number;
+  /** 命中率文本；未上报时为 null（不许拿 0 顶上） */
+  percent: string | null;
+}
+
+/**
+ * 把一组累计缓存读数变成**可显示的事实**（纯函数，便于判据）。
+ *
+ * @param input `promptTokens` 是 provider 口径的输入总量（含读缓存）；
+ *        uncached 用 `max(0, prompt − read)` 推，和 `StatsLine` 的历史口径一致。
+ */
+export function summarizeCacheUsage(input: CacheUsageInput): CacheUsageSummary {
+  const promptTokens = Number.isFinite(input.promptTokens) && input.promptTokens > 0 ? input.promptTokens : 0;
+  const read =
+    typeof input.cacheReadTokens === "number" && Number.isFinite(input.cacheReadTokens) && input.cacheReadTokens > 0
+      ? input.cacheReadTokens
+      : 0;
+  const write =
+    typeof input.cacheWriteTokens === "number" && Number.isFinite(input.cacheWriteTokens) && input.cacheWriteTokens > 0
+      ? input.cacheWriteTokens
+      : 0;
+  /**
+   * 上报与否**优先信显式标记**：聚合层（`CostTracker` / `TokenTracker`）永远带着
+   * 自己的 `cacheReported`，而它们的数值字段是 0（不是 undefined）——
+   * 若按「字段存在即上报」判，未上报的会话会被读成「确定命中 0%」（本波要消灭的假读数）。
+   * 只有调用方完全没给标记时，才退回按字段存在性判断（单条消息的老路径）。
+   */
+  const reported =
+    typeof input.cacheReported === "boolean"
+      ? input.cacheReported
+      : input.cacheReadTokens !== undefined || input.cacheWriteTokens !== undefined;
+  const uncached = Math.max(0, promptTokens - read);
+  const denominator = uncached + read + write;
+  return {
+    reported,
+    read,
+    write,
+    uncached,
+    percent: reported ? formatCacheHitPercent(read, denominator, 1) : null,
+  };
+}
+
+/**
+ * 一行缓存用量文案：
+ * - 上报过：`缓存命中：70%（读 700 / 写 100）`（部分命中不四舍五入成 100，见 `formatCacheHitPercent`）；
+ * - 没上报：`provider 未上报缓存字段` —— **绝不**写成 `缓存命中 0%`。
+ */
+export function formatCacheUsageLabel(summary: CacheUsageSummary): string {
+  if (!summary.reported) return "provider 未上报缓存字段";
+  const percent = summary.percent === null ? "—" : `${summary.percent}%`;
+  return `缓存命中：${percent}（读 ${summary.read} / 写 ${summary.write}）`;
+}
+
+/**
  * 一行**服务端前缀缓存**读数（第 191 波 O-48 的证据来源）。
  *
  * ## 为什么需要它（它是一条判据工具，不是装饰性日志）

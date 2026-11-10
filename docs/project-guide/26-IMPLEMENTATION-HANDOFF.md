@@ -2,7 +2,7 @@
 
 > **用途**：把 24/25 两轮对标收敛成一份“新会话可执行契约”，避免新窗口通读 150KB 后走偏。
 > **基线**：`master`，v1.18.13；最新相关提交 `7c92ff18`。
-> **状态**：设计已定，**尚未开工代码**。
+> **状态（2026-11-08）**：P0/P1 已完成；**Bot Team 独立产品层按用户 B 决策撤除**（不另造 Bot 应用），记忆/团队协同回到现有会话 + AgentTeam/TaskCenter。
 > **裁决优先级**：`24 §9` > `25 §9` > 本文；本文与源码冲突时，**以源码为准**，并立刻停下报告。
 
 ---
@@ -44,7 +44,7 @@
 
 | ID | 决策 | 含义 |
 |---|---|---|
-| D1 | **Session = Thread，Epoch = Segment** | 不新建 `threads` 表；不每次 switch 新建 Session。epoch 的**权威**是 marker 的 `metadata.contextEpoch`；`context_epochs` 同步加 `segment_seq`/`kind`，但它**仍是派生索引、读路径不依赖它**；`handoff_json` 推 P0-3。灰度开关是 **`codem-context-config.segmentEpochs`，默认 `false`**（不是 `settings.isFeatureEnabled` 独扛；设置面板映射在 `ContextMonitor.tsx` 的上下文设置区）。 |
+| D1 | **Session = Thread，Epoch = Segment** | 不新建 `threads` 表；不每次 switch 新建 Session。epoch 的**权威**是 marker 的 `metadata.contextEpoch`；`context_epochs` 同步加 `segment_seq`/`kind`，但它**仍是派生索引、读路径不依赖它**；`handoff_json` 已随 P0-0 落地（可空；8KB 截断并标注）。灰度开关是 **`codem-context-config.segmentEpochs`**，**2026-11-08 起默认 `false`**（不授权默认开启；显式 `true` 才产生 switch；设置面板映射在 `ContextMonitor.tsx` 的上下文设置区）。 |
 | D2 | **一个 pressure 模型（含过渡安全网）** | 沿用 Codem 0.7 考虑线、0.9 hard；不引入第二套 80%/90%/0.95 阈值。**不新增水位压力**：保留现有 ≥90% 紧急提示条作为**过渡安全网**，等 P1 的 Manifest/Eval 落地后再隐藏百分比；P0-4 只加「整理中/继续」状态。 |
 | D3 | **compact 与 switch 分离** | compact 写 checkpoint epoch；switch 写 handoff epoch；旧消息都不删。**switch 只走内部 epoch**：不新增同名工具、**不复用 `handoff_to_new_session`**（该工具只服务用户显式「新开对话」，由「自动 switch 不得调用该工具」的不变量判据守住）。 |
 | D4 | **记忆只读口径（已修正）** | **不自动删除/改写 manual/pinned**；不做全局 memory summary。**「自动只产 candidate/pending」不是本阶段目标**，留到 P1 单独决策；现状即口径：审批开=pending、审批关=active、用户明确要求=active（`src/core/llm/index.ts:2884`）。**不要把它写成已实现的 candidate/pending 制。** |
@@ -54,15 +54,15 @@
 | D8 | **先设计门，后代码** | Phase 1 只读审计/文件级计划/测试矩阵；用户说「开工」前不改代码 |
 | D9 | **判据先行** | 每个改动先有能变红的判据；变异自证；`tsc` + 定向 + 全量测试 |
 | D10 | **独立复核** | 实现者不自审；fresh reviewer 只看契约 + diff + 测试；通过后才算完成 |
-| D11 | **switch 兼容判据先行（硬门禁）** | remote `session.get` 与 `fork` 的 switch-epoch 兼容判据**全绿之前**，不得在真实环境打开 `segmentEpochs`。默认 `false` 是**门禁**，不是建议；打开开关需要一条显式判据证明两个读路径已走 DisplayView。 |
+| D11 | **switch 兼容判据先行（硬门禁）** | remote `session.get` 与 `fork` 的 switch-epoch 兼容判据**全绿之前**，不得在真实环境打开 `segmentEpochs`。**2026-11-08 锁定**：`src/test/segment-default-on-compat.test.ts` 保留四条兼容判据（remote 返回全部时间线 / post-switch fork 复制旧段且无悬空 epoch / 权威 JSONL 导出不丢旧段 / 默认配置不产生 switch，另有显式 `true` 产生 switch 与低压力不切），默认关闭 `false`；不授权默认开启。**2026-11-07 修正**：完成态换段受 `compactionThreshold` 约束（不再「完成即边界」；连压 ≥2 / 接近 hard 仍救援）。 |
 
 ### 2.1 已拍板记录（2026-11-06，用户确认；实现时不得重开）
 
 | 分叉 | 结论 |
 |---|---|
 | E1 `handoff_to_new_session` 与新 switch 撞名 | **保留该工具**，它只服务用户显式「新开对话」；自动上下文切换走**内部 epoch switch**，不新增同名工具；补一条**「自动 switch 不得调用该工具」的不变量判据** |
-| E2 片 1 是否连表一起改 | **一起改**：marker metadata 与 `context_epochs` 表都加 `kind` + `segment_seq`；旧行默认 `compact` / `1`；`handoff_json` 推 P0-3；表**仍是派生索引**，读路径不依赖 |
-| E3 灰度开关载体 | 不用 `settings.isFeatureEnabled` 作唯一开关；改用 **`codem-context-config.segmentEpochs`，默认 `false`**；要一条「默认 off」判据 + 设置面板映射（`ContextMonitor.tsx`） |
+| E2 片 1 是否连表一起改 | **一起改**：marker metadata 与 `context_epochs` 表都加 `kind` + `segment_seq`；旧行默认 `compact` / `1`；`handoff_json` 已落地（可空）；表**仍是派生索引**，读路径不依赖 |
+| E3 灰度开关载体 | 不用 `settings.isFeatureEnabled` 作唯一开关；改用 **`codem-context-config.segmentEpochs`**，**2026-11-08 起默认 `false`**（不授权默认开启；显式 `true` 才产生 switch）；要一条「默认不产生 switch」判据 + 显式 true 判据 + 设置面板映射（`ContextMonitor.tsx`） |
 | E4 D4 口径 | 本阶段**不改默认**：审批开=pending、审批关=active、explicit=active；D4 按 §2 修正后的写法执行，**不写成已实现** |
 | E5 remote / fork 读法 | 片 1 只加「**存在 switch epoch 时强制读 timeline**」的 guard + 合成判据；默认读法不变；新增 **D11** 作为打开开关的前置门禁 |
 | E6 水位百分比 | **不删**现有 ≥90% 提示；P0-4 只加「整理中/继续」状态；D2 按「过渡安全网」改写 |
@@ -139,7 +139,7 @@
 - 不做全局 memory summary；
 - 不做新 Document/Code Graph（先复用）；
 - 不做第二套 Bot/Team 状态；
-- 不做群聊 UI、浏览器隔离、多端同步（P1/P2）；
+- 不做群聊 UI、浏览器隔离、多端同步（P1/P2；注：2026-11-07 实际落了 P1-4 **最小**群聊页，完整流式 UI/审批交互仍未做）；
 - 不做“绝对不上下文满”的承诺；只做可降级/可检索/可恢复。
 
 ---
@@ -229,6 +229,14 @@ PASS / FAIL / UNKNOWN
 - 第一片 P0-0 的测试矩阵可执行；
 - 用户明确说「开工」后才进入 Phase 2；
 - Phase 2 每片有 fresh reviewer PASS，才进入下一片。
+
+> **2026-11-07 状态**：Phase 2 的 P0-0..P0-4 全部完成（契约/记忆检索/thread history/context manager/UI 恢复）；
+> 24 号 P1（Notes、摘要与连压、可撤销 consolidation）与 P1 的 Bot 三件（身份/群聊路由/peer+deadline/只读面板）已落地；
+> 24 号 P2 的跨会话检索、可观测、FTS 镜像、混合检索、跨作用域面板入口、向量持久化/索引、
+> 跨启动索引缓存、多客户端并发写冲突**全部完成**（详见 24 的 P2 状态注）。
+> 25 号 P1-4 收尾（TaskCenter/群记忆/成本/权限/审批 broker）与 P2 **多设备 Host 同步**
+> 也已完成；仅**流式群聊 UI** 留作未来预期，除非用户明确要求否则不做。
+> 营销 13 条全 verified，`gate --tier P0` 与 `--tier all` 均 PASS。
 
 ---
 

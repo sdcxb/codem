@@ -30,6 +30,10 @@ vi.mock("../core/storage/settings", () => ({
   getSetting: () => ({}),
   setSetting: vi.fn(),
   removeSetting: vi.fn(),
+  getSettingJSON: () => null,
+  setSettingJSON: vi.fn(),
+  /* P1-1：thread-notes 读侧用它区分「配置面未预热」与「真的没有笔记」 */
+  isSettingsMirrorReady: () => true,
 }));
 
 vi.mock("../core/theme", () => ({

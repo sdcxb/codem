@@ -38,8 +38,8 @@ describe("LLMEngine — 延后注册工具的就绪屏障（O-25）", () => {
     const b = new LLMEngine();
     await Promise.all([a.whenToolsReady(), b.whenToolsReady()]);
     const count = (e: LLMEngine) => e.tools.getAll().filter((t) => t.id.startsWith("agent_teams_")).length;
-    expect(count(a)).toBe(10);
-    expect(count(b)).toBe(10);
+    expect(count(a)).toBe(12);
+    expect(count(b)).toBe(12);
   });
 
   it("TOOLS-READY-4 process() 仍是 async generator（屏障加在它内部，不改入口形状）", () => {

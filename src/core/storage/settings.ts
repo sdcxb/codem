@@ -717,6 +717,42 @@ export async function writeMemoryConfirmed(content: string): Promise<{ ok: boole
   return { ok: true };
 }
 
+/**
+ * **从引擎读当前记忆内容**（读-改-写的"读"那一半，241 号 P2 并发写）。
+ *
+ * ## 为什么不能用 `loadMemoryChecked()`
+ *
+ * 它读的是**配置域的内存镜像**：本进程写过的值立刻可见，但**别的客户端**（另一个窗口/
+ * 另一个进程/手机桥）写进库里的值，除非本进程重新预热，否则镜像永远是旧的。并发合并
+ * 要求"写之前看到库里此刻的真实内容"，所以这里走一条**结构化读命令** `memory.get`
+ * （引擎侧 `config.rs::memory_get`，只读单行）。
+ *
+ * 返回 `ok:false` 的三种情形（都**不**改任何东西，由调用方决定"跳过合并"）：
+ * ① 没有端口 / 记忆域未预热；② 端口没有结构化命令能力；③ 引擎报错。
+ * **绝不**在失败时回退到镜像并假装读到了库 —— 那会把"没合并"演成"合并过了"。
+ */
+export async function readMemoryFresh(): Promise<{ ok: boolean; data?: string; reason?: string }> {
+  if (!hasStoragePort()) return { ok: false, reason: MEMORY_DOMAIN_NO_PORT };
+  if (!isMemoryDomainReady()) return { ok: false, reason: MEMORY_DOMAIN_NOT_WARMED };
+  const port = getStoragePort() as {
+    data?: { command?(command: string, params?: Record<string, unknown>): Promise<unknown> };
+  };
+  if (typeof port.data?.command !== "function") {
+    return { ok: false, reason: "存储端口没有结构化读能力（无法读到库里的当前记忆内容）" };
+  }
+  try {
+    const result = await port.data.command("memory.get", {});
+    const content =
+      result && typeof result === "object" ? (result as { content?: unknown }).content : undefined;
+    if (typeof content !== "string") {
+      return { ok: false, reason: "memory.get 返回的内容不是字符串（形状不认识）" };
+    }
+    return { ok: true, data: content };
+  } catch (e) {
+    return { ok: false, reason: `读取当前记忆失败：${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 // ========== Recovery Data Storage ==========
 
 // P5 第 8 段：`recovery_data` 与 `cost_records` 接入端口。

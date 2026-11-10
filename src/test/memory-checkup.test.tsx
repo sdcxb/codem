@@ -195,6 +195,10 @@ describe("MEM-CHECK-2：归属未知单列且写明原因（不许静默塞进�
     expect(checkup.groups.some((g) => g.kind === "project" && g.title.includes("deleted")), "解析不到的项目不许单列成'某项目'组").toBe(false);
   });
 
+  /*
+   * 计时口径：2c 是文件里**第一个**动态 import `MemoryManager` 的用例（冷启动要现场编译
+   * 整棵组件图）。实测 4.8–5.1s 抖动 ⇒ 默认 5s 在满载/冷缓存时假红。只放宽计时，断言不变。
+   */
   it("MEM-CHECK-2c：列表/体检的顺序由**创建序**（`order`）决定，与 `timestamp` 无关（= 注入/面板同口径）", async () => {
     const memoryModule = await import("../core/memory/memory");
     const { MemoryManager } = await import("../components/MemoryManager");
@@ -247,7 +251,7 @@ describe("MEM-CHECK-2：归属未知单列且写明原因（不许静默塞进�
     const panelKeys = Array.from(container.querySelectorAll(".memory-item-key")).map((n) => n.textContent ?? "");
     expect(panelKeys, "面板 DOM 顺序必须与体检同口径（创建序）").toEqual(checkupKeys);
     spy.mockRestore();
-  });
+  }, 15_000);
 
   it("MEM-CHECK-2d：全部都有归属时，不出现「归属未知」组（空组不占位）", () => {
     const svc = new MemoryService();

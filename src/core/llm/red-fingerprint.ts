@@ -23,6 +23,10 @@ export interface RedFingerprintSignal {
   ranTests: boolean;
 }
 
+/**
+ * @public 对外动作联合类型（`RedFingerprintDecision.action` 的公开形状）。
+ * 只在声明处出现是正常的：消费方用 `RedFingerprintDecision`，但类型别名是 API 面的一部分。
+ */
 export type RedFingerprintAction = "none" | "ask" | "stop";
 
 export interface RedFingerprintDecision {

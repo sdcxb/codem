@@ -28,6 +28,13 @@ import type { GoalTurnArgs, GoalTurnResult } from "../core/goal/runner";
 import type { ReplanArgs, ReplanResult } from "../core/goal/planner";
 import type { Acceptance, AcceptanceResult, GoalContract, GoalPlan, PlanPhase } from "../core/goal/types";
 import { isReplanTrigger, REPLAN_TRIGGERS } from "../core/goal/types";
+import { recordDocumentOutline } from "../core/document/ledger";
+import {
+  __resetDocumentBackendForTests,
+  __resetDocumentLedgerForTests,
+  setDocumentBackend,
+} from "../core/document/test-seams";
+import { createFakeDocumentBackend, makeDoc } from "./helpers/documents-fake";
 
 const SESSION = "s-goal-runner";
 
@@ -530,5 +537,318 @@ describe("GOAL-19 工件验收：相对路径按阶段工作目录解析（G5 �
     });
     await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
     expect(fileApi.seen[0]).toBe("D:\\work\\x.txt");
+  });
+});
+
+// ========== C10 × C06：里程碑完成前的独立检查（Verifier 钩子） ==========
+
+describe("C10×C06 里程碑完成前独立检查（默认接真实文档同步）", () => {
+  /**
+   * 判据（先写判据，再改实现）：
+   *
+   * | 判据 | 钉什么 | 变异（去掉完成前检查 ⇒） |
+   * |---|---|---|
+   * | GOAL-DOC-1 | 里程碑引用的文档落后 ⇒ 阶段**不标 done**、目标 blocked、reason 可见 | 不跑检查 ⇒ 阶段 done、目标 completed ⇒ 红 |
+   * | GOAL-DOC-2 | 文档同步（检查通过）⇒ 阶段 done、目标 completed，决策里落检查结果 | 无条件拦 ⇒ 红 |
+   * | GOAL-DOC-3 | 没有文档引用 ⇒ **不阻塞**，决策如实标注「独立检查未接入」 | 无引用也拦 ⇒ 红 |
+   * | GOAL-DOC-4 | 默认实现接的是**真实 C06**：账本版本 vs 当前文档版本（不是只看注入值） | 检查永远返回 ok ⇒ 第一条红 |
+   */
+  beforeEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+  afterEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+
+  /** 一个引用了文档工件的里程碑（artifact path 以文档扩展名结尾） */
+  function docPhase(key: string, docPath: string): PlanPhase {
+    const p = phase(key, 0, []);
+    p.acceptance = [
+      { id: `${key}.a1`, kind: "artifact", description: `文档 ${docPath} 存在`, path: docPath, contains: "x" },
+    ];
+    return p;
+  }
+
+  /** 账本记下「读它那一刻」的版本（当前版本由假后端决定） */
+  function seedLedgerDoc(collectionId: string, documentId: string, name: string, recordedAt: number): void {
+    recordDocumentOutline({ collectionId, documentId, documentName: name, headings: ["第一章"], updatedAt: recordedAt });
+  }
+
+  function setDocVersion(documentId: string, name: string, currentAt: number): void {
+    setDocumentBackend(createFakeDocumentBackend({ documents: [makeDoc({ id: documentId, name, updated_at: currentAt })] }).backend);
+  }
+
+  it("GOAL-DOC-1: 文档落后 ⇒ 阶段不标完成、目标 blocked 且 reason 可见（注入检查）", async () => {
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store, { phases: [docPhase("p1", "设计.md"), phase("p2", 1, ["p1"])] });
+    const preCompletionCheck = vi.fn(async () => ({
+      checked: true,
+      ok: false,
+      reason: "C06 文档版本未同步（读过之后变了：设计.md）",
+    }));
+    const turns = turnRunner();
+    const r = runner(store, {
+      runTurn: turns.run,
+      runAcceptance: acceptanceRunner().run,
+      preCompletionCheck,
+    });
+
+    const outcome = await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "检查未通过不许标完成").toBe("blocked");
+    expect(outcome.kind === "blocked" ? outcome.reason : "").toContain("设计.md");
+    expect(preCompletionCheck, "每个里程碑完成前都要过独立检查").toHaveBeenCalledTimes(1);
+    const phases = store.listPhases(goal.id, 1);
+    expect(phases[0].status, "本阶段不许标 done").not.toBe("done");
+    expect(phases[1].status, "后续阶段不许被推进").toBe("pending");
+    expect(store.getGoal(goal.id)?.status).toBe("blocked");
+    expect(store.getGoal(goal.id)?.blockedReason).toContain("设计.md");
+    const failed = store.listDecisions(goal.id).filter((d) => d.kind === "phase_failed");
+    expect(failed[failed.length - 1]?.reason, "决策日志里要能看见独立检查").toContain("独立检查");
+  });
+
+  it("GOAL-DOC-2: 文档同步（检查通过）⇒ 阶段完成、目标 completed，并落检查结果", async () => {
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store, { phases: [docPhase("p1", "设计.md")] });
+    const preCompletionCheck = vi.fn(async () => ({
+      checked: true,
+      ok: true,
+      reason: "C06 已检查 1 份带版本文档，里程碑引用的文档版本未变化",
+    }));
+    const r = runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+      preCompletionCheck,
+    });
+
+    const outcome = await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind).toBe("completed");
+    expect(store.listPhases(goal.id, 1)[0].status).toBe("done");
+    const passed = store.listDecisions(goal.id).filter((d) => d.kind === "phase_passed");
+    expect(passed, "阶段通过要留决策").toHaveLength(1);
+    const payload = passed[0].payload as { docSync?: { checked?: boolean; ok?: boolean } };
+    expect(payload.docSync?.checked, "决策里要落检查结果").toBe(true);
+    expect(payload.docSync?.ok).toBe(true);
+  });
+
+  it("GOAL-DOC-3: 没有文档引用 ⇒ 默认检查不阻塞，并如实标注「未接入」", async () => {
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store); // 默认三个里程碑：验收全是命令，没有文档引用
+    const r = runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    });
+
+    const outcome = await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "没有可比对的文档版本 ⇒ 不阻塞").toBe("completed");
+    const passed = store.listDecisions(goal.id).filter((d) => d.kind === "phase_passed");
+    expect(passed).toHaveLength(3);
+    const payload = passed[0].payload as { docSync?: { checked?: boolean; ok?: boolean } };
+    expect(payload.docSync?.checked, "没接入就是没接入（不假装检查过）").toBe(false);
+    expect(payload.docSync?.ok).toBe(true);
+    expect(passed[0].reason).toContain("未接入");
+  });
+
+  it("GOAL-DOC-4: 默认实现接真实 C06 —— 文档版本落后 ⇒ blocked；已同步 ⇒ completed", async () => {
+    const collectionId = `session:${SESSION}`;
+
+    // ① 账本记的是 100，文档现在是 200 ⇒ 版本落后
+    const staleStore = createMemoryGoalStore(() => 1000);
+    const stale = seed(staleStore, { phases: [docPhase("p1", "设计.md")] });
+    seedLedgerDoc(collectionId, "doc_1", "设计.md", 100);
+    setDocVersion("doc_1", "设计.md", 200);
+    const staleOutcome = await runner(staleStore, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    }).run({ goalId: stale.goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(staleOutcome.kind, "真实 C06 检查必须拦住落后的文档").toBe("blocked");
+    expect(staleOutcome.kind === "blocked" ? staleOutcome.reason : "").toContain("设计.md");
+    expect(staleStore.listPhases(stale.goal.id, 1)[0].status).not.toBe("done");
+
+    // ② 重新记成当前版本 ⇒ 已同步，正常完成
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+    const syncedStore = createMemoryGoalStore(() => 1000);
+    const synced = seed(syncedStore, { phases: [docPhase("p1", "设计.md")] });
+    seedLedgerDoc(collectionId, "doc_1", "设计.md", 200);
+    setDocVersion("doc_1", "设计.md", 200);
+    const syncedOutcome = await runner(syncedStore, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    }).run({ goalId: synced.goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(syncedOutcome.kind, "同步后必须能正常完成").toBe("completed");
+    expect(syncedStore.listPhases(synced.goal.id, 1)[0].status).toBe("done");
+  });
+});
+
+// ========== C06 × **目标级**验收：所有阶段 done 之后的完成前独立检查 ==========
+
+describe("C06×目标级 最终完成前独立检查（goal.acceptance 接文档同步）", () => {
+  /**
+   * 判据（先写判据，再改实现）：
+   *
+   * | 判据 | 钉什么 | 变异（目标级跳过检查 ⇒） |
+   * |---|---|---|
+   * | GOAL-GOAL-DOC-1 | 目标验收引用的文档落后 ⇒ **不标 completed**、目标 blocked、reason 含「目标」与文档名 | 跳过目标级检查 ⇒ 目标 completed ⇒ 红 |
+   * | GOAL-GOAL-DOC-2 | 同步之后 ⇒ completed；已完成阶段不重跑；完成决策落 docSync | 无条件拦 ⇒ 红 |
+   * | GOAL-GOAL-DOC-3 | 目标验收没有文档引用 ⇒ **不阻塞**，完成决策标 `docSync.checked:false` | 无引用也拦 ⇒ 红 |
+   * | GOAL-GOAL-DOC-4 | 检查器**抛错** ⇒ fail-closed（blocked，不是 completed） | 抛错当通过 ⇒ 红 |
+   */
+  beforeEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+  afterEach(() => {
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+  });
+
+  /** 目标级验收：一个以文档扩展名结尾的工件（step 1 的检查对象） */
+  function docAcceptance(docPath: string): Acceptance {
+    return { id: "A1", kind: "artifact", description: `文档 ${docPath} 已同步`, path: docPath, contains: "x" };
+  }
+
+  function seedLedgerDoc(collectionId: string, documentId: string, name: string, recordedAt: number): void {
+    recordDocumentOutline({ collectionId, documentId, documentName: name, headings: ["第一章"], updatedAt: recordedAt });
+  }
+
+  function setDocVersion(documentId: string, name: string, currentAt: number): void {
+    setDocumentBackend(createFakeDocumentBackend({ documents: [makeDoc({ id: documentId, name, updated_at: currentAt })] }).backend);
+  }
+
+  function goalCompletedPayload(store: GoalStore, goalId: string): { checked?: boolean; ok?: boolean } {
+    const decisions = store.listDecisions(goalId).filter((d) => d.kind === "goal_completed");
+    const payload = decisions[decisions.length - 1]?.payload as { docSync?: { checked?: boolean; ok?: boolean } } | undefined;
+    return payload?.docSync ?? {};
+  }
+
+  it("GOAL-GOAL-DOC-1: 目标验收引用的文档落后 ⇒ 不标 completed、blocked，reason 含「目标」与文档名", async () => {
+    const collectionId = `session:${SESSION}`;
+    const store = createMemoryGoalStore(() => 1000);
+    // 阶段验收不引用文档（阶段级 checked:false）—— 只有目标级验收引用，证明检查确实接在目标级
+    const { goal } = seed(store, {
+      goalPatch: { acceptance: [docAcceptance("交付说明.md")] },
+      phases: [phase("p1", 0, [])],
+    });
+    seedLedgerDoc(collectionId, "doc_goal", "交付说明.md", 100);
+    setDocVersion("doc_goal", "交付说明.md", 200);
+
+    const outcome = await runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    }).run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "目标级检查未通过不许标 completed").toBe("blocked");
+    const reason = outcome.kind === "blocked" ? outcome.reason : "";
+    expect(reason, "reason 必须点名这是目标级检查").toContain("目标");
+    expect(reason, "reason 必须点名落后的文档").toContain("交付说明.md");
+    expect(reason, "不能与里程碑级原因混同（阶段/目标要可区分）").not.toContain("里程碑完成前");
+    expect(store.getGoal(goal.id)?.status).toBe("blocked");
+    expect(store.getGoal(goal.id)?.blockedReason).toContain("交付说明.md");
+    expect(store.listPhases(goal.id, 1)[0].status, "阶段已完成（卡在目标级）").toBe("done");
+    expect(store.listDecisions(goal.id).filter((d) => d.kind === "goal_completed"), "绝不落「目标完成」").toHaveLength(0);
+    const blocked = store.listDecisions(goal.id).filter((d) => d.kind === "goal_blocked");
+    const payload = blocked[blocked.length - 1]?.payload as { docSync?: { checked?: boolean; ok?: boolean } };
+    expect(payload.docSync?.checked, "落库的检查结果是「真的比对过」").toBe(true);
+    expect(payload.docSync?.ok).toBe(false);
+  });
+
+  it("GOAL-GOAL-DOC-5: kind=file 的文档验收也参与（不再只认 artifact）", async () => {
+    const collectionId = `session:${SESSION}`;
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store, {
+      goalPatch: { acceptance: [{ ...docAcceptance("交付说明.md"), kind: "file" }] },
+      phases: [phase("p1", 0, [])],
+    });
+    seedLedgerDoc(collectionId, "doc_goal_file", "交付说明.md", 100);
+    setDocVersion("doc_goal_file", "交付说明.md", 200);
+
+    const outcome = await runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    }).run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "kind=file 的文档落后也必须拦").toBe("blocked");
+    expect(outcome.kind === "blocked" ? outcome.reason : "").toContain("交付说明.md");
+  });
+
+  it("GOAL-GOAL-DOC-2: 目标文档同步后 ⇒ completed；已完成阶段不重跑，完成决策落 docSync", async () => {
+    const collectionId = `session:${SESSION}`;
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store, {
+      goalPatch: { acceptance: [docAcceptance("交付说明.md")] },
+      phases: [phase("p1", 0, [])],
+    });
+    seedLedgerDoc(collectionId, "doc_goal", "交付说明.md", 100);
+    setDocVersion("doc_goal", "交付说明.md", 200);
+
+    const turns = turnRunner();
+    const r = runner(store, { runTurn: turns.run, runAcceptance: acceptanceRunner().run });
+    const first = await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+    expect(first.kind, "文档落后 ⇒ 先 blocked").toBe("blocked");
+    expect(turns.turns, "阶段跑过一次").toHaveLength(1);
+
+    // 同步：账本重新记成**当前**版本；用户点「继续目标」把状态改回 active
+    __resetDocumentLedgerForTests();
+    __resetDocumentBackendForTests();
+    seedLedgerDoc(collectionId, "doc_goal", "交付说明.md", 200);
+    setDocVersion("doc_goal", "交付说明.md", 200);
+    store.updateGoal(goal.id, { status: "active" });
+
+    const second = await r.run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+    expect(second.kind, "同步后必须能正常完成").toBe("completed");
+    expect(store.getGoal(goal.id)?.status).toBe("completed");
+    expect(turns.turns, "已完成阶段不重跑").toHaveLength(1);
+    const payload = goalCompletedPayload(store, goal.id);
+    expect(payload.checked, "完成决策要落「真的检查过」").toBe(true);
+    expect(payload.ok).toBe(true);
+    const completed = store.listDecisions(goal.id).filter((d) => d.kind === "goal_completed");
+    expect(completed[0]?.reason).toContain("目标文档同步检查通过");
+  });
+
+  it("GOAL-GOAL-DOC-3: 目标验收没有文档引用 ⇒ 不阻塞，完成决策标注 docSync.checked:false", async () => {
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store); // 默认目标/阶段验收都是命令，没有文档引用
+
+    const outcome = await runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+    }).run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "没有可比对的文档版本 ⇒ 不阻塞").toBe("completed");
+    expect(store.getGoal(goal.id)?.status).toBe("completed");
+    const payload = goalCompletedPayload(store, goal.id);
+    expect(payload.checked, "没接入就是没接入（不假装检查过）").toBe(false);
+    expect(payload.ok).toBe(true);
+    const completed = store.listDecisions(goal.id).filter((d) => d.kind === "goal_completed");
+    expect(completed[0]?.reason).toContain("未接入");
+  });
+
+  it("GOAL-GOAL-DOC-4: 目标级检查器抛错 ⇒ fail-closed（blocked，不是 completed）", async () => {
+    const store = createMemoryGoalStore(() => 1000);
+    const { goal } = seed(store, { phases: [phase("p1", 0, [])] });
+    const preGoalCompletionCheck = vi.fn(async () => {
+      throw new Error("检查器坏了");
+    });
+
+    const outcome = await runner(store, {
+      runTurn: turnRunner().run,
+      runAcceptance: acceptanceRunner().run,
+      preGoalCompletionCheck,
+    }).run({ goalId: goal.id, cwd: "C:\\repo", signal: signal() });
+
+    expect(outcome.kind, "无法证明同步 ⇒ 不许标完成").toBe("blocked");
+    const reason = outcome.kind === "blocked" ? outcome.reason : "";
+    expect(reason).toContain("目标完成前独立检查执行失败");
+    expect(reason).toContain("检查器坏了");
+    expect(preGoalCompletionCheck, "目标完成前必须真的调用检查器").toHaveBeenCalledTimes(1);
+    expect(store.getGoal(goal.id)?.status).toBe("blocked");
+    expect(store.listDecisions(goal.id).filter((d) => d.kind === "goal_completed")).toHaveLength(0);
   });
 });

@@ -119,7 +119,7 @@ describe("转派给成员不能卡在静默期", () => {
     expect(snap.members.find((m) => m.name === "研究员")!.status).toBe("idle");
   });
 
-  it("TEAMR-5: 依赖未满足导致无法开新领取时，也必须清掉静默期并报出原因", () => {
+  it("TEAMR-5: 依赖未满足导致无法开新领取时，也必须清掉静默期并报出原因", async () => {
     const team = svc().create({ name: "组A", captainSessionId: "cap-1" });
     team.members.push({ id: "member-1", name: "研究员", status: "idle", addedAt: Date.now() });
     const dep = svc().createTask(team.id, { subject: "前置任务" }).task;
@@ -134,8 +134,16 @@ describe("转派给成员不能卡在静默期", () => {
     expect(t.status).toBe("pending");
     // 依赖完成后仍可正常领取（证明没有留下"永久拒绝"的状态）
     const c = svc().claim(team.id, dep.id, "captain");
-    svc().update(team.id, dep.id, { status: "in_progress", by: "captain", attemptId: c.attemptId });
-    svc().update(team.id, dep.id, { status: "completed", by: "captain", attemptId: c.attemptId });
+    const evidence = [
+      { kind: "code" as const, ref: "src/dep.ts" },
+      { kind: "doc" as const, ref: "docs/dep.md" },
+      { kind: "test" as const, ref: "npx vitest run src/test/dep.test.ts", status: "pass" as const },
+      { kind: "reference" as const, ref: "issue#5" },
+    ];
+    await svc().update(team.id, dep.id, { status: "in_progress", by: "captain", attemptId: c.attemptId, evidence });
+    const { verification } = await svc().verify(team.id, dep.id, "验收员");
+    expect(verification.verdict).toBe("pass");
+    await svc().update(team.id, dep.id, { status: "completed", by: "captain", attemptId: c.attemptId, evidence });
     const claim2 = svc().claim(team.id, task.id, "研究员");
     expect(claim2.attemptId).toBeTruthy();
   });

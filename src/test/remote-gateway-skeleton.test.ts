@@ -60,6 +60,43 @@ const SESSION = {
 function deps(overrides: Partial<GatewayDataDeps> = {}): GatewayDataDeps {
   return {
     listSessions: () => [SESSION],
+    sync: {
+      pull: async () => ({
+        events: [],
+        nextSeq: 0,
+        hasMore: false,
+        devices: 0,
+        scannedSessions: 0,
+        missingBodies: 0,
+        droppedEntries: 0,
+        droppedUnpulled: 0,
+        resetRequired: false,
+        oldestSeq: 0,
+        filteredSessions: 0,
+        overCapacity: false,
+        serverTime: 0,
+      }),
+      push: async () => ({
+        accepted: 0,
+        duplicates: 0,
+        rejected: [],
+        hostSeqMax: 0,
+        devices: 0,
+        storageFailed: 0,
+        filteredSessions: 0,
+      }),
+      snapshot: async () => ({
+        sessionId: "",
+        messages: [],
+        nextBefore: null,
+        hasMore: false,
+        total: 0,
+        hostSeq: 0,
+        filteredSessions: 0,
+        serverTime: 0,
+      }),
+      mergeMemory: async () => ({ ok: true, payload: "", entries: 0, conflicts: [], changed: false }),
+    },
     getSession: (id, limit) => {
       if (id !== SESSION.id) return null;
       return {
@@ -306,12 +343,18 @@ describe("PC 桌面远程网关 M1（ADR-0005）", () => {
     expect(desktop, "desktop-engine 必须把网关路径转给 gateway-engine").toContain("handleGatewayRequest");
     expect(desktop).toContain("flattenSessions");
     expect(desktop).toContain("gatewaySessionDetail");
-    expect(desktop).toContain("MessageStorage.listMessages");
+    /**
+     * P0-0（D1/E5/D11）：这个唯一同步读点仍然是**一处**，入口从 `listMessages`
+     * 换成 `listDisplayMessages`（换过段的会话必须读完整时间线）。
+     * 断言仍然钉「读点必须在这一层、且只有一个函数名」，不许退回投影视图。
+     */
+    expect(desktop).toContain("MessageStorage.listDisplayMessages");
+    expect(desktop, "不许退回投影视图（换段后手机会少一段）").not.toContain("MessageStorage.listMessages");
     expect(desktop).toContain('listen("remote-request"');
     expect(desktop).not.toContain('listen("gateway-request"');
   });
 
-  it("GW-6: /rpc 白名单 = 只读 4 条 + 写 2 条 + 审批 2 条 + 文件面 3 条 + 变更面 2 条 + 项目面 3 条；其余方法被拒绝", async () => {
+  it("GW-6: /rpc 白名单 = 只读 4 条 + 写 2 条 + 审批 2 条 + 文件面 3 条 + 变更面 2 条 + 项目面 3 条 + 多设备同步 4 条；其余方法被拒绝", async () => {
     expect([...GATEWAY_RPC_METHODS]).toEqual([
       "host.hello",
       "host.diagnostics",
@@ -329,6 +372,10 @@ describe("PC 桌面远程网关 M1（ADR-0005）", () => {
       "workspace.diff",
       "session.changes",
       "session.change.diff",
+      "sync.pull",
+      "sync.push",
+      "sync.memory",
+      "sync.snapshot",
     ]);
 
     const hello = await gatewayRpcReply(rpc("host.hello", { protocolVersion: 1 }), deps());

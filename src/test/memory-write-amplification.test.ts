@@ -40,11 +40,18 @@ import { resetPersistFailures } from "../core/storage/persist-failure";
 /**
  * **写放大的棘轮**（只许降不许升）：400 条 × 300 字符（≈150 KB 量级）时，
  * 整份 payload 的保守字节估算必须 ≤ 这个登记值。
+ *
  * 第 191 波实测 = **392_216 字节**（约 383 KB，含每条目的 id/key/时间戳等字段开销；
  * 也就是"一次单条改动 = 落库约 383 KB 的本地单行 UPDATE"）。
- * 上调必须先说明理由（O-50 同款纪律）；下调了就把它改小。
+ *
+ * ★ 24 号文 P2-A 上调到 **446_000**（实测 445_816，+13.7%），理由是可核对的：
+ * 并发写合并要求每条记忆带 `rev` / `updatedAt` / `deviceId` 三个字段（版本三元组）。
+ * 400 条规模下它们的固定开销 ≈ 54 KB（每条约 67 字节 × 两字节口径），与条目数**线性**、
+ * 与内容长度无关；2 MiB 的 payload 预算（`MEMORY_PAYLOAD_BUDGET_BYTES`）没有变。
+ * 这是"结构换来的必要字节"，不是实现走样 —— 若将来还要上调，同样必须写清是哪一项换来的。
+ * 下调了就把它改小。
  */
-const PAYLOAD_RATCHET_BYTES_400 = 392_216;
+const PAYLOAD_RATCHET_BYTES_400 = 446_000;
 
 let port: FakeStoragePort;
 
@@ -115,7 +122,7 @@ describe("MEM-IPC：记忆整份写的放大倍数（O-52 的量化与决策）"
     svc.add({ scope: "platform", key: "x", content: "y", source: "manual" });
     await svc.flushPendingPersist();
     expect(memorySetWrites(port).length - before, "落库次数与条目数无关（永远 1 次整份）").toBe(1);
-  });
+  }, 20_000);
 
   it("MEM-IPC-1c: 无变化不写这条既有防线仍然生效（放大的前提是「内容真的变了」）", async () => {
     const svc = new MemoryService();

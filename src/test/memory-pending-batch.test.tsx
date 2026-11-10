@@ -154,7 +154,14 @@ function clearPendingSelection(container: HTMLElement): void {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  /*
+   * 24 号文 P2-A 之后，保存链多了"读当前库 → 版本合并 → 索引缓存"几步，异步尾巴更长：
+   * 上一个用例排队的写可能在本用例的 `saveMemory("")` **之后**才落地（共享同一个假端口），
+   * 于是新实例会把它们读回来（实测：旧的待批准条目泄漏进下一个用例）。
+   * 判据不能靠时序运气 —— 先让上一条用例的写入落定，再清库。
+   */
+  if (svc) await svc.flushPendingPersist();
   saveMemory("");
   setSetting(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify({ platform: true, project: true, conversation: false }));
   port = createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } });
@@ -310,6 +317,8 @@ describe("MEM-BATCH-UI：待批准区的勾选 + 批量同意/拒绝（含全选
      * 如果不做这条反向对照，一个"无脑全勾"的实现也能让 MB-UI-6 变绿 ——
      * 而它会在用户的旧数据上一次性勾满，让「批量拒绝」变成一次误点删 N 条。
      */
+    /* 24 号文 P2-A 之后保存链的异步尾巴更长：先把 beforeEach 那三条的写落定，再清库 */
+    await svc.flushPendingPersist();
     saveMemory(""); // ★ 先清掉 beforeEach 写的那三条（否则新实例会把它们跟旧数据一起读进来）
     const legacy = new MemoryService();
     for (let i = 0; i < 3; i++) {

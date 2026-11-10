@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 上下文检查点的**运行时索引/审计**（第 262 轮）。
 -- 权威仍是 JSONL 里 marker 的 metadata；这张表只做按会话的快速查询与审计，
 -- 不参与模型读路径（同步读仍走 messages.metadata 投影，避免异步 IPC）。
+--
+-- P0-0（D1/E2）：`kind` / `segment_seq` 与 metadata 的 `contextEpoch.kind` /
+-- `segmentSeq` 同义。旧行没有这两列时由 DDL 默认值补 `compact` / `1`，
+-- 读侧也不依赖它们（`context-view.ts` 自己给默认值）。
 CREATE TABLE IF NOT EXISTS context_epochs (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -52,6 +56,12 @@ CREATE TABLE IF NOT EXISTS context_epochs (
   removed_count INTEGER NOT NULL DEFAULT 0,
   kept_count INTEGER NOT NULL DEFAULT 0,
   trigger_kind TEXT,
+  kind TEXT NOT NULL DEFAULT 'compact',
+  segment_seq INTEGER NOT NULL DEFAULT 1,
+  -- P0-0（D1/E2）：switch 的 handoff 摘要（JSON 文本，可空）。
+  -- 权威仍是 marker 自身正文/metadata；这里只是派生索引里的可查询副本，
+  -- 旧行没有它 ⇒ NULL（读侧不依赖，见 `context-epochs.ts` 的超限截断说明）。
+  handoff_json TEXT,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
@@ -130,6 +140,54 @@ CREATE TABLE IF NOT EXISTS memory (
   content TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- ========== P2-C：记忆独立表（结构镜像，**权威仍是 settings 的 `memory` 字段**）==========
+--
+-- 为什么要有这张表（24 §P2）：`memory` 字段是**整份 JSON 字符串**，一次跨会话/跨项目检索
+-- 只能把全部条目读进渲染进程再逐条比 —— 规模一大就没有"有界检索"这回事。
+-- 这张表 + `memories_fts`（见 `schema.rs::apply`）只做一件事：给
+-- 「显式 opt-in 的跨作用域检索」提供**有界、可过滤**的候选集；
+-- 正文、状态、归属的最终判定仍然回到 settings（`MemoryService`），所以这里**允许滞后**。
+--
+-- 为什么不做外键到 projects/sessions：镜像由渲染侧整批重写，且项目/会话可能已被删
+-- （镜像滞后时不该因为外键把整批写入拒掉 —— 那会让"镜像失败"从可容忍变成阻断）。
+--
+-- 旧库兼容：`apply()` 每次打开都执行本文件，`CREATE TABLE IF NOT EXISTS` 幂等，
+-- 所以升级前建的库**不需要**单独的 ALTER/编号迁移（表是新增的，没有列要补）。
+CREATE TABLE IF NOT EXISTS memories (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL DEFAULT '',
+  project_id TEXT,
+  session_id TEXT,
+  -- 25:668 团队记忆的归属键（AgentTeam id）；与 `MemoryEntry.teamId` 同名同义。
+  -- 为什么必须有这一列：`memories.search` 是唯一一条"可能跨项目"的读路径，
+  -- 团队过滤必须写在 SQL 里（与 project/session 同一条 fail-closed 纪律），
+  -- 否则 team 条目要么在镜像检索里永远不可见（功能缺失），要么只能靠渲染侧再过滤（多一处泄漏面）。
+  team_id TEXT,
+  key TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  source TEXT,
+  status TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  -- 24 号文 P2-C：**持久化的向量**（f32 小端连续字节；NULL = 还没有向量）
+  --
+  -- 为什么放在这张镜像表而不是另开一张：向量与记忆条目同生命周期（条目删了向量就该消失），
+  -- 而这张表的写入方只有一个（`memories.rs` 的镜像命令）。放这里也不会被 `replace_all`
+  -- 无条件抹掉 —— 它在同一事务里按「key 与正文都没变」才带回旧向量（见 `replace_all`）。
+  --
+  -- 为什么还要 `embedding_dim`：两个不同向量空间的余弦是**噪声**，
+  -- 检索时必须按维度过滤掉不一致的行（而不是当成 0 分参与排序）。
+  embedding BLOB,
+  embedding_dim INTEGER
+);
+
+-- 跨作用域检索的过滤轴（platform 恒在，project/session/team 任选其一或都给）
+CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(scope, project_id, session_id);
+-- 25:668：团队过滤单独一条索引（旧库的 `idx_memories_owner` 已存在、不会被重建，
+-- 所以团队轴必须有自己的一条 `IF NOT EXISTS` 索引，否则升级库上的 team 过滤永远走全表扫描）
 
 CREATE TABLE IF NOT EXISTS recovery_data (
   session_id TEXT PRIMARY KEY,

@@ -12,7 +12,7 @@
 import { memo, useMemo, useLayoutEffect, useRef, useState, Fragment } from 'react'
 import type { Message } from '../store'
 import { useLang, getLang } from '../core/i18n/lang'
-import { formatCacheHitPercent } from '../core/llm/cache-percent'
+import { summarizeCacheUsage, formatCacheUsageLabel } from '../core/llm/cache-percent'
 
 /** 紧凑 token 计数格式：517 / 12.2K / 517K / 1.2M */
 function formatTokens(n: number): string {
@@ -100,23 +100,23 @@ function deriveStats(message: Message): WindowStats {
     stats.decodeTokens = meta.outputTokens as number
   }
 
-  // token 统计（cache 字段真实化：usage.cacheHitTokens = DeepSeek
-  // prompt_cache_hit_tokens；inputTokens 取 uncached 口径避免与 cache 重复计）
+  // token 统计（cache 字段真实化：读缓存优先新字段 `cacheReadTokens`，
+  // 旧字段 `cacheHitTokens` 兜底；inputTokens 取 uncached 口径避免与 cache 重复计）
   if (meta.usage) {
     const u = meta.usage
     const promptTotal = u.promptTokens || u.inputTokens || 0
-    const cacheRead = u.cacheHitTokens ?? u.cacheReadTokens ?? 0
+    const cacheRead = u.cacheReadTokens ?? u.cacheHitTokens ?? 0
     stats.cacheReadTokens = cacheRead
     stats.cacheWriteTokens = u.cacheWriteTokens || 0
     stats.inputTokens = u.uncachedInputTokens ?? Math.max(0, promptTotal - cacheRead)
     stats.outputTokens = u.completionTokens || u.outputTokens || 0
     if (typeof u.cost === "number") stats.cost = u.cost
-    // provider 是否明确上报缓存字段——未上报（如非 DeepSeek 系）时命中率未知，
-    // 不得显示误导性的"缓存命中 0%"
-    stats.cacheReported =
-      u.cacheHitTokens !== undefined ||
-      u.cacheReadTokens !== undefined ||
-      u.uncachedInputTokens !== undefined
+    /**
+     * 是否上报只认**显式的 `cacheReported`**（新消息由聚合层写入）：
+     * 老消息的 metadata.usage 里 `cacheHitTokens` 恒为 0（旧聚合初始化），
+     * 按键存在性判断会把「未上报」显示成「缓存命中 0%」——本波修的就是它。
+     */
+    stats.cacheReported = u.cacheReported === true
   }
 
   // tool 耗时
@@ -130,12 +130,6 @@ function deriveStats(message: Message): WindowStats {
   }
 
   return stats
-}
-
-/** cache hit 率（dsh 高精度格式：不把部分命中四舍五入成 100，如 99.97%） */
-function cacheHitPercent(stats: WindowStats): string | null {
-  const denom = stats.inputTokens + stats.cacheReadTokens + stats.cacheWriteTokens
-  return formatCacheHitPercent(stats.cacheReadTokens, denom, 1)
 }
 
 /** billed input tokens */
@@ -184,12 +178,19 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
   }
   if (speeds.length > 0) groups.push(speeds.join(' · '))
 
-  // 第 3 组：token 计数 + cache hit（仅当 provider 上报缓存字段时显示命中率）
+  // 第 3 组：token 计数 + cache 读数（仅当 provider 上报缓存字段时显示；
+  // 未上报时整组不出现，绝不显示误导性的「缓存命中 0%」）
   const billed = billedInputTokens(stats)
   if (billed > 0 || stats.outputTokens > 0) {
-    const hit = stats.cacheReported ? cacheHitPercent(stats) : null
-    if (hit !== null) {
-      groups.push(zh ? `缓存命中 ${hit}%` : `Cache ${hit}%`)
+    if (stats.cacheReported) {
+      const summary = summarizeCacheUsage({
+        /* prompt 口径 = uncached + 读缓存（写缓存是独立桶，由 summary 自己加进分母） */
+        promptTokens: stats.inputTokens + stats.cacheReadTokens,
+        cacheReadTokens: stats.cacheReadTokens,
+        cacheWriteTokens: stats.cacheWriteTokens,
+        cacheReported: true,
+      })
+      groups.push(formatCacheUsageLabel(summary))
     }
     groups.push(
       zh

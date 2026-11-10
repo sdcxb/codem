@@ -52,8 +52,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "  return getWriteApprovalSetting()[scope] === true;",
-          "to": "  return getWriteApprovalSetting().platform === true;"
+          "from": "  const key: keyof ApprovalScopeSetting = scope === \"team\" ? \"conversation\" : scope;\n  return getWriteApprovalSetting()[key] === true;",
+          "to": "  void scope;\n  return getWriteApprovalSetting().platform === true;"
         }
       ],
       "tests": [
@@ -67,8 +67,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      this.entries.set(id, { ...entry, status: \"active\" });\n      changed++;",
-          "to": "      this.entries.set(id, { ...entry, status: \"active\" });\n      this.save();\n      changed++;"
+          "from": "      this.entries.set(id, this.touchCopy(entry, { status: \"active\" }));\n      changed++;",
+          "to": "      this.entries.set(id, this.touchCopy(entry, { status: \"active\" }));\n      this.save();\n      changed++;"
         }
       ],
       "tests": [
@@ -82,8 +82,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
-          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
+          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);",
+          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);"
         }
       ],
       "tests": [

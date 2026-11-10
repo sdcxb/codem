@@ -266,19 +266,17 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
     expect(queryByTestId("water-level-banner")).not.toBeNull();
   });
 
-  it("WB-7: 两个出口的**代价**分开写清楚（C 项）——压缩保摘要 / 新对话归零并交接", () => {
+  it("WB-7: 水位提示只保留压缩出口，不再出现新对话劝退", () => {
     Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
     const { queryByTestId } = banner();
     const text = queryByTestId("water-level-banner")!.textContent ?? "";
     // 必须说明"会发生什么"（B 项：静默丢弃这件事不许静默）
     expect(text).toContain("丢弃");
     expect(text).toContain("静默");
-    // 两个出口都要在
+    // 只保留压缩出口；新对话建议必须已删除
     expect(text).toContain("压缩");
-    expect(text).toContain("新对话");
-    // 选择说明必须写清"代价不同"
-    expect(text).toContain("摘要");
-    expect(text).toContain("上下文离开");
+    expect(text).not.toContain("新对话");
+    expect(text).not.toContain("新会话");
   });
 
   it("WB-8: 「查看详情」把用户送到既有的压缩面板（不自己造第二个压缩入口）", () => {
@@ -326,135 +324,6 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
 });
 
 // =====================================================================
-describe("第 122 轮 · 「开启新对话」是**交接**，不是从零开始", () => {
-  const banner = () =>
-    render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
-
-  function armHighLevel() {
-    Object.assign(levelBox, { used: 106000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
-  }
-
-  /**
-   * 一次有"具体对象"的会话（真实形态：用户点名一个文件、助手调工具改它）。
-   *
-   * ⚠️ 这一点是必须的，不是装饰：交接协议（`handover.ts`）要求正文里出现**绝对路径**，
-   * 否则连机械生成的交接都会被判不合规、在"建会话/委派"之前就返回。
-   * 第一版用例只放了一句「干活」，于是 WH-2/WH-3 实际测的是"交接协议拒绝"
-   * 而不是它们声称的"建会话失败 / 委派抛错" —— 用例名与所测不同，是被真跑打出来的。
-   */
-  function realisticSession(filePath = "D:\\proj\\out.md") {
-    mockMessages = [
-      { id: "u1", role: "user", content: `把 ${filePath} 补完`, timestamp: 1, status: "done" },
-      {
-        id: "a1",
-        role: "assistant",
-        content: "已更新",
-        timestamp: 2,
-        status: "done",
-        toolCalls: [
-          { id: "tc1", tool: "write", args: { path: filePath, content: "x" }, result: "ok", status: "done" },
-        ],
-      },
-    ];
-  }
-
-  it("WH-1: 点击后：新建会话 + 把当前工作**委派**过去（源会话 → 新会话）", async () => {
-    armHighLevel();
-    mockMessages = [
-      { id: "u1", role: "user", content: "把 D:\\proj\\报告.md 的第 3 节补完", timestamp: 1, status: "done" },
-      {
-        id: "a1",
-        role: "assistant",
-        content: "已更新",
-        timestamp: 2,
-        status: "done",
-        toolCalls: [
-          {
-            id: "tc1",
-            tool: "edit",
-            args: { file_path: "D:\\proj\\报告.md", old_string: "x", new_string: "y" },
-            result: "ok",
-            status: "done",
-          },
-        ],
-      },
-    ];
-    delegateMock.mockResolvedValue({ id: "del-1" });
-
-    const { queryByTestId } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(createSessionMock).toHaveBeenCalledTimes(1);
-    expect(delegateMock).toHaveBeenCalledTimes(1);
-    const arg = delegateMock.mock.calls[0][0] as any;
-    expect(arg.sourceSessionId).toBe(SESSION);
-    expect(arg.targetSessionId).toBe("s-new");
-    // 交接正文必须是一份**合规**的交接（协议校验过），而不是一段意图复述
-    expect(arg.task).toContain("【会话交接】");
-    expect(arg.task).toContain("完成判据");
-    expect(arg.task).toContain("不要重新扫描");
-    // 成功必须说出来（不能只在控制台里）
-    expect(queryByTestId("water-level-note")!.textContent).toContain("del-1");
-  });
-
-  it("WH-2: 新建会话失败 ⇒ **如实报错**，不许「看起来点成功了」", async () => {
-    armHighLevel();
-    realisticSession();
-    createSessionResult = { id: "" };
-
-    const { queryByTestId } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(delegateMock).not.toHaveBeenCalled();
-    expect(reportActionFailureMock).toHaveBeenCalled();
-    const note = queryByTestId("water-level-note")!;
-    expect(note.className).toContain("is-error");
-  });
-
-  it("WH-3: 委派抛错 ⇒ 上报 + 可见失败（不许静默）", async () => {
-    armHighLevel();
-    realisticSession();
-    delegateMock.mockRejectedValue(new Error("Maximum concurrent delegations (2) reached"));
-
-    const { queryByTestId } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(reportActionFailureMock).toHaveBeenCalled();
-    expect(queryByTestId("water-level-note")!.textContent).toContain("Maximum concurrent");
-  });
-});
-
-// =====================================================================
-/**
- * 第 191 波 · **真机报的两个缺陷**（用户原话）：
- *
- * > 1、我这个轮次的对话已经非常的长了……结果提示上下文压力偏高（已用 1%），只有 1% 不合理，
- * > 而且只有 1% 就不应该报提示了。
- * > 2、点了【开启新对话（交接当前工作）】、或者【压缩 / 查看详情】后，这个提示没有隐藏……
- * > 用户会以为自己没点到按钮，重复的点。
- *
- * 侦察结论（根因只有一个）：旧渲染把**回执（note）**并进了**风险提示条**——
- * `if (!visible && !note) return null;` 之后不区分渲染哪一套 ⇒ 只要有过一次回执
- * （交接成功、压缩入口），整条风险提示条就继续渲染：标题仍是「上下文压力偏高（已用 N%）」、
- * 两个按钮仍在。于是 ①水位已经掉到 1% 却还挂着"压力偏高"（荒谬）；②刚做完的动作看起来像没做
- * （用户反复点）。
- *
- * 判据分三层：①水位正常 + 有回执 ⇒ **只**渲染窄回执条（没有压力标题、没有动作按钮）；
- * ②点两个按钮 ⇒ 提示条**立刻收起**并有回执；③风险真的还在时（`visible`）提示条照常完整渲染
- * （不许"一键收起所有告警"）。
- */
 describe("第 191 波 · 回执不许混进风险提示条（真机报的「已用 1% 却报警」+「点了没反应」）", () => {
   const banner = () =>
     render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
@@ -484,26 +353,6 @@ describe("第 191 波 · 回执不许混进风险提示条（真机报的「已�
     ];
   }
 
-  it("WB-10: 交接**成功**后风险提示条必须收起（只留一条窄回执）—— 否则用户以为没点到", async () => {
-    armHighLevel();
-    realisticSession();
-    delegateMock.mockResolvedValue({ id: "del-191" });
-
-    const { queryByTestId } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(queryByTestId("water-level-banner"), "用户已经处理过这一档水位 ⇒ 不许继续以风险语气显示").toBeNull();
-    const strip = queryByTestId("water-level-note-only");
-    expect(strip, "但回执必须看得见（不能把'做完了'也一起藏掉）").not.toBeNull();
-    expect(queryByTestId("water-level-note")!.textContent).toContain("del-191");
-    expect(queryByTestId("water-level-handoff"), "动作按钮必须跟着风险提示条一起收起").toBeNull();
-    expect(queryByTestId("water-level-detail")).toBeNull();
-  });
-
   it("WB-11: 点「压缩 / 查看详情」⇒ 提示条收起 + 打开面板 + 留一条回执（不许看起来没反应）", () => {
     armHighLevel();
     const onOpen = vi.fn();
@@ -514,56 +363,6 @@ describe("第 191 波 · 回执不许混进风险提示条（真机报的「已�
     expect(onOpen, "面板照旧要打开（这是既有契约）").toHaveBeenCalledTimes(1);
     expect(queryByTestId("water-level-banner"), "收起提示条：用户已经按了这个按钮").toBeNull();
     expect(queryByTestId("water-level-note")!.textContent).toContain("面板");
-  });
-
-  it("WB-12: 水位掉回 1%（真机形态）时只许渲染窄回执 —— 不许出现「上下文压力偏高（已用 1%）」与按钮", async () => {
-    armHighLevel();
-    realisticSession();
-    delegateMock.mockResolvedValue({ id: "del-192" });
-    const { queryByTestId, rerender } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // 真机现场：交接/压缩之后水位回到 1%
-    armNormalLevelLikeRealMachine();
-    rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
-
-    const strip = queryByTestId("water-level-note-only");
-    expect(strip).not.toBeNull();
-    const text = strip!.textContent ?? "";
-    expect(text, "1% 绝不是'压力偏高'").not.toContain("上下文压力");
-    expect(text).not.toContain("已用 1%");
-    expect(queryByTestId("water-level-banner"), "风险提示条本身必须已经不在").toBeNull();
-  });
-
-  it("WB-13 反向对照: 风险真的还在时，提示条必须完整渲染 + 带两个出口（不许被回执逻辑吞掉）", () => {
-    armHighLevel();
-    const { queryByTestId } = banner();
-    const el = queryByTestId("water-level-banner");
-    expect(el).not.toBeNull();
-    expect(el!.textContent).toContain("即将满");
-    expect(queryByTestId("water-level-handoff")).not.toBeNull();
-    expect(queryByTestId("water-level-detail")).not.toBeNull();
-    // 而"窄回执条"这种形态此刻**不该**出现（它是给"没有风险"用的）
-    expect(queryByTestId("water-level-note-only")).toBeNull();
-  });
-
-  it("WB-14: 窄回执条可以被关掉（回执不是不可清除的常驻物）", async () => {
-    armHighLevel();
-    realisticSession();
-    delegateMock.mockResolvedValue({ id: "del-193" });
-    const { queryByTestId } = banner();
-    await act(async () => {
-      fireEvent.click(queryByTestId("water-level-handoff")!);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(queryByTestId("water-level-note-only")).not.toBeNull();
-    fireEvent.click(queryByTestId("water-level-note-close")!);
-    expect(queryByTestId("water-level-note-only")).toBeNull();
   });
 
   it("WB-15: 只因『本轮已被精简』而显示时，标题**不许**说「压力偏高」（1% + 压力偏高 = 两句话同时为假）", async () => {

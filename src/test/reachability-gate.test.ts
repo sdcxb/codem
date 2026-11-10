@@ -10,8 +10,10 @@
  *
  * 所以这里把 `tools/audit/reachability-scan.mjs`（模块解析 + 可达性，带**两条已知答案对照**）
  * 作为门禁钉住，判据三条：
- *  ① **自检必须通过**：`MessageBubble` 可达、`sync-engine` 不可达 —— 不过就说明分析不可信，
+ *  ① **自检必须通过**：`MessageBubble` 可达、`MessageActions` 不可达 —— 不过就说明分析不可信，
  *    这时**不许**拿结论下判断（本条会红）；
+ *     （第 258 波：不可达对照从 `sync-engine` 换成 `MessageActions` —— 多设备同步接上之后
+ *     `sync-engine` 已经可达，再拿它当对照等于要求把功能拆掉，见扫描工具文件头）
  *  ② **不可达集合必须 ⊆ 白名单**（`tools/audit/reachability-allowlist.json`）——
  *    新冒出来的不可达文件要么接线、要么登记并写清类别；
  *  ③ **白名单不许有过期条目**（文件变可达了就要删掉，否则白名单会慢慢变成"历史垃圾场"）。
@@ -33,11 +35,14 @@ import { scanReachability, readAllowlist, checkAgainstAllowlist } from '../../to
 const ROOT = path.resolve(__dirname, '..', '..')
 
 describe('可达性门禁：写了但没接线的代码必须被拦住（第 109 轮）', () => {
-  it('REACH-1: 工具自检通过（MessageBubble 必须可达 / sync-engine 必须不可达）', () => {
+  it('REACH-1: 工具自检通过（MessageBubble 必须可达 / MessageActions 必须不可达）', () => {
     const result = scanReachability(ROOT)
     expect(result.checks.entryMissing, '入口文件必须存在').toEqual([])
     expect(result.checks.messageBubbleReachable, '活着的组件必须被判为可达（否则分析不可信）').toBe(true)
-    expect(result.checks.syncEngineUnreachable, '已知未接线的 sync-engine 必须被判为不可达（否则分析不可信）').toBe(true)
+    expect(
+      result.checks.messageActionsUnreachable,
+      '已知未接线的 MessageActions 必须被判为不可达（否则分析不可信）',
+    ).toBe(true)
     expect(result.trustworthy).toBe(true)
     // 反向对照：算出来的规模必须像回事（避免"扫到 0 个文件"式恒真）
     expect(result.counts.prod).toBeGreaterThan(700)
@@ -78,7 +83,6 @@ describe('可达性门禁：写了但没接线的代码必须被拦住（第 109
       'src/components/MessageActions.tsx',
       'src/components/RegenerateModelPopover.tsx',
       'src/core/environment/file-edit-capture.ts',
-      'src/core/storage/sync-engine.ts',
     ])
   })
 

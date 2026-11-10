@@ -1,0 +1,82 @@
+{
+  "wave": "context-p0-handoff-236",
+  "description": "第 236 波·上下文契约（2026-11-07 独立复核）：25 P0-0 要求 `context_epochs.handoff_json` 可空、switch 时写 handoff 摘要、8KB 截断并标注；此前表里没有这一列、投影也不写。本波把「行类型/写入/读取/旧行兼容/截断」四处接缝各打一条变异。",
+  "runAt": "2026-11-07T15:34:11.393Z",
+  "specFingerprint": "5964513f68d35452b6e68eaf10a3db1db9ac60c5",
+  "files": [
+    "src/core/storage/context-epochs.ts"
+  ],
+  "tests": [
+    "src/test/context-epochs.test.ts",
+    "src/test/context-epochs-handoff.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 投影不写 handoff_json（switch 行读回 null）",
+      "why": "CE-9 / CE-12：switch 的 handoff 摘要必须从 marker 正文投影进派生索引；把这一行改回 null 后，真实换段后索引里就查不到交接内容。",
+      "patches": [
+        {
+          "file": "src/core/storage/context-epochs.ts",
+          "from": "      handoff_json: kind === \"switch\"\n        ? buildHandoffJson(epoch.epochId, (m as unknown as { content?: unknown }).content, segmentSeq)\n        : null,",
+          "to": "      handoff_json: null,"
+        }
+      ],
+      "tests": [
+        "src/test/context-epochs.test.ts",
+        "src/test/context-epochs-handoff.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4437
+    },
+    {
+      "id": "MUT-2 去掉 8KB 截断（handoff_json 无界，撑大派生索引）",
+      "why": "CE-10：25 P0-0 要求「大小上限 8KB，超限截断并标注」；去掉长度判断后一条长 handoff 会让 JSON 超过预算，且 truncated 永远 false。",
+      "patches": [
+        {
+          "file": "src/core/storage/context-epochs.ts",
+          "from": "  let keep = Math.min(\n    originalChars,\n    Math.max(0, HANDOFF_JSON_MAX_CHARS - JSON.stringify({\n      v: 1, ref: epochId, segmentSeq, summary: \"\", truncated: true, originalChars,\n    }).length),\n  );",
+          "to": "  let keep = originalChars;"
+        },
+        {
+          "file": "src/core/storage/context-epochs.ts",
+          "from": "    if (json.length <= HANDOFF_JSON_MAX_CHARS || keep === 0) return json;",
+          "to": "    return json;"
+        }
+      ],
+      "tests": [
+        "src/test/context-epochs.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5793
+    },
+    {
+      "id": "MUT-3 旧行归一退化成 undefined（旧库兼容破口）",
+      "why": "CE-11：旧行没有 handoff_json 字段时必须归一成 null；直接透传会让面板/审计在旧库上读到 undefined，契约「可空」变成「可能不存在」。",
+      "patches": [
+        {
+          "file": "src/core/storage/context-epochs.ts",
+          "from": "    handoff_json: typeof row.handoff_json === \"string\" ? row.handoff_json : null,",
+          "to": "    handoff_json: row.handoff_json as unknown as string | null,"
+        }
+      ],
+      "tests": [
+        "src/test/context-epochs.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6542
+    }
+  ]
+}

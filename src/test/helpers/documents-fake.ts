@@ -18,10 +18,27 @@ export interface FakeDocSeed {
   documents?: DocumentRecord[];
   hits?: DocumentSearchHit[];
   chunks?: Record<string, DocumentChunkMeta[]>;
+  /** `documents.chunks` 的 `has_more`（判据用来模拟「块元数据被 limit 截断」） */
+  chunksHasMore?: boolean;
   texts?: Record<string, string>;
   byStatus?: Record<string, number>;
   totalChunks?: number;
   headings?: Array<{ heading: string; block_no: number }>;
+  /**
+   * 页级元数据（`documents.pages`，C05 表格/OCR 状态判据用）。
+   *
+   * 与真机同形：`kind` 是 text/scanned/mixed，`ocr_state` 是 pending/done/failed；
+   * `text_source=vision` 表示正文来自视觉转录。
+   */
+  pages?: Record<string, Array<{
+    page_no: number;
+    kind?: string | null;
+    text_source?: string | null;
+    text_bytes?: number;
+    ocr_state?: string | null;
+    ocr_model?: string | null;
+    image_path?: string | null;
+  }>>;
   /** 向量命中（`documents.vector_search`） */
   vectors?: Array<{ document_id: string; chunk_no: number; score: number; name?: string | null; page_from?: number | null; page_to?: number | null; heading_path?: string | null }>;
   /** 向量覆盖状态（`documents.vector_status`） */
@@ -85,10 +102,12 @@ export function createFakeDocumentBackend(seed: FakeDocSeed = {}): FakeDocHandle
         case "documents.chunks":
           return {
             items: seed.chunks?.[String(params.document_id)] ?? [],
-            has_more: false,
+            has_more: seed.chunksHasMore ?? false,
           } as unknown as T;
         case "documents.outline":
           return { headings: seed.headings ?? [] } as unknown as T;
+        case "documents.pages":
+          return { items: seed.pages?.[String(params.document_id)] ?? [] } as unknown as T;
         case "documents.health":
           return { path: "C:\\x\\documents\\index.db", schema_version: 1, documents: documents.length, chunks: 0 } as unknown as T;
         case "documents.vector_search":

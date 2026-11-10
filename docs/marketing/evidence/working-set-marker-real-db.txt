@@ -1,0 +1,76 @@
+真机复验：工作集启用时 epoch marker 仍在发给 provider 的请求里
+========================================================================
+
+构建 / 安装
+------------
+安装包: src-tauri\target\release\bundle\nsis\Codem_1.18.13_x64-setup.exe
+  LastWriteTime = 2026-11-06 21:10:40.468551
+  sha256 = 927A055F9E551F74F703484DC25CA05D102ABC167796A351E5C3D94BC8FB82BE
+安装后: C:\Users\abee\AppData\Local\Codem\codem.exe
+  LastWriteTime = 2026-11-06 21:09:02
+
+配置快照（为让工作集必然移出消息而临时收紧；复验后已还原）
+------------------------------------------------------
+{
+  "maxContextWindow": 2000,
+  "outputReserve": 4096,
+  "systemPromptTokens": 2000,
+  "compactionThreshold": 0.8,
+  "maxMessagesAfterCompaction": 20,
+  "preserveRecentToolOutputs": true
+}
+动态模型 contextWindow: aicodewith/claude-haiku-4-5-20251001 = 2000
+说明：workingSetBudget 的真源是 TokenTracker（模型目录的 contextWindow），只改 maxContextWindow 不会改变工作集预算；两处都收紧到 2000 才是本证据的有效条件。
+
+会话
+----
+('ws-marker-1793970261312', '', 'WS-MARKER-工作集保护 21:04:21', 'claude-haiku-4-5-20251001', 1793959461312, 1793970689625, 28)
+
+1) switch marker（metadata.contextEpoch）
+   ('compact-1793970261312-1', 'user', '【上下文摘要】此前 10 条历史已移出视图；剩余编号 10–23。marker=compact-1793970261312-1', '{"contextEpoch": {"createdAt": 1793970261312, "cutoffMessageId": "ws-marker-1793970261312-msg-10", "epochId": "compact-1793970261312-1", "keptCount": 14, "kind": "switch", "removedCount": 10, "segmentSeq": 2, "seq": 2, "trigger": "switch"}}', 1793960841313, 0)
+   解析:
+   {
+  "contextEpoch": {
+    "createdAt": 1793970261312,
+    "cutoffMessageId": "ws-marker-1793970261312-msg-10",
+    "epochId": "compact-1793970261312-1",
+    "keptCount": 14,
+    "kind": "switch",
+    "removedCount": 10,
+    "segmentSeq": 2,
+    "seq": 2,
+    "trigger": "switch"
+  }
+}
+
+2) context_epochs
+   ('compact-1793970261312-1', 2, 'ws-marker-1793970261312-msg-10', 10, 14, 'switch', 1793970261312, 'switch', 2)
+
+3) 模型视图 = [marker] + cutoff 之后的 14 条
+   cutoffMessageId = ws-marker-1793970261312-msg-10
+   marker id       = compact-1793970261312-1
+   cutoff 起（含）消息数 = 18
+   预置 24 条历史仍在 = 24
+
+3b) context_epochs（复验后回合完成又自动切了 segment 3）
+   ('compact-1793970261312-1', 'switch', 2, 'ws-marker-1793970261312-msg-10')
+   ('compact-1793970689626-1', 'switch', 3, 'ws-marker-1793970261312-msg-07')
+
+4) 本轮真实回合
+   user = ('user-1793970682900', '只回复 OK', 'done', 1793970682900)
+   assistant = ('assistant-1793970682982', 'OK', 'done', 1793970689578, '{"turnEndTime":1793970689633,"turnOutcome":"completed","usage":{"cacheHitTokens":0,"completionTokens":4,"cost":0,"promptTokens":33398,"totalTokens":33402,"uncachedInputTokens":33398}}')
+
+5) 发给 provider 的请求（来自 CDP Network.requestWillBeSent 的 postData）
+   url=https://api.aicodewith.ai/v1/messages
+   postDataLength=93206 markerIdInBody=True markerSummaryInBody=True contextEpochInBody=False
+
+6) 渲染侧 console 诊断（request ids 列表）
+   [log] [agent-loop] [working-set] window=2000 outputReserve=4096 system=12625 memory=0 budget=0 selected=7 evicted=9 indexLines=9
+   [log] [working-set] protected markers kept: compact-1793970261312-1; request messages=8; evicted=9; request ids=compact-1793970261312-1,ws-marker-1793970261312-msg-19,ws-marker-1793970261312-msg-20,ws-marker-1793970261312-msg-21,ws-marker-1793970261312-msg-22,ws-marker-1793970261312-msg-23,ctx-workingset-index,user-1793970682900
+
+7) 失败痕迹
+   loop-outcome / Failed to fetch / LLM 调用失败 = 0 条
+
+结论：PASS
+
+JSON={"sessionId": "ws-marker-1793970261312", "markerId": "compact-1793970261312-1", "markerKeptInConsole": true, "markerInProviderPostData": true, "markerSummaryInProviderPostData": true, "contextWindow": 2000, "maxContextWindow": 2000, "ok": true, "failures": []}

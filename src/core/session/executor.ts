@@ -17,7 +17,12 @@ import type { LLMEngine } from "../llm";
 import type { LoopEvent } from "../llm/agentic-loop";
 import * as MessageStorage from "../storage/message";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { retainToolResult } from "../storage/spill";
+/* 工具调用/结果的落库语义与 Bot 子智能体路径共用**唯一实现**（见该文件头） */
+import {
+  persistToolCallError,
+  persistToolCallStart,
+  persistToolCallSuccess,
+} from "./tool-call-persistence";
 import * as SessionStorage from "../storage/session";
 // 第 191 波：会话 → 项目根路径走**唯一实现**（安全模式的项目级覆盖按项目根路径存键）
 import { sessionProjectPath } from "../storage/session-project";
@@ -663,13 +668,11 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
              * 那时 `currentAssistantMsgId` 还是空的 —— 以前这里是 `if (tc && currentAssistantMsgId)`，
              * 于是这次调用与它的结果在历史里**凭空消失**：下一轮模型从库里重建上下文，
              * 看到的是"我没调用过任何工具"，于是重发同一个调用 → 死循环。
+             *
+             * 落库动作（`args` 形状、`status`）走 `tool-call-persistence.ts` ——
+             * 与 Bot 子智能体路径同一份实现，禁止在这里再写一套。
              */
-            MessageStorage.addToolCall(ensureAssistantMessage(), {
-              id: tc.id,
-              tool: tc.name,
-              args: { ...tc.input, name: tc.input?.name || (tc as any).metadata?.name },
-              status: "running",
-            });
+            persistToolCallStart(ensureAssistantMessage(), tc);
           }
           break;
         }
@@ -681,46 +684,21 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           reportProgress();
           const tc = "toolCall" in event ? event.toolCall : null;
           if (tc) {
-            // 第 83 波：结果同样要落在真实存在的消息上（见 tool_start 的说明）
-            ensureAssistantMessage();
-            let resultStr: string;
-            let toolMetadata: Record<string, any> | undefined;
-            if (typeof event.result === "string") {
-              resultStr = event.result;
-            } else if (event.result && typeof event.result === "object" && "output" in event.result) {
-              resultStr = (event.result as any).output;
-              // 提取结构化元数据（如 subagentId 等）
-              if ((event.result as any).metadata) {
-                toolMetadata = (event.result as any).metadata;
-              }
-            } else {
-              resultStr = JSON.stringify(event.result || "");
-            }
-            resultStr = resultStr.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
-            // 第 76 波（对齐 DSH dsh-spill-policy）：超大工具结果溢出到会话私有文件，
-            // 库里/上下文里只留 head+tail 预览和一行"全文在哪"的说明。
-            // 为什么在这里做：这是工具结果进库、进上下文的**唯一入口**，
-            // 在这里拦一次，DB 体积、后续每轮的上下文、以及每次整库导出的峰值都一起受控。
-            // 失败必须退回原文（宁可库大一点，也不能把工具结果变成一句"保存失败"）。
-            try {
-              const retained = await retainToolResult(resultStr, {
-                sessionId,
-                toolName: tc.name,
-                callId: tc.id,
-              });
-              if (retained.spilled) {
-                console.log(
-                  `[Spill] 工具结果 ${retained.totalBytes} 字节超过上限，已省略 ${retained.omittedBytes} 字节；全文：${retained.locator}`,
-                );
-              }
-              resultStr = retained.text;
-            } catch (e) {
-              console.warn("[Spill] 溢出保存失败，保留完整结果:", e);
-            }
-            MessageStorage.updateToolCall(currentAssistantMsgId, tc.id, {
-              status: "done",
-              result: resultStr,
-              ...(toolMetadata ? { metadata: toolMetadata } : {}),
+            /**
+             * 第 83 波：结果同样要落在真实存在的消息上（见 tool_start 的说明）。
+             *
+             * 结果规范化（字符串 / `{ output, metadata }` / JSON）与
+             * 第 76 波（对齐 DSH dsh-spill-policy）的**超大结果溢出**都在
+             * `tool-call-persistence.ts::persistToolCallSuccess` 里 ——
+             * 那是工具结果进库、进上下文的**唯一入口**，Bot 子智能体路径共用同一份
+             * （拆分前这段逻辑只在本文件里，Bot 路径拿不到 ⇒ 模型看不到工具结果）。
+             * 失败必须退回原文（宁可库大一点，也不能把工具结果变成一句"保存失败"）。
+             */
+            await persistToolCallSuccess({
+              sessionId,
+              messageId: ensureAssistantMessage(),
+              toolCall: tc,
+              result: event.result,
             });
           }
           break;
@@ -733,11 +711,8 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           const tc = "toolCall" in event ? event.toolCall : null;
           const err = "error" in event ? event.error : "Unknown error";
           if (tc) {
-            ensureAssistantMessage();
-            MessageStorage.updateToolCall(currentAssistantMsgId, tc.id, {
-              status: "error",
-              result: err,
-            });
+            /* 与 tool_start / tool_complete 同一份落库实现（空 id 的 LLM 级失败不落，见该文件头） */
+            persistToolCallError(ensureAssistantMessage(), tc, err);
           }
           break;
         }

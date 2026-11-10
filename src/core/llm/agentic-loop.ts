@@ -2,6 +2,7 @@ import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./type
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
+import { getActivatedDeferredTools } from "./deferred-activation";
 import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } from "./context-fold";
 /**
  * 第 122 轮 B 项：把「这一轮丢了什么上下文」投给界面。
@@ -10,7 +11,7 @@ import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } fr
  */
 import { recordContextDrop } from "./context-visibility";
 import type { ToolExecutorConfig } from "./streaming-executor";
-import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
+import { StreamingToolExecutorImpl, type StreamingToolCall, type ToolExecutorEvent } from "./streaming-executor";
 import { initDefaultPipeline, type ToolPipelineHost } from "./tool-pipeline";
 // 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
 import { mutatesWorkspace, needsPreCallSnapshotForCall } from "./tool-contract";
@@ -22,8 +23,11 @@ import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../ret
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { recordRequestContext, recordRequestPromptTokens, messageSetFingerprint } from "./request-context";
 import { readContextWaterLevel } from "../context/water-level";
+import { buildThreadNotesDigest, maybeBuildWaterNotesReminder } from "../context/thread-notes";
 // 第 191 波（O-48）：服务端前缀缓存的读数必须**可复核**（一行日志 + 判据）
 import { formatPromptCacheLog } from "./cache-percent";
+// 提示缓存断点（Anthropic `cache_control`）：稳定前缀锚点的唯一实现
+import { stablePrefixLastMessageId } from "./prompt-cache";
 // 第 191 波（O-49）：**附录的落点**是判据对象（必须跟在整份系统提示的最后），抽成唯一实现
 import { appendVolatileAppendix } from "../prompt/prompt";
 // 第 191 波（O-41）：重试预算用尽必须**用户可见**（旧形态只有 console.warn）
@@ -75,14 +79,33 @@ import { recordVerificationCheck } from "../environment/verification-checks";
 import { decidePreCallSnapshot } from "../environment/pre-call-snapshot";
 import { isVerificationCommand, isShellCommandTool } from "./tool-contract";
 import { recordLoopStop } from "./loop-stop-log";
+/**
+ * C06 文档同步硬闸的判定与文案：**静态 import**。
+ *
+ * 为什么不像本文件其它收尾守卫那样动态 import：`completion-guards` 是**零依赖的纯函数模块**，
+ * 静态 import 不会把任何重依赖拉进启动链；而动态 import 在 knip/可达性扫描里**不算接线**
+ * （`judgeDocumentSyncGate` 就被记成"没人用"的导出 ⇒ 棘轮红）。
+ */
+import {
+  buildDocumentSyncBlockedText,
+  buildDocumentSyncNudge,
+  judgeDocumentSyncGate,
+  shouldNudgeDocumentSync,
+  type DocumentSyncGateDecision,
+} from "./completion-guards";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { nextConsecutiveCompactions, planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, messageCharSize,
+import { nextConsecutiveCompactions, planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, COMPACTION_SUMMARY_MAX_CHARS, MAX_CONSECUTIVE_COMPACTIONS, clampCompactionSummary, messageCharSize,
   messageCharSizeForEstimate,
   recentToolResultIds,
 } from "./compaction-budget";
 import { summarizeModelContext, estimateRawContextTokens } from "./compaction-budget";
-import { buildContextEpochMetadata, contextCutoffExclusions } from "../context/context-view";import {
+import { buildContextEpochMetadata, contextCutoffExclusions, readContextEpochOf, type ContextEpoch } from "../context/context-view";
+import { epochActionForLoop, shouldDeferBoundaryCompaction } from "../context/segment-switch";
+import { resolveStewardPolicy, type StewardPolicy } from "../context/steward-policy";
+import { latestThreadNoteId } from "../context/thread-notes";
+import { performSegmentSwitch, type SegmentSwitchResult } from "../storage/context-switch";
+import { getContextManager } from "../context/context";import {
   FOLD_TARGET_RATIO,
   foldToolOutputsUnderTarget,
   shouldFoldToolOutputs,
@@ -93,6 +116,24 @@ import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
+import {
+  buildContextManifest,
+  computePrefixHash,
+  diffManifests,
+  loadManifests,
+  recordManifest,
+  type ContextManifestWorkingSet,
+} from "../context/manifest";
+/**
+ * C03：最小工作集（纯函数：算「这一轮带哪些历史消息 + 移出的索引」）。
+ * 预算怎么来、为什么记忆块不重复扣，见 `workingSetBudget` 的注释。
+ */
+import {
+  collectProtectedContextIds,
+  planWorkingSet,
+  renderWorkingSetIndexMessage,
+} from "../context/working-set";
+import { currentSegmentInfo } from "../storage/thread-history";
 /** ★ 第 45 波：`saveMessages` 的成本账（core 侧 ✓，store 写入、这里取走 ✓） */
 import { takeSaveStats } from "../storage/persist-stats";
 import { getTelemetry } from "../telemetry/telemetry";
@@ -127,6 +168,20 @@ export type LoopResult =
        * 避免两边各算一遍而分歧 ✓（第 70 波的既有教训 ✓）。
        */
       regressionRedTests?: string[];
+      /**
+       * ★★ C06 边界②：**文档同步硬闸**（从"收尾提醒"升级为"不允许标记完成"）。
+       *
+       * 非空 ⇒ 这一轮因「改过文件 + 账本里带版本的文档版本落后/读不到」被拒收；
+       * 由 `describeTurnOutcome` 消费 ⇒ **绝不显示"任务完成"**，并把原因与修法透给用户。
+       * 空/缺席 ⇒ 没拦（绝大多数回合都是这个形态，结果对象与改前逐字一致）。
+       */
+      documentSyncBlocked?: { changed: string[]; unknown: string[] };
+      /**
+       * C06 边界②的**放行**形态：同一（文档 + 版本）已经拦过，或本会话拦截次数达到上限
+       * （见 `completion-guards.ts::MAX_DOCUMENT_SYNC_BLOCKS`），本轮不再阻塞收尾，
+       * 但结果**必须标未验证** ⇒ 呈现层同样拒绝"任务完成"卡片。
+       */
+      documentSyncUnverified?: { changed: string[]; unknown: string[] };
     }
   | {
       type: "overflow";
@@ -242,11 +297,34 @@ function skipReasonFor(code: number): string {
   if (code === -2) return "当前没有可移除的旧消息（保留集已覆盖全部可见消息）";
   if (code === -3) return "保留集为空（可见消息只剩压缩摘要标记），本次不压缩";
   if (code === -4) return "可见消息太少（≤2 条），压缩无法减小上下文";
+  /* CMP-P-4：marker-only 是**稳态**，不是"窗口已满"，也不该被记成一次压缩 */
+  if (code === -5) return "待压缩内容只有压缩摘要标记（没有可压的真实内容），本次不压缩";
   return "当前没有可压缩的内容";
 }
 
-export interface LoopState {
-  iteration: number;
+/**
+ * ★ CMP-P-1：最近一次上下文压力估算的**构成读数**（只给日志/面板/判据看，不参与任何判断）。
+ *
+ * 为什么要有它：24 §P0-5 要求的不是"压力数字变大"，而是"**不许静默漏算**"——
+ * 某条路径确实拿不到工具表时，必须能在外部回答「这一次估算到底算了什么」。
+ */
+export interface PressureBasis {
+  /** 工具定义是否被计入（`false` = 本回合还没算出工具表，按 0 计并已留痕） */
+  toolsIncluded: boolean;
+  /** 计入的工具条数（`toolsIncluded=false` 时为 0） */
+  toolCount: number;
+  /** 系统提示词是否被计入（纯估算路径才有意义；真实基准路径恒为 true） */
+  systemIncluded: boolean;
+  /**
+   * `actual` = 用最近一次真实 promptTokens 作基准（system/tools 已含在基准里）；
+   * `estimate` = 纯估算（本轮把消息 + 工具定义 + 系统提示词相加）。
+   */
+  mode: "actual" | "estimate";
+  /** 估算发生的时刻（毫秒） */
+  at: number;
+}
+
+export interface LoopState {  iteration: number;
   /**
    * Hard iteration cap (0 = no cap). Only used as a runaway safety valve,
    * NOT as a normal stop condition. The loop stops when the model produces
@@ -272,7 +350,7 @@ export interface LoopState {
   isCompacting: boolean;
   /** 本轮是否已经压缩过（避免同一轮重复压） */
   compactedThisIteration: boolean;
-  /** 连续压缩次数（≥3 就认为"压了也没用"，按"压缩无效"上报并中止本轮） */
+  /** 连续压缩次数（达到 `MAX_CONSECUTIVE_COMPACTIONS` 就认为"压了也没用"，按"压缩无效"上报并中止本轮） */
   consecutiveCompactions: number;
   /* （全量审计）microCompactedThisRun 是死状态（多处赋值、0 处读取）⇒ 已删除 */
   costDegraded: boolean;
@@ -352,6 +430,24 @@ export interface LoopConfig {
   toolExecutor?: Partial<ToolExecutorConfig>;
   /** Called when a tool needs user permission. Return the user's decision. */
   onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionResult>;
+  /**
+   * 把需要用户审批的工具调用变成 `permission_request` 事件（默认关闭）。
+   *
+   * ## 为什么要有它（P1-4：生产 Bot runner 的审批）
+   *
+   * `onPermissionRequest` 是「回调式」审批：调用方必须自己保存那个 Promise 并在界面上
+   * 决定。Bot 的执行方是**生成器事件流**（群聊派发只消费事件），没有一个天然的回调
+   * 落点；而事件流里本来就有 `permission_request` 的声明形状。
+   *
+   * 开启后：
+   * - `checkPermission` 把请求推进 `PermissionEventQueue`，并 `await` 用户决定；
+   * - `run()` 在工具执行事件流里插入 `permission_request`，把 `resolve` 一并交给消费者；
+   * - 消费者**不调用 resolve** ⇒ 生成器永远停在那里（= 审批前不执行）。
+   *
+   * 注意：只在**明确开启**时生效。未开启时行为与改动前逐字一致（有回调走回调，
+   * 没有回调按 fail-closed 拒绝）。
+   */
+  permissionRequestEvents?: boolean;
 
   /**
    * 目标模式存储（默认 `getGoalStore()` 单例）。
@@ -677,6 +773,106 @@ export type LoopEvent =
   | { type: "agent_message_received"; fromAgent: string; subject: string; body: string }
   | { type: "end"; result: LoopResult };
 
+/** 一条等待用户决定的工具审批（队列项；`resolve` 就是事件里交回给消费者的那个函数） */
+interface PendingPermissionRequest {
+  request: PermissionRequest;
+  resolve: (result: PermissionResult) => void;
+}
+
+/** `permission_request` 事件的形状（与 `LoopEvent` 里的同名分支逐字一致） */
+type PermissionRequestEvent = {
+  type: "permission_request";
+  request: PermissionRequest;
+  resolve: (result: PermissionResult) => void;
+};
+
+/**
+ * 审批请求的排队器（P1-4：生产 Bot runner 的审批入口）。
+ *
+ * ## 为什么需要队列，而不是在 `checkPermission` 里直接 `yield`
+ *
+ * 权限检查发生在**工具执行器内部**（一个普通 async 函数），而 `yield` 只允许出现在
+ * `run()` 这个 async generator 里。所以两侧各做一半：
+ * - `checkPermission` 把「请求 + 等待决定的 Promise」推进队列；
+ * - `run()` 的迭代循环用 `withPermissionEvents()` 把队列项变成 `permission_request` 事件。
+ *
+ * ## 不 resolve 就会**永远挂起**（这是刻意的）
+ *
+ * 队列项被 `yield` 出去后，工具的 `checkPermission` 一直 `await` 那个 Promise。
+ * 消费方不调用 `resolve`，生成器就停在 `permission_request` 那里 —— 这正是
+ * 「审批前不执行」的机制保证：没有任何路径能在未批准时让工具继续跑。
+ */
+class PermissionEventQueue {
+  private items: PendingPermissionRequest[] = [];
+  private waiters: Array<(item: PendingPermissionRequest) => void> = [];
+
+  /** 推入一条请求（有等待者就直接交付，避免多造一个 Promise） */
+  push(item: PendingPermissionRequest): void {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter(item);
+    else this.items.push(item);
+  }
+
+  /** 取下一条请求；没有就等（队列是按 `permission_request` 顺序消费的） */
+  take(): Promise<PendingPermissionRequest> {
+    const item = this.items.shift();
+    if (item) return Promise.resolve(item);
+    return new Promise<PendingPermissionRequest>((resolve) => this.waiters.push(resolve));
+  }
+}
+
+/**
+ * 把工具执行器的事件流与审批队列合并成一个事件流。
+ *
+ * 两个来源的**先后语义**由 `Promise.race` 决定：谁先就绪谁先出去。工具还没开始跑时
+ * （权限检查在管线 pre-execute 层）只有审批会就绪；批准之后工具才执行并产出
+ * `tool_complete` 等事件。**不改变**任何既有事件的顺序，只在中间插入审批事件。
+ *
+ * ⚠️ `finally` 里的 `return()` 是必需的：`run()` 里任何一处提前 `return`（中止/截断/
+ * 守卫停止）都要把工具执行器关掉，否则它会继续派发调用。
+ */
+async function* withPermissionEvents(
+  events: AsyncIterable<ToolExecutorEvent>,
+  queue: PermissionEventQueue,
+): AsyncGenerator<ToolExecutorEvent | PermissionRequestEvent, void, unknown> {
+  const iterator = events[Symbol.asyncIterator]();
+  let nextToolEvent = iterator.next();
+  let nextPermission = queue.take();
+  try {
+    /*
+     * ⚠️ 这里刻意写无限 `for` 而不是无限 `while`：
+     * `agentic-loop-exit-reason.test.ts` 的抽取器按**全文第一处**无限 while 定位
+     * `run()` 的主循环 —— 在它前面再出现一个同形写法会把抽取器带偏（判据假红）。
+     */
+    for (;;) {
+      const winner = await Promise.race([
+        nextToolEvent.then((value) => ({ kind: "tool" as const, value })),
+        nextPermission.then((value) => ({ kind: "permission" as const, value })),
+      ]);
+      if (winner.kind === "permission") {
+        /* 先挂上新的等待，再 yield：消费方在 resolve 之后可能立刻推进下一个事件 */
+        nextPermission = queue.take();
+        yield {
+          type: "permission_request",
+          request: winner.value.request,
+          resolve: winner.value.resolve,
+        };
+        continue;
+      }
+      if (winner.value.done) return;
+      yield winner.value.value;
+      nextToolEvent = iterator.next();
+    }
+  } finally {
+    try {
+      await iterator.return?.(undefined);
+    } catch (e) {
+      /* 关闭失败不能反过来改变「这一轮到此为止」的结论，但必须留痕 */
+      console.warn("[AgenticLoop] 关闭工具执行器失败（本轮不再派发工具）：", e);
+    }
+  }
+}
+
 // ========== Agentic Loop ==========
 /**
  * **收尾时"还有红的测试"最多提醒几次**（第 128 波，值是**实测逼出来的**）。
@@ -752,6 +948,8 @@ export function buildCompactionInstruction(): string {
 - 用简洁的中文工程式写摘要
 - 保留精确的文件路径、命令、错误字符串、标识符、数值
 - 忠实捕获用户反馈和明确指示
+- 总长度不超过 ${COMPACTION_SUMMARY_MAX_CHARS} 字符（结构化段落优先于细节；写不下时先压缩细节，不要删掉整段）
+- 旧消息原文**没有被删除**，仍在时间线里：需要更早的细节时，可用 thread_history_search / thread_history_read 回读
 ${COMPACTION_MEMORY_AUTHORITY_RULE}
 - 不要提及这个摘要请求本身
 - 只输出检查点文本，不调用任何工具`;
@@ -786,7 +984,8 @@ export function buildCompactionSystemPrompt(): string {
 - 每个条目一行，不要展开细节
 - 如果已有前序摘要，将其内容合并到新摘要中（不要丢失前序信息）
 - 持久记忆是权威的：不得因为压缩/摘要而降级或改写记忆里的结论（摘要与记忆冲突时以记忆为准）
-- 总长度不超过 1500 字符
+- 总长度不超过 ${COMPACTION_SUMMARY_MAX_CHARS} 字符（结构化段落优先于细节）
+- 旧消息原文仍在时间线里：需要更早的细节时可用 thread_history_search / thread_history_read 回读
 - 不要包含临时性信息（如中间步骤的调试输出）`;
 }
 
@@ -971,6 +1170,37 @@ export class AgenticLoop {
   private testFileBaseline = new Map<string, "red" | "green">();
   /** 回归提醒已用次数（每轮重置 ✓，与 `redTestNudges` 并列 ✓） */
   private regressionNudges = 0;
+  /**
+   * 本回合**中途已经换过段**（`trySwitchSegment` 成功）。
+   *
+   * 为什么要这个字段：压力触发点（hard 线 / 连压 ≥2）可能在回合中途先切一次；
+   * 那一轮稍后正常完成时，完成出口若再切一次，会在**刚建好的新段里**再切一刀
+   * （时间线只多了一两条消息，handoff 却再写一份）—— 语义上是同一个任务边界被处理两遍。
+   * 判据 `AUTOCOMPACT-SWITCH` 的"模型视图的头必须是 switch marker"就是被这种二次切段打红的
+   * （第二次切段会产出**新的** marker，视图头变成第二个，而用例拿的是第一个）。
+   *
+   * 生命周期：每轮开始置 false（与 `redTestNudges` 等"按轮重置"字段同居），
+   * 只有 `trySwitchSegment` 真的写成才置 true。
+   */
+  private switchedThisTurn = false;
+  /** 本回合是否曾达到考虑线（即使中途压缩把压力降下去，完成态仍应换段） */
+  private considerPressureSeenThisTurn = false;
+  /**
+   * P2 自适应 steward 的**观测基线**：上一回合「平均每次模型调用的 prompt tokens」。
+   *
+   * 为什么用平均值而不是累计：一个回合可能有多次工具迭代，累计值会把「上下文本身多大」
+   * 算进「本回合新增多少」里 —— 那就等于把压力再算一遍（第二套压力模型，明确禁止）。
+   * 用「本回合均值 − 上一回合同口径均值」得到的是**增量**（约等于用户消息 + 工具输出），
+   * 只喂给 `resolveStewardPolicy` 做「大单轮」判定。
+   *
+   * `null` = 还没有上一回合可比（首个回合不做单轮调整，保守）。
+   * 只在正常收尾出口（`trySwitchOnCompletion`）更新；中止/异常回合不更新基线。
+   */
+  private previousTurnPromptAvg: number | null = null;
+  /** 上一回合观测到的增量 token（0 = 没有可用观测；跨轮保留给中途触发点用） */
+  private observedTurnTokens = 0;
+  /** 本回合是否已经把 `steward_policy` 审计写进事件（每回合最多一条，避免每迭代刷屏） */
+  private stewardPolicyAuditedThisTurn = false;
   /** 本轮因"收尾时测试还红着"提醒过几次（上限 1，避免把模型困在循环里） */
   private redTestNudges = 0;
 
@@ -1365,6 +1595,26 @@ export class AgenticLoop {
   /** **模式 A（零产出收工）**的提醒也是每会话一次 ✓（第 162 波 ✓）。 */
   private zeroOutputNudged = false;
   /**
+   * **C06：文档版本同步提醒**（每会话一次）。
+   *
+   * 触发要看**跨模块**的三份事实（本轮改过文件、账本有覆盖、账本里还有未验/版本变过），
+   * 判定抽在 `completion-guards.ts::shouldNudgeDocumentSync`（纯函数），这里只负责取数与去重 ——
+   * 与另外三把收尾守卫同一形状，判据可以只测纯函数，不必驱动整个循环。
+   */
+  private documentSyncNudged = false;
+  /**
+   * **C06 硬闸：已经拦过的「文档 id + 版本」**（会话级）。
+   *
+   * 为什么按「文档 + 版本」而不是一个布尔：会话级一次性额度会让第一份文档拦过之后
+   * **所有**新 stale 文档都放行（新问题再也拦不住）。这里保证另一份文档、或同一份文档的
+   * 新版本仍有拦截机会；总次数上限见 `completion-guards.ts::MAX_DOCUMENT_SYNC_BLOCKS`。
+   */
+  private documentSyncBlockedKeys = new Set<string>();
+  /** **C06 硬闸：已经拦过几次**（会话级；达到总上限后只放行并标未验）。 */
+  private documentSyncBlocks = 0;
+  /** 本回合是否要把「放行但未验证」写进结果（在收尾出口消费） */
+  private documentSyncUnverified: { changed: string[]; unknown: string[] } | null = null;
+  /**
    * **本会话动过盘上的东西**（第 157 波 ✓）—— 与 `sessionEditedSources` 的区别很关键 ✗：
    *
    * 真机上失败轮的编辑**多半是用 bash 写的** ✗（`python -c …` / `echo … > file` ✓，
@@ -1395,6 +1645,69 @@ export class AgenticLoop {
    * - `lastIterationEndAt` ⇒ `work=`（上一轮迭代结束到这一轮发请求 ✓ = 工具执行 + 收尾 ✓）。
    */
   private lastBuildMessagesAt = 0;
+  /** C04：上一次记录的 manifest 指纹（去重用，每轮重置） */
+  private lastManifestKey = "";
+  /**
+   * ## C03：**工作集之前**的那一份消息（压力口径的输入）
+   *
+   * 为什么需要它：工作集会把请求截到预算内（`budgetTokens = 窗口 − 输出预留 − 系统提示词`，
+   * 恒小于 `窗口 × 0.9`）⇒ 若压力仍按**截断后**的数组算，它就再也贴不到 hard 线（0.9），
+   * 于是**自动压缩 / 换段在构造上不可达** —— 而那正是 C13「用户不做上下文管理」的前提。
+   *
+   * 语义上这也更对：「上下文有多满」问的是**这段对话的体积**，不是"这一次请求的字节数"。
+   * 被工作集移出视图的消息仍在时间线里、仍会被索引指回 —— 它们没有离开对话。
+   *
+   * 口径：`buildMessages` 每次在应用工作集**之前**覆盖它；`run()` 的三处压力计算优先用它
+   * （没有则退回传入的消息数组，行为与改前逐字一致）。每轮开始置空，避免上一轮的残留。
+   */
+  private lastPressureBasis: any[] | null = null;
+  /**
+   * C04：**本轮**基础 system 提示词。
+   *
+   * `buildMessages()` 返回的数组里没有 system 消息（它由 `callLLM` 拼到最前），
+   * 而前缀摘要的定义是「system 内容 + 第一条 user」——所以把本轮基础提示词留在这里，
+   * 供 `recordContextManifest` 计算 `prefixHash`。每轮开始由 `run()` 覆盖。
+   */
+  private turnSystemPrompt = "";
+  /**
+   * ★ CMP-P-1：**本轮真实发送的工具定义**（`toolDefs` 过滤之后的集合）。
+   *
+   * ## 被守的缺陷（24 §P0-5 / 24 §6 `CMP-P-1`）
+   *
+   * `estimateContextPressure()` 里读的是 `(this as any).currentToolDefs`，而**全仓没有任何赋值**
+   * ⇒ `toolCount` 恒为 0、纯估算路径永远只算消息。首轮（还没有真实 usage）压力因此系统性偏低
+   * ⇒ 第一次压缩触发偏晚。
+   *
+   * 现在由 `run()` 的 prep 在算出 `toolDefs`（core 定义 + 会话/模式/附件过滤后的**实际发送集合**）
+   * 之后立刻写这里；`buildMessages()` 内部那两处早于工具表计算的估算会读到 `null` ——
+   * 那种情况**显式按 0 计并留痕**（`getPressureBasis().toolsIncluded === false` + 一次性日志），
+   * 绝不静默漏算。
+   */
+  private currentToolDefs: ToolDefinition[] | null = null;
+  /**
+   * ★ CMP-P-1：本轮**实际发送的系统提示词**（基础提示词 + 易变附录）。
+   *
+   * `buildMessages()` 的数组里没有 system 消息（它由 `executeIteration` 拼到最前），
+   * 所以压力估算必须由这里拿到同一份正文；`run()` 在 prep 里用**同一个**
+   * `appendVolatileAppendix()` 写它，保证"估算的"与"发出去的"不是两段文本。
+   */
+  private pressureSystemPrompt = "";
+  /** ★ CMP-P-1：最近一次压力估算的构成（给日志/面板/判据看，不参与任何判断）。 */
+  private lastPressureEstimate: PressureBasis | null = null;
+  /**
+   * C04：`currentSegmentInfo` 的**本轮缓存**（键 sessionId）。
+   *
+   * 为什么：它每次调用都要读整条时间线，而 `buildMessages` 一轮里会被调用多次
+   * （重试/重建）。缓存到回合结束，轮内复用；`run()` 的按轮重置区会清空，
+   * 所以不存在「上一轮的段号泄漏到这一轮」的跨轮脏读。
+   *
+   * 换段发生在轮内时，视图里的 epoch marker 会变；`recordContextManifest` 检测到
+   * marker 与缓存不一致会立即重读一次（见 `freshSegmentInfo`），避免记录旧段号。
+   */
+  private manifestSegmentCache = new Map<
+    string,
+    { segmentSeq: number; epochId?: string; cutoffMessageId?: string }
+  >();
   private lastIterationEndAt = 0;
   /**
    * **`buildMessages` 返回的时刻** ✓（第 182 波 ✓）。
@@ -1548,6 +1861,25 @@ export class AgenticLoop {
 }
 
 /**
+ * 事件式审批的**等待点**（P1-4）：把请求推进本轮队列，等消费方在
+ * `permission_request` 事件里调用 `resolve`。
+ *
+ * 为什么单独一个方法而不是内联在 `checkPermission` 里：那段内联会插在
+ * 「回调式审批」与「fail-closed 缺省」之间，把两者推得太远 ——
+ * `plan-mode-readonly-gate.test.ts::PLAN-5` 按源码距离钉住「ask 没有通道必须拒绝」，
+ * 内联版会让它假红（不是判据太严，是"缺省分支要挨着入口"本身就是可读性约束）。
+ *
+ * 语义：**不 resolve 就永远挂起** —— 这正是「审批前工具一定不执行」的机制保证
+ * （真正的用户决定由生产 Bot runner 的 approval broker 交回来）。
+ */
+private waitForPermissionViaEvents(
+  queue: PermissionEventQueue,
+  request: PermissionRequest,
+): Promise<PermissionResult> {
+  return new Promise<PermissionResult>((resolve) => queue.push({ request, resolve }));
+}
+
+/**
  * ★ 第 185 波（T1）：**本 loop 的管线宿主回调**（闸门按次从调用上下文取的那一份）。
  *
  * ## 为什么要有这个方法（而不是把对象内联在 `initDefaultPipeline(...)` 里）
@@ -1566,7 +1898,7 @@ export class AgenticLoop {
  * 每次调用返回**新对象**（回调都读 `this.config` / `this.tools` 的当前值，
  * 所以对象本身不需要缓存 —— 缓存反而会把模式切换之类的活读变成快照）。
  */
-private pipelineHost(): ToolPipelineHost {
+private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolPipelineHost {
   return {
     isPlanMode: () => this.config.collaborationMode === "plan",
     // 第 87 波：跟随设置（原来是硬编码 () => false，面板里的沙箱开关形同虚设）
@@ -1633,6 +1965,22 @@ private pipelineHost(): ToolPipelineHost {
 
       const action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
 
+      /**
+       * 审批结果的**唯一处置点**：回调式与事件式共用同一条判定，
+       * 免得两种通道各写一份（「拒绝理由进模型可见文本」这类语义一处分叉就是漏洞）。
+       */
+      const applyDecision = (result: PermissionResult): { allowed: boolean; denyMessage?: string } => {
+        if (result.action === "deny") {
+          // 用户理由必须进模型可见的工具结果；单行化/截断/空理由回落见 describeUserDenial()
+          return { allowed: false, denyMessage: describeUserDenial(toolName, result.reason) };
+        }
+        // 「始终允许」的唯一消费点：只记本会话 + 精确 (tool, resource)（通配/跨会话会盖过 S2 硬 deny）
+        if (result.action === "allow" && result.alwaysAllow === true && resource && sessionId) {
+          permissionManager.getEvaluator().setAlwaysAllow(toolName, resource, "allow", sessionId);
+        }
+        return { allowed: true };
+      };
+
       if (action === "ask" && this.config.onPermissionRequest) {
         const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
         const request: PermissionRequest = {
@@ -1644,17 +1992,18 @@ private pipelineHost(): ToolPipelineHost {
           timestamp: Date.now(),
         };
 
-        const result = await this.config.onPermissionRequest(request);
-
-        if (result.action === "deny") {
-          // 用户理由必须进模型可见的工具结果；单行化/截断/空理由回落见 describeUserDenial()
-          return { allowed: false, denyMessage: describeUserDenial(toolName, result.reason) };
-        }
-
-        // 「始终允许」的唯一消费点：只记本会话 + 精确 (tool, resource)（通配/跨会话会盖过 S2 硬 deny）
-        if (result.action === "allow" && result.alwaysAllow === true && resource && sessionId) {
-          permissionManager.getEvaluator().setAlwaysAllow(toolName, resource, "allow", sessionId);
-        }
+        return applyDecision(await this.config.onPermissionRequest(request));
+      } else if (action === "ask" && permissionQueue) {
+        /* 事件式审批（P1-4）：把请求交给 `run()` 的 `permission_request` 事件流 */
+        const request: PermissionRequest = {
+          id: `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          sessionId: ctx.sessionId,
+          tool: toolName,
+          input: args,
+          resource,
+          timestamp: Date.now(),
+        };
+        return applyDecision(await this.waitForPermissionViaEvents(permissionQueue, request));
       } else if (action === "deny") {
         return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
       } else if (action === "ask") {
@@ -1672,8 +2021,8 @@ private pipelineHost(): ToolPipelineHost {
           allowed: false,
           denyMessage:
             `Permission required for tool "${toolName}" but no approval channel is available ` +
-            `(the caller did not provide onPermissionRequest). Denied by default — ` +
-            `set the security mode to "auto"/"full" or provide an approval callback.`,
+            `(the caller did not provide onPermissionRequest, and no permission_request consumer is active). ` +
+            `Denied by default — set the security mode to "auto"/"full" or provide an approval callback.`,
         };
       }
 
@@ -1811,8 +2160,26 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     return {
       iteration: 0,
       maxIterations: this.config.maxIterations,
-      totalUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheHitTokens: 0, uncachedInputTokens: 0 },
-      compactionUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheHitTokens: 0, uncachedInputTokens: 0 },
+      totalUsage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cacheHitTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReported: false,
+        uncachedInputTokens: 0,
+      },
+      compactionUsage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cacheHitTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReported: false,
+        uncachedInputTokens: 0,
+      },
       toolCallsInIteration: 0,
       consecutiveErrors: 0,
       contextPressure: 0,
@@ -2016,6 +2383,32 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     // 【第 46 波】基线随之清空 ✓（"回归"= 本轮之内被改红 ✓）；回归提醒次数也归零 ✓
     this.testFileBaseline.clear();
     this.regressionNudges = 0;
+    /* 本回合是否已在中途换过段（完成出口据此避免"同一轮切两次"） */
+    this.switchedThisTurn = false;
+    this.considerPressureSeenThisTurn = false;
+    /**
+     * P2 自适应 steward 的**按轮状态**：审计每回合最多一条；观测基线**不**在这里重置
+     * （它正是跨回合的「上一回合均值」，只在收尾出口更新）。
+     */
+    this.stewardPolicyAuditedThisTurn = false;
+    /**
+     * C04：清单的按轮状态 —— 去重键、段信息缓存、基础 system 提示词。
+     * 放在"按轮重置"区里，保证下一轮从干净状态开始（不许跨轮复用：段号/前缀都会变）。
+     */
+    this.lastManifestKey = "";
+    /** C03：压力口径的输入每轮重算（`buildMessages` 会覆盖；先置空避免上一轮残留） */
+    this.lastPressureBasis = null;
+    /**
+     * ★ CMP-P-1：工具表 / 系统提示词 / 构成读数**同样按轮重置**。
+     *
+     * 不重置的话，上一轮的工具集会"继承"到这一轮第一次 `buildMessages` 的估算里 ——
+     * 那条路径本来就不该假装自己知道本轮的发送集合（宁可如实标「未计入」）。
+     */
+    this.currentToolDefs = null;
+    this.pressureSystemPrompt = "";
+    this.lastPressureEstimate = null;
+    this.manifestSegmentCache.clear();
+    this.turnSystemPrompt = systemPrompt;
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
     this.turnTouchedCode = false;
@@ -2025,6 +2418,12 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.turnRanVerification = false;
     this.turnEditsAfterVerification = false; // 第 140 波：时序判据 ✓
     this.verificationNudgeIssued = false;
+    /**
+     * C06 边界②：**「放行但标未验」是本回合的结果**（不是会话状态）——
+     * 每轮重置，避免上一轮的未验标记永久挂在后面每个回合上。
+     * `documentSyncBlockedKeys` / `documentSyncBlocks` **不**在这里重置（它们是会话级的闸门额度）。
+     */
+    this.documentSyncUnverified = null;
     this.planRevision = 0;
     this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
@@ -2468,14 +2867,50 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       const apiMessages = await this.buildMessages(sessionId);
       /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
       this.lastBuildReturnAt = Date.now();
+      /**
+       * 提示缓存断点 2 的锚点：**稳定前缀的最后一条消息**（`prompt-cache.ts`）。
+       *
+       * 为什么由这里算、而不是让协议层猜「倒数第 2 条」：只有请求侧知道易变尾部
+       * （时间上下文 / 计划上下文 / 目标摘要 / 表面状态）从哪一条开始 ——
+       * 它们都在 `apiMessages` **之后**才拼上来；而工作集索引消息
+       * （`ctx-workingset-index`，见 `attachWorkingSetIndex`）虽然已经在
+       * `apiMessages` 里，但它本身每轮都变，也必须排除。
+       * `stablePrefixLastMessageId` 就是这两条规则的唯一实现。
+       *
+       * ⚠️ 压缩 / 引导会重建消息（`buildMessages`）⇒ 下面三处重建后都要**重算**；
+       * 不重算的话锚点可能指向一条已经不在请求里的消息（协议层只好退化）。
+       */
+      let promptCacheAnchorId = stablePrefixLastMessageId(apiMessages);
       // P2/P4: Filter tool definitions based on runtime context.
       // - Plan mode: write/edit/multi_edit/tts/image_gen tools are hidden (enforced at registration layer)
       // - read_attachment: only available when conversation has document attachments
       //   (matches Wegent's ChatContext._build_extra_tools has_attachments pattern)
       // P0-2: Use core definitions (non-deferred) + deferred hints to save tokens.
       // Deferred tools (like lsp) are loaded on-demand via tool_search.
-      const allToolDefs = filterToolDefsForSession(sessionId, this.tools.getCoreDefinitions());
-      const deferredHints = this.tools.getDeferredDefinitions();
+      /**
+       * ★ Bug 1（真机：`tool_search` 之后仍不可调用）：
+       * 激活表按 sessionId 记忆，构造请求时把**已激活工具的真实定义**追加进来。
+       *
+       * 约束：只改请求侧的 `toolDefs`，**不改** `ToolDef.shouldDefer` —— 常驻 schema
+       * 预算（`getCoreDefinitions()` 的结果）保持原样，激活只发生在这一轮请求上。
+       * 生命周期/去重/上限见 `deferred-activation.ts`。
+       */
+      const activatedNames = getActivatedDeferredTools(sessionId);
+      const activatedDefs: ToolDefinition[] = [];
+      for (const name of activatedNames) {
+        const activatedDef = this.tools.getDeferredDefinition(name);
+        if (activatedDef !== undefined) activatedDefs.push(activatedDef);
+      }
+      const activatedNameSet = new Set(activatedDefs.map((def) => def.name));
+      const allToolDefs = filterToolDefsForSession(sessionId, [
+        ...this.tools.getCoreDefinitions(),
+        ...activatedDefs,
+      ]);
+      // 已激活的工具不再出现在 Deferred 提示里：否则提示还在说「没加载，先 tool_search」，
+      // 与同一轮请求里已经带上完整定义的事实自相矛盾。
+      const deferredHints = this.tools
+        .getDeferredDefinitions()
+        .filter((hint) => !activatedNameSet.has(hint.name));
       const writeToolNames = new Set(["write", "edit", "multi_edit", "tts", "image_gen"]);
 
       // P4: Check if any message in this session has a document attachment.
@@ -2492,6 +2927,15 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         if (conditionalToolNames.has(t.name)) return false;
         return true;
       });
+      /**
+       * ★ CMP-P-1：把**本轮实际发送集合**交给压力估算。
+       *
+       * 写在这里的理由：`toolDefs` 是"core 定义 + 本会话/当前模式/附件过滤"之后真正进请求的那一份
+       * （`executeIteration` 的 `tools: toolDefs` 用的就是它），deferred 工具走的是系统提示词里的
+       * 提示文本、不是工具定义 —— 它们的开销由下面的 `pressureSystemPrompt`（含 `extraSystemPrompt`）
+       * 计入，不会漏。旧实现读 `(this as any).currentToolDefs` 而全仓无赋值 ⇒ 首轮压力永远漏工具。
+       */
+      this.currentToolDefs = toolDefs;
 
       /**
        * 本轮要追加给模型的内容，两种落点 —— 判据是「内容会不会随时间变化」：
@@ -2584,7 +3028,11 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         extraSystemPrompt += deferredPrompt;
       }
 
-      debugLog("agent-loop", `collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
+      debugLog("agent-loop", `collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length}, activated: ${activatedDefs.length})`, toolDefs.map(t => t.name));
+      if (activatedDefs.length > 0) {
+        // 明确日志：真机排查「tool_search 之后到底激活了哪些工具」
+        debugLog("agent-loop", "deferred tools activated in this request:", activatedDefs.map((def) => def.name));
+      }
       /** 第 184 波：工具定义构建+技能注入 打点 ✓（`prep` 窗口的第一段 ✓）。 */
       debugLog("agent-loop", `prep打点 toolDefs t=${Date.now()}`);
 
@@ -2777,12 +3225,26 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        * 3. 没有文档用法 ⇒ 一个字都不写（不把普通对话变成永远带一段固定文本）。
        */
       try {
-        const [{ collectionIdForSession }, { hasDocumentLedger, renderDocumentLedger }] =
-          await Promise.all([
-            import("../document/session-collection"),
-            import("../document/ledger"),
-          ]);
+        const [
+          { collectionIdForSession },
+          { hasDocumentLedger, renderDocumentLedger, noteDocumentLedgerSegment },
+        ] = await Promise.all([
+          import("../document/session-collection"),
+          import("../document/ledger"),
+        ]);
         const docCollection = collectionIdForSession(sessionId);
+        /**
+         * C06：把**当前段号**告诉账本（只观察、不重置）。
+         *
+         * 为什么用清单缓存的段号而不是再读一次时间线：`currentSegmentInfo` 每次都要扫
+         * 整条时间线，而这段代码在每轮 prep 里跑；`recordContextManifest`（`buildMessages`
+         * 末尾）已经把本轮段号算好放进 `manifestSegmentCache`，直接复用即可。
+         * 拿不到（首个请求）就不写 —— 账本不猜段号。
+         */
+        const cachedSegment = this.manifestSegmentCache.get(sessionId)?.segmentSeq;
+        if (typeof cachedSegment === "number") {
+          noteDocumentLedgerSegment(docCollection, cachedSegment);
+        }
         if (hasDocumentLedger(docCollection)) {
           const ledgerText = renderDocumentLedger(docCollection, 2000);
           if (ledgerText) {
@@ -2794,7 +3256,18 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         console.warn("[AgenticLoop] document ledger injection failed:", e);
       }
 
-      this.state.contextPressure = this.estimateContextPressure(apiMessages);
+      /**
+       * C03：压力按**工作集之前**的那一份算（见 `lastPressureBasis`）——
+       * 工作集只截请求，不缩小对话；否则 hard 线（0.9）在构造上不可达，
+       * 自动压缩/换段就永远不会触发（C13 的前提被悄悄取消）。
+       * 没走工作集时 `lastPressureBasis` 与 `apiMessages` 是同一个数组 ⇒ 行为不变。
+       *
+       * ★ CMP-P-1：估算前把**本轮真正发出去的系统提示词**记下来 —— 与 `executeIteration`
+       * 用的是同一个 `appendVolatileAppendix()`（基础提示词 + 易变附录），
+       * 于是"估算的那段文本"与"发出去的那段文本"不可能分叉。
+       */
+      this.pressureSystemPrompt = appendVolatileAppendix(systemPrompt, extraSystemPrompt);
+      this.state.contextPressure = this.estimateContextPressure(this.lastPressureBasis ?? apiMessages);
       /** 第 184 波：**只量不猜** ✓ —— 打时间戳，段差由这些行与 `llm timing` 的 ctx/tail/prep 一起算出 ✓。 */
       debugLog("agent-loop", `prep打点 pressure t=${Date.now()}`);
 
@@ -2819,26 +3292,133 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     if (!hiddenStateReady) {
       console.log("[compactMessages] 跳过压力压缩：消息索引镜像还没就绪（可见集可能含已隐藏的历史）");
     }
-    if (hiddenStateReady && this.state.contextPressure >= this.config.compactionThreshold && this.config.enableCompaction) {
-        // Prevent infinite compaction loops (max 3 consecutive compactions)
-        if (this.state.consecutiveCompactions >= 3) {
-          console.warn("[AgenticLoop] Too many consecutive compactions, forcing stop");
+    /*
+     * 2026-11-09：显式 segmentEpochs 的**首拍**不先把 0.7 穿越花在预防性压缩上。
+     * 规则说 compact 是因为 turnCompleted:false（完成态此刻客观未知）；
+     * 若本回合首拍就完成，压缩会把压力降下去，完成出口再也切不了段。
+     */
+    const deferCompaction = this.shouldDeferBoundaryCompaction(sessionId, apiMessages.length);
+    if (deferCompaction) {
+      console.log(
+        `[segment-defer] first-iteration pressure ${this.state.contextPressure.toFixed(3)} >= consider ⇒ 推迟预防性压缩（本拍到完成则直接 switch）`,
+      );
+    }
+    if (hiddenStateReady && this.state.contextPressure >= this.config.compactionThreshold && this.config.enableCompaction && !deferCompaction) {
+        this.considerPressureSeenThisTurn = true;
+        // Prevent infinite compaction loops (max MAX_CONSECUTIVE_COMPACTIONS consecutive compactions)
+        if (this.state.consecutiveCompactions >= MAX_CONSECUTIVE_COMPACTIONS) {
+          /**
+           * ★ C01（诚实性 P0，2026-11）：**窗口满不等于「只能重开对话」**。
+           *
+           * 被修的形态：连压到上限后这里直接结束本轮，并让用户「开启新对话」——
+           * 而 C01 对外的承诺是「一个连续 Thread，不因上下文窗口满而被迫重开」。
+           * 只要段式上下文（`segmentEpochs`）开着，换段本来就能把模型视图切开
+           * （不新建 Session、不删消息），没有理由先劝用户放弃这一轮。
+           *
+           * 处理顺序（与正常压缩块同一套收尾语义）：
+           * 1. 先 `trySwitchSegment`：成功 ⇒ 清缓存、重建视图、按效果重算连压次数，
+           *    `continue` 到下一轮继续（**同一 Session**）；
+           * 2. 换段不可用（同轮已切过 / 规则说 compact / 没有可切内容）⇒ 回退
+           *    `compactMessages`；真的压动了同样继续；
+           * 3. 两者都救不回来（`< 0`：拿不到锁 / 消息太少 / 无可移除）⇒ 才用原提示。
+           *
+           * ⚠️ **显式关闭**（`segmentEpochs: false`）必须**逐字不变**：不发压缩事件、不尝试换段/压缩，
+           * 直接走下面那段原提示。判据 `AUTOCOMPACT-CEILING-*` 用反向对照钉住这一点。
+           *
+           * 为什么这里可以 `continue` 而不是 `return`：本段在 `run()` 的主循环体里，
+           * 结束本轮是「发结束事件 + return」；`continue` 只是回到循环头，
+           * 下一轮会重新 `buildMessages`（清过缓存）并重算压力。
+           */
+          const ceilingCfg = getContextManager().getConfig();
+          if (ceilingCfg.segmentEpochs === true) {
+            /* 与正常压缩块同一事件形状：UI 的压缩横幅必须成对（start/end） */
+            yield { type: "compaction_start" };
+            const pressureBeforeRescue = this.state.contextPressure;
+            const switchOutcome = this.trySwitchSegment(sessionId);
+            let rescued = -1;
+            try {
+              rescued = switchOutcome.switched
+                ? (switchOutcome.removed ?? 0)
+                : await this.compactMessages(sessionId);
+              if (rescued >= 0) {
+                yield { type: "compaction_end", messagesRemoved: rescued, skipped: false };
+                /* 与正常压缩收尾逐项相同：清缓存 / 记忆钩子 / 重建视图 / 按效果计连压 */
+                TranscriptCache.clear();
+                this.readCache?.clear();
+                this.writeCache?.clear();
+                this.observationCache.clear();
+                this.msgCache = null;
+                if (this.config.memoryEnabled && this.config.onCompactionComplete) {
+                  try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+                }
+                messagesForIteration = await this.buildMessages(sessionId);
+                this.lastBuildReturnAt = Date.now();
+                /* 重建后必须重算提示缓存锚点（见 `promptCacheAnchorId` 计算处的说明） */
+                promptCacheAnchorId = stablePrefixLastMessageId(messagesForIteration);
+                {
+                  /* C03：与上面同一口径（工作集之前的消息），见 `lastPressureBasis` */
+                  const pressureAfter = this.estimateContextPressure(this.lastPressureBasis ?? messagesForIteration);
+                  this.state.consecutiveCompactions = nextConsecutiveCompactions(
+                    this.state.consecutiveCompactions,
+                    pressureBeforeRescue,
+                    pressureAfter,
+                    this.config.compactionThreshold,
+                  );
+                }
+                console.log(
+                  `[AgenticLoop] 窗口满但段式上下文开启：${switchOutcome.switched ? "换段" : "压缩"}救回（移出 ${rescued} 条）⇒ 继续同一会话，不要求用户重开对话`,
+                );
+                continue;
+              }
+            } catch (rescueErr) {
+              /* 救援本身抛错也算"救不回来"：回退原提示，绝不让一个异常吃掉可解释的终态 */
+              console.warn("[AgenticLoop] 窗口满救援失败（换段/压缩抛错），回退原提示:", rescueErr);
+              rescued = -1;
+            }
+            /* 换段与压缩都救不回来 ⇒ 如实上报「这次没救回」，然后才用原提示 */
+            yield {
+              type: "compaction_end",
+              messagesRemoved: 0,
+              skipped: true,
+              skipReason: skipReasonFor(rescued),
+            };
+          }
+          /*
+           * 2026-11-08 决定：**不允许「请开启新对话」兜底**。
+           * 换段/压缩两条救援都失败时，本轮以中性错误结束，Session 保留；
+           * 用户可以重试，不把「窗口满」等价成「必须放弃这个会话」。
+           */
+          console.warn("[AgenticLoop] 换段/压缩均未释放空间：中性错误结束本轮（同一 Session，可重试）");
           this.noteExit("context_overflow", sessionId);
           const result = this.finishWithNudges({
-            type: "overflow",
-            message: "上下文窗口已满，即使压缩后仍无法继续。请开启新对话。",
-            usage: this.state.totalUsage,
+            type: "error",
+            error: "上下文压缩未能释放空间；本会话仍保留，可以重试。",
+            detail: { contextOverflow: true },
           });
           yield { type: "end", result };
           return result;
         }
         yield { type: "compaction_start" };
-        const compacted = await this.compactMessages(sessionId);
+        /**
+         * P0-3（D1/D3/D11）：段式上下文开启时，先按**规则**决定"压缩还是换段"。
+         *
+         * - 显式关（`segmentEpochs: false`）⇒ 原样走 `compactMessages`，一行行为都不变；
+         * - 开且规则说 switch ⇒ 写一条 `kind="switch"` 的 epoch（**不新建 Session、不删消息**），
+         *   之后把"移出模型视图的条数"当作 `compacted` 继续走同一套收尾
+         *   （清缓存 / 重建消息 / 记忆提取 / 连压计数）。
+         *
+         * 为什么复用 `compacted`：下面那段收尾对"视图变了"的处理与压缩**完全相同**，
+         * 而 switch 恰恰也是"视图变了"。另起一条分支只会制造第二套收尾。
+         */
+        const switchOutcome = this.trySwitchSegment(sessionId);
+        const compacted = switchOutcome.switched
+          ? (switchOutcome.removed ?? 0)
+          : await this.compactMessages(sessionId);
         /**
          * ★ 第 228 波审计修复（中）：**"被跳过"与"压不动"必须分开记**。
          *
          * `compactMessages` 拿不到压缩锁时返回 **-1**（老实现返回 0，与"没有可移除的消息"
-         * 同值）⇒ 调用方把 skip 计成一次"压缩成功"，连跳 3 次就以
+         * 同值）⇒ 调用方把 skip 计成一次"压缩成功"，连跳 2 次就以
          * 「上下文窗口已满，即使压缩后仍无法继续」结束本轮 —— 而**一次压缩都没真正发生**。
          * 跳过的语义是"这次不算"：既不记账、也不清缓存（什么都没变）。
          */
@@ -2853,7 +3433,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         if (compacted === -4) {
           /**
            * ★ 全量审计：**消息太少**不是"另一次压缩在跑"，它是稳态 ⇒ 计入连压次数，
-           * 这样"连压 3 次"的熔断能给出诚实结论（而不是无限重试同一份注定失败的请求）。
+           * 这样「连压到上限」的熔断能给出诚实结论（而不是无限重试同一份注定失败的请求）。
            */
           this.state.consecutiveCompactions++;
         } else if (compacted < 0) {
@@ -2878,10 +3458,13 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           messagesForIteration = await this.buildMessages(sessionId);
           /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
           this.lastBuildReturnAt = Date.now();
+          /* 重建后必须重算提示缓存锚点（见 `promptCacheAnchorId` 计算处的说明） */
+          promptCacheAnchorId = stablePrefixLastMessageId(messagesForIteration);
           this.state.compactedThisIteration = true;
           // BRK：按**效果**计数（压力降了就不算"无效压缩"），而不是按次数
           {
-            const pressureAfter = this.estimateContextPressure(messagesForIteration);
+            /* C03：与上面同一口径（工作集之前的消息），见 `lastPressureBasis` */
+            const pressureAfter = this.estimateContextPressure(this.lastPressureBasis ?? messagesForIteration);
             this.state.consecutiveCompactions = nextConsecutiveCompactions(
               this.state.consecutiveCompactions,
               this.state.contextPressure,
@@ -2890,12 +3473,39 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
             );
           }
         }
-      } else {
+      } else if (!deferCompaction) {
         // Reset consecutive compactions if no compaction needed
         this.state.consecutiveCompactions = 0;
       }
       /** 第 185 波：压缩块出口 ✓ —— 与 `compactionIn` 的差就是整块（含 `compactMessages`）的耗时 ✓。 */
       debugLog("agent-loop", `prep打点 compactionOut t=${Date.now()}`);
+
+      /**
+       * P1-1：**水位 ≥80% 时注入一次 developer 提醒**（把目标/进度/卡点写进会话笔记）。
+       *
+       * ## 位置（为什么在压缩块之后、请求组装之前）
+       *
+       * - 必须在压缩/换段块**之后**：那里有 `continue`，若先消费提醒再 `continue`，
+       *   提醒文本会随本次迭代一起丢掉，而"本水位段已提醒"的状态却已经置位 ⇒ 永不提醒。
+       * - 必须在 `trailingTurnContext` 组装成尾部消息**之前**：它只能进易变尾部，
+       *   绝不进 system 稳定前缀（否则 `cache-prefix-stability` / NOTE-4 当场红）。
+       * - 只调 `water-level.ts` 的唯一入口（不在这里重算压力、不引入第二套阈值模型）。
+       * - **计划模式不提醒**：plan 模式是只读契约，`notes_append`（非只读）会被
+       *   `PlanModeGuard` 拒绝；提醒一个用不了的工具只会白耗一轮。
+       */
+      try {
+        if (this.config.collaborationMode !== "plan") {
+          const water = readContextWaterLevel(sessionId);
+          const notesReminder = maybeBuildWaterNotesReminder(sessionId, water.ratio);
+          if (notesReminder) {
+            trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notesReminder;
+            debugLog("agent-loop", "thread-notes reminder injected at water", water.ratio.toFixed(3));
+          }
+        }
+      } catch (e) {
+        /* 提醒是辅助机制：读水位/拼文案失败都不许阻断回合（notes 不可用回退现有行为） */
+        console.warn("[AgenticLoop] thread-notes reminder injection failed:", e);
+      }
 
       // === Guidance injection (mid-turn steering) ===
       // Consume one guidance item from the queue at this iteration boundary.
@@ -2942,6 +3552,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           this.msgCache = null;
           try {
             messagesForIteration = await this.buildMessages(sessionId);
+            /* 重建后必须重算提示缓存锚点（见 `promptCacheAnchorId` 计算处的说明） */
+            promptCacheAnchorId = stablePrefixLastMessageId(messagesForIteration);
           } catch (rebuildErr) {
             // 重建失败也不能丢：退回"注入临时消息"的老行为（模型这一轮仍能看到）
             console.warn("[AgenticLoop] Guidance persisted but message rebuild failed — injecting a temporary copy:", rebuildErr);
@@ -3088,6 +3700,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         cwd,
         systemPrompt,
         extraSystemPrompt,
+        /* 提示缓存断点 2 的锚点（稳定前缀最后一条消息）；协议层据此决定 cache_control 落在哪 */
+        promptCacheAnchorId,
       )) {
         // update_plan 工具修改计划后，先推送一次刷新事件，让 UI 的
         // "第X/X步"与完整步骤列表立即同步（对标 dsh todo 动态插入）。
@@ -3690,6 +4304,117 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         /**
+         * **C06：代码改完之后检查相关文档版本是否同步** —— 第四把收尾守卫。
+         *
+         * 与上面三把同一纪律：**只陈述事实**（账本里文档版本变了 / 章节没验 / 结论没验），
+         * 不施压、每会话一次、判定是纯函数。取数只走账本（不扫库、不读正文）：
+         * `hasDocumentCoverage` 说明这个任务确实用过文档，否则代码任务与文档无关、一律沉默。
+         *
+         * ⚠️ 前置用 `sessionEditedSources OR sessionModifiedAnything`：真机上大量编辑是
+         * **bash 写的**（`python -c` / `echo > file`），只认编辑工具会让这条守卫对大多数
+         * 真实改动沉默 —— 与上面「族提醒」那次踩过的坑同源（见 `sessionModifiedAnything` 注释）。
+         *
+         * ## C06 边界②：这里取到的同一批事实，也喂给**硬闸**
+         *
+         * 提醒只负责「给一次回合内补救的机会」；真正不允许标记完成的是下面那个
+         * `judgeDocumentSyncGate` 的判定（动作放在所有既有收尾守卫之后，见那里的说明）。
+         * **只取一次数**：`documentSyncCheck` 要读文档索引，没必要为提醒和硬闸各读一遍。
+         */
+        const codeTouchedFiles =
+          this.sessionEditedSources.size > 0 || this.sessionModifiedAnything;
+        let documentSyncGate: {
+          decision: DocumentSyncGateDecision;
+          versioned: number;
+          changed: string[];
+          unreadable: string[];
+        } = {
+          decision: { verdict: "none", keys: [], newlyBlocked: [] },
+          versioned: 0,
+          changed: [],
+          unreadable: [],
+        };
+        if (codeTouchedFiles) {
+          try {
+            const [{ collectionIdForSession }, ledger] = await Promise.all([
+              import("../document/session-collection"),
+              import("../document/ledger"),
+            ]);
+            const documentCollection = collectionIdForSession(sessionId);
+            const docSnapshot = ledger.documentLedgerSnapshot(documentCollection);
+            if (docSnapshot.hasContent) {
+              const sync = await ledger.documentSyncCheck(documentCollection);
+              /**
+               * 硬闸只看 `versioned` / `changed` / `unreadable`：
+               * 「没记过版本」的文档与「未验章节/claim」都**不**参与（低误报，见纯函数注释）。
+               *
+               * 账本给出的是「文档 + 版本」事实（`changed` 带当前 updatedAt/sha256，
+               * `unreadableFacts` 带账本记录版本）—— 硬闸据此按（文档 id + 版本）记账，
+               * 判定与键的生成都在纯函数里，这里不重复实现。
+               */
+              documentSyncGate = {
+                decision: judgeDocumentSyncGate({
+                  codeEdited: codeTouchedFiles,
+                  versionedDocuments: sync.versioned,
+                  changedDocuments: sync.changed.map((c) => ({
+                    documentId: c.documentId,
+                    name: c.name,
+                    ...(c.currentUpdatedAt !== undefined ? { updatedAt: c.currentUpdatedAt } : {}),
+                    ...(c.currentSha256 !== undefined ? { sha256: c.currentSha256 } : {}),
+                  })),
+                  unreadableDocuments: sync.unreadableFacts.map((u) => ({
+                    documentId: u.documentId,
+                    name: u.name,
+                    ...(u.recordedUpdatedAt !== undefined ? { updatedAt: u.recordedUpdatedAt } : {}),
+                    ...(u.recordedSha256 !== undefined ? { sha256: u.recordedSha256 } : {}),
+                  })),
+                  blockedKeys: [...this.documentSyncBlockedKeys],
+                  blocksIssued: this.documentSyncBlocks,
+                }),
+                versioned: sync.versioned,
+                changed: sync.changed.map((c) => c.name),
+                unreadable: [...sync.unreadable],
+              };
+              if (
+                !this.documentSyncNudged &&
+                shouldNudgeDocumentSync({
+                  codeEdited: codeTouchedFiles,
+                  hasDocumentCoverage: docSnapshot.hasContent,
+                  changedDocuments: sync.changed.length,
+                  unverifiedSections: sync.unverifiedSections,
+                  unverifiedClaims: sync.unverifiedClaims,
+                  unreadableDocuments: sync.unreadable.length,
+                  alreadyNudged: false,
+                })
+              ) {
+                this.documentSyncNudged = true;
+                debugLog("agent-loop", "收尾：文档账本未同步", {
+                  changed: sync.changed.length,
+                  unreadable: sync.unreadable.length,
+                  versioned: sync.versioned,
+                  unverifiedSections: sync.unverifiedSections,
+                  unverifiedClaims: sync.unverifiedClaims,
+                });
+                recordLoopStop(sessionId, "completed_unverified", {
+                  phase: "document-sync",
+                  iteration: this.state.iteration,
+                });
+                this.completionNudgeReasons.push("document-sync");
+                this.completionNudges.push(
+                  buildDocumentSyncNudge({
+                    changedDocuments: sync.changed.map((c) => c.name),
+                    unverifiedSections: sync.unverifiedSections,
+                    unverifiedClaims: sync.unverifiedClaims,
+                    unreadSections: sync.unreadSections,
+                  }),
+                );
+              }
+            }
+          } catch (e) {
+            warnOnce("document-sync", "[agentic-loop] 文档版本同步检查失败", e);
+          }
+        }
+
+        /**
          * **第 154/156 波：收尾时点出"族里没跑过的判据"** ✓ —— 目标①的正面突破点 ✓。
          *
          * ## 为什么是"族"而不是"共享符号"（先验前提查出来的 ✗→✓）
@@ -4017,6 +4742,110 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         /**
+         * ★★ C06 边界②：**文档同步硬闸** —— 从「收尾提醒」升级为「不允许标记完成」。
+         *
+         * ## 为什么要从提醒升级（用户口径）
+         *
+         * 提醒只是「再说一句」：模型完全可以在回执里写一句「文档本次不用动」就收尾，
+         * 而账本里的事实（文档版本在你读过之后变了）**依然成立**，引用却可能已经失效。
+         * 这一条把同一批事实变成**结构性的拒绝**：结果 `reason` 不是 `completed`，
+         * `describeTurnOutcome` 因此**绝不显示「任务完成」**，并给出原因与修法。
+         *
+         * ## 为什么放在**所有既有收尾守卫之后**
+         *
+         * 上面那些守卫（验证/红判据/回归）都还在「催」，它们各自有继续补救的机会；
+         * 文档同步是**最后一道门**：只有其他门都放行时才轮到这里，避免抢掉更重要的提醒。
+         *
+         * ## 为什么不会死循环
+         *
+         * 额度按「文档 id + 版本」记（`documentSyncBlockedKeys`）：同一份文档的同一版本
+         * 再出现 ⇒ `release-unverified` ⇒ **放行**但结果带 `documentSyncUnverified`
+         * （标未验，而不是假完成）；另一份文档 / 同一文档的新版本仍可再拦，
+         * 但整个会话最多拦 `MAX_DOCUMENT_SYNC_BLOCKS` 次，到顶后一律放行并标未验。
+         */
+        if (documentSyncGate.decision.verdict === "block") {
+          this.documentSyncBlocks += 1;
+          for (const key of documentSyncGate.decision.newlyBlocked) {
+            this.documentSyncBlockedKeys.add(key);
+          }
+          recordLoopStop(sessionId, "document_sync_required", {
+            phase: "document-sync-gate",
+            iteration: this.state.iteration,
+            blocked: this.documentSyncBlocks,
+            blockedKeys: [...documentSyncGate.decision.newlyBlocked],
+            versioned: documentSyncGate.versioned,
+            changed: documentSyncGate.changed,
+            unreadable: documentSyncGate.unreadable,
+          });
+          const blockedText = buildDocumentSyncBlockedText({
+            changedDocuments: documentSyncGate.changed,
+            unreadableDocuments: documentSyncGate.unreadable,
+          });
+          /**
+           * 这一轮**到此结束**（不再 `continue`）⇒ 不需要再往会话里注入一条 role=user 的提醒
+           * （那会新增一个 system-injected id 前缀）。原因与修法直接进**可见文本**，
+           * 收尾时 `describeTurnOutcome` 还会再落一条 system 提示（持久可见）。
+           */
+          yield {
+            type: "text_delta",
+            text: `\n\n📄 ${blockedText.replace(/^\[SYSTEM\]\s*/, "")}\n\n`,
+          };
+          this.noteExit("document_sync_required", sessionId);
+          const blockedResult = this.finishWithNudges({
+            type: "stop",
+            reason: "document_sync_required",
+            usage: this.state.totalUsage,
+            /**
+             * 结构化事实 ⇒ 呈现层据此拒绝「任务完成」并给出原因与修法
+             * （与回归门同一条纪律：判定在循环、呈现只消费事实）。
+             */
+            documentSyncBlocked: {
+              changed: [...documentSyncGate.changed],
+              unknown: [...documentSyncGate.unreadable],
+            },
+            detail: {
+              documentSyncGate: {
+                versioned: documentSyncGate.versioned,
+                changed: [...documentSyncGate.changed],
+                unreadable: [...documentSyncGate.unreadable],
+                blocked: this.documentSyncBlocks,
+                blockedKeys: [...documentSyncGate.decision.newlyBlocked],
+              },
+            },
+          });
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result: blockedResult };
+          return blockedResult;
+        }
+        if (documentSyncGate.decision.verdict === "release-unverified") {
+          /**
+           * 每一次「放行」都如实标未验（不再只标会话里第一次）：
+           * 同一版本重放、或达到总上限放行，这一刻账本里的事实仍然成立 ——
+           * 结果必须带着它，界面才不会显示「任务完成」。
+           */
+          this.documentSyncUnverified = {
+            changed: [...documentSyncGate.changed],
+            unknown: [...documentSyncGate.unreadable],
+          };
+          recordLoopStop(sessionId, "completed_unverified", {
+            phase: "document-sync-unverified",
+            iteration: this.state.iteration,
+            releaseReason: documentSyncGate.decision.releaseReason,
+            blocksIssued: this.documentSyncBlocks,
+            changed: [...documentSyncGate.changed],
+            unreadable: [...documentSyncGate.unreadable],
+          });
+          debugLog("agent-loop", "收尾：文档同步硬闸放行但标未验", {
+            releaseReason: documentSyncGate.decision.releaseReason,
+            blocksIssued: this.documentSyncBlocks,
+            changed: documentSyncGate.changed.length,
+            unreadable: documentSyncGate.unreadable.length,
+          });
+        }
+
+        /**
          * ★ 第 185 波（集成复审 I-1）：**`content_filter` 是第 4 个"不许算完成"的结束原因**。
          *
          * 复审取证：`finish-reason.ts` 有专门的映射分支、`types.ts` 的取值域里有它，
@@ -4044,6 +4873,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         this.noteExit("completed", sessionId);
+        /**
+         * P0（完成态换段）：回合真的完成之后，按「**任务边界 + 水位**」决定要不要切段。
+         *
+         * 放在 `noteExit("completed")` 之后、`finishWithNudges` 之前：
+         * - 这里 `turnCompleted` 是真的 true（不是中途触发点那种恒 false）；
+         * - 但完成**不等于**该换段：`decideEpochAction` 还要求
+         *   `contextPressure >= compactionThreshold`（或连压≥2 / 接近 hard 的救援信号）。
+         *   低压力完成 ⇒ 继续当前段 —— 否则超过 keepCount 之后每回合都切一段
+         *   （2026-11 修正；规模化验收 `ICM-1` 用真实 200 轮/3 段钉住）；
+         * - 有回归（regressions）时**不切** —— 那不是"完成"，切段只会把问题藏进新段；
+         * - 开关关着时 `trySwitchOnCompletion` 直接返回 null（默认路径零变化）。
+         */
+        this.trySwitchOnCompletion(sessionId, regressions.length === 0);
         const result = this.finishWithNudges({
           type: "stop",
           reason: "completed",
@@ -4053,6 +4895,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
            * 用尽提醒上限后仍然收尾 ✓ —— 但**绝不谎报成功** ✓（这是本条的全部意义 ✓）。
            */
           ...(regressions.length > 0 ? { regressionRedTests: regressions } : {}),
+          /**
+           * C06 边界②的**放行形态**：同一（文档 + 版本）已经拦过，或拦截次数到会话上限，
+           * 本轮不再阻塞收尾 —— 但必须标成**未验证**，呈现层据此拒绝「任务完成」卡片。
+           */
+          ...(this.documentSyncUnverified ? { documentSyncUnverified: this.documentSyncUnverified } : {}),
         });
         // F1.3: Trigger memory extraction after turn completes
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
@@ -4250,6 +5097,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
      * 明确丢掉 system 行。所以那个判据恒假，注入曾经是死代码。
      */
     extraSystemPrompt = "",
+    /**
+     * 提示缓存断点 2 的锚点：稳定前缀最后一条消息的 id（由 `run()` 算，见
+     * `promptCacheAnchorId`）。这里只把它转交给请求（`LLMRequest.promptCache`）——
+     * **不改消息文本/顺序/角色**，也不在这里判断开关（开关在
+     * `llm/prompt-cache.ts::isPromptCacheEnabled`，只有 Anthropic 协议消费它）。
+     */
+    promptCacheAnchorId?: string,
   ): AsyncGenerator<LoopEvent, void, unknown> {
     let currentText = "";
     let currentToolCalls: StreamingToolCall[] = [];
@@ -4324,6 +5178,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 万一仍被 API 拒绝，`provider.ts` 已有"降档 + 记住 + 重试一次"的路径兜住。
          */
         ...(this.config.maxOutputTokens ? { maxTokens: this.config.maxOutputTokens } : {}),
+        /**
+         * 提示缓存断点 2 的锚点（只被 Anthropic Messages 协议消费）：
+         * 稳定前缀最后一条消息的 id。**不影响消息内容**，只让 `cache_control`
+         * 落在正确的 block 上（易变尾部不加断点）。
+         */
+        ...(promptCacheAnchorId
+          ? { promptCache: { stablePrefixLastMessageId: promptCacheAnchorId } }
+          : {}),
         stream: true,
         abortSignal: this.abortController!.signal,
         // E2: Pass reasoning effort to LLM
@@ -4705,7 +5567,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       // 旧的 `prompt_too_long` / `context_length_exceeded` 一个都不含 → 反应式压缩从未触发过）
       if (isContextOverflowError(error.message)) {
         // 已经压缩过太多次还放不下 → 明确告诉用户怎么办，别静默死掉
-        if (this.state.consecutiveCompactions >= 3) {
+        if (this.state.consecutiveCompactions >= MAX_CONSECUTIVE_COMPACTIONS) {
           recordLoopStop(sessionId, "context_overflow", {
             consecutiveCompactions: this.state.consecutiveCompactions,
             message: error.message?.slice(0, 300),
@@ -4720,7 +5582,17 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
-          const compacted = await this.compactMessages(sessionId);
+          /**
+           * P0-3：**第二条压缩触发路径**（请求因超长失败后的反应式压缩）同样要先问换段。
+           *
+           * 只接第一条会留下一个静默缺口：门禁开着时，反应式路径仍会去压缩 ——
+           * 于是同一次超长事件里既可能换段又可能压缩，行为取决于先走到哪条路。
+           * 两条路共用 `trySwitchSegment`（含开关判断）与同一套收尾语义。
+           */
+          const switchOutcome = this.trySwitchSegment(sessionId);
+          const compacted = switchOutcome.switched
+            ? (switchOutcome.removed ?? 0)
+            : await this.compactMessages(sessionId);
           yield {
             type: "compaction_end",
             messagesRemoved: compacted < 0 ? 0 : compacted,
@@ -4731,7 +5603,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             /*
              * ★ 全量审计（中低）：这条分支**不再自己自增** ——
              * 本路径末尾本来就会 `consecutiveCompactions++`（压缩确实跑过），
-             * 我上一版在这里再加一次 ⇒ 一次 -4 记 2 ⇒ 熔断「连压 3 次」实际按 2 次触发。
+             * 我上一版在这里再加一次 ⇒ 一次 -4 记 2 ⇒ 熔断上限实际按一半触发。
              */
           } else if (compacted < 0) {
             /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
@@ -4765,7 +5637,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           type: "text_delta",
           text:
             `\n\n${describeContextOverflow(error.message)}` +
-            `\n\n（本次**没有自动压缩**：设置里关闭了「反应式压缩」。请开启它，或新建对话后继续。）`,
+            `\n\n（本次**没有自动压缩**：设置里关闭了「反应式压缩」。请开启它后重试；或换一个上下文更大的模型。）`,
         };
         yield {
           type: "end",
@@ -4978,8 +5850,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       this.state.totalUsage.promptTokens += usage.promptTokens;
       this.state.totalUsage.completionTokens += usage.completionTokens;
       this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
-      if (usage.cacheHitTokens !== undefined) {
-        this.state.totalUsage.cacheHitTokens = (this.state.totalUsage.cacheHitTokens ?? 0) + usage.cacheHitTokens;
+      /**
+       * 缓存桶累计：读 = `cacheReadTokens`（新字段）或旧名 `cacheHitTokens`；
+       * 写 = `cacheWriteTokens`（Anthropic 口径，OpenAI 没有）。
+       *
+       * 数值缺报时保持 0（聚合口径），但 `cacheReported` 只在**这一轮真的报过**
+       * 时才置 true —— UI 就是靠它区分「provider 未上报」与「确定 0%」。
+       */
+      const cacheRead = usage.cacheReadTokens ?? usage.cacheHitTokens;
+      if (cacheRead !== undefined) {
+        this.state.totalUsage.cacheHitTokens = (this.state.totalUsage.cacheHitTokens ?? 0) + cacheRead;
+        this.state.totalUsage.cacheReadTokens = (this.state.totalUsage.cacheReadTokens ?? 0) + cacheRead;
+      }
+      if (usage.cacheWriteTokens !== undefined) {
+        this.state.totalUsage.cacheWriteTokens =
+          (this.state.totalUsage.cacheWriteTokens ?? 0) + usage.cacheWriteTokens;
+      }
+      if (usage.cacheReported === true || cacheRead !== undefined || usage.cacheWriteTokens !== undefined) {
+        this.state.totalUsage.cacheReported = true;
       }
       this.state.totalUsage.uncachedInputTokens = Math.max(
         0,
@@ -5029,6 +5917,9 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
         cacheHitTokens: usage.cacheHitTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        cacheReported: usage.cacheReported,
         uncachedInputTokens: usage.uncachedInputTokens,
       },
       toolCallCount: currentToolCalls.length,
@@ -5094,6 +5985,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
        */
       const toolMessageId = this.resolveMessageIdForTools(sessionId, assistantMsgId);
       /**
+       * 事件式审批的队列（仅 `permissionRequestEvents: true` 时创建）。
+       *
+       * 每次「模型 → 工具批」一个队列：审批事件与这一批工具调用一一对应，
+       * 上一批的队列不会把请求泄漏到下一批（那会让 `resolve` 配错行）。
+       */
+      const permissionQueue =
+        this.config.permissionRequestEvents === true ? new PermissionEventQueue() : null;
+      /**
        * ★ 第 185 波（T1）：`pipelineHost` 就是**本 loop 这一轮**的闸门回调。
        * 管线中间件优先用它（见 `tool-pipeline.ts` 的 `hostFor`），于是：
        * 主 loop 的调用走主 loop 的 `checkPermission`（该弹的确认框会弹），
@@ -5103,7 +6002,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         sessionId,
         messageId: toolMessageId,
         cwd,
-        pipelineHost: this.pipelineHost(),
+        /* P1-4：事件式审批的队列随本轮 ctx 一起交给 `checkPermission` */
+        pipelineHost: this.pipelineHost(permissionQueue),
         // P1-6: Don't use ctx.abort — let each tool have its own abortController
         abort: undefined as any,
         // NOTE: Do NOT call buildMessages() here — it would pollute the cache
@@ -5127,7 +6027,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         updatePlan: (op) => this.applyPlanUpdate(op),
       };
 
-    for await (const event of this.executor.execute(
+    /**
+     * P1-4：工具执行事件流（可选用审批事件包一层）。
+     *
+     * 包装是**就地插入**：不改变执行器任何事件的顺序与内容，只在中间插入
+     * `permission_request`。包装器负责在 `run()` 提前结束时关闭执行器。
+     */
+    const toolExecutorEvents = this.executor.execute(
       currentToolCalls,
       toolCtx,
       async (name, args, ctx) => {
@@ -5841,7 +6747,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           metadata: result.metadata,
         };
       },
-    )) {
+    );
+    const toolEvents: AsyncIterable<ToolExecutorEvent | PermissionRequestEvent> = permissionQueue
+      ? withPermissionEvents(toolExecutorEvents, permissionQueue)
+      : toolExecutorEvents;
+    for await (const event of toolEvents) {
+      if (event.type === "permission_request") {
+        /**
+         * P1-4：把审批请求**原样**交给消费者。`resolve` 就是 `checkPermission` 正在
+         * `await` 的那个 Promise 的结算函数 —— 消费者不调用它，生成器就停在这里。
+         */
+        yield event;
+        continue;
+      }
       switch (event.type) {
       case "tool_start":
         // Skip — already yielded during streaming phase to preserve LLM output order
@@ -6187,6 +7105,87 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     }
 
     /**
+     * ## C03：最小工作集（Working Set）—— 请求侧的**最后一道**收口
+     *
+     * 到这里 `finalMessages` 已经过「按优先级选择 + 工具配对过滤 + 微压缩」，但它仍然是
+     * **一大段历史**：选择器的预算口径是「窗口 × 0.9」，而真正可用的预算还要扣掉
+     * **输出预留**与**系统提示词**（两者都不在这个数组里，却真实占着窗口）。于是长会话里
+     * 请求仍可能贴着甚至超过窗口；更关键的是，被挤掉的那些消息**连索引都没有** ——
+     * 模型不知道它们存在，只能把读过的文件重读一遍、把跑过的命令重跑一遍
+     * （长尾任务的主要浪费形态）。
+     *
+     * 这里把它收口成最小工作集：
+     * - **必选**：全部 system 消息、最近几轮（`keepRecent`）、最后一条 user 消息，
+     *   以及**压缩 / 换段 marker**（`protectedIds`，见下面那段注释）；
+     * - 其余从新到旧在预算内填，放不下的**移出视图**并留下 Pager 索引；
+     * - 索引作为**一条尾部 user 消息**插在最后一条 user 消息之前（稳定前缀 + 易变尾部，
+     *   见 `attachWorkingSetIndex` 的注释）。
+     *
+     * ## 灰度安全（判据 WS-5 / WS-9）
+     *
+     * `segmentEpochs` 关着、且消息估算**没超预算** ⇒ 这里**完全不动**，请求逐字节与改前一致。
+     * 即使进来了（默认开启，或超预算），只要全部放得下，`planWorkingSet` 返回的 `selected` 就是**入参那个数组**
+     * （引用相等）⇒ 依然零行为变化。默认开启 + 短历史（WS-9）连清单都不记 `workingSet` 字段。
+     *
+     * ⚠️ 失败不许影响请求：计划算不出来就按原样发（工作集是"更好"，不是"必须"）。
+     */
+    let workingSetStats: ContextManifestWorkingSet | undefined;
+    /**
+     * ## 高优先缺陷修复（2026-11）：压缩 / 换段 marker 必须**永不被移出视图**
+     *
+     * 模型视图是 `[marker, ...cutoff 之后]`（`context-view.ts::applyContextCutoff`），
+     * marker 因此**排在最旧的一端**。而工作集的规则是「超预算时只移出最旧的那一段」——
+     * 于是长会话里第一个被移出的恰好是 marker，模型只剩索引里一行 80 字摘要，
+     * 而被它摘要的那段历史又已经不在视图里 ⇒ **唯一自动摘要丢失**（判据 WS-8）。
+     *
+     * 受保护 id 从**存储形状的这一份消息**里算（`messages` 是 `listMessages` 读到的
+     * 模型视图：`applyContextCutoff` 的投影结果，metadata 还在）：
+     * - `metadata.contextEpoch` 存在 ⇒ epoch marker（压缩 / 换段都是它）；
+     * - `id` 以 `compact-` 开头 ⇒ `nextCompactionMarkerId` 造的 marker（读不到元数据时的兜底）。
+     *
+     * 为什么不额外 `listTimelineMessages()`：这里只需要「**会进这次请求的** marker」，
+     * 而它必然在这一份视图里（更早的 marker 已经被投影排除、根本不在请求里，保护它没有意义）；
+     * 再全量读一次时间线等于每个迭代多一次全量 IO（`list` 那一步已经是热路径，见第 180 波打点）。
+     */
+    const protectedIds = collectProtectedContextIds(messages);
+    /**
+     * 压力口径的输入 = **工作集之前**的这一份（见 `lastPressureBasis` 的注释）：
+     * 必须先存下来，再让工作集去截请求数组。
+     */
+    this.lastPressureBasis = finalMessages;
+    try {
+      const workingSet = this.applyWorkingSet(finalMessages, protectedIds);
+      if (workingSet.applied) {
+        finalMessages = workingSet.messages;
+        workingSetStats = workingSet.stats;
+      }
+    } catch (e) {
+      /**
+       * 用 `console.warn` 而不是上报通道：这是**请求侧**的降级（按原样发送），
+       * 不产生用户可见的失败，也不需要用户动作（与 `foldToolOutputs` 的分类相反）。
+       */
+      console.warn("[working-set] 计划失败（本次按原样发送）:", e);
+    }
+
+    /**
+     * C03 / WS-8：**受保护 marker 是否真的还在请求里**（真机可取证）。
+     *
+     * 只在存在「压缩 / 换段 marker」时打印（普通会话零噪音）：把 marker id 与这一份
+     * 请求的完整 id 列表打出来，真机不必开 devtools 也能复核「marker 没被工作集移出」。
+     * 纯诊断，不改任何请求内容。
+     */
+    if (protectedIds.size > 0) {
+      const requestIds = finalMessages
+        .map((message: any) => (typeof message?.id === "string" ? message.id : ""))
+        .filter((id: string) => id.length > 0);
+      console.log(
+        `[working-set] protected markers kept: ${[...protectedIds].join(",")}; ` +
+        `request messages=${finalMessages.length}; evicted=${workingSetStats?.evicted ?? 0}; ` +
+        `request ids=${requestIds.join(",")}`,
+      );
+    }
+
+    /**
      * **第 179 波：把"非模型开销"拆开量一量** ✓（目标②，§13.69 说模型占 85% ✓）。
      *
      * 残差 15% 里到底是谁 ✓：`buildMessages`（上下文重建 ✓，这一段 ✓）
@@ -6224,7 +7223,298 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
       }
     }
+    this.recordContextManifest(sessionId, finalMessages, workingSetStats);
     return finalMessages;
+  }
+
+  /**
+   * C03/C04：记录**这一次请求**的上下文清单（哪些消息、四类来源字符、预算、段）。
+   *
+   * 只记 id 与统计，不记正文（正文在 JSONL / messages 里，按 id 可还原）。
+   * 去重：同一份 messageIds + 段 + cutoff 连续出现时只记一次（buildMessages 会被
+   * 重试/重建多次调用，不去重会把事件表撑成每轮十几条）。
+   *
+   * C04 补全：
+   * - `version` 由 `buildContextManifest` 写入；
+   * - `prefixHash` 由 `computePrefixHash` 按「system + 第一条 user」计算；
+   * - `evictedIds` 用 `diffManifests` 对**上一份同会话 manifest**求差集
+   *   （上一份优先取内存环；进程重启后回读 settings，见 `loadManifests`）。
+   *
+   * C03：`workingSet` 由 `applyWorkingSet` 算好后传进来（**只有真的走了工作集**才有值）——
+   * 它记的是这一轮工作集的四个数字，不是索引正文（见 `ContextManifestWorkingSet` 的注释）。
+   */
+  private recordContextManifest(
+    sessionId: string,
+    messages: any[],
+    workingSet?: ContextManifestWorkingSet,
+  ): void {
+    try {
+      const messageIds = messages
+        .map((m) => (typeof m?.id === "string" ? m.id : ""))
+        .filter((id) => id.length > 0);
+      const segment = this.segmentInfoForManifest(sessionId, messages);
+      const manifest = buildContextManifest({
+        sessionId,
+        segmentSeq: segment.segmentSeq,
+        epochId: segment.epochId,
+        cutoffMessageId: segment.cutoffMessageId,
+        pressure: this.state.contextPressure,
+        budgetTokens: this.config.contextWindow ?? 0,
+        estimatedTokens: this.estimateContextPressure(messages) * (this.config.contextWindow ?? 0),
+        messages,
+        ...(workingSet ? { workingSet } : {}),
+      });
+      const key = `${manifest.segmentSeq}|${manifest.cutoffMessageId ?? ""}|${manifest.messageIds.join(",")}|${manifest.sources.chat + manifest.sources.tool + manifest.sources.memory}`;
+      if (key === this.lastManifestKey) return;
+      this.lastManifestKey = key;
+      /* 前缀摘要只在真要落一条时才算（buildMessages 一轮会进来多次） */
+      manifest.prefixHash = computePrefixHash(messages, this.turnSystemPrompt);
+      /**
+       * 淘汰集合：相对上一份同会话 manifest。首份为空数组（没有「上一份」可差）。
+       * `loadManifests` 在内存环为空时会回读 settings —— 进程重启后的第一份也能对齐。
+       */
+      const previousList = loadManifests(sessionId);
+      const previous = previousList.length > 0 ? previousList[previousList.length - 1] : undefined;
+      manifest.evictedIds = previous ? diffManifests(previous, manifest).removedIds : [];
+      recordManifest(manifest);
+    } catch (e) {
+      /* 清单是诊断面：写不进去不影响这一轮请求 */
+      console.warn("[context-manifest] 记录失败（已忽略）:", e);
+    }
+  }
+
+  /**
+   * C03：把「最终消息」收口成**最小工作集**（请求侧最后一道，纯计算 + 一条索引消息）。
+   *
+   * 返回 `applied: false` 表示**这一轮没有产生工作集效果**（闸门没开，或开了但一条都没移出）——
+   * 消息原样返回，调用方据此不记录 `workingSet` 字段（见 `ContextManifestWorkingSet` 的注释：
+   * 没有该字段 = 旧记录或未触发工作集）。
+   *
+   * `protectedIds` 是**压缩 / 换段 marker** 的 id（由调用方从存储形状的消息算出来）：
+   * 它们必须留在请求里（见调用处那段注释与判据 WS-8），两个 `planWorkingSet` 调用
+   * 都要带上 —— 只带第一次的话，索引预扣后的「重算」会再把 marker 移出视图，
+   * 等于没修。
+   */
+  private applyWorkingSet(
+    messages: any[],
+    protectedIds: ReadonlySet<string> = new Set<string>(),
+  ): {
+    applied: boolean;
+    messages: any[];
+    stats?: ContextManifestWorkingSet;
+  } {
+    const budget = this.workingSetBudget();
+    /**
+     * 一次估算、多次复用：重算预算时还要再算一遍，而 `estimateTokens` 对长工具结果是
+     * 抽样扫描（O(64K) 量级）——同一个 `buildMessages` 里算三遍纯属浪费。
+     */
+    const costCache = new Map<unknown, number>();
+    const estimateMessage = (message: any): number => {
+      const key = message && typeof message === "object" ? message : String(message);
+      const hit = costCache.get(key);
+      if (hit !== undefined) return hit;
+      const value = estimateRawContextTokens([message]);
+      costCache.set(key, value);
+      return value;
+    };
+
+    let estimated = 0;
+    for (const message of messages) estimated += estimateMessage(message);
+
+    /**
+     * **灰度闸门**：`segmentEpochs` 开着 **或** 消息估算超过预算才启用。
+     * 两者都不成立 ⇒ 连 `planWorkingSet` 都不跑，请求与改前**逐字节一致**（判据 WS-5）。
+     */
+    if (!budget.segmentEpochs && estimated <= budget.budgetTokens) {
+      return { applied: false, messages };
+    }
+
+    let plan = planWorkingSet<any>({
+      messages,
+      budgetTokens: budget.budgetTokens,
+      estimate: estimateMessage,
+      protectedIds,
+    });
+
+    /**
+     * **索引消息也占 token**：它插进请求之后，实际发出的一轮比 `plan.tokens` 多出那一段
+     * （40 行索引在长 id/长摘要下能有上千 token）。所以先量出索引的估算量、从预算里**预扣**
+     * 再重算一次（最多 3 轮，收敛即停）—— 否则「工作集把请求压进预算」这句话在边界上是假的。
+     */
+    for (let pass = 0; pass < 3; pass += 1) {
+      if (plan.indexLines.length === 0) break;
+      const indexCost = Math.max(
+        0,
+        Math.ceil(estimateMessage({ role: "user", content: renderWorkingSetIndexMessage(plan.indexLines) })),
+      );
+      const remaining = budget.budgetTokens - indexCost;
+      if (plan.tokens <= remaining) break;
+      const next = planWorkingSet<any>({
+        messages,
+        budgetTokens: Math.max(0, remaining),
+        estimate: estimateMessage,
+        protectedIds,
+      });
+      const stable =
+        next.evicted.length === plan.evicted.length &&
+        next.indexLines.length === plan.indexLines.length;
+      plan = next;
+      if (stable) break;
+    }
+
+    const stats: ContextManifestWorkingSet = {
+      budgetTokens: budget.budgetTokens,
+      selected: plan.selected.length,
+      evicted: plan.evicted.length,
+      indexLines: plan.indexLines.length,
+    };
+    if (plan.evicted.length === 0 || plan.indexLines.length === 0) {
+      /**
+       * 一条都没移出（例如 `segmentEpochs` 开着而历史很短）⇒ **消息不动、也不记清单字段**。
+       *
+       * 2026-11-06（WS-9）：这里原来返回 `applied: true` + 全 0 统计，于是默认开启下
+       * 一条短历史的清单里会出现 `{evicted:0, indexLines:0}` —— 而 `ContextManifestWorkingSet`
+       * 的文档口径是「旧记录或未触发工作集时没有该字段」，
+       * 两者矛盾；也会让「零变化」只对请求成立、对清单不成立。
+       *
+       * 请求字节本来就没动（全放得下时 `plan.selected === messages`，见 `planWorkingSet` 规则 4），
+       * 所以这里只改**记录口径**：返回 `applied: false`，调用方据此不写 `workingSet`。
+       */
+      return { applied: false, messages: plan.selected };
+    }
+    debugLog(
+      "agent-loop",
+      `[working-set] window=${budget.windowTokens} outputReserve=${budget.outputReserve}`,
+      `system=${budget.systemPromptTokens} memory=${budget.memoryTokens}`,
+      `budget=${budget.budgetTokens} selected=${stats.selected} evicted=${stats.evicted} indexLines=${stats.indexLines}`,
+    );
+    return { applied: true, messages: this.attachWorkingSetIndex(plan.selected, plan.indexLines), stats };
+  }
+
+  /**
+   * C03：把 Pager 索引**作为一条尾部 user 消息**插在最后一条 user 消息之前。
+   *
+   * ## 为什么插在"最后一条 user 之前"而不是开头
+   *
+   * 稳定前缀 = system + 最早那几条消息；provider 的前缀缓存命中的就是这段稳定字节。
+   * 索引行来自「刚被移出的最旧那一段」，**每轮都可能变**——插到第一条会把整段稳定前缀挤走
+   * （`dsh-d5-prefix-cache-stability` 守的就是这条），插在最后一条 user 之前则：
+   * ① 仍然在尾部（稳定前缀一字不动）；② 「用户当下要什么」依旧是最后一条 user 消息。
+   *
+   * ## 边界
+   *
+   * 最后一条 user 消息恰好是**第 0 条**时（例如可见集只剩一条压缩摘要标记 + 工具结果），
+   * **追加到末尾**而不是插到开头 —— 「不许动第一条」优先（判据 WS-5 的变异就是插到第一条）。
+   */
+  private attachWorkingSetIndex(messages: any[], indexLines: readonly string[]): any[] {
+    const content = renderWorkingSetIndexMessage(indexLines);
+    if (!content) return messages;
+    /**
+     * id 必须**确定**：`manifest` 按 id 记录这一轮带了什么，用 `Date.now()` 会让每轮多一条
+     * 「新 id」（清单差异被噪声淹没）；这条消息也不落库，固定 id 不会撞车。
+     */
+    const indexMessage = { id: "ctx-workingset-index", role: "user", content, status: "done" };
+    let lastUser = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    const insertAt = lastUser > 0 ? lastUser : messages.length;
+    if (insertAt >= messages.length) return [...messages, indexMessage];
+    return [...messages.slice(0, insertAt), indexMessage, ...messages.slice(insertAt)];
+  }
+
+  /**
+   * C03：最小工作集的**可用预算**（tokens）= 窗口 − 输出预留 − 系统提示词 − 记忆块。
+   *
+   * 每一项怎么来（每一层都有兜底，**不许 NaN / 负数**——负预算会让 `planWorkingSet`
+   * 把可选消息全移出，静默丢光历史）：
+   *
+   * - **窗口**：`TokenTracker`（由模型目录解析）→ `config.contextWindow` → 128k 兜底；
+   * - **输出预留**：`codem-context-config.outputReserve`（设置面板可改）→ 4096；
+   * - **系统提示词**：本轮**实测**（`turnSystemPrompt` 的估算，见 `run()` 每轮写入）→
+   *   面板配置的 `systemPromptTokens`（默认 2000）→ 保守兜底；
+   * - **记忆块**：本仓的记忆注入**就在系统提示词内部**（`core/llm/index.ts` 把
+   *   `memoryInstructions` / `memoryTailInstructions` 交给 `buildSystemPrompt` 拼成同一条提示词），
+   *   所以实测的 `systemPromptTokens` **已经含它**。这一项显式保留、记 0：
+   *   再扣一次会把预算压小（长会话里等于多移出一批消息，纯损失）。
+   *   项本身不省略，是为了让公式与「为什么是 0」写在同一个地方。
+   *
+   * `segmentEpochs` 一并读回（同一个 `getConfig()` 调用），供调用方判断灰度闸门。
+   */
+  private workingSetBudget(): {
+    budgetTokens: number;
+    windowTokens: number;
+    outputReserve: number;
+    systemPromptTokens: number;
+    memoryTokens: number;
+    segmentEpochs: boolean;
+  } {
+    const positive = (value: unknown, fallback: number): number => {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    const windowTokens = Math.floor(
+      positive(getTokenTracker().getContextWindow(), positive(this.config.contextWindow, 128_000)),
+    );
+    let outputReserve = 4096;
+    let configuredSystemTokens = 2000;
+    let segmentEpochs = false;
+    try {
+      const cfg = getContextManager().getConfig();
+      outputReserve = Math.max(0, Math.floor(positive(cfg?.outputReserve, 4096)));
+      configuredSystemTokens = Math.max(0, Math.floor(positive(cfg?.systemPromptTokens, 2000)));
+      segmentEpochs = cfg?.segmentEpochs === true;
+    } catch (e) {
+      /* 配置读不到就用保守默认（宁可少移出，也不要凭空把历史移光） */
+      console.warn("[working-set] 读取上下文配置失败（用保守默认预算）:", e);
+    }
+    let measuredSystemTokens = 0;
+    try {
+      measuredSystemTokens = Math.max(0, Math.ceil(estimateTokens(this.turnSystemPrompt)));
+    } catch {
+      measuredSystemTokens = 0;
+    }
+    const systemPromptTokens = measuredSystemTokens > 0 ? measuredSystemTokens : configuredSystemTokens;
+    const memoryTokens = 0;
+    const budgetTokens = Math.max(0, Math.floor(windowTokens - outputReserve - systemPromptTokens - memoryTokens));
+    return {
+      budgetTokens,
+      windowTokens,
+      outputReserve,
+      systemPromptTokens,
+      memoryTokens,
+      segmentEpochs,
+    };
+  }
+
+  /**
+   * C04：取本次请求的段信息（**每轮只全量读一次时间线**）。
+   *
+   * 视图里带 `metadata.contextEpoch` 的 marker 是段的权威投影；若它与缓存不一致
+   * （轮内刚换过段），立刻重读 —— 否则这一轮剩下的请求都会带着旧段号，复盘时会
+   * 把「已经在新段里」误读成「还在旧段」。
+   */
+  private segmentInfoForManifest(
+    sessionId: string,
+    messages: any[],
+  ): { segmentSeq: number; epochId?: string; cutoffMessageId?: string } {
+    let marker: ContextEpoch | null = null;
+    for (const message of messages) {
+      marker = readContextEpochOf(message);
+      if (marker) break;
+    }
+    const cached = this.manifestSegmentCache.get(sessionId);
+    const stale =
+      !cached ||
+      (marker !== null &&
+        (marker.segmentSeq !== cached.segmentSeq || marker.epochId !== cached.epochId));
+    if (!stale && cached) return cached;
+    const fresh = currentSegmentInfo(sessionId);
+    this.manifestSegmentCache.set(sessionId, fresh);
+    return fresh;
   }
 
   /** Convert raw DB messages to LLM API format, stripping system-reminder tags and stale custom instructions */
@@ -6276,14 +7566,63 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     }
   }
 
+  /**
+   * 估算本回合的上下文压力（0-1）。
+   *
+   * ## CMP-P-1：工具表 + 系统提示词**必须**计入首轮压力
+   *
+   * 旧实现：`const tools = (this as any).currentToolDefs || []` —— 而全仓无任何赋值，
+   * 于是首轮（没有真实 usage 时）只算消息本身，系统提示词与工具定义一个字都没算。
+   *
+   * 现在：工具表取 `this.currentToolDefs`（`run()` 在算出**实际发送集合**后写入），
+   * 系统提示词取 `this.pressureSystemPrompt`（与实际发送同一份文本）。
+   * 拿不到工具表（本回合尚未计算工具表，例如 `buildMessages()` 里那两处早于工具表的估算）
+   * ⇒ **显式传 0 并留痕**：打一次性日志 + 在 `getPressureBasis()` 里标 `toolsIncluded=false`，
+   * 面板据此显示「未计入工具定义」—— 绝不静默漏算。
+   */
   private estimateContextPressure(messages: any[]): number {
     // R3-1.6: Use TokenTracker for more precise estimation
     const tracker = getTokenTracker();
-    const toolCount = (this as any).currentToolDefs?.length || 0;
-    const tools = (this as any).currentToolDefs || [];
-    
+    const captured = this.currentToolDefs;
+    const toolsIncluded = Array.isArray(captured) && captured.length > 0;
+    if (!toolsIncluded) {
+      /*
+       * 一次性日志（`warnOnce` 按 key 去重）：每个进程只提醒一次"这条路径没算工具"，
+       * 既不静默，也不会把每个会话/每轮都刷一遍。
+       */
+      warnOnce(
+        "pressure:tools-missing",
+        "[AgenticLoop] 压力估算未计入工具定义（本回合工具表尚未生成）—— 该次读数偏低，压缩触发以工具表就绪后的下一拍为准",
+      );
+    }
+    const tools = toolsIncluded ? (captured as ToolDefinition[]) : [];
+    const systemPrompt = this.pressureSystemPrompt || this.turnSystemPrompt || "";
+
     // Try tracker's pressure estimation (uses actual usage if available)
-    return tracker.estimatePressure(messages, tools);
+    const pressure = tracker.estimatePressure(messages, tools, systemPrompt);
+    const mode = tracker.getLastPressureMode();
+    this.lastPressureEstimate = {
+      /*
+       * 真实基准（actual）是 provider 量的**整份请求**，system/tools 已经在里面；
+       * 纯估算才需要看"这一轮到底有没有把工具表/系统提示词加进去"。
+       */
+      toolsIncluded: mode === "actual" ? true : toolsIncluded,
+      toolCount: tools.length,
+      systemIncluded: mode === "actual" ? true : systemPrompt.trim().length > 0,
+      mode,
+      at: Date.now(),
+    };
+    return pressure;
+  }
+
+  /**
+   * ★ CMP-P-1：最近一次压力估算的构成读数（日志/面板/判据共用；只读、不参与判断）。
+   *
+   * 返回 `null` = 本回合还没算过压力。`toolsIncluded === false` 时调用方**必须**如实显示
+   * 「未计入工具定义」，不许把它当成一次完整读数。
+   */
+  getPressureBasis(): PressureBasis | null {
+    return this.lastPressureEstimate ? { ...this.lastPressureEstimate } : null;
   }
 
 /**
@@ -6341,6 +7680,233 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    * This enables "summary of summaries" — repeated compaction preserves
    * key context across many days of conversation.
    */
+  /**
+   * P2：计算本次决策要用的自适应 steward 策略，并在**真的调整阈值**时写一条
+   * `steward_policy` 审计（每回合最多一条）。
+   *
+   * 为什么每回合最多一条：两个决策入口（中途 / 完成）会在同一轮里各问一次，
+   * 每次都写事件会把事件库刷成噪声；而「这一轮用过哪套刻度」只需要一条。
+   * 默认（窗口 128k、无单轮观测、连压 <2）`adjusted === false` ⇒ **一条都不写**。
+   */
+  private stewardPolicyFor(
+    sessionId: string,
+    cfg: { compactionThreshold?: number; maxMessagesAfterCompaction?: number },
+  ): StewardPolicy {
+    const policy = resolveStewardPolicy({
+      baseConsider: cfg.compactionThreshold,
+      baseKeepRecent: cfg.maxMessagesAfterCompaction,
+      /* 窗口用 loop 的真实模型窗口（不是配置里那个可能过期的 maxContextWindow） */
+      modelContextWindow: this.config.contextWindow,
+      observedAvgTurnTokens: this.observedTurnTokens,
+      consecutiveCompactions: this.state.consecutiveCompactions,
+      pressure: this.state.contextPressure,
+    });
+    if (policy.adjusted && !this.stewardPolicyAuditedThisTurn) {
+      this.stewardPolicyAuditedThisTurn = true;
+      try {
+        this.getEventLog().append(sessionId, "steward_policy", {
+          consider: policy.consider,
+          hard: policy.hard,
+          keepRecent: policy.keepRecent,
+          reason: policy.reason,
+          modelContextWindow: policy.modelContextWindow,
+          observedAvgTurnTokens: policy.observedAvgTurnTokens,
+          consecutiveCompactions: this.state.consecutiveCompactions,
+          pressure: this.state.contextPressure,
+          at: Date.now(),
+        });
+      } catch (e) {
+        /* 事件是诊断面：写不进去不影响决策本身，但必须留痕（不静默） */
+        console.warn("[steward-policy] steward_policy 审计事件未写入:", e);
+      }
+    }
+    return policy;
+  }
+
+  /**
+   * P0-3：尝试用**换段**代替压缩（D1/D3/D11）。
+   *
+   * 五道前置：
+   * 0. **本回合还没换过段**（`switchedThisTurn=false`）—— 两个中途入口都会调这里，
+   *    守卫在下面第一行（见那段注释；缺失时一轮会写两条 switch marker）；
+   * 1. `segmentEpochs` 必须显式为 true（默认 false；显式 false/缺省都回旧路径）；
+   * 2. 规则决策必须是 `switch`（未完成的任务一律 `compact`，见 `decideEpochAction`）；
+   * 3. 写入必须成功（失败就回退压缩 —— 换段是"更好"，不是"唯一"）；
+   * 4. 整段同步执行，无 await ⇒ 同一会话不存在并发换段（见 `performSegmentSwitch`）。
+   *
+   * 决策与结果都落在 `context_steward_decision` 事件里（诊断面），**不**混进用户消息。
+   */
+  /**
+   * 本回合第一拍是否应推迟预防性压缩（2026-11-09，显式 segmentEpochs 完成态 switch 根因）。
+   * 只拼输入；规则在 `shouldDeferBoundaryCompaction` 纯函数里，单测可直接钉。
+   */
+  private shouldDeferBoundaryCompaction(sessionId: string, viewMessageCount: number): boolean {
+    const cfg = getContextManager().getConfig();
+    if (cfg.segmentEpochs !== true || this.state.iteration !== 1 || this.switchedThisTurn) return false;
+    const policy = this.stewardPolicyFor(sessionId, cfg);
+    const action = epochActionForLoop(
+      cfg,
+      { contextPressure: this.state.contextPressure, consecutiveCompactions: this.state.consecutiveCompactions },
+      { turnCompleted: false, policy },
+    );
+    const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128_000;
+    return shouldDeferBoundaryCompaction({
+      segmentEpochs: true,
+      turnCompleted: false,
+      action,
+      iteration: this.state.iteration,
+      switchedThisTurn: this.switchedThisTurn,
+      viewMessageCount,
+      keepRecent: policy.keepRecent,
+      headroomTokens: Math.max(0, 1 - this.state.contextPressure) * windowTokens,
+      outputReserveTokens: Math.max(0, Number(cfg.outputReserve) || 4096),
+    });
+  }
+  private trySwitchSegment(sessionId: string): SegmentSwitchResult {
+    /**
+     * ★ P0（2026-11）：**同一轮只许换一次段**。
+     *
+     * 两个中途入口都会调这里 —— 主动压力（`this.state.contextPressure >= hard`）
+     * 与反应式溢出（provider 报超长后的重建请求）。一次 hard 线切换之后：
+     * - 下一迭代的压力是**重算**的，保留集仍可能 ≥ hard 线（大文件/大粘贴）；
+     * - 同一次超长事件里，`executeIteration` 的 catch 分支也会再进来。
+     * 没有这道守卫时两条入口各写一条 `kind="switch"` epoch ⇒ 时间线出现两个 marker、
+     * handoff 写两份、段号一次跳两级（判据 `AUTOCOMPACT-SWITCH` 曾以"视图头不是同一个
+     * marker"的形态红过）。
+     *
+     * ⚠️ 守卫只拒绝**换段**，不拒绝压缩：返回 `switched:false` 后调用方照旧走
+     * `compactMessages`（两处都是 `switchOutcome.switched ? … : await this.compactMessages(…)`），
+     * 所以"换段失败回退压缩"这条语义一点没变。
+     */
+    if (this.switchedThisTurn) {
+      return { switched: false, reason: "already switched this turn" };
+    }
+    /**
+     * 开关与两个数字都从 `codem-context-config`（唯一配置源）现读，而不是 loop 的快照：
+     * 面板改完开关应当**下一轮就生效**，不该要求重启会话（那正是本仓反复修过的
+     * 「面板改了、引擎不读」形状）。
+     */
+    const cfg = getContextManager().getConfig();
+    if (cfg.segmentEpochs !== true) return { switched: false };
+    /* P2：自适应策略（窗口 / 单轮观测 / 连压）—— 只改 consider/hard，不改决策顺序 */
+    const policy = this.stewardPolicyFor(sessionId, cfg);
+    const action = epochActionForLoop(
+      cfg,
+      {
+        contextPressure: this.state.contextPressure,
+        consecutiveCompactions: this.state.consecutiveCompactions,
+      },
+      { policy },
+    );
+    if (action !== "switch") return { switched: false, reason: action };
+    try {
+      const result = performSegmentSwitch(sessionId, {
+        /* P2：保留条数也走策略（默认透传配置值 20 ⇒ 与旧行为逐字一致） */
+        keepCount: policy.keepRecent,
+      });
+      if (result.switched) {
+        /* 记下"本回合已经切过一次" —— 完成出口据此避免同一轮切两次（见字段注释） */
+        this.switchedThisTurn = true;
+        console.log(
+          `[segment-switch] ${action} at pressure ${this.state.contextPressure.toFixed(3)} ⇒ segment ${result.segmentSeq}（移出视图 ${result.removed} 条）`,
+        );
+      }
+      return result;
+    } catch (e) {
+      /* 换段失败绝不能吃掉这一轮：回退到压缩，并如实留痕 */
+      console.warn("[segment-switch] 换段失败，回退到压缩:", e);
+      return { switched: false, reason: "exception" };
+    }
+  }
+
+  /**
+   * P0：**完成态换段**（回合正常完成后，按"任务边界 + 水位"切段）。
+   *
+   * 与中途触发点（`trySwitchSegment`）的区别只有一个参数，但语义不同：
+   * - 中途点 `turnCompleted:false` ⇒ 只在 hard 线 / 连压≥2 时切，一般压力只 compact
+   *   （工具可能还在跑、输入可能待处理，绝不能因为"模型说完了"就切）；
+   * - 这里 `turnCompleted:true` ⇒ **水位达到考虑线才切**（2026-11 修正：旧实现「完成即边界」，
+   *   于是超过 keepCount 之后每回合都切一段；真实 200 轮不可能只有 3 段）。
+   *   低压力完成 ⇒ 继续当前段；连压 ≥2 / 接近 hard 两条救援信号仍然切。
+   *
+   * 为什么再挡一层 `regressions.length === 0`：有回归 = 没完成，切段会把问题藏进新段，
+   * 也违反完成门。切段失败一律回退为"不切"（不影响收尾）。
+   *
+   * 为什么再挡一层 `switchedThisTurn`：回合中途的 hard 线/连压切换已经处理过这个边界，
+   * 完成时再切一次会在新段里重复写 handoff（见字段注释）。
+   */
+  private trySwitchOnCompletion(sessionId: string, completed: boolean): SegmentSwitchResult | null {
+    if (!completed) return null;
+    /**
+     * P2：**完成态先更新单轮观测，再判段**。
+     *
+     * 观测 = 「本回合平均每次模型调用的 prompt tokens」与上一回合同口径值的差 ——
+     * 它近似「这一回合新增了多少上下文」（用户消息 + 工具输出），而不是「上下文本身多大」。
+     * 拿上下文总量当观测就等于把压力再算一遍（第二套压力模型，明确禁止）。
+     *
+     * 没有可用用量（provider 不报 usage）或首个回合（没有基线）⇒ 观测记 0（不做单轮调整），
+     * 保守优先：宁可少提前一次，也不要在噪声上抖动。中止/异常回合不走这里，基线不更新。
+     */
+    const totalPromptTokens = Math.max(0, Math.floor(Number(this.state.totalUsage?.promptTokens) || 0));
+    if (totalPromptTokens > 0) {
+      const iterations = Math.max(1, Math.floor(Number(this.state.iteration) || 0));
+      const avgPromptTokens = totalPromptTokens / iterations;
+      this.observedTurnTokens =
+        this.previousTurnPromptAvg === null ? 0 : Math.max(0, Math.round(avgPromptTokens - this.previousTurnPromptAvg));
+      this.previousTurnPromptAvg = avgPromptTokens;
+    }
+    const cfg = getContextManager().getConfig();
+    if (cfg.segmentEpochs !== true) return null;
+    /**
+     * 同一轮只切一次：中途已切过（hard 线 / 连压 ≥2）就直接放弃完成态换段 ——
+     * 那一刀已经把这个任务边界处理过了，再切只会在刚建好的新段里多写一份 handoff。
+     */
+    if (this.switchedThisTurn) {
+      console.info("[segment-switch-diag] completion exit: skipped (already switched this turn)");
+      return null;
+    }
+    /* P2：同一套自适应刻度（窗口 / 单轮观测 / 连压）；默认输入下仍是 0.7 / 0.9 */
+    const policy = this.stewardPolicyFor(sessionId, cfg);
+    const action = epochActionForLoop(
+      cfg,
+      { contextPressure: this.state.contextPressure, consecutiveCompactions: this.state.consecutiveCompactions },
+      { turnCompleted: true, policy },
+    );
+    /**
+     * ## 受控诊断（只在灰度开关打开时输出）
+     *
+     * 为什么留一行 `console.info`：这条链的单元判据只能证明"代码在那儿"，
+     * 真机取证要靠渲染侧 console（Rust 日志收不到渲染侧 —— AGENTS.md §5 第 8 条）。
+     * 被修过的真机缺陷形态是"开关打开、历史够长、库里却什么都没有"，那时
+     * **分不清**是"没走到完成出口"还是"走到了但决策说 none / 被 nothing-to-cut 挡掉"。
+     *
+     * 开关关闭时前面已 `return null` ⇒ **默认路径一行日志都不多**（零成本、零噪声）。
+     */
+    if (action !== "switch") {
+      console.info(
+        `[segment-switch-diag] completion exit: action=${action} pressure=${this.state.contextPressure.toFixed(3)} threshold=${policy.consider}`,
+      );
+      return null;
+    }
+    try {
+      const result = performSegmentSwitch(sessionId, { keepCount: policy.keepRecent });
+      if (!result.switched) {
+        console.info(
+          `[segment-switch-diag] completion exit: switch rejected (${result.reason ?? "unknown"}) pressure=${this.state.contextPressure.toFixed(3)} keep=${policy.keepRecent}`,
+        );
+      }
+      if (result.switched) {
+        console.log(
+          `[segment-switch] completed at pressure ${this.state.contextPressure.toFixed(3)} ⇒ segment ${result.segmentSeq}（移出视图 ${result.removed} 条）`,
+        );
+      }
+      return result;
+    } catch (e) {
+      console.warn("[segment-switch] 完成态换段失败（已忽略，不影响收尾）:", e);
+      return null;
+    }
+  }
+
   private async compactMessages(sessionId: string): Promise<number> {
     /**
      * ⚠️ 这里**不再**额外读一次消息来判「太少」：第 144 波的 SYNC-2 门禁（数据层以外不许使用
@@ -6438,7 +8004,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      *
      * 这里改成：估算保留集的 token，超过预算就成半收缩（仍对齐轮次边界），
      * 直到进预算或触到下限。仍压不下去时如实记日志 —— 那种情况（单条消息本身就超窗口）
-     * 任何压缩都救不了，必须让用户看到"开新对话/改用附件"的明确结论。
+     * 任何压缩都救不了，必须让用户看到"收敛单条体积/改用附件"的明确结论。
      */
     const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
     // 预算：窗口的一半。留一半给系统提示、工具 schema、以及模型输出。
@@ -6464,7 +8030,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 对"一屏工具输出"的会话估算出来接近 0 ⇒ `planCompactionKeep` 判"已进预算"、**一次都不收缩**
      * ⇒ 压缩后压力不降（压力是按真实请求侧 token 算的）⇒ 下一轮再压，而此时可见消息只剩
      * 「标记 + 20 条」，`keepCount=20` 使待压集只剩那条旧标记 ⇒ 每轮只删 1 条、写回等长标记
-     * （空转）⇒ `consecutiveCompactions` 到 3 ⇒ 假结论「上下文窗口已满，请开启新对话」。
+     * （空转）⇒ `consecutiveCompactions` 到上限 ⇒ 假结论「上下文窗口已满，请开启新对话」。
      *
      * ⚠️ 这是**同一个坑的第二个入口**：`removedChars`（本波新增）已经算过 `tc.result`，
      * 保留集预算这一处此前是瞎的。
@@ -6474,7 +8040,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      *
      * 被守的缺陷：这里读的是完整的 toolCalls[].result，而真正发出去的请求走
      * `pruneStaleToolResults`（>8192 只留头尾、只保留最近 2 条完整）⇒ 单条陈旧大结果可差 ~40×
-     * ⇒ 「装得下也收缩」（白删最近几轮）+ `plan.overBudget` 把 consecutiveCompactions 直接顶到 3
+     * ⇒ 「装得下也收缩」（白删最近几轮）+ `plan.overBudget` 把 consecutiveCompactions 直接顶到上限
      * ⇒ 下一轮给出假结论「上下文窗口已满，即使压缩后仍无法继续。请开启新对话。」
      */
     /**
@@ -6544,14 +8110,14 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     if (plan.overBudget) {
       console.warn(
         `[compactMessages] 即使保留 ${plan.keepCount} 条仍超出预算（估算 ${plan.estimated} > ${keepBudget}）：` +
-          `单条消息本身过大时压缩无法解决，将由循环按"压缩无效"上报（建议开新对话或改用附件）。`,
+          `单条消息本身过大时压缩无法解决，将由循环按"压缩无效"上报（建议收敛单条体积或改用附件）。`,
       );
       /**
        * 第 83 波：既然压缩救不了，就别再白烧两次摘要调用。
        * 把连压计数直接顶到上限，循环下一轮就按"上下文装不下"给出可执行的建议
        * （用户现场：压缩 → 仍溢出 → 再压缩，迭代 1→2→3→4 全是无用功）。
        */
-      this.state.consecutiveCompactions = 3;
+      this.state.consecutiveCompactions = MAX_CONSECUTIVE_COMPACTIONS;
     }
 
     let messagesToKeep = messages.slice(-keepCount);
@@ -6698,10 +8264,34 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 上下文**反而变大**、压力不降反升 ⇒ 立刻再次压缩（用户看到"点了压缩，占用没降甚至更高"）。
      * 工具结果与参数也一起算（它们同样是"被移除的上下文"）。
      */
+    /**
+     * ★ CMP-P-4（24 §P0-5）：**marker-only 投影直接返回「无可压」**。
+     *
+     * ## 被守的缺陷（读码确证 + 真机形态）
+     *
+     * 稳态会话的形状是「旧标记 + 最近 20 条」，`keepCount=20` ⇒ 待压集只剩那条旧标记。
+     * 旧实现把它当普通内容：`removedChars` 把标记正文算进去 ⇒ 新标记的字符预算 = 旧标记长度
+     * ⇒ **写回一条近等长的标记**（净变化≈0），压力不降 ⇒ 下一轮再压 ⇒
+     * `consecutiveCompactions` 到上限 ⇒ 假结论「上下文窗口已满，请开启新对话」。
+     *
+     * 标记的正文已经作为级联摘要（`existingSummary`）原样带进新标记，它**不是**
+     * 「这次新压掉的上下文」—— 因此既不进 `removedChars`，也不能单独构成一次压缩。
+     * 返回 **-5**（不是 -4：-4 会被计成连压、最后仍推出「窗口已满」；-5 是「被跳过」，
+     * 与 -2/-3 同列，不假报满）。
+     *
+     * 判据 `CMP-P-4`：构造 marker-only 视图 ⇒ 不写新标记、不报满；去掉本段排除 ⇒ 红。
+     */
+    const compressibleMessages = messagesToRemove.filter((m: any) => !isCompactionMarker(m));
+    if (compressibleMessages.length === 0) {
+      console.warn(
+        "[compactMessages] 待压集只有压缩摘要标记（无可压的真实内容）⇒ 本次不压缩（避免写回近等长标记、假报「窗口已满」）",
+      );
+      return -5;
+    }
     /* ★ 全量审计：同样按"将要发出的形态"量（与 estimateKeepTokens 同一把裁剪） */
     /* ★ 全量审计（高）：同一把裁剪口径（存储行里的陈旧工具结果只算头尾） */
-    const removedRecentIds = recentToolResultIds(messagesToRemove as never[]);
-    const removedChars = (messagesToRemove as any[]).reduce(
+    const removedRecentIds = recentToolResultIds(compressibleMessages as never[]);
+    const removedChars = (compressibleMessages as any[]).reduce(
       (sum: number, m: any) => sum + messageCharSizeForEstimate(m, removedRecentIds),
       0,
     );
@@ -6797,6 +8387,18 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
 
     /**
+     * ★ P1-2（24 §P1-2 / COMPACT-1）：**摘要正文必须有硬上限**。
+     *
+     * 上限原来只写在提示词里（且 `buildCompactionSystemPrompt` 写的是 1500 字符），代码侧
+     * 从不校验；模型一旦无视提示就会写出上万字符，标记随之膨胀，`composeCompactionMarkerText`
+     * 的预算只能把中间档/更早档挤掉。这里在**进入标记排版之前**统一裁一次
+     * （`clampCompactionSummary` 会保住每个结构化段落的标题，而不是一刀切掉尾部段落）。
+     *
+     * 为什么放在 catch 之后：兜底路径（片段摘要）同样要受上限约束 —— 两条路径共用同一个出口。
+     */
+    summary = clampCompactionSummary(summary, COMPACTION_SUMMARY_MAX_CHARS);
+
+    /**
      * 中间档：确定性结构化要点（不调 LLM）；最老溢出的那段（`packed.consumed` 之后的消息）：
      * 同样用确定性渲染，但**明写保真度最低**（模型据此知道"这段只有清单，细节要用工具重新取"）。
      */
@@ -6870,6 +8472,19 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const eventLog = this.getEventLog();
     const messageStorage = this.getMessageStorage();
     const removedIds = messagesToRemove.map((m: any) => m.id);
+    /**
+     * P1-1：压缩后模型只剩摘要 —— 把会话笔记摘要拼进 marker **尾部**（untrusted）。
+     *
+     * 失败/没有笔记 ⇒ 空串（`composeCompactionMarkerText` 会整段省略），压缩照旧完成：
+     * 「notes 不可用回退现有摘要，不阻断」。上限由 `thread-notes.ts` 统一（4–8KB），
+     * 最终还会被 marker 的 `charBudget` 再裁一次（"压缩不许让上下文变大"）。
+     */
+    let notesDigest = "";
+    try {
+      notesDigest = buildThreadNotesDigest(sessionId);
+    } catch (e) {
+      console.warn("[compactMessages] 会话笔记摘要读取失败（marker 回退为旧版内容）:", e);
+    }
     const markerContent = composeCompactionMarkerText({
       summary,
       priorSummary: priorSummaryCarried,
@@ -6887,6 +8502,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       overflowCount: overflowOut.renderedCount ?? overflowSelected.length,
       /* ★ 第 228 波审计：**压缩不许让上下文变大** —— 标记 ≤ max(800, 待压内容字符数) */
       charBudget: removedChars,
+      /* P1-1：会话笔记摘要（尾部；受 charBudget 约束，放不下会整段省略） */
+      notesDigest,
     });
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
     /**
@@ -6936,6 +8553,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
             removedCount: messagesToRemove.length,
             keptCount: keepCount,
             trigger: "auto",
+            /* P1-2：有会话笔记才写 notesRef（没有就整个键不出现） */
+            notesRef: latestThreadNoteId(sessionId),
             excludedMessageIds: contextCutoffExclusions(
               messages as never[],
               messagesToKeep as never[],
@@ -7082,7 +8701,9 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const usage: any = (response as any)?.usage;
     if (usage) {
       const prompt = Number(usage.promptTokens ?? 0);
-      const hit = usage.cacheHitTokens;
+      /** 读缓存优先用新字段，旧名 `cacheHitTokens` 兜底（两条路径同源，见 `toTokenUsage`） */
+      const hit = usage.cacheReadTokens ?? usage.cacheHitTokens;
+      const write = usage.cacheWriteTokens;
       const miss = hit === undefined ? "?" : (usage.uncachedInputTokens ?? Math.max(0, prompt - hit));
       /*
        * 单独累计（不并进 totalUsage）：引擎据此按**压缩模型**记一条独立的成本记录，
@@ -7092,13 +8713,23 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       acc.promptTokens += prompt;
       acc.completionTokens += Number(usage.completionTokens ?? 0);
       acc.totalTokens += Number(usage.totalTokens ?? 0);
-      if (hit !== undefined) acc.cacheHitTokens = (acc.cacheHitTokens ?? 0) + Number(hit);
+      if (hit !== undefined) {
+        acc.cacheHitTokens = (acc.cacheHitTokens ?? 0) + Number(hit);
+        acc.cacheReadTokens = (acc.cacheReadTokens ?? 0) + Number(hit);
+      }
+      if (write !== undefined) {
+        acc.cacheWriteTokens = (acc.cacheWriteTokens ?? 0) + Number(write);
+      }
+      if (usage.cacheReported === true || hit !== undefined || write !== undefined) {
+        acc.cacheReported = true;
+      }
       if (usage.uncachedInputTokens !== undefined) {
         acc.uncachedInputTokens = (acc.uncachedInputTokens ?? 0) + Number(usage.uncachedInputTokens);
       }
       console.log(
         `[compact] usage prompt=${prompt} completion=${Number(usage.completionTokens ?? 0)} ` +
-          `cacheHit=${hit === undefined ? "?" : hit} miss=${miss} model=${compactionModel} ` +
+          `cacheRead=${hit === undefined ? "?" : hit} cacheWrite=${write === undefined ? "?" : write} ` +
+          `miss=${miss} model=${compactionModel} ` +
           `convChars=${truncatedConv.length}`,
       );
     }

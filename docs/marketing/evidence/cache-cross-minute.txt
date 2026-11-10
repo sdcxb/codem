@@ -1,0 +1,34 @@
+跨分钟前缀缓存：日期移出 system（2026-11-07）
+================================================
+
+结论
+----
+1. 旧实现把分钟精度 `# Current Date` 放在**系统提示最后一段**；它仍在 system block 内，
+   而 `prompt-cache.ts` 的第一个缓存断点就在 system ⇒ **每分钟整段 system 前缀失效**，
+   跨分钟必然 miss（即便日期只在末尾）。
+2. 现在日期只出现在**易变尾部**（`time-context` 的本地时间戳，含年月日），位于所有缓存断点之后；
+   system 提示不再包含任何分钟级时间。
+3. 因此同一会话、消息与配置不变时，**跨分钟 system 逐字节相同**，system 上的断点可继续命中。
+
+判据（实跑全绿，925 files / 9885 passed）
+-----------------------------------------
+- `src/test/cache-prefix-stability.test.ts`
+  - 「不同分钟的 prompt 逐字节相同（date 已整体移出 system）」：date 10:00 vs 10:01 ⇒ `a === b`、公共前缀 1.0
+  - 「无 date 与有 date 的 system 逐字节相同（date 不再影响 system）」
+  - 「date 不出现在 # Environment，也不出现在 system 任何位置」
+  - 「MEM-PLACE-18-F2：跨分钟 system 逐字节相同（date 已移出，记忆与哨兵不受影响）」
+- `src/test/memory-placement-boundary.test.ts`
+  - MEM-PLACE-1 反向后缀：system 不许含分钟精度日期
+  - MEM-PLACE-7：段序改为 `语言规则 → 边界 → 易变记忆`，system 不许含 `# Current Date`
+  - MEM-PLACE-16：无记忆时 system 也不许含 date
+- `src/test/memory-placement-overhead.test.ts`
+  - MEM-PLACE-25a：附录变化时公共前缀覆盖到易变记忆（不再以 date 为界）
+  - MEM-PLACE-27：传不传 date，system 逐字节相同
+
+限制（如实）
+------------
+- 本轮**没有重跑跨分钟真机 A/B**；结构证据是「system 跨分钟逐字节相同」的判据。
+- 同分钟真机 A/B 的真实命中读数仍有效：`cache-hit-real-2.txt`（请求带 2 个 `cache_control` 断点，
+  provider 回报每轮 cache_read≈40.2k / cache_creation≈10.2k，单轮命中率 99.98%）。
+- 日期不再进 system 后，「跨分钟必失效」这一前提已从结构上消除；若后续要再测，
+  直接沿用 `cache-hit-real-2` 的脚本，把第二轮跨过分钟边界即可。

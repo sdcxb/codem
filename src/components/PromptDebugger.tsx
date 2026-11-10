@@ -91,6 +91,8 @@ export function PromptDebugger() {
       debugProjectId,
       undefined,
       memoryBudget,
+      /* MEM-AUTH-1：与引擎两处注入点同形（auto/未知是未经确认的线索，manual 小节各自带权威句） */
+      "mixed",
     );
 
     const config: SystemPromptConfig = {

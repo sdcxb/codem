@@ -42,6 +42,7 @@ import {
   MemoryService,
   MEMORY_AUTHORITY_NOTE,
   MEMORY_INJECT_CHAR_BUDGET,
+  MEMORY_INJECT_KEY_MAX,
   MEMORY_INJECT_MAX_PER_BLOCK,
   MEMORY_SOURCE_KIND_LABEL,
   MEMORY_STABLE_BLOCK_SELECTION,
@@ -95,6 +96,27 @@ function buildMinimalAgent() {
 }
 
 /**
+ * 夹具专用：把条目 id 固定成确定值（`mem-fixture-0..n`，按插入序）。
+ *
+ * 为什么需要它：产品里**同一条记忆的 id 跨回合不变**；而 `add()` 生成的是
+ * `mem-<时间>-<随机>` —— 两个独立构造的服务即使内容相同也会拿到不同 id。
+ * 索引式注入把 id **恒写在行内**（`- [date] (id) key — 摘要…`），不固定的话，
+ * 「只改易变侧」「只改附录」这类**前缀字节**判据会先被夹具抖动打断（差异点落在
+ * 稳定记忆那一行），测到的就不是缓存纪律了。固定 id 后，夹具才等价于
+ * 「同一批记忆，两轮之间只有内容变了」。
+ */
+function pinFixtureIds(svc: MemoryService): void {
+  const holder = svc as unknown as { entries: Map<string, { id: string }> };
+  const pinned = new Map<string, { id: string }>();
+  let i = 0;
+  for (const entry of holder.entries.values()) {
+    entry.id = `mem-fixture-${i++}`;
+    pinned.set(entry.id, entry);
+  }
+  holder.entries = pinned;
+}
+
+/**
  * 造一个真实 `MemoryService`，并把三类条目**分别**塞进去。
  *
  * ⚠️ 构造前必须先 `saveMemory("")` 清一次数据面：`MemoryService.load()` 会把**持久化里已有的**
@@ -121,12 +143,15 @@ function makeMemory(opts: {
   for (const [i, e] of (opts.conversation ?? []).entries()) {
     svc.add({ scope: "conversation", sessionId: SESSION, key: e.key, content: e.content, source: "manual", timestamp: ts + 200 + i });
   }
+  pinFixtureIds(svc);
   return svc;
 }
 
 /** 一个真实自动提取块（带 `source=auto` ⇒ 注入时必须自证"自动提取、未经人工确认"） */
 function withAutoBlock(svc: MemoryService, key: string, content: string): MemoryService {
   svc.add({ scope: "project", projectId: PROJ, key, content, source: "auto", timestamp: 1_760_000_500_000 });
+  // 自动块也一起固定（同一形状的两份夹具必须连 id 都逐字节相同，见 `pinFixtureIds`）
+  pinFixtureIds(svc);
   return svc;
 }
 
@@ -145,8 +170,16 @@ function configWithMemory(svc: MemoryService, date?: string): SystemPromptConfig
     memoryInstructions:
       composeMemoryBlock(svc, MEMORY_STABLE_BLOCK_SELECTION, MEMORY_STABLE_HEADER, PROJ, SESSION, budget) || undefined,
     memoryTailInstructions:
-      composeMemoryBlock(svc, MEMORY_VOLATILE_BLOCK_SELECTIONS, MEMORY_VOLATILE_HEADER, PROJ, SESSION, budget) ||
-      undefined,
+      composeMemoryBlock(
+        svc,
+        MEMORY_VOLATILE_BLOCK_SELECTIONS,
+        MEMORY_VOLATILE_HEADER,
+        PROJ,
+        SESSION,
+        budget,
+        /* MEM-AUTH-1：与产品注入点同形（易变块 = mixed 框架） */
+        "mixed",
+      ) || undefined,
   };
 }
 
@@ -215,11 +248,11 @@ describe("MEM-PLACE：记忆留在系统提示，按易变性两分 + 显式缓�
     const e2 = promptViaEngine(svc, SESSION, "C:\\work\\alpha");
     expect(e1).toBe(e2);
     /*
-     * 死参数修复的判据（第 189 波 C7）：引擎的 date 必须来自**可注入时钟**，
-     * 而不是自己偷偷取真实时钟。旧写法 `promptViaEngine(..., date)` 的 date 形参被引擎
-     * 内部覆盖 ⇒ 判据既测不到它、又隐式依赖跑测试时的真实时刻（跨分钟假红）。
+     * 2026-11-07：分钟精度日期已从 system 移到易变尾部（`time-context`），
+     * 否则 system block 里的缓存断点每分钟失效。这里反向钉住「system 不含日期」，
+     * 日期能力由 `time-context` 的本地时间戳承载（见 cache-prefix-stability 的 PC-8）。
      */
-    expect(e1, "引擎的 date 必须来自注入的时钟（否则判据隐式依赖真实时钟）").toContain(
+    expect(e1, "system 提示不许再含分钟精度日期（否则跨分钟前缀缓存必失效）").not.toContain(
       minutePrecisionDate(FIXED_NOW),
     );
   });
@@ -488,26 +521,23 @@ describe("MEM-PLACE：记忆留在系统提示，按易变性两分 + 显式缓�
 
     const p = promptWithMemory(svc, "2026-10-07 10:00");
     const langAt = p.indexOf("# 语言规则");
-    const dateAt = p.indexOf("# Current Date");
     const boundaryAt = p.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
     const volatileAt = p.indexOf("PROJECT_ORDER_MARKER");
 
     expect(langAt, "语言规则段必须还在").toBeGreaterThan(-1);
-    expect(dateAt, "date 段必须还在").toBeGreaterThan(-1);
     expect(volatileAt, "易变记忆必须还在").toBeGreaterThan(-1);
     /*
-     * 顺序契约（第 189 波第 4 条按实测改）：`语言规则 → 记忆（易变）→ date`。
-     * 旧序是 `语言规则 → date → 记忆`，而 date **每分钟**都变 ⇒ 分钟一跨就把记忆一起顶掉
-     * （实测跨分钟公共前缀 94.64%，而"只改易变记忆"是 97.67%）。date 收尾后只顶掉自己。
+     * 顺序契约（2026-11-07 改）：`语言规则 → 边界 → 易变记忆`。
+     * 分钟精度日期**已整体移出 system**（进 `time-context` 尾部）——
+     * 它留在 system 里会让 `prompt-cache` 的 system 断点每分钟失效。
      */
     expect(langAt, "语言规则必须在边界之前（它是稳定前缀的最后一段）").toBeLessThan(boundaryAt);
     expect(boundaryAt, "边界必须在易变记忆之前").toBeLessThan(volatileAt);
-    expect(volatileAt, "易变记忆必须在 date 之前").toBeLessThan(dateAt);
-    expect(p.indexOf("CONV_ORDER_MARKER"), "对话级也在 date 之前").toBeLessThan(dateAt);
+    expect(p, "system 不许再含 # Current Date（日期已移到易变尾部）").not.toContain("# Current Date");
     expect(
       p.split("\n\n---\n\n").slice(-1)[0].startsWith("# Current Date"),
-      "date 必须是最后一段（它的 churn 只顶掉自己）",
-    ).toBe(true);
+      "system 最后一段不许是 date",
+    ).toBe(false);
 
     /*
      * ⚠️ P4 合并（第 189 波复审）：这里原有一段"只改 date ⇒ 公共前缀覆盖 date 之前 / 无 date 是有 date
@@ -600,15 +630,23 @@ describe("MEM-PLACE：稳定侧只留平台级 manual，自动条目一律易变
 
   it("S1-BUDGET-TOTAL：三块各自不超预算时，**合计**仍不得超过总预算，且超限必须如实披露", () => {
     /*
-     * 构造：三块各自约 4.6k 字符（单块预算 12k 之内）、合计约 13.8k > 12k。
-     * 每块 20 条（正好等于每块条数上限），正文 300 字符（`formatLine` 截到 200 ⇒ 行约 230 字符）。
+     * 构造：三块各自约 5.6k 字符（单块预算 12k 之内）、合计约 17k > 12k。
+     * 每块 20 条（正好等于每块条数上限），正文 300 字符（`formatLine` 截到摘要上限 120）。
+     *
+     * ⚠️ 行宽变更（索引式注入）后必须用**长 key**：新行 ≈
+     * `- [date] (id) key — 摘要(≤120)…`。短 key 时每行只有 ≈170 字符 ⇒ 20×3 ≈ 10.2k
+     * **永远到不了** 12000 聚合预算，判据会退化成"聚合口径从未咬合"的恒真形态。
+     * 把 key 顶到 `MEMORY_INJECT_KEY_MAX` 后每行 ≈280，三块合计重新 > 12000，
+     * 判据原意（单块各自不超、合计必须超、超出必须披露）逐条保留。
      */
     const svc = makeMemory({});
     const filler = "A".repeat(300);
+    const longKey = (prefix: string) => `${prefix}_${"K".repeat(MEMORY_INJECT_KEY_MAX - prefix.length - 1)}`;
+    expect(longKey("pm0").length, "长 key 必须顶到上限（否则压不出聚合超限）").toBe(MEMORY_INJECT_KEY_MAX);
     for (let i = 0; i < 20; i++) {
-      svc.add({ scope: "platform", key: `pm${i}`, content: `TOTAL_PM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_000_000 + i });
-      svc.add({ scope: "project", projectId: PROJ, key: `jm${i}`, content: `TOTAL_JM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_100_000 + i });
-      svc.add({ scope: "conversation", sessionId: SESSION, key: `cm${i}`, content: `TOTAL_CM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_200_000 + i });
+      svc.add({ scope: "platform", key: longKey(`pm${i}`), content: `TOTAL_PM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_000_000 + i });
+      svc.add({ scope: "project", projectId: PROJ, key: longKey(`jm${i}`), content: `TOTAL_JM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_100_000 + i });
+      svc.add({ scope: "conversation", sessionId: SESSION, key: longKey(`cm${i}`), content: `TOTAL_CM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_200_000 + i });
     }
 
     // 各块单独跑：每一块都在**单块**预算之内（这正是"拆成三块"会失控的前提）
@@ -777,7 +815,7 @@ describe("MEM-PLACE：来源三态 / 边界无条件 / 披露存活 / 顺序稳�
       timestamp: 1, // 1970 ⇒ 一定超过 maxAgeDays
     });
     const report = svc3.consolidate({ maxAgeDays: 90 });
-    expect(report.staleRemoved, "受保护条目不许被自动清理掉").toBe(0);
+    expect(report.staleArchived, "受保护条目不许被自动归档（更不许删除）").toBe(0);
     expect(svc3.get("legacy-old"), "受保护条目必须还在").toBeTruthy();
   });
 
@@ -861,10 +899,12 @@ describe("MEM-PLACE：来源三态 / 边界无条件 / 披露存活 / 顺序稳�
     /*
      * `showAllProjects` 只给「记忆体检」用，却被 `visibleIn` 消费 —— 而 `visibleIn` 是**注入**
      * 的必经闸门。今天 `buildMemoryPrompt` 内部重建 ctx 恰好安全，但那只是"恰好"。
-     * 这条把它变成**类型系统保证**：注入侧上下文只有 projectId/sessionId。
+     * 这条把它变成**类型系统保证**：注入侧上下文只有三个**归属键**（projectId / sessionId /
+     * teamId —— 25:668 的团队记忆需要第三个归属维度），没有任何视图开关。
      */
     const ctx: InjectionScopeContext = injectionScopeContext("proj-a", "sess-a");
-    expect(Object.keys(ctx).sort()).toEqual(["projectId", "sessionId"]);
+    expect(Object.keys(ctx).sort()).toEqual(["projectId", "sessionId", "teamId"]);
+    expect("showAllProjects" in ctx, "注入侧上下文不许携带体检开关").toBe(false);
 
     // 运行时口径：只有当前项目的条目会进注入文本（另一个项目的条目一条都不许进）
     const svc = makeMemory({ project: [{ key: "本项目", content: "INJECT_OWN_PROJECT" }] });
@@ -947,12 +987,17 @@ describe("MEM-PLACE：来源三态 / 边界无条件 / 披露存活 / 顺序稳�
     expect(clean, "空块仍然不占上下文").toBe("");
 
     // 端到端：聚合上限咬合时，最终提示里"未注入"必须真的出现（而不是随空块消失）
+    /*
+     * 同上一条（S1-BUDGET-TOTAL）的行宽前提：索引式注入把每行压到「key + 摘要(120)」，
+     * 必须用长 key 才能让三块合计真的 > 12000 聚合预算；否则这一段在本判据里是恒真的。
+     */
     const svc = makeMemory({});
     const filler = "B".repeat(300);
+    const longKey = (prefix: string) => `${prefix}_${"K".repeat(MEMORY_INJECT_KEY_MAX - prefix.length - 1)}`;
     for (let i = 0; i < 20; i++) {
-      svc.add({ scope: "platform", key: `pm${i}`, content: `DISCLOSE_PM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_000_000 + i });
-      svc.add({ scope: "project", projectId: PROJ, key: `jm${i}`, content: `DISCLOSE_JM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_100_000 + i });
-      svc.add({ scope: "conversation", sessionId: SESSION, key: `cm${i}`, content: `DISCLOSE_CM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_200_000 + i });
+      svc.add({ scope: "platform", key: longKey(`pm${i}`), content: `DISCLOSE_PM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_000_000 + i });
+      svc.add({ scope: "project", projectId: PROJ, key: longKey(`jm${i}`), content: `DISCLOSE_JM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_100_000 + i });
+      svc.add({ scope: "conversation", sessionId: SESSION, key: longKey(`cm${i}`), content: `DISCLOSE_CM_${i}_${filler}`, source: "manual", timestamp: 1_760_000_200_000 + i });
     }
     // 前提：三块各自都在单块预算之内，合计超过总预算（否则这条判据无从度量）
     const each = [
@@ -1040,14 +1085,11 @@ describe("MEM-PLACE：来源三态 / 边界无条件 / 披露存活 / 顺序稳�
      */
     const none = buildSystemPrompt({ agent: buildMinimalAgent() as never, date: "2026-10-07 10:00" });
     expect(findCacheBoundary(none)).toBeGreaterThan(-1);
-    expect(
-      findCacheBoundary(none),
-      "无记忆时边界仍在 date 之前（date 才是内容上的易变者）",
-    ).toBeLessThan(none.indexOf("# Current Date"));
+    expect(none, "无记忆时 system 也不许含 date（已移到易变尾部）").not.toContain("# Current Date");
     expect(
       none.split("\n\n---\n\n").slice(-1)[0].startsWith("# Current Date"),
-      "无记忆时 date 仍是最后一段",
-    ).toBe(true);
+      "无记忆时 system 最后一段也不许是 date",
+    ).toBe(false);
     expect(splitSystemPromptCacheBoundary(none).boundaryFound).toBe(true);
 
     // 形态 C：**人为构造**的缺边界提示 ⇒ 不许静默兜底

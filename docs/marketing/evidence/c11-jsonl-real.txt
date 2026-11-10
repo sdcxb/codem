@@ -1,0 +1,119 @@
+C11 真机验证：JSONL 权威日志里的 switch marker 与 27 条消息
+==========================================================================
+
+结论
+----
+**PASS。** 真实模型回合（只回复 OK）完成后，该会话的权威 JSONL
+（`%APPDATA%\com.codem.app\sessions\<sid>.jsonl`）里：
+- 该会话 **27 条消息全部在**（24 条预置历史 + user + assistant + 1 条 switch marker），
+  与 SQLite 索引逐 id 对齐（missing=0 / extra=0）；
+- switch marker 的 **`metadata.contextEpoch` 原样存在**：
+  `kind=switch`、`segmentSeq=2`、`cutoffMessageId=c11-msg-07`、removed=6 / kept=20；
+- **0 条坏行**（38 条非空行全部 `JSON.parse` 成功；文件 UTF-8 往返一致）。
+
+边界（如实标注）：截图里本回合 `缓存命中 0%` —— 本次**没有**证明真实 provider
+缓存命中；C11 验的是「JSONL 权威副本里 marker 与消息齐全」，不是缓存收益。
+
+构建 / 安装
+-----------
+安装包: src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe
+  sha256 = FE042B854C398EFEB1796E433A5AC54AEBA2FE025D5ECD8E98E861F8D3E11C08
+  LastWriteTime = 2026-11-06 23:36:41.220 (+08:00)
+  构建命令: $env:TAURI_SIGNING_PRIVATE_KEY=(Get-Content .tauri\codem-updater.key -Raw).Trim();
+            $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD="dummy";
+            node node_modules\@tauri-apps\cli\tauri.js build
+  构建退出码 = 0（Rust 侧有 warning：codem lib 13 条 + rustdoc 若干；无 error；
+  与「退出码 1 属正常」的旧经验不同）
+静默安装: Start-Process <setup> -ArgumentList '/S' -Wait
+安装后 exe: C:\Users\abee\AppData\Local\Codem\codem.exe
+  sha256 = D5CD1D485816EA64EA1C5DF2966D41A7888E1524723BCBEF50063F4547035AF4
+  LastWriteTime = 2026-11-06 23:35:20（构建产物时间）
+  ProductVersion = 1.18.13
+
+配置（**默认配置，未写 segmentEpochs**）
+----------------------------------------
+codem-context-config（验证前后逐字节一致）=
+{"maxContextWindow": 128000, "outputReserve": 4096, "systemPromptTokens": 2000,
+ "compactionThreshold": 0.8, "maxMessagesAfterCompaction": 20,
+ "preserveRecentToolOutputs": true}
+segmentEpochs 键是否存在 = False（默认值 true 生效）
+
+会话
+----
+id    = c11-jsonl-1793979469850
+title = C11-JSONL-真机验证
+形态  = 全局会话（project_id = ""）；预置 24 条短历史（user/assistant 交替，
+        正文为「C11 历史消息 NN」/「已记录 NN」，时间戳在 1 小时前）；
+        设为 codem-last-session / codem-last-project = ""，App 启动即打开。
+真实回合: 用户「只回复 OK」→ assistant「OK」；模型（界面显示）
+        「Claude Haiku 4.5 (AI Code With)」，真实 API 调用，非 mock。
+
+命令
+----
+启动（带 CDP）:
+  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222'
+  Start-Process 'C:\Users\abee\AppData\Local\Codem\codem.exe'
+驱动（CDP：点击会话 → textarea.message-input 写入「只回复 OK」→ 点 button.send-btn）:
+  node .preview-shot/_c11-drive.mjs
+读 JSONL + 只读核对:
+  node .preview-shot/_c11-verify.mjs
+DB 佐证（context_epochs / session_events）:
+  node .preview-shot/_c11-db.mjs
+
+JSONL 路径与实测读数
+--------------------
+路径: C:\Users\abee\AppData\Roaming\com.codem.app\sessions\c11-jsonl-1793979469850.jsonl
+  （按本任务第 5 步「还原」要求，验证后该文件已删除；以下读数是验证当时实测）
+  文件大小 7080 字节；UTF-8（往返编码一致）
+  文本行数 39（末尾换行产生 1 个空行）；**非空记录 38 条**
+  唯一消息 id = **27**；DB messages = **27**
+  missingInJsonl = []，extraInJsonl = []
+  JSON.parse 失败 = **0**；文件以换行结尾（无残尾 torn tail）。
+  `skippedLines` 是读取侧的计数（不是文件里的字段）；本次逐行解析 0 失败 ⇒ 坏行 = 0。
+  38 条非空记录里 11 条是同 id 的后写（assistant 2 行 + c11-msg-15..24 各 2 行）——
+  符合「append-only，后写者胜」的既定语义，不是重复消息：按 id 去重后恰好 27 条。
+  后写的具体触发路径（流式 flush / 启动期回填）本次未单独归因，只按日志语义取最后一行。
+
+switch marker（JSONL 第 37 行，长度 928 字符）
+----------------------------------------------
+id   = compact-1793979489144-1
+role = user
+metadata.contextEpoch =
+{"epochId":"compact-1793979489144-1","seq":2,"cutoffMessageId":"c11-msg-07",
+ "removedCount":6,"keptCount":20,"trigger":"switch",
+ "createdAt":1793979489144,"kind":"switch","segmentSeq":2}
+
+DB 佐证（同一轮、只读）
+-----------------------
+context_epochs:
+  id=compact-1793979489144-1  seq=2  cutoff_message_id=c11-msg-07
+  removed_count=6  kept_count=20  trigger_kind=switch  kind=switch  segment_seq=2
+session_events（context_steward_decision）:
+  {"action":"switch","at":1793979489144,"cutoffMessageId":"c11-msg-07",
+   "epochId":"compact-1793979489144-1","keptCount":20,"removedCount":6,"segmentSeq":2}
+messages 总数 = 27（24 预置 + user-1793979481278 + assistant-1793979481354 + marker）
+marker 条数 = 1
+
+截图
+----
+docs/marketing/evidence/c11-jsonl-real.png
+  （真实回合完成态：会话标题、用户「只回复 OK」、assistant「OK」、「任务完成」、
+    「系统提醒 [段切换 handoff] segment 2」；右下角读数「缓存命中 0%」）
+
+还原
+----
+删除预置会话后（再次只读核对）:
+  sessions=0 / messages=0 / context_epochs=0 / session_events=0 / session_fts=0
+  settings 里 codem-context-manifests:c11-jsonl-1793979469850 = 0
+  JSONL 文件已删除；sessions 目录 .jsonl 数量 = 907（验证前后一致），无 c11 文件
+  codem-last-session 恢复为原值 "1793955363177-4yuxjivf0"
+  codem-last-project 恢复为原值 ""
+  codem-context-config 与验证前逐字节一致（未写入 segmentEpochs）
+App 正常启动（不带 CDP 环境变量）:
+  PID 存活；Get-NetTCPConnection -LocalPort 9222 -State Listen = 0 条
+
+未做项
+------
+- 没有证明真实 provider 缓存命中（UI 自报 0%；请求/响应无命中字段）。
+- JSONL 的 38 条非空行里含 11 条同 id 更新行，本判据按 id 去重后核对 27 条消息；
+  未要求「物理行数 = 27」（append-only 日志的既定语义就是允许同 id 多行）。

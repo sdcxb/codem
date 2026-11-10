@@ -8,6 +8,8 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNo
 import { getStoragePort, hasStoragePort } from "./port";
 import { reportPersistFailure } from "./persist-failure";
 import { deleteSessionSpillFiles } from "./spill";
+import { forgetManifests } from "../context/manifest";
+import { forgetThreadNotes } from "../context/thread-notes";
 
 /**
  * `sessions` 域接入端口（P5 第 4 段）。
@@ -846,6 +848,19 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
     void purgeSessionIndexResidue(id);
     /* 唯一的 spill 回收入口：用户删会话 ⇒ 该会话工具正文一起删 */
     void deleteSessionSpillFiles(id);
+    /**
+     * C04：请求清单存在**独立的 settings 键**里（`codem-context-manifests:<id>`），
+     * 既不在 `sessions` 的外键级联里，也不在消息表里 —— 删除路径必须显式清，
+     * 否则「会话已删、清单还在」，同 id 的新会话会读到上一份的淘汰集合。
+     * 清理函数自己吞异常（删除已经成功，补偿失败不许把删除改成失败）。
+     */
+    forgetManifests(id);
+    /**
+     * P1-1：会话笔记同样在**独立的 settings 键**里（`codem-session-notes:<id>`），
+     * 不在外键级联里 —— 不显式清就是「会话已删、笔记还在」，同 id 的新会话会读到
+     * 上一份的目标/卡点（比清单残留更危险：模型会把它们当当前任务状态）。
+     */
+    forgetThreadNotes(id);
     return;
   }
   // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。

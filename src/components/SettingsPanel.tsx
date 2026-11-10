@@ -29,6 +29,7 @@ import { modelModalityLabel } from "../core/llm/model-modality";
 import { getCatalogHealthFor, describeCatalogHealth, subscribeCatalogHealth, orderModelsByHealth, catalogModelLabelSuffix } from "../core/llm/catalog-health";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
+import { TokenPricesPanel } from "./TokenPricesPanel";
 import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
 import { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { MultimodalPanel } from "./MultimodalPanel";
@@ -58,6 +59,7 @@ import { PersonaManager } from "./PersonaManager";
 import { ComputerUseSettings } from "./ComputerUseSettings";
 import { WechatSettings } from "./WechatSettings";
 import { RemoteAccessSettings } from "./RemoteAccessSettings";
+import { DeviceSyncSettings } from "./DeviceSyncSettings";
 import { applyUiFontScale, applyStoredUiFont, applyUiFontFamily, applyStoredUiFontFamily, readStoredUiFontFamily, FONT_BASE_PX } from "../core/ui-font";
 import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
 import {
@@ -658,7 +660,7 @@ export function SettingsPanel({
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "codegraph" | "advanced" | "help" | "usage" | "performance" | "memory-checkup">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "device-sync" | "codegraph" | "advanced" | "help" | "usage" | "performance" | "memory-checkup">((initialTab as any) || "general");
   /**
    * 切到「安全」时**重新读一次**允许目录。
    *
@@ -678,9 +680,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
    * 展开状态**不持久化**：下次打开设置回到"只有 API 模式"的默认形态（这正是用户要的"平常不显示"）。
    */
   const [showMoreRunModes, setShowMoreRunModes] = useState(false);
+  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   // P2 #36: Settings search — D2 修复：占位搜索框现在真正过滤/跳转设置分组
   const [settingsSearch, setSettingsSearch] = useState("");
-  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
   /**
    * 「检查更新」的进度/结果文案（第 62 轮）。
@@ -726,10 +728,11 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     ["computer", ["电脑操作", "computer", "读屏", "鼠标", "自动化"]],
     ["wechat", ["微信", "wechat", "clawbot", "桥", "绑定", "手机"]],
     ["phone", ["连接手机", "phone", "手机", "远程", "配对", "远程网关", "AA"]],
+    ["device-sync", ["设备同步", "device sync", "多设备", "同步", "sync", "Host", "游标", "配对"]],
     ["codegraph", ["代码图谱", "codegraph", "graph"]],
     ["advanced", ["高级", "advanced", "实验", "分层"]],
     ["help", ["帮助", "help", "关于", "教程"]],
-    ["usage", ["用量统计", "usage", "费用", "token", "限额"]],
+    ["usage", ["用量统计", "usage", "费用", "token", "限额", "价格", "成本", "price"]],
     ["performance", ["性能", "performance", "指标"]],
     ["memory-checkup", ["记忆体检", "记忆", "memory", "体检", "checkup"]],
   ];
@@ -783,6 +786,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         { id: "computer", zh: "电脑操作", en: "Computer Use", icon: MousePointer2 },
         { id: "wechat", zh: "微信 ClawBot", en: "WeChat ClawBot", icon: MessageCircle },
         { id: "phone", zh: "连接手机", en: "Phone access", icon: Smartphone },
+        { id: "device-sync", zh: "设备同步", en: "Device sync", icon: Network },
         { id: "codegraph", zh: "代码图谱", en: "CodeGraph", icon: Network },
         { id: "pet", zh: "宠物", en: "Pet", icon: PawPrint },
       ],
@@ -2693,6 +2697,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 <RemoteAccessSettings />
 </>
 )}
+{activeTab === "device-sync" && (
+<>
+{/* 多设备 Host 同步（25 号文 P2）：开关 / 配对 / 立即同步 / 游标与错误 */}
+<DeviceSyncSettings zh={lang === "zh"} />
+</>
+)}
 {activeTab === "advanced" && (
 <>
 {/* Advanced Settings with sub-tabs */}
@@ -2925,9 +2935,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 )}
 {/* P2 #35: Usage stats embedded in settings */}
 {activeTab === "usage" && (
-  <div className="sp-card">
-    <UsageStats onClose={() => setActiveTab("general")} />
-  </div>
+  <>
+    <div className="sp-card">
+      <UsageStats onClose={() => setActiveTab("general")} />
+    </div>
+    {/*
+      群聊成本价格表（2026-11 边界补齐）：与用量/费用紧邻，用户看到群聊页
+      「未配置价格」时能就地补；面板只写 codem-context-config 的两个字段。
+    */}
+    <div className="sp-card sp-card--mt">
+      <TokenPricesPanel />
+    </div>
+  </>
 )}
 {activeTab === "performance" && (
   <div className="sp-card">

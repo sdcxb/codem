@@ -97,6 +97,35 @@ pub fn apply(conn: &Connection) -> DbResult<SchemaReport> {
         conn.execute_batch(&ddl).map_err(DbError::from)?;
     }
 
+    /*
+     * P2-C：记忆的全文镜像表（24 §P2）。
+     *
+     * ## 为什么是**独立的虚拟表**而不是 `session_fts` 那种外部内容表
+     *
+     * 镜像的写入方（`crate::memories::replace_all`）本来就会把 `key` / `content`
+     * 用 `fts::tokenize` 切好再存（CJK 单字 + 相邻双字），所以查询侧只需要
+     * `fts::query_expr`，不依赖触发器或外部内容表的 rowid 对齐 ——
+     * `memories.id` 是**文本主键**，与 rowid 没有天然对应关系。
+     *
+     * ## 为什么在代码里建而不是写进 `schema.sql`
+     *
+     * `schema.sql` 是「业务表」真源（`tables.json` 由它生成）；全文表是**引擎维护的索引**，
+     * 与会话全文表同一类，归这里。`CREATE VIRTUAL TABLE IF NOT EXISTS` 对旧库同样幂等 ——
+     * 升级前建的库在这一步补建，不需要单独的编号迁移（新增表没有列要 ALTER）。
+     *
+     * ## 为什么列名不叫 `key`
+     *
+     * `key` 在 SQLite 里可用（`settings` 表就是这么写的），但 FTS5 的模块参数解析
+     * 对它更敏感（`key` 在查询语法里也是可出现的词）；这里用 `mem_key` / `mem_content`
+     * 消除歧义，查询侧不按列名过滤（只做整表 MATCH），所以对上层没有可见差异。
+     */
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(\
+           id UNINDEXED, mem_key, mem_content, tokenize='unicode61'\
+         );",
+    )
+    .map_err(DbError::from)?;
+
     // 迁移：逐条执行，容忍"列已存在"（与渲染侧的 try/catch 等价）
     let migrations: Vec<String> = serde_json::from_str(MIGRATIONS_JSON)
         .map_err(|e| DbError::other(format!("migrations.json 解析失败：{e}")))?;
@@ -111,6 +140,17 @@ pub fn apply(conn: &Connection) -> DbResult<SchemaReport> {
             }
         }
     }
+
+    /*
+     * 25:668：team 轴过滤索引必须在 `ALTER TABLE memories ADD COLUMN team_id`
+     * **之后**建。不能写进 `schema.sql` 的 SCHEMA 脚本：旧库先执行 SCHEMA 再跑
+     * migrations，`CREATE INDEX ... team_id` 会在列还不存在时直接失败
+     * （legacy backfill 用例就是这样抓住的）。
+     */
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_memories_team ON memories(scope, team_id);",
+    )
+    .map_err(DbError::from)?;
 
     // 与渲染侧一致：种下全局项目行（project_id="" 供全局会话满足外键）
     conn.execute(

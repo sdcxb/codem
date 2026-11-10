@@ -47,8 +47,8 @@
       "expectRed": true
     },
     {
-      "id": "MUT-4 注入截断又不披露（界面写「已生效（参与上下文）」而 9800 字符没进上下文）",
-      "why": "MA-10：条目允许 10000 字符，每行注入只取前 200 —— 条数与字符预算都有披露，唯独这一处没有",
+      "id": "MUT-4 注入截断又不披露（界面写「已生效（参与上下文）」而摘要之外的正文没进上下文）",
+      "why": "MA-10：条目允许 10000 字符，每行只注入摘要上限（`MEMORY_INJECT_LINE_MAX`）—— 条数与字符预算都有披露，唯独这一处没有",
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
@@ -127,8 +127,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "export const MEMORY_INJECT_LINE_MAX = 200;",
-          "to": "export const MEMORY_INJECT_LINE_MAX = 200; /* 反向对照：行为逐字不变 */"
+          "from": "export const MEMORY_INJECT_LINE_MAX = 120;",
+          "to": "export const MEMORY_INJECT_LINE_MAX = 120; /* 反向对照：行为逐字不变 */"
         }
       ],
       "tests": [

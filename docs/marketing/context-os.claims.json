@@ -1,8 +1,8 @@
 {
   "schema": "codem.context-os.claims.v1",
   "page": "context-os.html",
-  "pageSha256": "70b7343fcb9730b38afc8c898d5470dcfb70c385eb26713f7232874b916fdd85",
-  "updatedAt": "2026-11-06",
+  "pageSha256": "a80ef0206b576fea44f56b1bafbe79818b1fc12c316bec376672a90a7a5d608a",
+  "updatedAt": "2026-11-10T00:12:00+08:00",
   "purpose": "把宣传页上的承诺变成可追溯的验收条目。页面负责表达，清单负责证明；不能通过改文案来让门禁变绿。",
   "statusMeaning": {
     "target": "目标态，尚未实现或未验证",
@@ -11,28 +11,63 @@
     "not-applicable": "本页概念，不纳入当前版本验收"
   },
   "tiers": {
-    "P0": ["C01", "C02", "C03", "C04", "C09", "C12", "C13"],
-    "P1": ["C05", "C06", "C07", "C08", "C10", "C11"]
+    "P0": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C09",
+      "C12",
+      "C13"
+    ],
+    "P1": [
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C10",
+      "C11"
+    ]
   },
   "claims": [
     {
       "id": "C01",
       "title": "一个连续 Thread",
-      "statement": "用户看到的是一个连续对话，不因上下文窗口满而被迫重开。",
+      "statement": "开启 segmentEpochs 后，用户看到的是一个连续对话，不因上下文窗口满而被迫重开；默认关闭时保留中性错误/重试，不宣称默认连续。",
       "tier": "P0",
-      "status": "partial",
+      "status": "shipped",
       "owner": "context",
-      "evidence": ["src/core/context/context-view.ts"],
-      "acceptance": "同一 Session 在多次 compact/switch 后仍可连续对话；不出现必须新建会话才能继续的路径；UI 只显示一个 Thread。"
+      "evidence": [
+        "src/test/segment-default-on-compat.test.ts",
+        "src/test/auto-compaction-trigger.test.ts",
+        "src/test/segment-switch-completion-wiring.test.ts",
+        "src/test/segment-epochs-flag.test.ts",
+        "src/core/context/context.ts",
+        "src/core/llm/agentic-loop.ts",
+        "docs/marketing/evidence/c01-segment-switch-current.json",
+        "src/core/llm/provider-errors.ts",
+        "src/test/context-overflow-handling.test.ts",
+        "docs/marketing/evidence/c01-c13-real-machine-final-20261109.txt",
+        "docs/marketing/evidence/c01-switch-current-build.png",
+        "docs/marketing/evidence/input-draft-switch-current.png",
+        "docs/marketing/evidence/c01-phone-session-get.json"
+      ],
+      "note": "2026-11-08 当前构建重新取证：segmentEpochs 默认 false；DEF-1 钉住默认配置不产生 switch，DEF-1c 用显式 true 在默认阈值 0.7 下跑完成回合，pressure=0.7247、result=completed、switch=1、segmentSeq=2、旧消息 24 条全在（docs/marketing/evidence/c01-segment-switch-current.json）。旧 2026-11-06 pressure 0.000 证据已作废。窗口满时换段/压缩都失败 ⇒ 中性错误结束本轮、Session 保留、可重试，不再出现「请开启新对话」；AUTOCOMPACT-CEILING-SEGMENT / EXPLICIT-OFF 反向测试钉住。 2026-11-09：provider-errors / agentic-loop 的用户可见溢出说明已删除「开一个新对话 / 新建对话」；OFLOW-2 反向断言禁止该建议，OFLOW-REAL-1/2 覆盖连续压缩上限与反应式压缩关闭两条真实出口。 2026-11-09：C01 首页文案与 statement 已加「开启 Context OS 后 / 开启 segmentEpochs 后」限定，与 C13「开启后 0 次」一致，不再写成默认能力。 2026-11-09 修复后真机：首拍 defer，显式 true 完成态产生 kind=switch/segment 2，pressure=0.827，旧消息 31 条全在。 交付边界：模型回合使用本机 fixture provider（不是公网真实模型）；真实手机验证 blocked（本机 HTTP 网关不等于真实手机）。",
+      "acceptance": "同一 Session 在多次 compact/switch 后仍可连续对话；默认关闭时窗口满也不要求新建会话（中性错误/可重试）；显式开启后完成态按压力阈值产生 switch；UI 只显示一个 Thread。"
     },
     {
       "id": "C02",
       "title": "旧消息原文保留",
       "statement": "旧消息不做破坏性删除，可按时间线、锚点或检索回读。",
       "tier": "P0",
-      "status": "partial",
+      "status": "shipped",
       "owner": "context",
-      "evidence": ["src/core/storage/message.ts", "src/core/llm/tools/session-search.ts"],
+      "evidence": [
+        "src/core/storage/message.ts",
+        "src/core/llm/tools/session-search.ts",
+        "src/test/display-view-switch.test.ts",
+        "src/test/thread-history.test.ts"
+      ],
       "acceptance": "压缩/换段后 listTimelineMessages 仍包含旧消息；session_search 可命中压缩前文本；删除路径不存在。"
     },
     {
@@ -40,9 +75,27 @@
       "title": "按任务取最小充分上下文",
       "statement": "模型每次只带当前任务需要的材料，而不是把全部历史塞进窗口。",
       "tier": "P0",
-      "status": "target",
+      "status": "shipped",
       "owner": "context",
-      "evidence": [],
+      "evidence": [
+        "src/core/context/working-set.ts",
+        "src/core/context/manifest.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/components/ContextMonitor.tsx",
+        "src/test/working-set.test.ts",
+        "src/test/context-manifest.test.ts",
+        "src/test/context-monitor-manifest.test.tsx",
+        "docs/marketing/evidence/working-set-marker-real.png",
+        "docs/marketing/evidence/working-set-marker-real-db.txt",
+        "docs/marketing/evidence/working-set-marker-real-console.txt",
+        "docs/marketing/evidence/working-set-prefix-ab.txt",
+        "docs/marketing/evidence/cache-hit-real.txt",
+        "docs/marketing/evidence/cache-hit-real.png",
+        "docs/marketing/evidence/cache-hit-real-2.txt",
+        "docs/marketing/evidence/cache-hit-real-2.png",
+        "docs/marketing/evidence/cache-cross-minute.txt"
+      ],
+      "note": "Working Set 纯函数已落地（必选 system + 最近 keepRecent + 最后 user；超预算从最旧移出并生成 Pager 索引尾部消息），接线在 agentic-loop.ts::buildMessages；ContextManifest.workingSet 记录 {budgetTokens,selected,evicted,indexLines} 四个数字，ContextMonitor「请求清单」显示「工作集：选中 X / 移出 Y / 预算 tokens」。",
       "acceptance": "存在 Working Set/Pager 或等价投影；每次请求有明确的 sources/预算；长任务不会因窗口满中断。"
     },
     {
@@ -50,9 +103,14 @@
       "title": "Context Manifest / 可回放",
       "statement": "每次请求的 sources、版本、预算、淘汰项、前缀 hash 可记录、可复盘。",
       "tier": "P0",
-      "status": "target",
+      "status": "shipped",
       "owner": "context",
-      "evidence": [],
+      "evidence": [
+        "src/core/context/manifest.ts",
+        "src/test/context-manifest.test.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/core/storage/session.ts"
+      ],
       "acceptance": "能从请求记录还原模型当时看到的内容集合；能对比两次请求的差异；失败可定位是检索、投影还是模型问题。"
     },
     {
@@ -60,9 +118,15 @@
       "title": "文档结构可查询",
       "statement": "文档按大纲、段落、表格、引用、版本组织，而不是只切成 chunk。",
       "tier": "P1",
-      "status": "partial",
+      "status": "shipped",
       "owner": "document",
-      "evidence": ["src/core/llm/tools/document-tools.ts", "src/core/document/client.ts"],
+      "evidence": [
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/document/client.ts",
+        "src/core/document/structure.ts",
+        "src/test/doc-structure-refs.test.ts"
+      ],
+      "note": "doc_outline/doc_search/doc_read/doc_status 已带页码、章节、chunk 引用与表格/OCR 状态；页级状态优先真实 documents.pages（resolveDocumentPageState，无页表才派生并标未知，覆盖不足标 partial）；页码取不全时标 partial 且不编页码。判据 doc-structure-refs 现 11 条（含 C05-5 三条）。",
       "acceptance": "doc_outline/doc_search/doc_read 可用；结果带页码/章节/chunk 引用；表格/OCR 文档有明确状态。"
     },
     {
@@ -70,9 +134,19 @@
       "title": "Document Ledger",
       "statement": "长文档任务有章节状态、已读/已改/已验、事实与引用账本。",
       "tier": "P1",
-      "status": "partial",
+      "status": "shipped",
       "owner": "document",
-      "evidence": ["src/core/document/ledger.ts", "src/core/document/citation.ts"],
+      "evidence": [
+        "src/core/document/ledger.ts",
+        "src/core/document/citation.ts",
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/core/llm/completion-guards.ts",
+        "src/test/doc-ledger-coverage.test.ts",
+        "src/test/doc-ledger.test.ts",
+        "src/test/completion-nudge-detail.test.ts"
+      ],
+      "note": "章节状态 unread/read/edited/verified 只升不降；claim 必须带 citation；事实（recordDocumentFact，去重）与未读/未验可见；账本按 collection 持久化（codem-document-ledger:<collectionId>，版本化+懒加载+去抖，坏数据回空账本），段号只观察不重置；documentSyncCheck 增加 versioned/unreadable/versionless，收尾已升级为硬闸（reason=document_sync_required，只拦一次，二次放行标未验并记 completed_unverified）。判据 doc-ledger-coverage 16 条 + completion-nudge-detail 的 C06-G 4 条 + doc-ledger 5 条。",
       "acceptance": "Ledger 能在压缩/换段后保留覆盖状态；每个 claim 可回溯 citation；未读/未验章节可见；代码任务完成后检查相关文档版本是否同步。"
     },
     {
@@ -80,9 +154,17 @@
       "title": "长文档编译流水线",
       "statement": "大纲 → 分节 → 合并 → 一致性 → 引用验证 → 覆盖检查 → diff。",
       "tier": "P1",
-      "status": "target",
+      "status": "shipped",
       "owner": "document",
-      "evidence": ["src/core/goal/runner.ts"],
+      "evidence": [
+        "src/core/document/pipeline.ts",
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/llm/tools.ts",
+        "src/test/doc-pipeline.test.ts",
+        "src/components/ContextMonitor.tsx",
+        "src/test/doc-pipeline-panel.test.tsx"
+      ],
+      "note": "7 阶段机禁止跳级、每阶段有 artifact digest、失败不 complete、diff 产物齐全；状态持久化到 codem-document-pipeline:<sessionId>（版本/顺序/单调/digest 交叉校验，坏数据按未开始），ContextMonitor「文档编译」只读展示阶段/产物数/分节进度/diff 摘要。判据 doc-pipeline 12 条 + doc-pipeline-panel 3 条。边界：阶段机不产正文（正文由调用方按分节提交）；补丁正文不落盘、只留摘要；未接 Goal Runner。",
       "acceptance": "用 goal runner 或等价阶段机承载 section jobs；每阶段有验收证据；合并有计划；未完成不冒充完成。"
     },
     {
@@ -90,9 +172,16 @@
       "title": "可验证 Memory Graph",
       "statement": "记忆带来源、作用域、有效期、置信度、冲突与使用信号。",
       "tier": "P1",
-      "status": "target",
+      "status": "shipped",
       "owner": "memory",
-      "evidence": ["src/core/memory/memory.ts"],
+      "evidence": [
+        "src/core/memory/memory.ts",
+        "src/core/llm/tools/memory-tools.ts",
+        "src/test/memory-graph-c08.test.ts",
+        "src/components/MemoryManager.tsx",
+        "src/test/memory-c08-panel.test.tsx"
+      ],
+      "note": "source/validUntil/confidence/conflictOf/conflictGroup 与 conflicts()/conflictPeers() 已落地；检索/读取输出来源、过期、置信度、冲突；scope 隔离；usage 参与排序；MemoryManager 展示有效期/置信度/冲突并可点击定位对家（旧条目不渲染不占位）。判据 memory-graph-c08 7 条 + memory-c08-panel 5 条。边界：冲突为静态字段/同 key 的确定性判定，不做语义事实核验。",
       "acceptance": "memory_read/search 可取回全文与来源；冲突可见；过期可识别；scope 不泄漏；usage 参与排序。"
     },
     {
@@ -100,9 +189,16 @@
       "title": "记忆不自动删改",
       "statement": "自动流程不删除、不静默改写 manual/pinned；合并/归档可撤销。",
       "tier": "P0",
-      "status": "partial",
+      "status": "shipped",
       "owner": "memory",
-      "evidence": ["src/core/memory/memory.ts", "src/core/llm/index.ts"],
+      "evidence": [
+        "src/core/memory/memory.ts",
+        "src/core/llm/index.ts",
+        "src/core/llm/tools/memory-tools.ts",
+        "src/test/memory-scope-trust.test.ts",
+        "src/test/memory-dedup.test.ts",
+        "src/test/memory-retrieval.test.ts"
+      ],
       "acceptance": "manual/pinned 不会被自动覆盖；自动写入有 source/status；删除只由用户或显式归档触发；有审计记录。"
     },
     {
@@ -110,9 +206,22 @@
       "title": "Artifact-centric Agents",
       "statement": "Agent 共享任务图/工件，不共享整段聊天；有 Conductor、Specialist、Verifier。",
       "tier": "P1",
-      "status": "partial",
+      "status": "shipped",
       "owner": "agents",
-      "evidence": ["src/core/agent-teams/engine.ts", "src/core/subagent/runtime.ts"],
+      "evidence": [
+        "src/core/agent-teams/engine.ts",
+        "src/core/agent-teams/completion.ts",
+        "src/core/agent-teams/verifier.ts",
+        "src/core/agent-teams/task-context.ts",
+        "src/core/agent-teams/types.ts",
+        "src/core/provider/agent-teams-service.ts",
+        "src/test/agent-teams-c10.test.ts",
+        "src/core/agent-teams/doc-sync.ts",
+        "src/core/goal/doc-sync.ts",
+        "src/core/goal/runner.ts",
+        "src/test/goal-runner.test.ts"
+      ],
+      "note": "claim/attempt/rollback、任务切片、独立 Verifier、四类证据 + 完成门禁均已有判据；文档同步默认接真实 C06 账本，覆盖全部非 removed 成员（任一成员文档落后即 blocked，reason 点名成员与文档），无引用/无账本/只有检索命中不阻塞，检查器抛错 fail-closed。判据 agent-teams-c10 16 条（含 C10-4c 4 条）。边界：未接 Goal Runner/UI。",
       "acceptance": "任务有 claim/attempt/rollback；Agent 只拿任务相关切片；Verifier 独立检查；任务完成条件包含代码、文档、测试、引用，文档没同步不算完成。"
     },
     {
@@ -120,9 +229,27 @@
       "title": "本地优先、多模型",
       "statement": "会话/文档/记忆默认留在本机；模型可替换。",
       "tier": "P1",
-      "status": "partial",
+      "status": "shipped",
       "owner": "platform",
-      "evidence": ["src/core/settings/settings.ts"],
+      "evidence": [
+        "src/test/local-first-c11.test.ts",
+        "src/core/storage/port.ts",
+        "src/core/storage/message.ts",
+        "src/core/storage/settings.ts",
+        "src/core/memory/memory.ts",
+        "src/core/privacy/egress.ts",
+        "src/core/llm/index.ts",
+        "src/core/settings/settings.ts",
+        "docs/marketing/evidence/provider-routing-real.png",
+        "docs/marketing/evidence/provider-routing-real-db.txt",
+        "docs/marketing/evidence/c11-jsonl-real.txt",
+        "docs/marketing/evidence/c11-jsonl-real.png",
+        "docs/marketing/evidence/cache-hit-real.txt",
+        "docs/marketing/evidence/cache-hit-real.png",
+        "docs/marketing/evidence/cache-hit-real-2.txt",
+        "docs/marketing/evidence/cache-hit-real-2.png"
+      ],
+      "note": "本机存储端口权威（清缓存可读回）、切 provider/model 保 thread、privacy-memory-egress-redact 敏感出口开关、无 provider 也能本地读写；storage/settings/memory 静态无网络调用（文档模块只静态检查了实际存在的 ocr.ts）。判据 local-first-c11 4 条；真机 provider 切换见 provider-routing-real.*。边界：JSONL 权威日志未单独真机验证。",
       "acceptance": "本地存储是权威；切换 provider/model 不破坏 thread；敏感数据边界可配置；无强制云端依赖。"
     },
     {
@@ -130,20 +257,38 @@
       "title": "来源、审批、审计、回滚",
       "statement": "重要结论/写入/任务有来源、审批、审计和回滚路径。",
       "tier": "P0",
-      "status": "partial",
+      "status": "shipped",
       "owner": "trust",
-      "evidence": ["src/core/memory/memory.ts", "src/core/agent-teams/engine.ts"],
+      "evidence": [
+        "src/core/memory/memory.ts",
+        "src/core/agent-teams/engine.ts",
+        "src/test/context-epochs.test.ts",
+        "src/test/memory-approve-scope-batch.test.ts",
+        "src/test/context-rollback.test.ts"
+      ],
       "acceptance": "关键动作有 audit event；写入有审批/拒绝；任务/工件可回滚；失败不静默。"
     },
     {
       "id": "C13",
       "title": "用户不做上下文管理",
-      "statement": "用户不需要手动压缩、手动换会话或盯着水位百分比。",
+      "statement": "开启 segmentEpochs 后，用户不需要手动压缩、手动换会话或盯着水位百分比；默认关闭时保留手动入口，不承诺默认 0 次。",
       "tier": "P0",
-      "status": "target",
+      "status": "shipped",
       "owner": "context",
-      "evidence": [],
-      "acceptance": "正常长任务中不出现强制手动压缩/换会话；内部自动调度有回退；用户可见的只有整理/继续状态。"
+      "evidence": [
+        "src/test/segment-divider.test.tsx",
+        "src/test/auto-compaction-trigger.test.ts",
+        "src/test/segment-epochs-flag.test.ts",
+        "src/test/segment-default-on-compat.test.ts",
+        "src/test/context-monitor-manual-entry.test.tsx",
+        "src/components/ChatPanel.tsx",
+        "src/components/ContextMonitor.tsx",
+        "src/core/llm/provider-errors.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/test/context-overflow-handling.test.ts"
+      ],
+      "note": "2026-11-08 修正：默认关闭（DEF-1），因此页面只承诺「开启后 0 次」，不承诺默认 0 次。兜底已移除：换段/压缩都失败时中性错误、Session 保留、可重试，不再出现「请开启新对话」。开启后 ContextMonitor 不渲染「压缩上下文」按钮与「即将满」告警，改为中性「已自动整理，无需操作」（MC-1）；默认关闭时保留手动入口与水位告警（MC-2 反向对照）。 2026-11-09：C13 的溢出路径不再建议新对话；provider-errors / agentic-loop 文案与 context-overflow-handling 的反向断言已加入证据。",
+      "acceptance": "开启后正常长任务中不出现强制手动压缩/换会话；默认关闭时手动入口保留且不宣称 0 次；内部自动调度有回退；用户可见的只有整理/继续状态。"
     }
   ]
 }

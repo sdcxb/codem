@@ -33,6 +33,7 @@ import {
 import { RecoveryPanel } from "../components/RecoveryPanel";
 import { TerminalPanel } from "../components/TerminalPanel";
 import { ContextMonitor } from "../components/ContextMonitor";
+import { getContextManager } from "../core/context/context";
 import { getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 
 // ============================================================================
@@ -613,6 +614,11 @@ function makeMessages(count: number) {
 
 describe("RB-5 ContextMonitor 手动压缩：守卫真的生效 + 失败可见（P1-8）", () => {
   beforeEach(() => {
+    /**
+     * C13 灰度口径：默认（段式上下文开启）不再提供手动压缩入口；
+     * 本组守的是那条入口自己的健壮性，所以显式关掉开关把它恢复出来。
+     */
+    getContextManager().updateConfig({ segmentEpochs: false });
     vi.spyOn(console, "error").mockImplementation(() => {});
     resetPersistFailures();
     listMessagesMock.mockReset().mockReturnValue(makeMessages(30));

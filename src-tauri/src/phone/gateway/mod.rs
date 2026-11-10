@@ -103,12 +103,20 @@ const RPC_PATH: &str = "/rpc";
 const EVENTS_PATH: &str = "/events";
 /// 配对兑换：未鉴权请求里**唯一**允许的方法。
 const PAIR_CLAIM_METHOD: &str = "pair.claim";
+/// 网关把**已鉴权设备**的身份带给渲染层时用的 query 名（与 TS `GATEWAY_DEVICE_QUERY_PARAM` 同名）。
+///
+/// 为什么必须由 Rust 注入：同步面要知道"这条请求是哪台设备发的"，而渲染层看不到 cookie，
+/// 也不能相信 body 里自称的 `deviceId`（否则任何已配对设备都能替别人写事件）。
+/// 这个值来自 `authenticate_device` 的结果（唯一真相），body 与它不一致时由渲染层拒绝。
+const GATEWAY_DEVICE_QUERY: &str = "__deviceId";
 /// `/rpc` 的**精确**白名单。不在表里的一律在网关层拒绝，不依赖渲染层自觉。
 ///
 /// M1 = 前四个只读方法；M2 = `prompt.send` / `run.cancel` + 审批两条；
 /// M3 = `workspace.list` / `workspace.read` / `workspace.diff`（只读文件面）+
 /// `session.changes` / `session.change.diff`（只读变更记录）；
-/// B1 = `project.list` / `project.create` / `session.create`（远程新建，写的是桌面**同一份**库）。
+/// B1 = `project.list` / `project.create` / `session.create`（远程新建，写的是桌面**同一份**库）；
+/// 多设备同步 = `sync.pull` / `sync.push` / `sync.memory` / `sync.snapshot`
+/// （25 号文 P2：账本/事件/记忆合并/会话快照，数据由渲染层注入的 `gateway-sync-host` 回答）。
 /// 引导（`run.guidance`）、附件（`attachment.put`）**都还不在**这里 —— 它们各自需要
 /// 渲染层与共享 UI 的真实实现，先加白名单 = 手机上出现"点了必失败"的按钮。
 const RPC_ALLOWED_METHODS: &[&str] = &[
@@ -128,6 +136,10 @@ const RPC_ALLOWED_METHODS: &[&str] = &[
     "workspace.diff",
     "session.changes",
     "session.change.diff",
+    "sync.pull",
+    "sync.push",
+    "sync.memory",
+    "sync.snapshot",
 ];
 /// 网关自报身份（不随进程变化；判据/信息面板用）。
 const GATEWAY_HOST_ID: &str = "codem-desktop";
@@ -786,24 +798,17 @@ async fn handle_rpc(
         .and_then(|value| value.as_str())
         .map(str::to_string);
     let mut bootstrap_cookie: Option<String> = None;
-    let authenticated = if authenticate_device(st, headers.device_token())
-        .await
-        .is_some()
-    {
-        true
+    let mut authenticated_device_id: Option<String> = None;
+    if let Some(device) = authenticate_device(st, headers.device_token()).await {
+        authenticated_device_id = Some(device.id);
     } else if let Some(identity) = headers.tailscale_identity(peer_is_loopback) {
-        match claim_tailscale_device(st, &identity, requested_device_name.as_deref(), "web").await {
-            Ok(claimed) => {
-                bootstrap_cookie = Some(claimed.token);
-                persist_pairing(st).await;
-                true
-            }
-            Err(_) => false,
+        if let Ok(claimed) = claim_tailscale_device(st, &identity, requested_device_name.as_deref(), "web").await {
+            authenticated_device_id = Some(claimed.device.id.clone());
+            bootstrap_cookie = Some(claimed.token);
+            persist_pairing(st).await;
         }
-    } else {
-        false
-    };
-    if !authenticated {
+    }
+    let Some(device_id) = authenticated_device_id else {
         return rpc_response(
             401,
             jsonrpc_error(
@@ -815,7 +820,7 @@ async fn handle_rpc(
             ),
             None,
         );
-    }
+    };
 
     if !RPC_ALLOWED_METHODS.contains(&method) {
         return rpc_response(
@@ -823,7 +828,7 @@ async fn handle_rpc(
             jsonrpc_error(
                 id,
                 -32006,
-                "网关未开放该方法（M3 开放只读会话 + prompt.send/run.cancel + approval.* + workspace 只读文件面）",
+                "网关未开放该方法（M3 开放只读会话 + prompt.send/run.cancel + approval.* + workspace 只读文件面 + 多设备同步）",
                 "UNSUPPORTED",
                 Some(serde_json::json!({ "method": method })),
             ),
@@ -831,7 +836,15 @@ async fn handle_rpc(
         );
     }
 
-    // 已鉴权且在白名单里：交给渲染层，由桌面现有存储/引擎回答。
+    /*
+     * 已鉴权且在白名单里：交给渲染层，由桌面现有存储/引擎回答。
+     *
+     * 转发前把**鉴权结果**（设备 id）塞进 query：同步面靠它判断"这台设备能不能写这条事件"，
+     * 而 body 里自称的 deviceId 一律只是"待校验的声明"（见 `GATEWAY_DEVICE_QUERY` 的说明）。
+     */
+    let mut req = req;
+    req.query
+        .insert(GATEWAY_DEVICE_QUERY.to_string(), device_id);
     let mut response = renderer.forward(req).await;
     if let Some(token) = bootstrap_cookie {
         response.headers.push((
@@ -1215,6 +1228,8 @@ mod tests {
     struct FakeRenderer {
         calls: AtomicUsize,
         seen: StdMutex<Vec<(String, String)>>,
+        /// 每次转发带过来的"已鉴权设备 id"（`__deviceId`），用来钉住 Rust → 渲染层的身份传递。
+        devices: StdMutex<Vec<String>>,
     }
 
     impl FakeRenderer {
@@ -1225,6 +1240,10 @@ mod tests {
         fn seen(&self) -> Vec<(String, String)> {
             self.seen.lock().expect("seen").clone()
         }
+
+        fn devices(&self) -> Vec<String> {
+            self.devices.lock().expect("devices").clone()
+        }
     }
 
     impl RendererBridge for FakeRenderer {
@@ -1234,6 +1253,12 @@ mod tests {
                 .lock()
                 .expect("seen")
                 .push((req.method.clone(), req.path.clone()));
+            self.devices.lock().expect("devices").push(
+                req.query
+                    .get("__deviceId")
+                    .cloned()
+                    .unwrap_or_else(String::new),
+            );
             Box::pin(async {
                 HttpResponse::json(
                     200,
@@ -1541,6 +1566,10 @@ mod tests {
                 "workspace.diff",
                 "session.changes",
                 "session.change.diff",
+                "sync.pull",
+                "sync.push",
+                "sync.memory",
+                "sync.snapshot",
             ]
         );
         // 还没做的那些：引导 / 附件
@@ -1733,7 +1762,45 @@ mod tests {
         }
         assert_eq!(fake.calls(), 13, "项目面三条必须交给渲染层");
 
+        // 多设备同步四条：必须到达渲染层（账本/事件/记忆合并/会话快照的数据面在渲染层
+        // 注入的 `gateway-sync-host` 里，Rust 不做第二份账本）。
+        for method in ["sync.pull", "sync.push", "sync.memory", "sync.snapshot"] {
+            let reply = post_rpc(
+                port,
+                &rpc_body(method, serde_json::json!({})),
+                Some(&cookie),
+            )
+            .await;
+            assert!(reply.starts_with("HTTP/1.1 200 OK"), "{} {}", method, reply);
+            assert!(
+                reply.contains("fake-renderer"),
+                "{} 必须交给渲染层：{}",
+                method,
+                reply
+            );
+        }
+        assert_eq!(fake.calls(), 17, "sync.* 必须交给渲染层");
+        /*
+         * 身份传递：四次 sync.* 转发都必须带**同一台设备**的 id（来自 cookie 鉴权结果）。
+         * 不带 ⇒ 渲染层的同步面无法区分"哪台设备在写"，也挡不住替别人写事件。
+         */
+        let forwarded_devices: Vec<String> = fake.devices().into_iter().filter(|id| !id.is_empty()).collect();
+        assert_eq!(
+            forwarded_devices.len(),
+            fake.calls(),
+            "每次转发都必须带已鉴权设备 id"
+        );
+        let first = forwarded_devices.first().cloned().unwrap_or_default();
+        assert!(!first.is_empty());
+        assert!(
+            forwarded_devices.iter().all(|id| id == &first),
+            "同一张 cookie 的每次转发必须是同一台设备"
+        );
+
         // 还没实现的方法：网关层拒绝，渲染层调用数不变。
+        // 用调用前快照而不是写死 16：白名单增删是正常演进，这里的契约是“不增加”，
+        // 不是“永远是 16”（2026-11-10 全量测试红：实际 17，旧断言 16 已过期）。
+        let calls_before_unsupported = fake.calls();
         for method in ["run.guidance", "attachment.put"] {
             let write = post_rpc(
                 port,
@@ -1744,9 +1811,14 @@ mod tests {
             assert!(write.starts_with("HTTP/1.1 200 OK"), "{} {}", method, write);
             assert!(write.contains("UNSUPPORTED"), "{}: {}", method, write);
         }
-        assert_eq!(fake.calls(), 13, "未实现的方法不得到达渲染层");
+        assert_eq!(
+            fake.calls(),
+            calls_before_unsupported,
+            "未实现的方法不得到达渲染层"
+        );
 
         // /events 未配对必须是 401（JSON 错误，不能是事件流），且**不经过渲染层**。
+        let calls_before_events = fake.calls();
         let events = raw(
             port,
             "GET /events?sessionId=s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
@@ -1758,7 +1830,11 @@ mod tests {
             events
         );
         assert!(!events.contains("text/event-stream"), "{}", events);
-        assert_eq!(fake.calls(), 13, "事件流不该转发给渲染层");
+        assert_eq!(
+            fake.calls(),
+            calls_before_events,
+            "事件流不该转发给渲染层"
+        );
 
         stop(st).await;
     }

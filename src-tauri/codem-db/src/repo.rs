@@ -1500,6 +1500,19 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             .map_err(DbError::from)?;
         let hidden_next = hidden_arg.unwrap_or(current_hidden);
 
+        /*
+         * `metadata` 在两条分支都必须落地（真机缺陷）。
+         *
+         * 它是上下文检查点的唯一索引载体（`metadata.contextEpoch` 决定读侧 cutoff），
+         * 而 `messages.upsert_index` 是渲染侧 `createMessage` 的唯一索引写路径。
+         * 第一版 `message_fields()` 解析了它、两条 SQL 却都没写 ⇒ 真机上
+         * `messages.metadata` **恒为 NULL**：JSONL 权威日志里有、`context_epochs` 里有，
+         * 只有查询索引里没有 —— 用 SQL 按 `"kind":"switch"` 查 epoch 会查不到，
+         * 也让"同步读才拿得到 cutoff"（message.ts 的注释）变成空头承诺。
+         *
+         * 更新分支用 `COALESCE(?13, metadata)`：与其它可选列同语义 ——
+         * **没给就不动**，否则一次普通内容更新会把已有 epoch 抹掉。
+         */
         let written = if exists > 0 {
             /*
              * `hidden = ?6` 这一处**必须走 `hidden_write_clause`**（第 45 轮）。
@@ -1519,7 +1532,8 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                        retrieved_sources = COALESCE(?8, retrieved_sources), \
                        prompt_tokens = COALESCE(?9, prompt_tokens), \
                        completion_tokens = COALESCE(?10, completion_tokens), \
-                       cost = COALESCE(?11, cost) \
+                       cost = COALESCE(?11, cost), \
+                       metadata = COALESCE(?13, metadata) \
                      WHERE id = ?12",
                     hidden_write_clause(6)
                 ),
@@ -1535,15 +1549,16 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                     prompt_tokens,
                     completion_tokens,
                     cost,
-                    f.id
+                    f.id,
+                    f.metadata
                 ],
             )
             .map_err(DbError::from)?
         } else {
             tx.execute(
                 "INSERT INTO messages (id, session_id, role, content, reasoning, timestamp, model, status, \
-                   generated_files, retrieved_sources, prompt_tokens, completion_tokens, cost, hidden) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                   generated_files, retrieved_sources, prompt_tokens, completion_tokens, cost, hidden, metadata) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     f.id,
                     f.session_id,
@@ -1558,7 +1573,8 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                     prompt_tokens.unwrap_or(0),
                     completion_tokens.unwrap_or(0),
                     cost.unwrap_or(0.0),
-                    hidden_next
+                    hidden_next,
+                    f.metadata
                 ],
             )
             .map_err(DbError::from)?
@@ -2587,18 +2603,34 @@ pub fn context_epochs_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
     let removed_count = opt_i64(p, "removed_count")?.unwrap_or(0);
     let kept_count = opt_i64(p, "kept_count")?.unwrap_or(0);
     let trigger_kind = opt_text(p, "trigger_kind").unwrap_or_default();
+    // P0-0（D1/D3）：旧调用点不带这两列 ⇒ 与 metadata 侧同一份默认值（compact / 1）
+    let kind = opt_text(p, "kind")?.unwrap_or_else(|| "compact".to_string());
+    let segment_seq = opt_i64(p, "segment_seq")?.unwrap_or(1);
+    /*
+     * P0-0（D1/E2）：handoff 摘要是可空列，且**原样透传**，不在这里解析 JSON。
+     *
+     * 为什么不在 Rust 侧校验/解析：
+     * 1. 它是派生索引的副本，权威在 marker 正文/metadata；写坏一份索引不该让换段失败；
+     * 2. 历史库可能手工插过任意文本 —— 读侧（`context_epochs.list`）只把它当字符串，
+     *    一个坏 JSON 不许把整次 list 变成错误（真机诊断路径会因此看不到任何检查点）；
+     * 3. 超限截断与「truncated」标注由写入侧（TS `buildHandoffJson`）负责，
+     *    这里只存已裁好的串，避免两套口径。
+     */
+    let handoff_json = opt_text(p, "handoff_json")?;
     let created_at = opt_i64(p, "created_at")?.unwrap_or(0);
     engine.write_tx(|tx| {
         tx.execute(
             "INSERT INTO context_epochs \
-             (id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             (id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, kind, segment_seq, handoff_json, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
              ON CONFLICT(id) DO UPDATE SET \
                session_id=excluded.session_id, seq=excluded.seq, \
                cutoff_message_id=excluded.cutoff_message_id, \
                removed_count=excluded.removed_count, kept_count=excluded.kept_count, \
-               trigger_kind=excluded.trigger_kind, created_at=excluded.created_at",
-            params![id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, created_at],
+               trigger_kind=excluded.trigger_kind, kind=excluded.kind, \
+               segment_seq=excluded.segment_seq, handoff_json=excluded.handoff_json, \
+               created_at=excluded.created_at",
+            params![id, session_id, seq, cutoff_message_id, removed_count, kept_count, trigger_kind, kind, segment_seq, handoff_json, created_at],
         )
         .map_err(DbError::from)?;
         Ok(json!({ "written": 1, "id": id }))
@@ -2606,6 +2638,12 @@ pub fn context_epochs_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
 }
 
 /// 按会话列出检查点（最新在前）；供完整历史/诊断读取
+///
+/// 排序口径与读侧 `context-view.ts::selectLatestContextEpoch` **必须一致**：
+/// `created_at DESC, seq DESC`。为什么 createdAt 优先 —— `seq` 对 compact 路径是
+/// **进程内计数器**（`nextCompactionMarkerId`，重启归零），重启后新写的 epoch 可能是
+/// `seq=1` 而老会话里已有 `seq=9`；按 `seq DESC` 排会把老 epoch 排在「最新」位置，
+/// 完整历史面板与诊断读到的检查点就是错的（与模型视图选错段同源）。
 pub fn context_epochs_list(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = req_text(p, "session_id")?;
     let limit = limit_of(p).unwrap_or(100).clamp(1, 500);
@@ -2613,9 +2651,9 @@ pub fn context_epochs_list(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, seq, cutoff_message_id, removed_count, kept_count, \
-                        trigger_kind, created_at \
+                        trigger_kind, kind, segment_seq, handoff_json, created_at \
                  FROM context_epochs WHERE session_id = ?1 \
-                 ORDER BY seq DESC, created_at DESC LIMIT ?2",
+                 ORDER BY created_at DESC, seq DESC LIMIT ?2",
             )
             .map_err(DbError::from)?;
         let rows = stmt
@@ -2628,7 +2666,20 @@ pub fn context_epochs_list(engine: &Engine, p: &Value) -> DbResult<Value> {
                     "removed_count": r.get::<_, i64>(4)?,
                     "kept_count": r.get::<_, i64>(5)?,
                     "trigger_kind": r.get::<_, Option<String>>(6)?,
-                    "created_at": r.get::<_, i64>(7)?,
+                    /*
+                     * 老库刚 ALTER 出来的行理论上已被 DEFAULT 填过，但历史库可能带着
+                     * NULL（例如别的路径手工插过行）⇒ 这里按 Option 读再补默认，
+                     * 绝不让一个 NULL 把整次 list 变成错误（D11 的读法保护）。
+                     */
+                    "kind": r.get::<_, Option<String>>(7)?.unwrap_or_else(|| "compact".to_string()),
+                    "segment_seq": r.get::<_, Option<i64>>(8)?.unwrap_or(1),
+                    /*
+                     * handoff_json 可空，且**不解析**：历史库里可能有手工写入的坏 JSON。
+                     * 读路径只把它当字符串返回；坏数据由读侧自行决定要不要解析（当前
+                     * 面板只展示检查点元信息，不解析它）——一个坏串不许让整次 list 报错。
+                     */
+                    "handoff_json": r.get::<_, Option<String>>(9)?,
+                    "created_at": r.get::<_, i64>(10)?,
                 }))
             })
             .map_err(DbError::from)?;

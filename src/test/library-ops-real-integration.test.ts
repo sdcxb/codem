@@ -91,6 +91,36 @@ async function collectReal(extra: Partial<AdapterDeps> = {}) {
   return collectSnapshotSync({ ...deps, ...extra });
 }
 
+/**
+ * C10：完成一个团队任务必须走「证据 → 独立 Verifier → completed」。
+ * 本文件测的是图书馆联动，不是完成门禁本身；用这个 helper 让任务真的完成。
+ */
+const C10_EVIDENCE = [
+  { kind: "code" as const, ref: "src/a.ts" },
+  { kind: "doc" as const, ref: "docs/a.md" },
+  { kind: "test" as const, ref: "npm test", status: "pass" as const },
+  { kind: "reference" as const, ref: "issue#1" },
+];
+
+async function finishTask(svc: any, teamId: string, taskId: string, by: string) {
+  const task = svc.get(teamId)?.tasks.find((item: any) => item.id === taskId);
+  const attemptId = task?.attemptId as string | undefined;
+  await svc.update(teamId, taskId, {
+    status: "in_progress", by, ...(attemptId ? { attemptId } : {}), evidence: C10_EVIDENCE,
+  });
+  await svc.verify(teamId, taskId, "独立验收员");
+  return svc.update(teamId, taskId, {
+    status: "completed", by, ...(attemptId ? { attemptId } : {}), evidence: C10_EVIDENCE,
+  });
+}
+
+/**
+ * ⏱ 超时口径：这些用例走 `loadDefaultDeps()` 的**真实动态 import**（agent-teams / squad /
+ * telemetry / cost-tracker …）+ 真实 store 快照，单跑约 3–4s 是常态；默认 5s 是「空载机器」
+ * 的预算，8 worker 满载时模块 import 与读盘排队会把它顶穿（实测满载下偶发 5s 超时）。
+ * 下面给重活用例显式 30s —— 只放宽「等多久算失败」，
+ * 「快照里必须出现谁 / 状态必须是什么」的断言一条未改。
+ */
 describe("LO-REAL 与真实团队 / 子智能体联动", () => {
   beforeEach(async () => {
     localStorage.clear();
@@ -163,7 +193,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(snap.metrics.tasksRunning).toBe(1);
     expect(snap.sources.teams).toBe(1);
     expect(snap.sources.teamMembers).toBeGreaterThanOrEqual(1);
-  });
+  }, 30_000);
 
   it("LO-REAL-2: 任务完成 → 成员释放回 idle（宿主修复回归），快照同步为待命", async () => {
     const { AgentTeamsService } = await import("../core/provider/agent-teams-service");
@@ -174,9 +204,8 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(svc.status(team.id).members[0].status).toBe("working");
 
     const taskId = svc.status(team.id).tasks[0].id;
-    // 状态机要求 claimed → in_progress → completed
-    svc.update(team.id, taskId, { status: "in_progress", by: "小前" });
-    svc.update(team.id, taskId, { status: "completed", by: "小前", output: "done" });
+    // 状态机要求 claimed → in_progress → completed；C10 还要求四类证据 + 独立 Verifier
+    await finishTask(svc, team.id, taskId, "小前");
     const after = svc.status(team.id);
     expect(after.tasks[0].status).toBe("completed");
     // 关键：成员不再卡在 working
@@ -187,7 +216,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(front.activity).toBe("idle");
     expect(front.metrics.done).toBe(1);
     expect(snap.metrics.tasksDone).toBe(1);
-  });
+  }, 30_000);
 
   it("LO-REAL-2b: 成员名下有多个任务时，完成一个不会误释放（仍 working）", async () => {
     const { AgentTeamsService } = await import("../core/provider/agent-teams-service");
@@ -199,8 +228,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     svc.createTask(team.id, { subject: "任务B", assignee: "小前" });
     const tasks = svc.status(team.id).tasks;
     svc.claim(team.id, tasks[0].id, "小前");
-    svc.update(team.id, tasks[0].id, { status: "in_progress", by: "小前" });
-    svc.update(team.id, tasks[0].id, { status: "completed", by: "小前" });
+    await finishTask(svc, team.id, tasks[0].id, "小前");
     // 还有一个非终态任务 → 不能释放
     expect(svc.status(team.id).members[0].status).toBe("working");
   });
@@ -221,7 +249,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     // 模板角色不再占位（否则「没建队却满馆人」）
     expect(snap.actors.find((a) => a.name === "小笔")).toBeUndefined();
     expect(snap.sources.teamTemplates).toBeGreaterThanOrEqual(1);
-  });
+  }, 30_000);
 
   it("LO-REAL-3b: 没有团队 / 子智能体 / 在途委派时，馆内只有队长一个角色且待命", async () => {
     // 宿主 fixture 默认是「正在执行工具」；这里先静下来，验证的是「无事可做时只有队长待命」
@@ -233,7 +261,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(captain.kind).toBe("captain");
     expect(captain.roleLabel).toBe("队长 · 主控");
     expect(["idle", "sleeping"]).toContain(captain.activity);
-  });
+  }, 30_000);
 
   it("LO-REAL-3c: 多个闲置会话不会再各自变成角色（场景只反映真实干活的人）", async () => {
     const { useProjectStore } = await import("../core/store");
@@ -248,7 +276,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     const snap = await collectReal();
     expect(snap.actors.length).toBe(1);
     expect(snap.actors[0].kind).toBe("captain");
-  });
+  }, 30_000);
 
   it("LO-REAL-4: 真实 AgentRegistry / CostTracker 接线（成本进入指标）", async () => {
     const { getCostTracker } = await import("../core/llm/cost-tracker");
@@ -269,7 +297,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     const { getAgentRegistry } = await import("../core/agent/agent");
     expect(getAgentRegistry().getAll().length).toBeGreaterThan(0);
     expect(snap.sources.agentProfiles).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it("LO-REAL-5: loadDefaultDeps 每个来源都能取到正确形状（无断链）", async () => {
     const deps = await loadDefaultDeps();
@@ -295,7 +323,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(Array.isArray(deps.agentDefs!())).toBe(true);
     expect(Array.isArray(deps.delegations!())).toBe(true);
     expect(Array.isArray(deps.telemetryEvents!([SESSION_ID]))).toBe(true);
-  });
+  }, 30_000);
 
   it("LO-REAL-6: 真实 SubagentTask 形状（经 runtime）→ 子智能体角色正确入馆", async () => {
     const rt = fakeRuntime();
@@ -307,7 +335,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(sub.activity).toBe("reading"); // 最近 activity = grep
     expect(sub.preferredZoneId).toBe("reading-hall");
     expect(snap.sources.subagents).toBe(1);
-  });
+  }, 30_000);
 
   it("LO-REAL-7: 团队删除/归档后不再出现在快照（不残留幽灵角色）", async () => {
     const { AgentTeamsService } = await import("../core/provider/agent-teams-service");
@@ -324,5 +352,5 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     const captain = snap.actors.find((a) => a.id === `session:${SESSION_ID}`)!;
     expect(captain.kind).toBe("captain");
     expect(captain.roleLabel).toBe("队长 · 主控");
-  });
+  }, 30_000);
 });

@@ -12,7 +12,7 @@ import type {
   ServerModelInfo,
 } from "./types";
 import { getLang } from "../i18n/lang";
-import { parseProviderUsage } from "./usage-normalize";
+import { parseProviderUsage, toTokenUsage } from "./usage-normalize";
 import { reasoningEffortForRequest } from "./reasoning-effort";
 import { mapFinishReason } from "./finish-reason";
 import type { Context } from "../cordis/src/index.ts";
@@ -341,13 +341,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         input: JSON.parse(tc.function.arguments),
         status: "completed" as const,
       })),
-      usage: {
-        promptTokens: nu.promptTokens,
-        completionTokens: nu.completionTokens,
-        totalTokens: nu.totalTokens,
-        ...(nu.cacheHitTokens !== undefined ? { cacheHitTokens: nu.cacheHitTokens } : {}),
-        ...(nu.uncachedInputTokens !== undefined ? { uncachedInputTokens: nu.uncachedInputTokens } : {}),
-      },
+      usage: toTokenUsage(nu),
       /**
        * ★ 第 184 波（审计修复）：**非流式的 `finish_reason` 不许被压成 `stop`**。
        *
@@ -776,21 +770,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
                  * ★ 第 184 波（审计修复）：**"未上报"必须是"键不存在"，不是 `undefined`**。
                  *
                  * 契约是按**键存在性**判的（`usage-normalize.ts` 的说明与 `StatsLine.tsx`
-                 * 的 `!== undefined` 判断都如此），而本文件两条路径原来不一致：
+                 * 的 `cacheReported` 判断都如此），而本文件两条路径原来不一致：
                  * · `complete()`（非流式）用条件展开 ⇒ 未上报就**没有这个键**；
                  * · 这里（流式）**显式写出** `cacheHitTokens: undefined` ⇒ 键**存在**但值是 undefined。
                  *
                  * 后果不只是风格：`JSON.stringify` 会把 `undefined` 的键丢掉，
                  * 于是同一次调用在不同序列化路径下**形状不同**；判据按 `in` / `hasOwnProperty`
                  * 判时会得出相反结论（这正是"两套真相"的温床）。
+                 *
+                 * 现在两条路径共用 `toTokenUsage`：缓存键只在真的上报时出现，
+                 * 另带显式 `cacheReported`（聚合层据此区分「未上报」与「确定 0」）。
                  */
-                usage: {
-                  promptTokens: nu.promptTokens,
-                  completionTokens: nu.completionTokens,
-                  totalTokens: nu.totalTokens,
-                  ...(nu.cacheHitTokens !== undefined ? { cacheHitTokens: nu.cacheHitTokens } : {}),
-                  ...(nu.uncachedInputTokens !== undefined ? { uncachedInputTokens: nu.uncachedInputTokens } : {}),
-                },
+                usage: toTokenUsage(nu),
               };
 
               /**
@@ -1096,6 +1087,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
  * `AICodeWithProvider` 按模型族把 `stream/complete` 分派给对应协议；
  * 模型目录保留三家的聊天模型，图像/视频生成模型不进聊天选择器。
  */
+/**
+ * @public 由模型注册表按类名分派（构造表引用，knip 看不到这条边）——
+ * 不是死代码；清理时必须同步改注册表。
+ */
 export class AICodeWithProvider extends OpenAICompatibleProvider {
   override async listModels(): Promise<ModelConfig[]> {
     return (await super.listModels()).filter((m) => isAICodeWithChatModel(m.id)).map(decorateAICodeWithModel);
@@ -1124,6 +1119,14 @@ export class AICodeWithProvider extends OpenAICompatibleProvider {
     yield* super.stream(request);
   }
 
+  /**
+   * 非流式 `complete()` 对 Anthropic / Gemini 走「流式聚合」。
+   *
+   * ★ 提示缓存（`cache_control`）不需要第二套实现：断点只在
+   * `aicodewith-protocols.ts::streamAnthropic` 里注入一次，`aggregateStream`
+   * 消费的就是同一条流 ⇒ **流式与非流式共用同一份断点**（避免「流式带断点、
+   * 非流式不带」的双口径缺陷）。
+   */
   override async complete(request: LLMRequest): Promise<LLMResponse> {
     if (classifyAICodeWithModel(request.model)?.protocol !== "openai") {
       return aggregateStream(this.stream(request));

@@ -63,8 +63,11 @@ import {
 /**
  * 常驻工具定义的字符预算（2026-10-29 实测 25,547，约 12% 余量）。
  *
- * 超了先问三件事：新工具是不是低频（→ `DEFERRED_BIG_TOOLS`）？描述有没有把
+ * 超了先问三件事：新工具是不是低频（→ `shouldDefer`）？描述有没有把
  * 使用说明写成小作文（→ 下沉到 guidance/文档）？schema 是不是能合并（按用户意图合并工具）？
+ *
+ * 2026-11-06：C06 的 `doc_ledger` 从常驻改为 defer（871 字符；它只在读写文档的
+ * 任务里有动作可做，覆盖摘要已由尾部注入免费给出），常驻读数 30,939 → 30,067。
  */
 const TOOL_SCHEMA_CHAR_BUDGET = 31_000;
 
@@ -72,14 +75,38 @@ const TOOL_SCHEMA_CHAR_BUDGET = 31_000;
 const SKILL_CATALOG_CHAR_BUDGET = 3_000;
 
 /**
+ * 延迟工具的 searchHint 预算。
+ *
+ * defer **不是免费**的：每个 defer 工具的 `name + searchHint` 每轮都随
+ * systemPrompt 的「Deferred Tools」段落发出去，只省掉完整 schema。所以这里
+ * 单独给 hint 记账，防止「把所有工具都标 defer、再写一段小作文当 hint」。
+ *
+ * 2026-11-06 实测：静态 19 个 2,722 + 动态 23 个 3,050 = 5,772（预算 6,500，约 11% 余量）。
+ */
+const DEFERRED_HINT_CHAR_BUDGET = 6_500;
+
+/**
  * 运行时动态注册的工具（`LLMEngine.setupDelegationTools` 那六批 + `whenToolsReady`）。
  *
- * 为什么必须单独量：它们**不在** `createDefaultToolRegistry()` 里，却和静态工具一样每轮
- * 都随请求发出去。只量静态那 39 个会把总成本低估三分之一（2026-10-29 实测：
- * 静态 25,547 + 动态 16,622）。
+ * 为什么必须单独量：它们**不在** `createDefaultToolRegistry()` 里，却和静态工具一样
+ * 每轮都随请求发出去。只量静态那 48 个会把总成本低估三分之一。
+ *
+ * ## 口径（2026-11-06 修正）
+ *
+ * 这里量的是**每轮固定成本**，所以 defer 工具按 `name + searchHint` 计，
+ * 完整 schema 只在 `tool_search` 按需拉取时出现，不能算进固定成本。
+ * 修正前一律按完整 schema 累加，把 agent-teams（12 个）与 computer-use（11 个）
+ * 两批**已经 defer** 的工具又算了一遍（多算 4,775 字符）—— 这既让读数偏高，
+ * 也让「把低频工具标 defer」这个正确动作对读数**完全没有效果**。
  */
 const DYNAMIC_TOOL_CHAR_BUDGET = 19_000;
-/** 静态 + 动态合计预算（2026-10-29 实测 44,167） */
+
+/**
+ * 三项合计预算：常驻完整 schema + 静态 deferred hints + 动态每轮实际成本。
+ *
+ * 2026-10-29 实测 44,167；2026-11-06 修正口径后实测 45,841（预算仍为 48,000，
+ * 没有上调 —— 先按 defer / 文案 / hint 压缩消化新增成本）。
+ */
 const TOTAL_TOOL_CHAR_BUDGET = 48_000;
 
 const REPO_SKILLS_DIR = path.join(__dirname, "..", "core", "skills");
@@ -126,9 +153,14 @@ describe("P0-2 上下文税账本", () => {
     }
     // 反向：tool_search 必须常驻，否则模型没法把延迟工具取回来
     expect(coreNames.has("tool_search"), "tool_search 必须常驻（否则延迟工具不可达）").toBe(true);
+    // defer 的提示也每轮发：hint 写成长篇同样在收税
+    expect(
+      JSON.stringify(deferred).length,
+      `静态 deferred 工具的 name+hint 合计 ${JSON.stringify(deferred).length} 字符超过预算 ${DEFERRED_HINT_CHAR_BUDGET}`,
+    ).toBeLessThanOrEqual(DEFERRED_HINT_CHAR_BUDGET);
   });
 
-  it("运行时动态工具（委派/团队/Issue/computer-use）也计入账本", () => {
+  it("运行时动态工具（委派/团队/Bot/Issue/computer-use）也计入账本", () => {
     const groups: Array<[string, any[]]> = [
       ["subagent", [createSubagentTool(), createSendMessageTool(), createInterruptAgentTool(), createListAgentsTool()]],
       [
@@ -145,40 +177,76 @@ describe("P0-2 上下文税账本", () => {
       ],
       ["squad", [createSquadListTool(), createSquadDispatchTool(), createSquadStatusTool()]],
       ["agent-teams", [] as any[]],
+      ["bots", [] as any[]],
       ["issue", [createIssueCreateTool(), createIssueUpdateTool(), createIssueCommentTool(), createIssueListTool()]],
       ["computer-use", [] as any[]],
     ];
     registerAgentTeamsTools((t: any) => groups[3][1].push(t));
+    /* 走真实注册函数，才能量到 `shouldDefer` + `searchHint` 实际每轮发出去的那一段 */
     registerComputerUseTools((t: any) => groups[5][1].push(t));
 
-    const defOf = (t: any) => ({ name: t.id, description: t.description, parameters: t.parameters });
+    /** 完整 schema（只用于对照：deferred 的这部分**不**进每轮请求） */
+    const fullDefOf = (t: any) => ({ name: t.id, description: t.description, parameters: t.parameters });
+    /**
+     * 每轮实际发出去的定义（与 `agentic-loop.ts` 的两条读取路径一一对应）：
+     * - 普通工具 ⇒ 完整 schema 进 `tools` 数组；
+     * - `shouldDefer` 工具 ⇒ `name + searchHint` 进 systemPrompt 的 Deferred Tools 段落
+     *   （完整 schema 只在模型 `tool_search` 时按需返回）。
+     */
+    const perTurnDefOf = (t: any) =>
+      t.shouldDefer
+        ? { name: t.id, searchHint: t.searchHint || String(t.description ?? "").substring(0, 120) }
+        : fullDefOf(t);
+
     let dynamicChars = 0;
+    let dynamicFullChars = 0;
+    let dynamicHintChars = 0;
     let dynamicCount = 0;
+    let deferredCount = 0;
     const rows: string[] = [];
     for (const [name, tools] of groups) {
-      const defs = tools.map(defOf);
-      const chars = JSON.stringify(defs).length;
+      const fullChars = JSON.stringify(tools.map(fullDefOf)).length;
+      const chars = JSON.stringify(tools.map(perTurnDefOf)).length;
+      const hintChars = JSON.stringify(tools.filter((t: any) => t.shouldDefer).map(perTurnDefOf)).length;
+      const deferred = tools.filter((t: any) => t.shouldDefer).length;
       dynamicChars += chars;
-      dynamicCount += defs.length;
-      rows.push(`${name}=${defs.length}/${chars}`);
+      dynamicFullChars += fullChars;
+      dynamicHintChars += hintChars;
+      dynamicCount += tools.length;
+      deferredCount += deferred;
+      rows.push(`${name}=${tools.length}/${chars}（完整 ${fullChars}${deferred ? `，defer ${deferred}` : ""}）`);
     }
 
-    const coreChars = JSON.stringify(createDefaultToolRegistry().getCoreDefinitions()).length;
+    const registry = createDefaultToolRegistry();
+    const coreChars = JSON.stringify(registry.getCoreDefinitions()).length;
+    const staticHintsChars = JSON.stringify(registry.getDeferredDefinitions()).length;
+    const total = coreChars + staticHintsChars + dynamicChars;
+
     console.log(
-      `[context-tax] 动态工具 ${dynamicCount} 个 / ${dynamicChars} 字符（${rows.join(" ")}）；` +
-        `静态+动态合计 ${dynamicChars + coreChars} 字符`,
+      `[context-tax] 动态工具 ${dynamicCount} 个（defer ${deferredCount} 个）/ 每轮 ${dynamicChars} 字符` +
+        `（完整 schema 对照 ${dynamicFullChars}）；静态 deferred hints ${staticHintsChars}；` +
+        `静态 ${coreChars}；合计 ${total} 字符`,
     );
+    console.log(`[context-tax] 动态分组：${rows.join(" ")}`);
 
     expect(
       dynamicChars,
-      `动态注册的工具定义 ${dynamicChars} 字符超过预算 ${DYNAMIC_TOOL_CHAR_BUDGET}`,
+      `动态工具每轮实际 ${dynamicChars} 字符超过预算 ${DYNAMIC_TOOL_CHAR_BUDGET}`,
     ).toBeLessThanOrEqual(DYNAMIC_TOOL_CHAR_BUDGET);
     // 反向：漏测也要红 —— 否则"把测量循环删掉"会让预算永远通过
     expect(dynamicCount, "动态工具数量不该是 0（测量被漏掉了吗？）").toBeGreaterThanOrEqual(30);
-    expect(dynamicChars, "动态工具字符数不该小到像没量").toBeGreaterThan(12_000);
     expect(
-      dynamicChars + coreChars,
-      `工具定义合计 ${dynamicChars + coreChars} 字符超过预算 ${TOTAL_TOOL_CHAR_BUDGET}`,
+      dynamicChars,
+      "动态工具每轮实际字符数不该小到像没量（defer 只去掉完整 schema，不会让工具消失）",
+    ).toBeGreaterThan(10_000);
+    expect(deferredCount, "动态工具里也必须有走延迟加载的低频批次（否则每轮都在付全量 schema）").toBeGreaterThan(0);
+    expect(
+      staticHintsChars + dynamicHintChars,
+      `deferred 工具的 name+hint 合计 ${staticHintsChars + dynamicHintChars} 字符超过预算 ${DEFERRED_HINT_CHAR_BUDGET}`,
+    ).toBeLessThanOrEqual(DEFERRED_HINT_CHAR_BUDGET);
+    expect(
+      total,
+      `工具定义合计 ${total} 字符超过预算 ${TOTAL_TOOL_CHAR_BUDGET}`,
     ).toBeLessThanOrEqual(TOTAL_TOOL_CHAR_BUDGET);
   });
 

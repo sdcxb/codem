@@ -36,6 +36,7 @@ pub mod aa_account;
 pub mod aa_connector;
 pub mod aa_protocol;
 pub mod gateway;
+pub mod gateway_client;
 pub mod guard;
 pub mod http;
 

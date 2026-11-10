@@ -4,7 +4,7 @@
  * - `MA-7`：跨所有桶的**总量上限**（容量按桶算、桶数无上限 ⇒ 光有 per-scope 配额等于无界）
  * - `MA-8`：payload 超预算 ⇒ **拒绝新的自动写入**（此前只上报，从不拒绝）
  * - `MA-9`：批量「保留为平台级」只落**一次**库（原来 N 条 = N 次整份序列化 + N 次 IPC）
- * - `MA-10`：单条 content 注入截断要**披露**（条目 10000 字符 vs 每行注入 200 字符）
+ * - `MA-10`：单条 content 注入截断要**披露**（条目 10000 字符 vs 每行只注入 `MEMORY_INJECT_LINE_MAX` 的摘要）
  * - `MA-11`：回退到迁移前**不会**被在途的普通保存覆盖（直写 vs 队列）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -104,7 +104,7 @@ describe("MA（第二批）：记忆的边界与诚实", () => {
     ).toBe(1);
   });
 
-  it("MA-10：注入截断必须披露（条目允许 10000 字符，每行注入只取前 200）", () => {
+  it("MA-10：注入截断必须披露（条目允许 10000 字符，每行只注入摘要上限）", () => {
     expect(
       injectionTruncationNote({ content: "短".repeat(MEMORY_INJECT_LINE_MAX) }),
       "刚好到上限 ⇒ 没截断，不该有提示",

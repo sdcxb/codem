@@ -53,21 +53,6 @@ const ALLOWED: Array<{ test: string; target: string; reason: string }> = [
     reason: "同上",
   },
   {
-    test: "src/test/no-sync-mirror-reads.test.ts",
-    target: "src/core/storage/sync-engine.ts",
-    reason: "sync-engine 是**已知未接线**的旧引擎：判据断言生产代码**不再**读它（测的是「它没被用」）",
-  },
-  {
-    test: "src/test/persist-failure-reporting.test.ts",
-    target: "src/core/storage/sync-engine.ts",
-    reason: "同上（断言上报路径不再经旧引擎）",
-  },
-  {
-    test: "src/test/reachability-gate.test.ts",
-    target: "src/core/storage/sync-engine.ts",
-    reason: "可达性门禁自己的自检：它必须引用一个已知不可达文件作为对照",
-  },
-  {
     test: "src/test/reachability-gate.test.ts",
     target: "src/components/MessageActions.tsx",
     reason: "可达性门禁自检用到的未接线组件（第 2 步起气泡工具栏由共享实现承担，白名单里有登记）",
@@ -125,6 +110,13 @@ function testSources(): Array<{ file: string; text: string }> {
 }
 
 describe("判据不许钉在死代码上（不可达文件）", () => {
+  /**
+   * ⚠️ 显式 30s 超时（与 `preview-shot-syntax.test.ts` 的 PS-1 同一形态，不是放宽判据）
+   *
+   * 这条要跑全仓可达性扫描（`scanReachability(ROOT)`）再把 `src/test/**` 全部读一遍，
+   * 单跑约 1.7s；下一条 CTR-2 还要再跑一遍。默认 5s 是空载预算：8 worker 满载时读盘排队
+   * 会把它顶穿，于是同一份代码整批红、单跑绿。判据语义（未登记引用必须为 0）一条未改。
+   */
   it("CTR-1: 未登记的『判据 → 不可达文件』引用必须为零", () => {
     const unreachable = scanReachability(ROOT).unreachable;
     expect(unreachable.length, "前置条件：必须真的有不可达文件（否则这条判据没有对象）").toBeGreaterThan(0);
@@ -147,12 +139,13 @@ describe("判据不许钉在死代码上（不可达文件）", () => {
         "请带理由加进 ALLOWED；如果它是想断言「功能已接线」，那它测的是空气 —— 目标文件根本不会被打包，" +
         "必须改成断言**真实装配路径**（见 plugin-assembly-path.test.ts）。",
     ).toEqual([]);
-  });
+  }, 30_000);
 
+  /* 与 CTR-1 同因（各自跑一遍全仓可达性扫描 + 全测试目录读取）：显式 30s，断言未改。 */
   it("CTR-2: 白名单条目必须仍然被引用（防白名单长草）", () => {
     const unreachable = new Set(scanReachability(ROOT).unreachable);
     const found = new Set(findDeadTargets(testSources(), [...unreachable]).map((f) => `${f.test}::${f.target}`));
     const stale = ALLOWED.filter((a) => !found.has(`${a.test}::${a.target}`)).map((a) => `${a.test} -> ${a.target}`);
     expect(stale, "这些白名单条目已经不成立了（引用被删 / 文件变可达）—— 请删掉条目").toEqual([]);
-  });
+  }, 30_000);
 });

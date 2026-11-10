@@ -1,0 +1,40 @@
+真机复验：渲染侧 console 取证（capture_browser_scenario / CDP 9222）
+========================================================================
+
+capture evidence_id = ev_33fb03adcafc76b55873e1f5444a15a58defdc05417d22de1ae180472ca78a01
+scenario_sha256     = e1e65dd567aa936b584a6bebc2efd334a13729caf2242d5de5836a344b075eb7
+start_url           = http://tauri.localhost/
+capture             = events: console/page-errors/network；at_end: url
+console events      = 188
+page-error events   = 0
+loop-error 类        = 0
+
+关键 console 行（按捕获序号）
+----------------------------
+[713][log] [LLMEngine.resolveSlot] slot=chat → fallback: provider=aicodewith, model=claude-haiku-4-5-20251001（现读设置）设置里的 provider=aicodewith
+[714][log] [LLMEngine.getAgenticLoop] agentId=undefined, sessionId=seg-default-1793965496222, slot=chat, resolved: provider=aicodewith, model=claude-haiku-4-5-20251001, effective model=claude-haiku-4-5-20251001, engine default: provider=aicodewith, model=claude-haiku-4-5-20251001, provider.id=aicodewith, provider.baseUrl=https://api.aicodewith.ai/v1
+[715][log] [LLMEngine.resolveSlot] slot=chat → fallback: provider=aicodewith, model=claude-haiku-4-5-20251001（现读设置）设置里的 provider=aicodewith
+[1020][log] [agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 27, tools: 64
+[1113][log] [agent-loop] llm timing iter=1: TTFT=6166ms stream=52ms total=6218ms ctx=488ms tail=14ms prep=474ms work=-1ms msgw=0 msgwms=0 msgwmax=0 save=7 savemsgs=12 savems=7 savemax=5
+[1114][log] [agent-loop] Iteration 1: LLM stream ended. finishReason: stop, toolCalls: 0, text length: 2
+[1117][log] [agent-loop] Iteration 1 completed: 0 tool calls (effective: 0), 0 consecutive errors
+[1118][log] [agent-loop] 收尾段：进入 modified=false edited=0 lookedAtSource=false tests=0 red=0
+[1123][log] [segment-switch] completed at pressure 0.001 ⇒ segment 2（移出视图 6 条）
+
+网络（provider 请求）
+------------------
+[1022] request POST https://api.aicodewith.ai/v1/messages status=None failure=None
+[1106] response POST https://api.aicodewith.ai/v1/messages status=200 failure=None
+[1107] request-finished POST https://api.aicodewith.ai/v1/messages status=None failure=None
+[1126] request POST https://api.aicodewith.ai/v1/messages status=None failure=None
+[1182] response POST https://api.aicodewith.ai/v1/messages status=200 failure=None
+[1185] request-finished POST https://api.aicodewith.ai/v1/messages status=None failure=None
+
+说明
+----
+1. capture_browser_scenario 的 goto_start 会让页面重载一次；因此 console 开头有一条
+   Tauri IPC 自定义协议回退警告（warning，文本里带 TypeError: Failed to fetch）：
+   `IPC custom protocol failed, Tauri will now use the postMessage interface instead`。
+   这是页面重载导致的 IPC 回退，不是模型调用失败；本轮 LLM 调用本身 0 条失败、2 次 POST 均 200。
+2. 上面的 loop-error / LLM 调用失败 / Agent loop error 计数为 0；page-error 为 0。
+3. 换段行：`[segment-switch] completed at pressure 0.001 ⇒ segment 2（移出视图 6 条）`。

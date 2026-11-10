@@ -4149,7 +4149,7 @@ min-height: 0;
   font-size: var(--fs-base);
   line-height: var(--lh-reading);
   color: var(--text-muted);
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
 }
 
 /* 主编辑区 */
@@ -8779,6 +8779,49 @@ color: var(--text-on-accent);
   line-height: var(--lh-ui);
 }
 
+/* UI-1：长条目的截断原因 + 「查看全文」展开（原因必须可读，不许只给一个省略号） */
+.memory-item-truncation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--warning);
+  line-height: var(--lh-ui);
+}
+
+.memory-item-truncation-reason {
+  white-space: normal;
+}
+
+.memory-item-expand {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+  line-height: var(--lh-ui);
+}
+
+.memory-item-expand:is(:hover, :focus-visible) {
+  text-decoration: underline;
+}
+
+.memory-item-full {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  line-height: var(--lh-ui);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .memory-item-meta {
   display: flex;
   gap: var(--space-4);
@@ -9219,6 +9262,14 @@ color: var(--text-on-accent);
   color: var(--text-muted);
 }
 
+/* CMP-P-1：压力估算「未计入工具定义」的如实披露（低权重提示，不打断） */
+.context-pressure-tools-note {
+  margin-top: var(--space-1);
+  font-size: var(--fs-2xs);
+  color: var(--warning);
+  line-height: var(--lh-ui);
+}
+
 .context-stats {
   display: flex;
   gap: var(--space-8);
@@ -9258,7 +9309,7 @@ color: var(--text-on-accent);
 
 .context-balance-loading {
   font-size: var(--fs-2xs);
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
 }
 
 .context-balance-item {
@@ -9283,6 +9334,210 @@ color: var(--text-on-accent);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+/* C04 请求清单（只读诊断：最近 5 条的段号/消息数/来源/预算 + 与上一条的差异） */
+.context-manifests {
+  margin-top: var(--space-4);
+}
+
+.context-manifests-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.context-manifests-title-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.context-manifests-title-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.context-manifest-row {
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  font-size: var(--fs-xs);
+}
+
+.context-manifest-meta {
+  color: var(--text-secondary);
+}
+
+.context-manifest-sources,
+.context-manifest-diff,
+/*
+ * C03：工作集那一行（选中 / 移出 / 预算）。与 sources/diff 同一档"次要信息"，
+ * 所以并进同一个选择器组，不新造颜色/字号（样式字面量与颜色角色两道审计都要求复用既有 token）。
+ */
+.context-manifest-working-set {
+  color: var(--text-muted);
+}
+
+/*
+ * P1-1：**会话笔记**（只读列表 + 全文展开）。
+ *
+ * 与请求清单同一档"次要诊断信息"：行只占一行摘要，点开才显示全文（长笔记不挤压面板）；
+ * 颜色/字号/间距全部复用既有 token（不新造颜色角色与样式字面量）。
+ */
+.context-notes {
+  margin-top: var(--space-4);
+}
+
+.context-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.context-note-row {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+
+.context-note-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-note-summary:hover {
+  background: var(--bg-secondary);
+}
+
+.context-note-time {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
+
+.context-note-tag {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+}
+
+.context-note-preview {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-note-full {
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/*
+ * 24 §9.4：会话笔记的**编辑/删除**（内联编辑 + 删除二次确认）。
+ *
+ * 行结构与只读版保持一致：摘要行仍是主体，动作按钮只在行尾占一小块；
+ * 编辑区与确认区都在**行内**展开（不弹模态框 —— 笔记是次要诊断信息，模态会把整个面板顶掉）。
+ * 颜色/字号/间距全部复用既有 token（不新造颜色角色与样式字面量）。
+ */
+.context-note-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.context-note-head .context-note-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.context-note-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.context-note-action {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+
+.context-note-action:is(:hover, :focus-visible) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.context-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+}
+
+.context-note-textarea,
+.context-note-tag-input {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+}
+
+.context-note-textarea {
+  resize: vertical;
+}
+
+.context-note-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: 1px solid var(--error-border);
+  background: var(--error-surface);
+}
+
+.context-note-confirm-text {
+  color: var(--error-content);
+  font-size: var(--fs-xs);
+}
+
+.context-note-error {
+  margin: var(--space-1) 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-xs);
+  background: var(--error-surface);
+  color: var(--error-content);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Compaction UI */
@@ -16109,7 +16364,7 @@ color: var(--accent, #7c6cf0);
 }
 .composer-badge-meta {
   font-size: var(--fs-xs);
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -17656,7 +17911,7 @@ color: var(--accent, #7c6cf0);
   border-radius: var(--radius-sm);
   color: inherit;
   cursor: pointer;
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
   transition: var(--transition-color);
 }
 
@@ -19601,7 +19856,7 @@ textarea {
 
 /* 4) 完成态：待办勾选后整行淡化 + 删除线（TodoListDisplay） */
 .todo-item:has(.completed) {
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
   text-decoration: line-through;
 }
 
@@ -21437,6 +21692,64 @@ html[data-contrast="high"] {
   border-style: dashed;
 }
 
+/* ---- C08：有效期 / 置信度 / 冲突（只读展示，与注入侧的判定同源） ---- */
+
+/* 已过期：用错误色明确说「不再作数」，不能和「有效期至某天」混成同一种弱提示 */
+.memory-source-badge.expired {
+  color: var(--error-content);
+  background: var(--error-surface);
+  border-color: var(--error-border);
+}
+
+/* 未过期：虚线边，表示「有时限但当前有效」 */
+.memory-source-badge.expiring {
+  color: var(--text-secondary);
+  border-style: dashed;
+}
+
+.memory-source-badge.confidence {
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+}
+
+/* 冲突徽标是**可点定位入口**：去掉按钮默认外观，保留徽标形态 */
+.memory-source-badge.conflict {
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+  font: inherit;
+  cursor: pointer;
+}
+
+.memory-source-badge.conflict:is(:hover, :focus-visible) {
+  background: var(--warning-surface-strong);
+}
+
+.memory-conflict-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.memory-conflict-link {
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.memory-conflict-link:is(:hover, :focus-visible) {
+  background: var(--warning-surface-strong);
+}
+
+.memory-expired-text {
+  color: var(--error-content);
+}
+
 /* 概览数字：作用域改名（平台/项目/对话）后补齐缺失的两档着色 */
 .memory-stat-value.platform {
   color: var(--warning);
@@ -21444,6 +21757,11 @@ html[data-contrast="high"] {
 
 .memory-stat-value.conversation {
   color: var(--success);
+}
+
+/* 25:668 团队级（跨群共享）—— 与项目/对话分开着色，一眼看出这条不是单项目/单对话的 */
+.memory-stat-value.team {
+  color: var(--info);
 }
 
 /* 「其它（作用域无法识别）」与旧版跨项目池：都是**要用户动手**的档 ⇒ 用警告色，不混进正常档 */
@@ -21846,4 +22164,134 @@ html[data-contrast="high"] {
 
 .goal-mode-bar__save {
   justify-self: start;
+}
+
+/*
+ * 任务中心 ·「Bot 团队」页签（25 P1-1/P1-2/P1-4 的正式入口）。
+ *
+ * 这两个面板原先只挂在 `ContextMonitor` 的窄侧栏里：那里靠 `.context-monitor-body`
+ * 的内边距和窄宽度“看起来正常”。直接搬进 1180px 的任务中心后，行贴着窗口边缘、
+ * 表单控件是浏览器默认样式、两组面板上下堆叠 —— 就是用户截图里“CSS 全乱了”的样子。
+ *
+ * 这里只在 `.task-center-bots` 作用域内补**布局与控件外观**：
+ * - 两栏：左侧 Bot/Team/work（280–340px），右侧群聊/路由/审批（自适应）；
+ * - 每个面板是一张卡片（背景/边框/内边距/圆角），与任务中心其它页签同一档；
+ * - 表单控件（select/textarea/button）统一用既有 token，不再出现默认 UA 样式；
+ * - 窄窗口（<1100px）叠成一栏，避免两栏各自被挤到不可读。
+ * 颜色/间距/字号全部复用既有 token，不新造颜色角色。
+ */
+.task-center-bots {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: stretch;
+  grid-auto-rows: minmax(0, 1fr);
+  min-height: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.task-center-bots-side,
+.task-center-bots-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.task-center-bots-side {
+  min-width: 0;
+}
+
+.task-center-bots-main {
+  min-width: 0;
+}
+
+.task-center-bots .context-notes {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+  padding: var(--space-4);
+  overflow: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.task-center-bots .context-manifests-title {
+  margin-bottom: var(--space-3);
+}
+
+.task-center-bots .context-notes-list {
+  gap: var(--space-2);
+}
+
+.task-center-bots .context-manifest-row {
+  margin-bottom: 0;
+  padding: var(--space-2) var(--space-3);
+  line-height: var(--lh-base);
+}
+
+.task-center-bots .context-manifest-meta {
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+.task-center-bots select,
+.task-center-bots textarea {
+  min-width: 0;
+  padding: var(--space-2);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.task-center-bots select {
+  min-width: 160px;
+  max-width: 100%;
+}
+
+.task-center-bots textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+}
+
+.task-center-bots select:focus-visible,
+.task-center-bots textarea:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-center-bots button.context-history-close {
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  cursor: pointer;
+}
+
+.task-center-bots button.context-history-close:hover {
+  background: var(--bg-hover);
+}
+
+.task-center-bots button.context-history-close:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+@media (max-width: 1100px) {
+  .task-center-bots {
+    grid-template-columns: 1fr;
+    padding: var(--space-4);
+  }
 }

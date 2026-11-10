@@ -139,11 +139,11 @@ export function createAgentTeamsCreateTaskTool(): ToolDef {
   return {
     id: "agent_teams_create_task",
     description: zh()
-      ? "（队长）创建任务。可指定 dependencies（前置任务 id，全部完成后才可领取）与 assignee（成员名或 captain；留空 = 共享池由空闲成员自动领取）。"
-      : "(captain) Create a task. Optionally set dependencies (must all complete first) and assignee (member name or captain; empty = shared pool auto-claimed by idle members).",
+      ? "（队长）创建任务。可指定 dependencies（前置任务 id，全部完成后才可领取）与 assignee（成员名或 captain；留空 = 共享池由空闲成员自动领取）。任务默认要求代码/文档/测试/引用四类证据 + 独立 Verifier 检查，文档未同步不算完成。"
+      : "(captain) Create a task. Optionally set dependencies and assignee. By default completion requires code/doc/test/reference evidence + an independent Verifier; unsynced docs block completion.",
     guidance: zh()
-      ? "把目标拆成尽量并行、依赖清晰的小任务；dependencies 用已建任务的 t1/t2… id。"
-      : "Break goals into parallel, dependency-clear tasks; reference prior ids like t1/t2 in dependencies.",
+      ? "把目标拆成尽量并行、依赖清晰的小任务；dependencies 用已建任务的 t1/t2… id。验收口径写进 acceptance。"
+      : "Break goals into parallel, dependency-clear tasks; reference prior ids like t1/t2 in dependencies and put the acceptance criteria in acceptance.",
     parameters: {
       type: "object",
       properties: {
@@ -152,6 +152,12 @@ export function createAgentTeamsCreateTaskTool(): ToolDef {
         description: { type: "string", description: zh() ? "细节（可选）" : "Details (optional)" },
         dependencies: { type: "array", items: { type: "string" }, description: zh() ? "前置任务 id 列表" : "Prerequisite task ids" },
         assignee: { type: "string", description: zh() ? "成员名或 captain（可选，留空共享池）" : "Member name or captain (optional)" },
+        acceptance: { type: "string", description: zh() ? "验收口径（可选；写清代码/文档/测试/引用各要什么）" : "Acceptance criteria (optional)" },
+        required_evidence: {
+          type: "array",
+          items: { type: "string", enum: ["code", "doc", "test", "reference"] },
+          description: zh() ? "必须齐备的证据类别（缺省 = 四类全要）" : "Required evidence kinds (default: all four)",
+        },
       },
       required: ["team_id", "subject"],
     },
@@ -164,11 +170,16 @@ export function createAgentTeamsCreateTaskTool(): ToolDef {
         description: args.description as string | undefined,
         dependencies: (args.dependencies as string[]) ?? [],
         assignee: args.assignee as string | undefined,
+        acceptance: args.acceptance as string | undefined,
+        requiredEvidence: args.required_evidence as any,
       });
       return out(`agent_teams_create_task: ${task.id}`, [
         t ? `任务 ${task.id} 已创建: ${task.subject}` : `Task ${task.id} created: ${task.subject}`,
         task.dependencies.length > 0 ? (t ? `依赖: ${task.dependencies.join(", ")}` : `Dependencies: ${task.dependencies.join(", ")}`) : "",
         task.assignee ? (t ? `负责人: ${task.assignee}` : `Assignee: ${task.assignee}`) : (t ? "共享池（空闲成员自动领取）" : "Shared pool (auto-claimed)"),
+        t
+          ? `完成条件: ${task.completion?.requiredEvidence.join(" / ")} 四类证据${task.completion?.requireVerification ? " + 独立 Verifier" : ""}；文档未同步 ⇒ 不完成`
+          : `Completion: ${task.completion?.requiredEvidence.join(" / ")} evidence${task.completion?.requireVerification ? " + independent Verifier" : ""}; unsynced docs block completion`,
       ]);
     },
   };
@@ -247,8 +258,8 @@ export function createAgentTeamsUpdateTool(): ToolDef {
   return {
     id: "agent_teams_update_task",
     description: zh()
-      ? "更新任务状态（in_progress / completed / failed / cancelled）。必须携带领取返回的 attempt_id；任务被转派后旧 attempt 会被拒绝（stale）。"
-      : "Update task status (in_progress / completed / failed / cancelled). Must carry the attempt_id from claim; stale attempts are rejected after reassignment.",
+      ? "更新任务状态（in_progress / completed / failed / cancelled）。必须携带领取返回的 attempt_id；任务被转派后旧 attempt 会被拒绝（stale）。可随更新登记证据（code/doc/test/reference）；completed 需四类证据齐备且 Verifier 通过，否则明确 blocked、任务保持未完成。"
+      : "Update task status (in_progress / completed / failed / cancelled). Must carry the attempt_id from claim; stale attempts are rejected. Evidence (code/doc/test/reference) can be recorded with the update; completion requires all four + a passing Verifier, otherwise it is explicitly blocked and the task stays unfinished.",
     parameters: {
       type: "object",
       properties: {
@@ -257,21 +268,116 @@ export function createAgentTeamsUpdateTool(): ToolDef {
         status: { type: "string", enum: ["in_progress", "completed", "failed", "cancelled"] },
         output: { type: "string", description: zh() ? "结果摘要（完成/失败时）" : "Result summary (on completion/failure)" },
         attempt_id: { type: "string", description: zh() ? "领取时返回的 attempt_id（必填）" : "attempt_id from claim (required)" },
+        evidence: {
+          type: "array",
+          description: zh() ? "随本次更新登记的证据（引用坐标，不是正文）" : "Evidence to record with this update (coordinates, not prose)",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["code", "doc", "test", "reference"] },
+              ref: { type: "string", description: zh() ? "可回溯坐标：文件路径 / 文档路径 / 测试命令 / issue 号" : "Traceable ref: file path / doc path / test command / issue id" },
+              summary: { type: "string" },
+              status: { type: "string", enum: ["pass", "fail"], description: zh() ? "test 证据必填" : "required for test evidence" },
+            },
+            required: ["kind", "ref"],
+          },
+        },
       },
       required: ["team_id", "task_id", "status", "attempt_id"],
     },
     async execute(args, ctx) {
       const t = zh();
       const teamId = args.team_id as string;
-      const { task } = svc().update(teamId, args.task_id as string, {
+      const { task, blocked } = await svc().update(teamId, args.task_id as string, {
         status: args.status as any,
         output: args.output as string | undefined,
         attemptId: args.attempt_id as string,
         by: callerName(ctx, teamId),
+        evidence: args.evidence as any,
       });
+      if (blocked) {
+        throw new Error(
+          t
+            ? `任务 ${task.id} 未完成（blocked）：${blocked.reasons.join("；")}。请补齐证据 / 让 Verifier 独立检查后再提交 completed。`
+            : `Task ${task.id} is blocked: ${blocked.reasons.join("; ")}. Complete the evidence / run an independent Verifier before submitting completed.`,
+        );
+      }
       return out(`agent_teams_update_task: ${task.id}`, [
         t ? `任务 ${task.id} → ${task.status}` : `Task ${task.id} → ${task.status}`,
         task.output ? (t ? `输出: ${task.output}` : `Output: ${task.output}`) : "",
+        t ? `证据: ${(task.evidence ?? []).map((e) => `${e.kind}:${e.ref}`).join(", ") || "(无)"}` : `Evidence: ${(task.evidence ?? []).map((e) => `${e.kind}:${e.ref}`).join(", ") || "(none)"}`,
+        task.verification ? (t ? `Verifier: ${task.verification.verifier} → ${task.verification.verdict}` : `Verifier: ${task.verification.verifier} → ${task.verification.verdict}`) : "",
+      ]);
+    },
+  };
+}
+
+// ========== 7b. verify_task（C10：独立 Verifier） ==========
+
+export function createAgentTeamsVerifyTool(): ToolDef {
+  return {
+    id: "agent_teams_verify_task",
+    description: zh()
+      ? "（Verifier）独立检查任务产物与判据，输出 pass/fail + 证据坐标。检查上下文只来自任务图/工件/证据，不含实现者的自评；Verifier 不能等于实现者。"
+      : "(Verifier) Independently check a task's artifacts and criteria; returns pass/fail + evidence coordinates. The context contains only the task graph/artifacts/evidence, never the implementer's self-assessment; the Verifier must differ from the implementer.",
+    guidance: zh()
+      ? "完成前必须由一个独立成员（不是实现者）调用；fail 时把 reasons 反馈给实现者补齐，不要直接改 completed。"
+      : "Before completion, an independent member (not the implementer) must run this; on fail, feed the reasons back instead of marking completed.",
+    parameters: {
+      type: "object",
+      properties: {
+        team_id: { type: "string" },
+        task_id: { type: "string" },
+        verifier: { type: "string", description: zh() ? "Verifier 身份（成员名；不能等于实现者）" : "Verifier identity (member name; must differ from implementer)" },
+      },
+      required: ["team_id", "task_id"],
+    },
+    async execute(args, ctx) {
+      const t = zh();
+      const teamId = args.team_id as string;
+      const verifier = (args.verifier as string | undefined) || callerName(ctx, teamId);
+      const { verification } = await svc().verify(teamId, args.task_id as string, verifier);
+      const lines = [
+        t ? `任务 ${args.task_id}: Verifier ${verification.verifier} → ${verification.verdict}` : `Task ${args.task_id}: Verifier ${verification.verifier} → ${verification.verdict}`,
+        ...verification.checks.map((check) => `- ${check.ok ? "✓" : "✗"} ${check.id}${check.detail ? `: ${check.detail}` : ""}`),
+      ];
+      if (verification.verdict !== "pass") lines.push(t ? `原因: ${verification.reasons.join("；")}` : `Reasons: ${verification.reasons.join("; ")}`);
+      lines.push(t ? `证据: ${verification.evidence.join(", ")}` : `Evidence: ${verification.evidence.join(", ")}`);
+      return { title: "agent_teams_verify_task", output: lines.join("\n"), isError: verification.verdict !== "pass" };
+    },
+  };
+}
+
+// ========== 7c. rollback_task（C10：回到上一版工件/状态） ==========
+
+export function createAgentTeamsRollbackTool(): ToolDef {
+  return {
+    id: "agent_teams_rollback_task",
+    description: zh()
+      ? "回滚任务：把共享工件与证据恢复到本次尝试领取时的上一版，任务回到共享池（attempt 记 rolled_back）。回滚必须写原因；完成后重新走 claim → Verifier → completed。"
+      : "Roll back a task: restore shared artifacts/evidence to the version at claim time and return the task to the pool (attempt recorded as rolled_back). A reason is required; rerun claim → Verifier → completed afterwards.",
+    parameters: {
+      type: "object",
+      properties: {
+        team_id: { type: "string" },
+        task_id: { type: "string" },
+        reason: { type: "string", description: zh() ? "回滚原因（必填，不能静默回滚）" : "Rollback reason (required)" },
+        attempt_id: { type: "string", description: zh() ? "可选：只回滚指定 attempt（stale 保护）" : "Optional: roll back a specific attempt (stale guard)" },
+      },
+      required: ["team_id", "task_id", "reason"],
+    },
+    async execute(args, ctx) {
+      const t = zh();
+      const teamId = args.team_id as string;
+      const { task, rollback } = svc().rollback(teamId, args.task_id as string, {
+        by: callerName(ctx, teamId),
+        reason: args.reason as string,
+        attemptId: args.attempt_id as string | undefined,
+      });
+      return out("agent_teams_rollback_task", [
+        t ? `任务 ${task.id} 已回滚到 pending（attempt #${rollback.attempt} → rolled_back）` : `Task ${task.id} rolled back to pending (attempt #${rollback.attempt} → rolled_back)`,
+        t ? `原因: ${rollback.reason}` : `Reason: ${rollback.reason}`,
+        t ? `恢复工件: ${rollback.restoredArtifacts.map((a) => `${a.id} r${a.fromRevision}→r${a.toRevision}`).join(", ") || "(无变化)"}` : `Restored: ${rollback.restoredArtifacts.map((a) => `${a.id} r${a.fromRevision}→r${a.toRevision}`).join(", ") || "(none)"}`,
       ]);
     },
   };
@@ -338,6 +444,17 @@ export function createAgentTeamsStatusTool(): ToolDef {
       for (const task of snap.tasks) {
         const dep = task.dependencies.length ? ` (deps: ${task.dependencies.join(",")})` : "";
         lines.push(`- ${task.id} ${task.status} — ${task.subject}${task.assignee ? ` @${task.assignee}` : ""}${dep}`);
+        // C10：任务图/工件必须对队长与其他成员可见（claim / attempt / 工件 / 四类证据 / Verifier）
+        const claim = task.claimBy ? `claim=${task.claimBy}` : "claim=(none)";
+        const artifacts = task.artifacts.length
+          ? task.artifacts.map((a) => `${a.kind}:${a.ref}@r${a.revision}`).join(", ")
+          : "(none)";
+        lines.push(
+          t
+            ? `  ${claim} · attempt=${task.attempts} · rollback=${task.rollbacks} · 证据=[${task.evidenceKinds.join(",") || "无"}] · verifier=${task.verified ? "pass" : "未通过"} · 工件: ${artifacts}`
+            : `  ${claim} · attempt=${task.attempts} · rollback=${task.rollbacks} · evidence=[${task.evidenceKinds.join(",") || "none"}] · verifier=${task.verified ? "pass" : "not-passed"} · artifacts: ${artifacts}`,
+        );
+        if (task.blockedReason) lines.push(t ? `  ⚠️ blocked: ${task.blockedReason}` : `  ⚠️ blocked: ${task.blockedReason}`);
       }
       for (const [to, n] of Object.entries(snap.unreadFor)) {
         lines.push("");
@@ -387,7 +504,13 @@ export function createAgentTeamsDeleteTool(): ToolDef {
 export function registerAgentTeamsTools(register: (t: ToolDef) => void): void {
   const markDeferred = (t: ToolDef): ToolDef => {
     t.shouldDefer = true;
-    t.searchHint = "多智能体团队协作：队长建队、成员领取依赖任务、状态汇报（用户要求团队/多名 agent 并行时使用）";
+    /*
+     * searchHint 是**每轮**都随 Deferred Tools 段落发出去的（12 个工具各一行），
+     * 所以它要短：工具名已经说明了做什么，这里只补「什么时候用」。
+     * 2026-11-06 的 `context-tax-budget` 读数把这段重复文案算进合计后，
+     * 从 47 字压到 21 字（12 份重复 ⇒ 每轮约省 300 字符）。
+     */
+    t.searchHint = "多 agent 团队协作（建队/派活/领取/验收）";
     return t;
   };
   register(markDeferred(createAgentTeamsCreateTool()));
@@ -397,6 +520,8 @@ export function registerAgentTeamsTools(register: (t: ToolDef) => void): void {
   register(markDeferred(createAgentTeamsReassignTool()));
   register(markDeferred(createAgentTeamsClaimTool()));
   register(markDeferred(createAgentTeamsUpdateTool()));
+  register(markDeferred(createAgentTeamsVerifyTool()));
+  register(markDeferred(createAgentTeamsRollbackTool()));
   register(markDeferred(createAgentTeamsSendMessageTool()));
   register(markDeferred(createAgentTeamsStatusTool()));
   register(markDeferred(createAgentTeamsDeleteTool()));

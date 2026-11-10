@@ -188,10 +188,11 @@ npm run retro -- --since 2026-10-01   # 只读复盘（默认数据根，可用 
 - 源码里 189 波已经把「replay 主系统提示、复用 KV 缓存」这句错误注释删掉，并写明「与实现不符」。
 - 另一半问题「压缩会不会频繁击穿缓存」：每次压缩都会重写历史（摘要标记替换旧消息）⇒
   下一次主请求前缀**必然失效一次**；频率受 70% 阈值 + 连续最多 3 次约束，正常会话一天 0–2 次。
-- **已补用法（2026-10-29）**：压缩调用打一行 `[compact] usage prompt=… completion=… cacheHit=… miss=… model=… convChars=…`；
+- **已补用法（2026-10-29，2026-11-07 字段名更新）**：压缩调用打一行
+  `[compact] usage prompt=… completion=… cacheRead=… cacheWrite=… miss=… model=… convChars=…`；
   provider 没上报的字段打 `?`（不编 0）。
 - **真机读数（同一次压缩）**：
-  - 第一块摘要：`prompt=59466 cacheHit=0` —— **与主会话前缀零命中**，结构性结论成立；
+  - 第一块摘要（旧版日志字段名 `cacheHit`）：`prompt=59466 cacheHit=0` —— **与主会话前缀零命中**，结构性结论成立；
   - 多块合计：压缩记录 `inputTokens=132605 cacheReadTokens=59264`（约 45%）——
     后续块会命中"**上一块累积摘要**"这段共享前缀，但**从不命中主会话那一段**；
   - 记账：压缩单独一条 `cost_records`（`duration=0`、`toolCalls=0`），主回合那条的 `inputTokens=97086` 不含压缩 ——

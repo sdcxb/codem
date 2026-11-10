@@ -53,6 +53,43 @@ function harness(overrides: Partial<GatewayChangesApi> = {}): Harness {
   };
   const deps: GatewayDataDeps = {
     listSessions: () => [SESSION],
+    sync: {
+      pull: async () => ({
+        events: [],
+        nextSeq: 0,
+        hasMore: false,
+        devices: 0,
+        scannedSessions: 0,
+        missingBodies: 0,
+        droppedEntries: 0,
+        droppedUnpulled: 0,
+        resetRequired: false,
+        oldestSeq: 0,
+        filteredSessions: 0,
+        overCapacity: false,
+        serverTime: 0,
+      }),
+      push: async () => ({
+        accepted: 0,
+        duplicates: 0,
+        rejected: [],
+        hostSeqMax: 0,
+        devices: 0,
+        storageFailed: 0,
+        filteredSessions: 0,
+      }),
+      snapshot: async () => ({
+        sessionId: "",
+        messages: [],
+        nextBefore: null,
+        hasMore: false,
+        total: 0,
+        hostSeq: 0,
+        filteredSessions: 0,
+        serverTime: 0,
+      }),
+      mergeMemory: async () => ({ ok: true, payload: "", entries: 0, conflicts: [], changed: false }),
+    },
     getSession: () => ({ session: SESSION, messages: [] }),
     sendPrompt: async () => ({ ok: true, runId: "run-1", sessionId: SESSION.id }),
     cancelRun: (input) => ({
@@ -130,6 +167,10 @@ describe("GWC-1 能力表与两条方法", () => {
       "workspace.diff",
       "session.changes",
       "session.change.diff",
+      "sync.pull",
+      "sync.push",
+      "sync.memory",
+      "sync.snapshot",
     ]);
     for (const method of ["session.changes", "session.change.diff"]) {
       expect(GATEWAY_UNSUPPORTED_METHODS).not.toContain(method);

@@ -74,6 +74,8 @@ interface CheckupEntry {
   legacyPool: boolean;
   projectId?: string;
   sessionId?: string;
+  /** 25:668：团队归属键（AgentTeam id）；团队级条目按它分组 */
+  teamId?: string;
   batchId?: string;
   tags?: string[];
   filePath?: string;
@@ -83,7 +85,7 @@ export interface CheckupGroup {
   /** 稳定 key（React 列表用，也是判据的断言锚点） */
   groupKey: string;
   /** 分组归属的类型 */
-  kind: "platform" | "legacy-pool" | "project" | "conversation" | "unknown" | "unknown-scope";
+  kind: "platform" | "legacy-pool" | "project" | "team" | "conversation" | "unknown" | "unknown-scope";
   /** 组标题（项目名 / 对话标题；解析不到时是 id + 标注） */
   title: string;
   /** 组头补充说明（归属未知组**必须**写明原因） */
@@ -94,6 +96,8 @@ export interface CheckupGroup {
   actionable?: boolean;
   projectId?: string;
   sessionId?: string;
+  /** 25:668：团队级分组的归属键 */
+  teamId?: string;
   entries: CheckupEntry[];
 }
 
@@ -277,10 +281,15 @@ export function checkupSourceOf(entry: MemoryEntry): CheckupSource {
  * 该条目在当前上下文里会不会被注入（与 `MemoryService` 的注入口径一致）。
  * 体检视图用它显示"这条现在不生效"，所以必须用**用户当前位置**算，不能用条目自己的归属算。
  */
-function checkupInjected(entry: MemoryEntry, ctx: { projectId?: string; sessionId?: string }): boolean {
+function checkupInjected(entry: MemoryEntry, ctx: { projectId?: string; sessionId?: string; teamId?: string }): boolean {
   if (isPendingMemoryEntry(entry)) return false;
   if (entry.scope === "platform") return true;
   if (entry.scope === "project") return Boolean(entry.projectId) && entry.projectId === ctx.projectId;
+  if (entry.scope === "team") {
+    /* 25:668：团队归属 + 项目收窄（与 `MemoryService.visibleIn` 同一条口径） */
+    if (!entry.teamId || entry.teamId !== ctx.teamId) return false;
+    return (entry.projectId ?? "") === (ctx.projectId ?? "");
+  }
   return Boolean(entry.sessionId) && entry.sessionId === ctx.sessionId;
 }
 
@@ -308,7 +317,7 @@ const LEGACY_POOL_REASON =
 /** 作用域无法识别组的标题与说明（M-5；标题取自 `memory.ts` 的**唯一一处**常量） */
 const UNKNOWN_SCOPE_TITLE = MEMORY_UNKNOWN_SCOPE_TITLE;
 const UNKNOWN_SCOPE_REASON =
-  "这些条目的作用域不是 platform / project / conversation 三者之一（例如更老版本写的 workspace、大小写不符或空值）：" +
+  "这些条目的作用域不是 platform / project / team / conversation 之一（例如更老版本写的 workspace、大小写不符或空值）：" +
   "它们过去在界面上完全看不见、也删不掉，现在单独列出，可删除或归位。";
 
 /**
@@ -319,12 +328,13 @@ const UNKNOWN_SCOPE_REASON =
  * - `platform` 且**有** `legacyPool` 标记 ⇒ 「旧版跨项目记忆（无法判断归属，可能被污染）」组
  *   （M-2：与平台级**分开**，组头写明原因，并提供批量删除/归位/保留为平台级）；
  * - `project` 且 `projectId` 能解析到项目 ⇒ 「项目级 · <项目名>」组；
+ * - `team` 且 `teamId`（AgentTeam id）存在 ⇒ 「团队级 · <团队 id>」组（25:668：跨群共享，按成员身份 + 项目收窄）；
  * - `conversation` 且 `sessionId` 能解析到对话 ⇒ 「对话级 · <项目名> / <对话标题>」组；
  * - 有归属键但解析不到 ⇒ 「归属未知（旧数据）」组，但组头**分开**写两种原因（I9）；
- * - 作用域不是三者之一 ⇒ 「作用域无法识别」组（M-5：可删除/可归位，计入清空全部）。
+ * - 作用域不是已知几者之一 ⇒ 「作用域无法识别」组（M-5：可删除/可归位，计入清空全部）。
  */
 export function createMemoryCheckup(
-  ctx?: { projectId?: string; sessionId?: string },
+  ctx?: { projectId?: string; sessionId?: string; teamId?: string },
   opts?: {
     index?: OwnershipIndex;
     entries?: MemoryEntry[];
@@ -361,7 +371,7 @@ export function createMemoryCheckup(
    * 往里加一个 `showAllProjects`，`visibleIn` 就会放行所有项目的条目，体检会把它们全标成
    * 「已生效」。现在那是**编译错误**，不是运气。
    */
-  const plan = service.injectionExplanations?.(injectionScopeContext(ctx?.projectId, ctx?.sessionId)) ?? null;
+  const plan = service.injectionExplanations?.(injectionScopeContext(ctx?.projectId, ctx?.sessionId, ctx?.teamId)) ?? null;
   const checkupInjectedWithReason = (entry: MemoryEntry): { injected: boolean; reason?: string } => {
     if (plan) {
       return plan.injected.has(entry.id)
@@ -373,7 +383,7 @@ export function createMemoryCheckup(
     if (isLegacyPoolInjectionPaused() && entry.legacyPool === true) {
       return { injected: false, reason: "已打开「暂停注入旧版跨项目记忆」" };
     }
-    if (entry.scope !== "platform" && entry.scope !== "project" && entry.scope !== "conversation") {
+    if (entry.scope !== "platform" && entry.scope !== "project" && entry.scope !== "team" && entry.scope !== "conversation") {
       return { injected: false, reason: "作用域无法识别，注入路径不认识它" };
     }
     return { injected: checkupInjected(entry, ctx ?? {}) };
@@ -382,6 +392,7 @@ export function createMemoryCheckup(
   const platform: CheckupEntry[] = [];
   const legacyPool: CheckupEntry[] = [];
   const projectGroups = new Map<string, CheckupEntry[]>();
+  const teamGroups = new Map<string, CheckupEntry[]>();
   const conversationGroups = new Map<string, CheckupEntry[]>();
   const unresolved: CheckupEntry[] = [];
   const unresolvedStale: CheckupEntry[] = [];
@@ -416,13 +427,14 @@ export function createMemoryCheckup(
       legacyPool: e.legacyPool === true,
       projectId: e.projectId,
       sessionId: e.sessionId,
+      teamId: e.teamId,
       batchId: e.batchId,
       tags: e.tags,
       filePath: e.filePath,
     };
 
-    // M-5：作用域不是三者之一 ⇒ 单独一组（过去所有界面都看不见它们）
-    if (e.scope !== "platform" && e.scope !== "project" && e.scope !== "conversation") {
+    // M-5：作用域不是已知几者之一 ⇒ 单独一组（过去所有界面都看不见它们）
+    if (e.scope !== "platform" && e.scope !== "project" && e.scope !== "team" && e.scope !== "conversation") {
       unknownScope.push(item);
       continue;
     }
@@ -441,6 +453,17 @@ export function createMemoryCheckup(
       } else if (e.projectId) {
         // I9：有归属键但解析不到 ⇒ 「归属已失效」，与"旧数据从来没有归属"分开
         unresolvedStale.push(item);
+      } else {
+        unresolved.push(item);
+      }
+      continue;
+    }
+    if (e.scope === "team") {
+      /* 25:668：团队级单列一组（归属键是 AgentTeam id；这里不解析团队名，如实显示 id） */
+      if (e.teamId) {
+        const list = teamGroups.get(e.teamId) ?? [];
+        list.push(item);
+        teamGroups.set(e.teamId, list);
       } else {
         unresolved.push(item);
       }
@@ -497,6 +520,18 @@ export function createMemoryCheckup(
       note: "仅该项目内的所有对话生效",
       unresolved: false,
       projectId,
+      entries: list,
+    });
+  }
+
+  for (const [teamId, list] of teamGroups) {
+    groups.push({
+      groupKey: `team:${teamId}`,
+      kind: "team",
+      title: `团队级 · ${teamId}`,
+      note: "仅该团队（同项目）的成员请求生效（跨群共享）",
+      unresolved: false,
+      teamId,
       entries: list,
     });
   }
@@ -599,10 +634,10 @@ export async function retargetEntry(id: string, target: CheckupRetarget): Promis
   const normalizedProjectId = target.scope === "project" ? projectIdFromCwd(target.projectId) ?? target.projectId : undefined;
   const updates: Partial<MemoryEntry> =
     target.scope === "platform"
-      ? { scope: "platform", projectId: undefined, sessionId: undefined, legacyPool: undefined }
+      ? { scope: "platform", projectId: undefined, sessionId: undefined, teamId: undefined, legacyPool: undefined }
       : target.scope === "project"
-        ? { scope: "project", projectId: normalizedProjectId, sessionId: undefined, legacyPool: undefined }
-        : { scope: "conversation", sessionId: target.sessionId, projectId: undefined, legacyPool: undefined };
+        ? { scope: "project", projectId: normalizedProjectId, sessionId: undefined, teamId: undefined, legacyPool: undefined }
+        : { scope: "conversation", sessionId: target.sessionId, projectId: undefined, teamId: undefined, legacyPool: undefined };
   // 容量拒绝 / 截断要**如实回执**（`getLastWriteError()` 是 update 的可见失败通道）
   service.getLastWriteError();
   const ok = service.update(id, updates, { actor: "user" });

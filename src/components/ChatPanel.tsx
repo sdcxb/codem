@@ -10,6 +10,9 @@ import { freeModelPlugin } from "../core/free-model-plugin/service";
  * 气泡骨架由共享实现 `packages/ui/src/message-bubble.tsx` 渲染（默认路径已切换，没有第二份）。
  */
 import { MessageBubble } from "./MessageBubble";
+import { SegmentDivider } from "./SegmentDivider";
+import { getContextManager } from "../core/context/context";
+import { segmentDividerAnchors, segmentDiagnostics } from "../core/storage/thread-history";
 import { useStableMessageHandlers } from "./useStableMessageHandlers";
 import { computeHasAssistantAfter } from "../core/ui/message-suffix";
 import { computeVirtualWindow } from "../core/ui/virtual-window";
@@ -143,6 +146,18 @@ const MODEL_FAMILY_LABELS: Record<ModelFamily, { zh: string; en: string }> = {
   mimo: { zh: "MiMo", en: "MiMo" },
   other: { zh: "其它模型", en: "Other models" },
 };
+
+/**
+ * 段式上下文开关（P0-4 / D11）：只在**渲染时**现读，避免把面板刚改的值缓存住。
+ * 读不到一律当"关"—— 界面不该因为配置读取失败而多画一条分隔线。
+ */
+function segmentEpochsOn(): boolean {
+  try {
+    return getContextManager().getConfig().segmentEpochs === true;
+  } catch {
+    return false;
+  }
+}
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
@@ -775,6 +790,34 @@ setStepTooltipLocked(false);
    * 内部通过 ref 调最新实现（handler 换了闭包也不会让引用失效）。
    */
   const messageIds = useMemo(() => messages.map((m) => m.id), [messages]);
+  /**
+   * 段分隔锚点（P0-4 / FAIL 9）：由数据层按**时间线**算「这一段的第一条可见消息」。
+   *
+   * 不用消息自己的 metadata：渲染列表是 ContextView，只保留**最新**一个 epoch marker；
+   * "换段之后又压缩过一次"时 switch marker 不在视图里 ⇒ 那种写法会让分隔卡静默消失。
+   */
+  const segmentAnchorSeq = useMemo(() => {
+    const map = new Map<string, number>();
+    try {
+      for (const anchor of segmentDividerAnchors(sessionId || currentSession?.id || "")) {
+        map.set(anchor.anchorMessageId, anchor.segmentSeq);
+      }
+    } catch {
+      /* 读不到就不画分隔：界面不许凭空多一条假边界 */
+    }
+    return map;
+  }, [sessionId, currentSession?.id, messages.length]);
+  /**
+   * C13：用户可见的**只有"整理"状态**（不暴露"压缩/换段/水位"术语）。
+   * 数据来自数据层的段诊断；开关关着时不显示（默认安静）。
+   */
+  const segmentCount = useMemo(() => {
+    try {
+      return segmentDiagnostics(sessionId || currentSession?.id || "").segments;
+    } catch {
+      return 0;
+    }
+  }, [sessionId, currentSession?.id, messages.length]);
   const getDeleteFilesHandler = useStableMessageHandlers<string[]>(
     useCallback((messageId: string, files: string[]) => {
       void handleDeleteFiles(messageId, files);
@@ -895,7 +938,17 @@ setStepTooltipLocked(false);
             ? (lang === "zh" ? "完整历史" : "Full history")
             : (lang === "zh" ? "模型视图" : "Model view")}
         </button>
-        {/* SlotBridge 消费 app.jobs-badge — 会话头部任务指示器 */}
+        {/* C13：只显示"已整理到第几段"这一件事（不暴露压缩/换段术语，默认安静） */}
+        {segmentEpochsOn() && segmentCount > 1 && (
+          <span
+            className="chat-history-btn"
+            data-segment-count={segmentCount}
+            title={lang === "zh" ? "上下文已在后台整理成多段；旧消息仍完整保留在历史里" : "Context was auto-organized into segments; old messages remain in full history"}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "default", opacity: 0.85 }}
+          >
+            {lang === "zh" ? `已整理 · 第 ${segmentCount} 段` : `Organized · segment ${segmentCount}`}
+          </span>
+        )}
         <SlotBridge
           name="app.jobs-badge"
           fallback={null}
@@ -1535,6 +1588,11 @@ setStepTooltipLocked(false);
 
             return (
             <React.Fragment key={msg.id}>
+            {/* P0-4：换段处的淡色分隔（开关关着时组件直接返回 null） */}
+            <SegmentDivider
+              segmentSeq={segmentAnchorSeq.get(msg.id)}
+              enabled={segmentEpochsOn()}
+            />
             {isLatestMsg ? (
             <motion.div
               initial={{ opacity: 0, y: 8 }}

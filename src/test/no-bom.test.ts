@@ -42,9 +42,21 @@ function walk(dir: string, out: string[] = [], depth = 0): string[] {
 }
 
 describe("BOM-1 文本文件不许带 BOM", () => {
+  /**
+   * ⚠️ 显式 30s 超时（与 `preview-shot-syntax.test.ts` 的 PS-1 同一形态，不是放宽判据）
+   *
+   * 这条判据查的是「有没有 BOM」，不是「扫得多快」；它要遍历全仓并把每个文本文件读一遍
+   * （实测单跑约 1.5s）。vitest 默认 5s 是「空载机器」的预算：8 worker 满载时读盘会排队，
+   * 同一份代码就会整批红、单跑绿 —— 那是机器当时快不快，不是仓库里有没有 BOM。
+   * 超时只放宽「等多久算失败」；下面「违规必须为 0」的断言一条未改。
+   */
   it("全仓扫描：带 BOM 的文本文件必须为 0（它会炸掉 JSON/PostCSS 这类解析）", () => {
+    const files = walk(ROOT);
+    /* 防恒绿：遍历/过滤坏了（比如把所有目录都跳掉）时扫描面会缩水，上面那条就成了「什么都没扫、所以干净」 */
+    expect(files.length, "扫描面太小 —— 遍历坏了（那这条会恒绿）").toBeGreaterThan(1000);
+
     const offenders: string[] = [];
-    for (const f of walk(ROOT)) {
+    for (const f of files) {
       let buf: Buffer;
       try {
         buf = fs.readFileSync(f);
@@ -56,5 +68,5 @@ describe("BOM-1 文本文件不许带 BOM", () => {
       }
     }
     expect(offenders, `这些文件开头有 BOM（构建会在 vite/JSON 解析阶段失败）：\n${offenders.join("\n")}`).toEqual([]);
-  });
+  }, 30_000);
 });

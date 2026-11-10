@@ -985,14 +985,9 @@
 .water-level-title {
   font-weight: var(--weight-semibold);
 }
-.water-level-detail,
-.water-level-choice {
-  color: var(--text-secondary);
-  line-height: var(--lh-reading);
-}
-/* 「会发生什么」比「选哪个」更要紧：机制句用主文字色，选择说明压到次级 */
 .water-level-detail {
   color: var(--text-primary);
+  line-height: var(--lh-reading);
 }
 .water-level-note {
   margin-top: var(--space-1);
@@ -1035,15 +1030,6 @@
 .water-level-btn:disabled {
   opacity: var(--opacity-disabled);
   cursor: default;
-}
-.water-level-btn.is-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent, white);
-  font-weight: var(--weight-medium);
-}
-.water-level-btn.is-primary:hover:not(:disabled) {
-  filter: brightness(1.06);
 }
 .water-level-close {
   display: inline-flex;

@@ -66,6 +66,42 @@ const DATA_LAYER_FILES = new Set([
   "src/core/storage/event-log.ts",
   "src/core/storage/message.ts",
   "src/core/storage/context-history.ts",
+  /**
+   * P0-0：上下文回退（rollback）也是**数据层实现**，与 `context-history.ts` 同类
+   * （读时间线、算回退点、写墓碑）。原来漏登记，靠"它只调 listTimelineMessages、
+   * 不在 FORBIDDEN 里"逃过统计 —— 那是漏洞，不是豁免。
+   */
+  "src/core/storage/context-rollback.ts",
+  /**
+   * P0-0：分叉下标换算的**会话级入口**（`resolveForkIndexForSession`）。
+   *
+   * 它必须读整个会话才能算出绝对下标，而且必须与 `forkSession` 的切片用同一个视图
+   * （`listDisplayMessages`）。把它登记成数据层实现，是为了不让"新增一个 helper"
+   * 变成绕开本门的方式 —— 纯函数 `resolveSessionAbsoluteIndex` 仍在
+   * `src/core/session/fork-index.ts`，但它自己不做 IO（reader 由调用方注入）。
+   */
+  "src/core/session/fork-index.ts",
+  /**
+   * P0-3：段切换的写入侧。写 epoch marker 前必须读整个时间线算 cutoff，
+   * 属于「数据层实现」而不是业务层 —— 放进 `context/` 会让本门的边界失效，
+   * 所以它被单独放在 `storage/context-switch.ts` 并在允许清单里显式登记。
+   */
+  "src/core/storage/context-switch.ts",
+  /**
+   * P0-2：thread history 的检索/分段/分隔锚点/诊断。整会话同步读在这里，
+   * 业务层只拿**有界结果**（FAIL 3：不许用"语义别名"把整份时间线交给工具层）。
+   */
+  "src/core/storage/thread-history.ts",
+  /** P0-1：记忆提取源（模型视图 ∪ 时间线里更完整的那个） */
+  "src/core/storage/memory-extraction-source.ts",
+  /**
+   * P1-4 收尾：**群会话消息的读取实现**。
+   *
+   * 群聊页要回读群会话里的 `metadata.groupMessage` 记录（面板展示 / 待审批判定 /
+   * 导出三条路径都读它），而业务层不许做整会话同步读 —— 所以整会话读收在这里，
+   * 业务层只拿到**有界**的结构化行（见文件头）。
+   */
+  "src/core/storage/group-message-log.ts",
   "src/core/storage/event-projection.ts",
   /**
    * ADR-0006 的五张目标表适配器：小域（一个会话最多一个 active goal + 十来个阶段），
@@ -73,6 +109,16 @@ const DATA_LAYER_FILES = new Set([
    * 它只是把行读写和失败上报收在数据层，业务规则仍在 `goal/store.ts`。
    */
   "src/core/storage/goal-domain.ts",
+  /**
+   * 多设备同步的**两个端口实现**（任务 A/B/C）：它们各只有一处整会话读 ——
+   * 宿主侧把会话时间线交给 `sync.snapshot`（分页 ≤200 条/≤2MB，业务层只拿页），
+   * 客户端侧在写快照前建一次「已有消息 id」集合做幂等（不重复写）。
+   * 两者都是"数据层适配器"而不是业务逻辑：纯逻辑在 `gateway-sync.ts` /
+   * `sync-engine.ts` 里，那里一次整会话读都没有。登记在这张表里是为了让
+   * 「无界读只能出现在数据层」这条边界不因"多设备同步"开一个暗门。
+   */
+  "src/core/remote/gateway-sync-host.ts",
+  "src/core/storage/sync-local-store.ts",
 ]);
 
 /**
@@ -89,7 +135,7 @@ const BASELINE: Record<string, number> = {
   "src/core/issue/issue-storage.ts": 6,
   "src/store.ts": 5,
   "src/core/knowledge/flashcard-store.ts": 4,
-  "src/core/llm/index.ts": 4,
+  "src/core/llm/index.ts": 3,
   "src/core/storage/account.ts": 4,
   "src/core/storage/project.ts": 4,
   "src/core/storage/prompt-draft.ts": 4,
@@ -99,7 +145,7 @@ const BASELINE: Record<string, number> = {
   "src/core/llm/runtime-invariants.ts": 3,
   "src/core/llm/tools/show-todo.ts": 3,
   "src/core/storage/agent-profile-storage.ts": 3,
-  "src/App.tsx": 2,
+  "src/App.tsx": 1,
   "src/core/llm/time-context.ts": 2,
   "src/core/remote/desktop-engine.ts": 1,
   "src/core/provider/session-persistence-sqlite-provider.ts": 2,
@@ -112,14 +158,31 @@ const BASELINE: Record<string, number> = {
   "src/core/session/tools.ts": 1,
   "src/core/storage/session-log-bridge.ts": 1,
   "src/core/storage/settings.ts": 1,
-  "src/core/storage/sync-engine.ts": 1,
   "src/core/storage/v2-session.ts": 1,
+  /**
+   * P0-0（D1/E5/D11）：`store.forkSession` 是**契约允许的**无界同步读
+   * （分叉的切片本身，必须读完整 DisplayView）。
+   *
+   * 注意：
+   * - `src/core/storage/context-rollback.ts` 与 `src/core/session/fork-index.ts`
+   *   不在这里 —— 它们是数据层实现，见 `DATA_LAYER_FILES`；
+   * - `FullHistoryPanel` 也不在这里：它的数据源是外部传进来的列表，自己不读会话。
+   */
   "src/core/store.ts": 1,
   "src/test/r3-snapshot-tests.ts": 1,
 };
 
-/** 这些调用 = "必须有镜像驻留才能工作" ✗ */
-const FORBIDDEN = /readAll\(|listMessages\(|domainReadMany\(|domainReadOne\(/;
+/**
+ * 这些调用 = "必须有镜像驻留才能工作" ✗
+ *
+ * P0-0（D1/D11）：把 `listTimelineMessages(` / `listDisplayMessages(` 也纳进来。
+ *
+ * 为什么：这两个入口读的都是**整个会话**（含被压缩隐藏的行），比 `listMessages(`
+ * 更重。原来它们不在名单里 ⇒ 把 `listMessages(` 换成 `listDisplayMessages(`
+ * 就能**无声脱离**这道门 —— 那不是迁移，是绕门。纳入之后，每一处调用都在基线里
+ * 显式列名（只允许真实需要的少量调用点，其余出现即红）。
+ */
+const FORBIDDEN = /readAll\(|listMessages\(|listDisplayMessages\(|listTimelineMessages\(|domainReadMany\(|domainReadOne\(/;
 
 /**
  * **剥掉注释再扫**（第 150 波 ✓）。

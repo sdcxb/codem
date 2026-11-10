@@ -1,6 +1,6 @@
 # Codem 项目文档集（2026-11-04 重编）
 
-> **基线**：`master` @ 代码提交见 `git log -1`（v1.18.13 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.18.8**（2026-11-05 发布，GitHub `Latest`）
+> **基线**：`master` @ 代码提交见 `git log -1`（v1.18.14 已发布）｜ 文档集提交见 `git log -1` ｜ 版本 **1.18.14**（2026-11-10 发布，GitHub `Latest`）
 > **用途**：把「长期演进后散落在 170+ 份文档里的现状」重新收拢成一套**可交接、可核查、可分维度阅读**的文档。
 > **适用对象**：人类开发者、任何大模型 / Agent 平台、以及未来的维护会话。
 
@@ -14,7 +14,7 @@
 - Rust 侧 `src-tauri/src` 约 **2.15 万行**，`lib.rs` 单文件 7883 行；
 - SQLite **40 张实表** + FTS + 审计表；Tauri **118 个命令注解**；
 - `src/core/` **61 个子域**，`src/components/` 160 个顶层组件 + 6 个子目录；
-- **880 个测试文件 / 9551 个用例**（2026-11-04 全量实测：9605 通过、17 跳过、0 失败，见 `09-CURRENT-STATE.md`）。
+- **966 文件 / 10186 用例（10168 通过、18 跳过、0 失败；2026-11-10 实测）**（见 `09-CURRENT-STATE.md`）。
 
 旧文档的问题不是“少”，而是**多且互相矛盾**：`docs/PROJECT-GUIDE.md` 有 823 KB，仍以 1.16.305 的口径写“当前状态”；`AGENTS.md` 已更新到 1.18.8 的版本/测试数与文档指针，但详细状态仍以本套为准；`docs/GAP-LIST.md` 的版本记录停在 1.16.305；`docs/NEW-SESSION-START.md` 已于 2026-11-05 重写为短入口；`docs/HANDOVER-2026-10-17.md` 停在 1.16.329。新会话读旧文档仍可能拿到过期结论。
 
@@ -103,12 +103,12 @@
 
 | 项 | 值 | 怎么核 |
 |---|---|---|
-| 版本 | **1.18.13**（2026-11-06 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
-| 发布 | GitHub `Codem v1.18.13` = `Latest`（2026-11-05） | `gh release list --limit 1` |
-| HEAD | 以 `git log -1` 为准（v1.18.13 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.13 已提交并推送 | `git status -sb` |
+| 版本 | **1.18.14**（2026-11-10 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `latest.json` |
+| 发布 | GitHub `Codem v1.18.14` = `Latest`（2026-11-10） | `gh release list --limit 1` |
+| HEAD | 以 `git log -1` 为准（v1.18.14 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.14 已提交并推送 | `git status -sb` |
 | TypeScript | **0 错误** | `npx tsc --noEmit`（2026-11-04 实测 exit 0） |
-| 全量测试 | **880 文件 / 9551 用例：9605 通过、17 跳过、0 失败** | `npx vitest run`（2026-11-04 实测，约 181 秒） |
+| 全量测试 | **966 文件 / 10186 用例（10168 通过、18 跳过、0 失败；2026-11-10 实测）** | `npx vitest run`（2026-11-10 实测） |
 | 已知失败 | **0** | 见 `09-CURRENT-STATE.md` §3 |
 | 工具链 | Node **24.19.0** / npm **11.17.0** / rustc **1.97.1** | `node -v` 等 |
 | 工作区 | 干净（仅 `.codem/` 运行时文件未跟踪） | `git status --porcelain` |

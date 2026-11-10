@@ -178,6 +178,13 @@ describe('declare-slots: 框架槽位声明', () => {
     expect(kinds.has('chain')).toBe(true)
   })
 
+  /**
+   * ⚠️ 显式 30s 超时（与 `preview-shot-syntax.test.ts` 的 PS-1 同一形态，不是放宽判据）
+   *
+   * 这条要遍历 `src/**` 全部 `.ts/.tsx`（实测 1000+ 个文件），逐个读盘、剥注释、跑 JSX 扫描，
+   * 单跑约 1.1s。默认 5s 是空载预算：8 worker 满载时读盘排队会把它顶穿，于是
+   * 同一份代码整批红、单跑绿。出口/声明对账的断言一条未改（`outlets.length > 40` 还在防恒绿）。
+   */
   it('SLOT-3: 源码里每个 SlotBridge/SlotListBridge 出口都指向已声明的槽位（否则插件注册必抛）', () => {
     const { core } = runDeclarations()
     const { outlets, unresolved } = collectOutlets()
@@ -190,7 +197,7 @@ describe('declare-slots: 框架槽位声明', () => {
       .filter(o => core.specDynamic(o.name as string) === undefined)
       .map(o => `${o.file}:${o.line} name="${o.name}" 未在 declareAppSlots 中声明`)
     expect(undeclared).toEqual([])
-  })
+  }, 30_000)
 
   it('SLOT-4: 已清理的死声明不回归（app.model-selector 声明+注册+永不渲染）', () => {
     const { core, declared } = runDeclarations()

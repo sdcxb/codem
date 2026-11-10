@@ -170,6 +170,8 @@ import {
   createDocReadTool,
   createDocStatusTool,
   createDocCrossSearchTool,
+  createDocLedgerTool,
+  createDocCompileTool,
   withDocOutputValue,
 } from "./tools/document-tools";
 import { createSearchNotebookTool } from "./tools/search-notebook";
@@ -216,6 +218,9 @@ import { createExitPlanModeTool } from "./tools/exit-plan-mode";
 import { createRunCodeTool } from "./tools/run-code";
 // P1-7: session_search tool for FTS5 full-text search
 import { createSessionSearchTool, createSessionEventSearchTool, createSessionTraceTool, createSessionEventReadTool } from "./tools/session-search";
+import { createMemoryTools } from "./tools/memory-tools";
+import { createThreadHistoryTools } from "./tools/thread-history";
+import { createNotesTools } from "./tools/notes-tools";
 // P2-12: Goal tools for automatic continuation
 import { createGoalTools } from "./tools/goal-tools";
 import { createProjectReportTool } from "./tools/project-report";
@@ -2548,7 +2553,18 @@ export function createImageGenTool(): ToolDef {
   };
 }
 
-export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
+export interface DefaultToolRegistryOptions {
+  /**
+   * 记忆只读工具开关（`codem-context-config.memoryTools`，**默认 true**）。
+   *
+   * 显式 `false` ⇒ `memory_search` / `memory_read`（以及本工厂将来产出的 `memory_list`）
+   * **不注册**：请求的 tools 里也不会有它们，模型退回只读静态注入行。
+   * 只控工具注册，**不改**记忆注入/提取/审批（判据 `MEM-TOOLS-1`）。
+   */
+  memoryTools?: boolean;
+}
+
+export function createDefaultToolRegistry(ctx?: Context, options?: DefaultToolRegistryOptions): ToolRegistry {
   // R4: 如果传入了 ctx，设置全局工具上下文
   if (ctx) setToolContext(ctx)
 
@@ -2594,13 +2610,23 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   // 项目级文档索引（ADR-0008）：doc_outline / doc_search / doc_read / doc_status
   //
   // 为什么常驻（而不是像 generate_ppt 那样延迟加载）：文档任务是本产品的**主路径**之一，
-  // 四个 schema 合计约 500 token；延迟加载会让模型先调 tool_search 才发现它们，
-  // 多一步且容易在文档任务里"看不见工具"。ADK 判据 DOCI-6/7 守住预算与重定向。
+  // 常驻 schema 合计约 1.2K 字符（`context-tax-budget` 量过）；延迟加载会让模型先调
+  // tool_search 才发现它们，多一步且容易在文档任务里"看不见工具"。ADK 判据 DOCI-6/7
+  // 守住预算与重定向。
   registry.register(withDocOutputValue(createDocOutlineTool()));
   registry.register(withDocOutputValue(createDocSearchTool()));
   registry.register(withDocOutputValue(createDocReadTool()));
   registry.register(withDocOutputValue(createDocStatusTool()));
   registry.register(withDocOutputValue(createDocCrossSearchTool()));
+  // C06/C07：文档账本（章节覆盖 + claim→citation）与长文档编译流水线（阶段机）。
+  //
+  // 两者都 **defer**（低频、动作型工具）：账本的可查询明细只在读写文档的任务里用得到，
+  // 覆盖摘要由尾部注入每轮免费给出、`doc_status` 仍常驻，所以不必让所有回合为它的
+  // 871 字符 schema 付费（2026-11-06 的 `context-tax-budget` 读数）；
+  // 编译流水线是特定任务才用的 1.8K 大 schema。
+  // 系统提示的 Deferred Tools 段落仍列出名称 + searchHint，模型用 tool_search 取回。
+  registry.register(withDocOutputValue(createDocLedgerTool()));
+  registry.register(withDocOutputValue(createDocCompileTool()));
   // F5: search_notebook tool for knowledge base mode
   registry.register(createSearchNotebookTool());
   // P1-6: AI 跨笔记操作工具 (create_note / edit_note / link_notes)
@@ -2631,6 +2657,31 @@ registry.register(createSessionSearchTool());
 registry.register(createSessionEventSearchTool());
 registry.register(createSessionTraceTool());
 registry.register(createSessionEventReadTool());
+  // P0-1: memory retrieval — injected lines are truncated to 200 chars; these two tools
+  // are the only way back to the full text (see tools/memory-tools.ts for the contract).
+  //
+  // MEM-TOOLS-1：`codem-context-config.memoryTools` 显式 false ⇒ **一个都不注册**
+  // （灰度项：关闭后回到"只有静态注入"的旧形态；注入/提取/审批全部不变）。
+  if (options?.memoryTools !== false) {
+    for (const tool of createMemoryTools()) {
+      registry.register(tool);
+    }
+  }
+  // P0-2: thread history — read the full timeline (incl. compacted / previous segments).
+  // session_search stays as the cross-session fallback; these three are per-conversation.
+  for (const tool of createThreadHistoryTools()) {
+    registry.register(tool);
+  }
+  /**
+   * P1-1：Thread Notes（**会话级**笔记；不是长期记忆）。
+   *
+   * 三个工具都显式 `shouldDefer`（见 `tools/notes-tools.ts` 文件头）：会话笔记只在
+   * 长任务里常用，而常驻工具 schema 预算已接近上限；deferred 提示里仍有名称 + hint，
+   * 80% 水位提醒也会告诉模型先 `tool_search`。
+   */
+  for (const tool of createNotesTools()) {
+    registry.register(tool);
+  }
   // 协调者 P0：thread 报告工具（写 .codem/project/reports）
   registry.register(deferIfBig(createProjectReportTool()));
   registry.register(createStackMarketTool());

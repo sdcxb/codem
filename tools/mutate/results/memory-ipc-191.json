@@ -1,8 +1,8 @@
 {
   "wave": "memory-ipc-191",
   "description": "第 191 波 O-52：记忆整份写的放大倍数必须被量化（无变化不写这条防线不许丢；落库字节必须是整份）",
-  "runAt": "2026-10-09T03:19:40.379Z",
-  "specFingerprint": "9030d2fdd78d30969402ed6980e4b3f84bb0a4e0",
+  "runAt": "2026-11-08T01:40:38.276Z",
+  "specFingerprint": "308e94e7fbd503f04bd062cdf0bafad9caf97a7c",
   "files": [
     "src/core/memory/memory.ts"
   ],
@@ -17,8 +17,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    if (payload === this.lastPersistedPayload) {\n      // 内容与\"已接受的那一份\"相同：仍要等前面在途的确认落地，不能直接说成功\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }",
-          "to": "    if (false) {\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }"
+          "from": "    if (payload === this.lastPersistedPayload) {\n      // 内容与\"已接受的那一份\"相同：仍要等前面在途的确认落地，不能直接说成功\n      this.afterMemoryPersisted(payload);\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;",
+          "to": "    if (false) {\n      this.afterMemoryPersisted(payload);\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;"
         }
       ],
       "tests": [
@@ -29,7 +29,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2320
+      "ms": 8062
     },
     {
       "id": "MUT-1b 去掉「无变化不写」（同步那一处）",
@@ -37,8 +37,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    // ② 无变化不写（内容逐字相同 ⇒ 库里已经是这份，不需要再发一次 IPC）\n    if (payload === this.lastPersistedPayload) return true;",
-          "to": "    if (false) return true;"
+          "from": "    if (payload === this.lastPersistedPayload) {\n      /*\n       * 内容没变也可能是**本进程还没落过索引缓存**（刚启动、缓存缺失/被裁过）。",
+          "to": "    if (false) {\n      /*\n       * 内容没变也可能是**本进程还没落过索引缓存**（刚启动、缓存缺失/被裁过）。"
         }
       ],
       "tests": [
@@ -49,7 +49,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2311
+      "ms": 8449
     },
     {
       "id": "MUT-2 只落「改动的那一条」而不是整份（伪增量）",
@@ -57,7 +57,7 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    this.chainPersist(payload);",
+          "from": "    this.chainPersist(payload, { snapshot: this.captureWriteSnapshot() });",
           "to": "    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));"
         }
       ],
@@ -69,7 +69,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2299
+      "ms": 7681
     },
     {
       "id": "MUT-3 反向对照：只改一处说明注释",
@@ -89,7 +89,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2282
+      "ms": 9185
     }
   ]
 }

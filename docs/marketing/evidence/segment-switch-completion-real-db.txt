@@ -1,0 +1,55 @@
+真机复验：完成态换段（Codem 1.18.13 安装包，2026-11-06 16:29 构建，含 segment-switch 修复）
+============================================================================================
+
+环境
+----
+安装包: src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe
+  sha256 = C3D02DA9407495E1EA95D4F5D999672489604A5A68B1EE60D5C9A68B5B59F573
+  built  = 2026-11-06 16:29:25 (+08:00)，静默安装 /S
+启动: WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+配置（写库后启动 App）:
+  codem-context-config = {"maxContextWindow":128000,"outputReserve":4096,"systemPromptTokens":2000,
+                          "compactionThreshold":0.8,"maxMessagesAfterCompaction":20,
+                          "preserveRecentToolOutputs":true,"segmentEpochs":true}
+会话: seg-verify2-1793953784222（标题 SEG-VERIFY-9002，预置 24 条短历史，project_id 为空 = 全局列表）
+模型: deepseek-flash / provider=deepseek（真实 API 调用，非 mock）
+
+操作
+----
+CDP 在输入框 textarea.message-input 写入「只回复 OK，不要调用任何工具。」→ 点击发送
+→ 真实模型返回 OK → 回合完成。
+
+渲染侧 console（CDP 抓取，节选）
+--------------------------------
+[log] [LLMEngine.resolveSlot] slot=chat → fallback: provider=deepseek, model=deepseek-flash（现读设置）
+[log] [agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 27, tools: 64
+[log] [agent-loop] Iteration 1 completed: 0 tool calls (effective: 0), 0 consecutive errors
+[log] [segment-switch] completed at pressure 0.000 ⇒ segment 2（移出视图 6 条）★
+[log] [LLMEngine.resolveSlot] slot=memory → fallback: provider=deepseek, model=deepseek-flash（现读设置）
+
+关键读数：pressure = 0.000（远低于阈值 0.8）、0 次工具调用、0 次连续错误 ⇒ 走的是**正常完成出口**。
+
+查库（App 运行时只读查询 %APPDATA%\com.codem.app\codem-db-rust.bin）
+--------------------------------------------------------------------
+1) 用户验收查询：select ... from messages where metadata like '%"kind":"switch"%'
+   count = 1
+   id: compact-1793953807266-1
+   metadata.contextEpoch = {"createdAt":1793953807266,"cutoffMessageId":"seg-verify2-msg-06",
+     "epochId":"compact-1793953807266-1","keptCount":20,"kind":"switch","removedCount":6,
+     "segmentSeq":2,"seq":1,"trigger":"switch"}
+   segmentSeq: 2 | kind: switch | removed: 6 | kept: 20 | cutoff: seg-verify2-msg-06
+
+2) select * from context_epochs where session_id='seg-verify2-1793953784222'
+   {id: compact-1793953807266-1, seq: 1, cutoff_message_id: seg-verify2-msg-06,
+    removed_count: 6, kept_count: 20, trigger_kind: switch, kind: switch, segment_seq: 2}
+
+3) select ... from session_events where event_type='context_steward_decision'
+   202650 1793953807268 {"action":"switch","cutoffMessageId":"seg-verify2-msg-06",
+     "epochId":"compact-1793953807266-1","keptCount":20,"removedCount":6,"segmentSeq":2}
+
+4) 时间线：messages 27 条（24 条预置历史 + 用户消息 + 助手消息 + 1 条 switch marker）
+   switch markers = 1 | 预置历史仍在 = 24
+
+截图：docs/marketing/evidence/segment-switch-completion-real-db.png
+（同批首轮复验截图：segment-switch-completion-real.png，当时 messages.metadata 列尚未持久化，
+  见报告里"第二个真 bug"一节；该轮 epoch 在 JSONL 与 context_epochs 里同样为 kind=switch / segmentSeq=2。）

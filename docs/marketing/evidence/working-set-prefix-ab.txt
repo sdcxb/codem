@@ -1,0 +1,77 @@
+前缀缓存 A/B：最小工作集（Working Set）稳定前缀实测（WS-11）
+================================================================
+
+结论
+----
+工作集启用且发生移出时，**索引消息之前那段稳定前缀（system + 保留的早期消息）在
+同一会话两轮之间逐字节不变**；索引与尾部可变。第二轮追加 4 条消息后，前 40 条
+消息（含 system）的 JSON 序列化字节完全相同，稳定前缀占两轮请求消息字节的
+94.51% / 98.35%，索引位置从 40 后移到 44。
+
+边界（如实标注）：本仓 provider 请求/响应里**没有缓存命中字段**（DeepSeek/OpenAI
+协议不回传 hit/miss token 明细），所以这里证明的是「**稳定前缀不变**」这一**缓存前提**，
+**不是**真实缓存命中率，也不证明省了多少钱。
+
+判据
+----
+src/test/working-set-prefix-ab.test.ts
+
+  WS-11a  同一会话两轮，两轮都发生移出；第一轮索引之前的稳定前缀在第二轮逐字节一致；
+          索引/尾部可变；稳定前缀字节占比 > 50%。
+  WS-11b  A/B 对照：同一份短历史，「工作集不启用（显式 segmentEpochs:false + 预算充足）」
+          与「启用但未移出」两臂的实际请求逐字节一致，且两臂清单都不记 workingSet。
+
+命令
+----
+npx vitest run src/test/working-set-prefix-ab.test.ts --reporter=dot
+
+场景（WS-11a）
+--------------
+会话 ws-11-prefix；60 条历史（每条约 2000 字符，user/assistant 交替）
++ 第一条 user 提示（u-turn1，模拟 App 发送前已落库）。
+上下文窗口 24000，预算 = 窗口 − 输出预留 4096 − 实测系统提示词 ≈ 19897 token。
+segmentEpochs:true（工作集启用）；maxMessagesAfterCompaction=10000（只为本判据
+屏蔽「完成态换段」，让两轮都走工作集而不是 `[marker, ...]` 视图）。
+第二轮前追加 a-turn1（assistant）+ e-1/e-2 两条短消息 + u-turn2（新 user 提示）。
+
+实测读数（同一命令输出，2026-11-06）
+------------------------------------
+[WS-11] round1 stablePrefixMsgs=40 stablePrefixBytes=82520 totalBytes=87317 ratio=94.51%
+[WS-11] round2 stablePrefixMsgs=40 stablePrefixBytes=82520 totalBytes=83903 ratio=98.35%
+        indexPos=44 evicted1=5 evicted2=5
+
+  - stablePrefixBytes：两轮**同一段**（第一轮索引之前的 40 条消息，含 system）的
+    UTF-8 字节数，82520；两轮逐字节相等（JSON 字符串比较）。
+  - totalBytes：该轮请求的 messages 数组整体 UTF-8 字节数（不含 tools / 请求头）。
+  - 百分比：82520 / 87317 = 94.51%；82520 / 83903 = 98.35%。
+  - 第二轮索引位置 44 > 第一轮 40：追加的 4 条消息落在索引之前、作为新的尾部增长；
+    索引与尾部（本轮 user 提示、计划段、时间上下文）可变，稳定前缀不变。
+  - 两轮工作集都真实移出 5 条（manifest.workingSet.evicted=5），证明不是「未移出」形态。
+
+WS-11b（零行为变化）
+--------------------
+同一份 3 条短历史，两个空会话各跑一轮，时钟冻结到同一时刻：
+  A 臂 segmentEpochs:true（启用，但预算充足 ⇒ 未移出，applied:false）
+  B 臂 segmentEpochs:false（不启用，预算充足 ⇒ 连 planWorkingSet 都不跑）
+断言：两臂 messages 的 JSON 序列化逐字节相等；两臂都没有索引头、manifest 都没有
+workingSet 字段。结果：通过。
+
+变异自证
+--------
+把 src/core/llm/agentic-loop.ts::attachWorkingSetIndex 的
+  const insertAt = lastUser > 0 ? lastUser : messages.length;
+改成
+  const insertAt = 1;
+后重跑同一命令：
+
+  FAIL  WS-11a：两轮都移出时，索引之前的稳定前缀逐字节一致；索引与尾部可变
+  AssertionError: 索引必须在尾部：它前面要有 system + 保留的早期消息
+  （插到第一条会让稳定前缀退化成 1 条）: expected 2 to be greater than 10
+
+还原后重跑：2 passed。WS-11a 在「索引插到第一条」时变红，说明判据有效。
+
+未做项
+------
+- 未验证真实 provider 缓存命中（请求/响应无命中字段；只能证明前缀字节不变）。
+- 未用真实模型跑 WS-11（本判据走假存储端口 + 记录型 provider；真机前缀行为属于
+  C11 真机验证那一侧的观察面）。

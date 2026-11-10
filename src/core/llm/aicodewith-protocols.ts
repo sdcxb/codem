@@ -17,6 +17,12 @@ import type {
   ToolCallResult,
   TokenUsage,
 } from "./types";
+import { parseProviderUsage, toTokenUsage } from "./usage-normalize";
+import {
+  anthropicSystemWithCache,
+  isPromptCacheEnabled,
+  placeAnthropicMessageBreakpoint,
+} from "./prompt-cache";
 
 export type AICodeWithProtocol = "openai" | "anthropic" | "gemini";
 
@@ -92,34 +98,103 @@ function anthropicContent(blocks: ContentBlock[]): any[] {
   return out;
 }
 
-function toAnthropicMessages(messages: LLMMessage[]): { system: string; messages: any[] } {
+/**
+ * 把 Codem 的 `LLMMessage[]` 转成 Anthropic Messages 的 wire 形状。
+ *
+ * ## 为什么要返回 `anchor`
+ *
+ * 提示缓存断点 2 必须落在「**锚点消息的最后一个 content block**」上，而不是
+ * 「所在 wire 消息的最后一块」：下面 `push` 会把连续同角色的消息**合并**，
+ * 于是易变尾部（时间上下文等）经常和稳定前缀的最后一条 message 落在同一个
+ * wire 消息里。只有在这里（还看得到原始 message 的 id 与 block 边界）才量得准
+ * 那个 block 下标。见 `prompt-cache.ts` 文件头。
+ */
+function toAnthropicMessages(
+  messages: LLMMessage[],
+  anchorId?: string,
+): {
+  system: string;
+  messages: any[];
+  anchor: { messageIndex: number; blockIndex: number } | null;
+} {
   const systemParts: string[] = [];
   const out: any[] = [];
-  const push = (role: "user" | "assistant", content: any[]) => {
-    if (content.length === 0) return;
+  let anchor: { messageIndex: number; blockIndex: number } | null = null;
+  /** 返回真正落到的 wire 下标；空内容返回 -1（没有东西可挂断点） */
+  const push = (role: "user" | "assistant", content: any[]): number => {
+    if (content.length === 0) return -1;
     const last = out[out.length - 1];
-    if (last && last.role === role) last.content.push(...content);
-    else out.push({ role, content });
+    if (last && last.role === role) {
+      last.content.push(...content);
+      return out.length - 1;
+    }
+    out.push({ role, content });
+    return out.length - 1;
   };
   for (const m of messages) {
     if (m.role === "system") {
       systemParts.push(textOf(m.content));
       continue;
     }
+    let wireIndex = -1;
     if (m.role === "tool") {
-      push("user", [{
+      wireIndex = push("user", [{
         type: "tool_result",
         tool_use_id: m.toolCallId || m.name || "tool",
         content: textOf(m.content),
       }]);
-      continue;
+    } else {
+      /**
+       * ★ 真机边界（2026-11）：历史 assistant 消息可能是**OpenAI 形状**的
+       * `tool_calls`（`messagesToLLMMessages` 从消息表重建时用的就是它，
+       * `Bot/子智能体` 的工具调用落库也走这条）。Anthropic Messages 要求
+       * assistant 里必须是 `tool_use` block，否则下一条 `tool_result` 会变成
+       * **孤立引用** —— 模型看不到自己调用过工具，会重复同一个调用。
+       *
+       * 这里把 `tool_calls` 一并转成 `tool_use`（与 content 里已有的 block 合并，
+       * 不覆盖），保证 tool_result 的 `tool_use_id` 有对应来源。
+       */
+      const blocks: any[] = typeof m.content === "string"
+        ? (m.content ? [{ type: "text" as const, text: m.content }] : [])
+        : [...m.content];
+      const legacyCalls = (m as unknown as { tool_calls?: unknown }).tool_calls;
+      if (m.role === "assistant" && Array.isArray(legacyCalls) && legacyCalls.length > 0) {
+        for (const raw of legacyCalls) {
+          const call = raw as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+          const fn = call.function ?? {};
+          let input: unknown = {};
+          if (typeof fn.arguments === "string") {
+            try {
+              input = JSON.parse(fn.arguments);
+            } catch {
+              input = {};
+            }
+          } else if (fn.arguments !== undefined) {
+            input = fn.arguments;
+          }
+          blocks.push({
+            type: "tool_use",
+            id: String(call.id ?? ""),
+            name: String(fn.name ?? ""),
+            input,
+          });
+        }
+      }
+      wireIndex = push(m.role === "assistant" ? "assistant" : "user", anthropicContent(blocks));
     }
-    const blocks = typeof m.content === "string"
-      ? [{ type: "text" as const, text: m.content }]
-      : m.content;
-    push(m.role === "assistant" ? "assistant" : "user", anthropicContent(blocks));
+    /**
+     * 锚点用「此刻」的最后一个 block 下标：后续消息若被合并进来，它们的 block
+     * 排在它**之后**，所以这个下标依然精确指向锚点消息的最后一块。
+     * 同一个 id 出现多次时取最后一次（与「稳定前缀到这一条为止」的语义一致）。
+     */
+    if (anchorId && m.id === anchorId && wireIndex >= 0) {
+      const content = out[wireIndex]?.content;
+      if (Array.isArray(content) && content.length > 0) {
+        anchor = { messageIndex: wireIndex, blockIndex: content.length - 1 };
+      }
+    }
   }
-  return { system: systemParts.join("\n\n"), messages: out };
+  return { system: systemParts.join("\n\n"), messages: out, anchor };
 }
 
 function anthropicTools(tools: ToolDefinition[] | undefined): any[] | undefined {
@@ -192,28 +267,90 @@ export async function* streamAnthropic(
   config: { apiKey: string; baseUrl?: string },
   request: LLMRequest,
 ): AsyncGenerator<StreamEvent, void, unknown> {
-  const { system, messages } = toAnthropicMessages(request.messages);
+  /**
+   * ## 提示缓存断点（`cache_control`）—— 这里也是**唯一**的注入点
+   *
+   * 开关 `codem-context-config.promptCache`（默认开，显式 false ⇒ 一个都不发）
+   * 只影响本函数。`AICodeWithProvider.complete()` 的非流式路径是把本条流
+   * `aggregateStream` 起来的（见 `provider.ts`），所以两条路径共用同一份断点，
+   * 不存在「流式带断点、非流式不带」的第二套实现。
+   *
+   * 两个断点：
+   * 1. system（字符串 ⇒ block 数组并挂元数据）；
+   * 2. 稳定前缀最后一条消息 —— 锚点由 `agentic-loop` 给
+   *    （`request.promptCache.stablePrefixLastMessageId`），断点落在该消息的
+   *    最后一个 content block 上；拿不到锚点时退化为「倒数第 2 条 wire 消息」，
+   *    日志里如实标 `source=fallback`。
+   *
+   * 易变尾部（时间上下文 / 工作集索引 / 计划上下文 / 目标摘要）**不加断点**：
+   * 它们每轮都变，加上等于每轮都 miss。只加元数据，消息文本/顺序/角色不变。
+   */
+  const cacheEnabled = isPromptCacheEnabled();
+  const { system, messages, anchor } = toAnthropicMessages(
+    request.messages,
+    request.promptCache?.stablePrefixLastMessageId,
+  );
+  /**
+   * 拿不到锚点时的**降级**位置：倒数第 2 条 wire 消息的最后一个 block。
+   * 为什么不用「最后一条」：最后一条通常就是易变尾部（时间上下文等），
+   * 给它加断点等于每轮都 miss（还要为写缓存付钱）。消息不足两条 ⇒ 干脆不加。
+   */
+  const fallbackBreakpoint = (): { messageIndex: number; blockIndex: number } | null => {
+    if (messages.length < 2) return null;
+    const messageIndex = messages.length - 2;
+    const content = messages[messageIndex]?.content;
+    if (!Array.isArray(content) || content.length === 0) return null;
+    return { messageIndex, blockIndex: content.length - 1 };
+  };
+  const body: any = {
+    model: request.model,
+    max_tokens: request.maxTokens ?? 8192,
+    /* 关闭时保留旧的字符串形态（与改前逐字节一致）；打开时才变成 block 数组 */
+    system: cacheEnabled ? anthropicSystemWithCache(system) : system || undefined,
+    messages,
+    tools: anthropicTools(request.tools),
+    stream: true,
+  };
+  if (cacheEnabled) {
+    const breakpoint = anchor ?? fallbackBreakpoint();
+    const placed = placeAnthropicMessageBreakpoint(messages, breakpoint);
+    /**
+     * 真机取证的锚点日志（与 usage 那行 `[prompt-cache] hit=…` 同一前缀，便于 grep）：
+     * 只写「断点落在哪、来源是锚点还是降级」，**不写任何消息正文**。
+     */
+    console.log(
+      `[prompt-cache] 断点注入 system=${body.system ? 1 : 0} message=${placed ? 1 : 0} ` +
+        `source=${anchor ? "anchor" : breakpoint ? "fallback" : "none"}`,
+    );
+  } else {
+    console.log("[prompt-cache] 已关闭（codem-context-config.promptCache=false）：不发 cache_control");
+  }
   const response = await postJson(
     `${rootOf(config.baseUrl || "")}/v1/messages`,
     {
       "x-api-key": config.apiKey,
       "anthropic-version": "2023-06-01",
     },
-    {
-      model: request.model,
-      max_tokens: request.maxTokens ?? 8192,
-      system: system || undefined,
-      messages,
-      tools: anthropicTools(request.tools),
-      stream: true,
-    },
+    body,
     request.abortSignal,
   );
   if (!response.body) throw new Error("Anthropic 返回空响应体");
 
   let started = false;
-  let inputTokens = 0;
   let outputTokens = 0;
+  /**
+   * 原始 usage 快照（Anthropic wire 形状）。
+   *
+   * 为什么不能只留 `input_tokens` / `output_tokens`：Anthropic 的缓存桶
+   * （`cache_read_input_tokens` / `cache_creation_input_tokens`）是**独立字段**，
+   * 旧实现只读 input/output ⇒ 真实回合里缓存命中被整段丢掉，UI 只能自报 0%。
+   * 这里把 message_start / message_delta 的 usage 原样合并，最后统一交给
+   * `parseProviderUsage` 归一化（与 OpenAI 兼容路径共用同一套口径）。
+   */
+  const rawUsage: Record<string, unknown> = {};
+  const mergeUsage = (usage: unknown): void => {
+    if (usage && typeof usage === "object") Object.assign(rawUsage, usage as Record<string, unknown>);
+  };
   let finishReason: string | null = null;
   const blocks = new Map<number, { type: string; id?: string; name?: string; json: string }>();
 
@@ -230,7 +367,7 @@ export async function* streamAnthropic(
         started = true;
         yield { type: "start", id: obj.message?.id || `anthropic_${Date.now()}`, model: obj.message?.model || request.model };
       }
-      inputTokens = Number(obj.message?.usage?.input_tokens ?? inputTokens) || 0;
+      mergeUsage(obj.message?.usage);
       continue;
     }
     if (obj.type === "content_block_start") {
@@ -278,14 +415,18 @@ export async function* streamAnthropic(
     if (obj.type === "message_delta") {
       finishReason = obj.delta?.stop_reason ?? finishReason;
       outputTokens = Number(obj.usage?.output_tokens ?? outputTokens) || 0;
+      mergeUsage(obj.usage);
       continue;
     }
     if (obj.type === "message_stop") {
-      if (outputTokens || inputTokens) {
-        yield {
-          type: "usage",
-          usage: { promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens },
-        };
+      /**
+       * 缓存桶走共享归一化（见 `rawUsage` 的说明）：Anthropic 在 message_start
+       * 里给 `input_tokens` + 两个 cache 桶，在 message_delta 里给 `output_tokens`。
+       * `completion_tokens` 显式以累计值覆盖，避免旧帧把新值顶掉。
+       */
+      const nu = parseProviderUsage({ ...rawUsage, completion_tokens: outputTokens });
+      if (outputTokens || nu.promptTokens > 0 || nu.cacheReported === true) {
+        yield { type: "usage", usage: toTokenUsage(nu) };
       }
       yield { type: "end", finishReason: mapAnthropicFinish(finishReason) };
       return;

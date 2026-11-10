@@ -416,7 +416,7 @@ import { setLang, useLang, S } from "./core/i18n/lang";
 import { useWindowState } from "./hooks/useWindowState";
 import * as MessageStorage from "./core/storage/message";
 // 第 47 轮补 P0：窗口下标 → 会话绝对下标的换算（纯函数，见该文件的长注释）
-import { resolveSessionAbsoluteIndex as resolveForkIndex } from "./core/session/fork-index";
+import { resolveForkIndexForSession } from "./core/session/fork-index";
 import * as SessionStorage from "./core/storage/session";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
@@ -563,7 +563,7 @@ function App() {
   // 窗口状态持久化（对标 dsh main-window-state）：恢复上次窗口尺寸/位置
   useWindowState();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages, loadedSessionId } = useAppStore();
-  const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
+  const { currentProject, currentSession, projects, createSession, dbReady, loadFromDB } = useProjectStore();
 
   /**
    * S4 / O-45：记忆面板与侧栏角标读的**必须是同一对键**，否则会出现最坏的一类缺陷 ——
@@ -954,6 +954,37 @@ useEffect(() => {
   };
   window.addEventListener("codem:open-session", openSession as EventListener);
   return () => window.removeEventListener("codem:open-session", openSession as EventListener);
+}, []);
+/**
+ * 多设备同步（25 号文 P2）：**只有开关打开时**才起自动同步定时器。
+ *
+ * 为什么放在 App 而不是 sync-engine 的构造函数里：定时器是"运行时资源"，
+ * 它的生命周期应该跟窗口一致（窗口关掉就没了）；而配置是持久化的 ——
+ * 在构造函数里按配置自启会让"有没有定时器"取决于模块被 import 的时机。
+ *
+ * 监听 `codem-sync-config-changed`：设置里改开关/间隔/地址后立刻对齐（不用重启）。
+ * 默认关（`DEFAULT_SYNC_CONFIG.autoSync === false`）⇒ 这里什么都不会发生，零网络请求。
+ */
+useEffect(() => {
+  let disposed = false;
+  const align = async () => {
+    try {
+      const { applySyncRuntime } = await import("./core/storage/sync-engine");
+      if (!disposed) applySyncRuntime();
+    } catch {
+      // 同步模块加载失败不该影响启动（没开同步的用户根本走不到这里）
+    }
+  };
+  void align();
+  const onChange = () => void align();
+  window.addEventListener("codem-sync-config-changed", onChange);
+  return () => {
+    disposed = true;
+    window.removeEventListener("codem-sync-config-changed", onChange);
+    void import("./core/storage/sync-engine")
+      .then((mod) => mod.stopSyncRuntime())
+      .catch(() => {});
+  };
 }, []);
 const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
@@ -3511,7 +3542,23 @@ if (!session) {
         });
         return;
       } else if (subcommand === "consolidate" || subcommand === "clean") {
-        const result = await engineInstance.consolidateMemories();
+        /*
+         * 24 §P1-3：`/memory consolidate undo` = 撤销**最近一次**整合（逐条恢复到整合前快照）。
+         * 撤销入口与整合入口放在同一子命令下，是因为它们是同一件事的两个方向
+         * （用户刚整理完发现不合意，最自然的动作就是"撤回刚才那一次"）。
+         */
+        if (parts[2] === "undo") {
+          const consolidationUndo = engineInstance.undoMemoriesConsolidation(parts[3]);
+          deliverToOwningSession({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: `${consolidationUndo.ok ? "✅" : "❌"} 记忆整合撤销：${consolidationUndo.message}`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+          return;
+        }
+        const result = await engineInstance.consolidateMemories({ sessionId });
         /*
          * 归属判定：**落库**。（同族的 off/on/status/用法 那三条保持"纯界面"—— 它们路径上没有
          * await，见各自的 XSESS-5 登记。）
@@ -3523,10 +3570,14 @@ if (!session) {
           id: `system-${Date.now()}`,
           role: "system",
           content:
-            `记忆整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条），` +
-            `清理 ${result.staleRemoved} 条超过 90 天未写入的自动条目，裁剪 ${result.capacityTrimmed} 条超额。\n` +
-            `（手动条目、对话级条目与待批准条目一条未动；容量裁剪按"可见地失败"处理，被拒绝的桶：${result.capacityBlocked} 个）\n` +
-            `说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），清理只发生在你显式执行本命令或点「整合」按钮时。`,
+            `记忆整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条；被合并的条目已归档，未删除）、` +
+            `按时间归档 ${result.staleArchived} 条超过 90 天的自动条目、按容量归档 ${result.capacityArchived} 条。\n` +
+            `（手动条目、对话级条目与待批准条目一条未动；容量归档按"可见地失败"处理，被拒绝的桶：${result.capacityBlocked} 个）\n` +
+            (result.undoToken
+              ? `本次整理可撤销：/memory consolidate undo（令牌 ${result.undoToken}，24 小时内有效；撤销会把每条恢复到整合前快照）。\n`
+              : "本次没有生成撤销记录（设置写入失败或没有任何变更）。\n") +
+            `说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），整理只发生在你显式执行本命令或点「整合」按钮时；` +
+            `被整理的条目只是**归档**（不删除），可在「设置 → 记忆」里逐条恢复。`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3548,7 +3599,8 @@ if (!session) {
             "/memory on — 开启记忆提取\n" +
             "/memory off — 关闭记忆提取\n" +
             "/memory status — 查看记忆状态（含待批准数与未归属数）\n" +
-            "/memory consolidate — 手动整合记忆\n" +
+            "/memory consolidate — 手动整合记忆（只归档、可撤销）\n" +
+            "/memory consolidate undo — 撤销最近一次整合（恢复到整合前快照）\n" +
             "/memory pending — 列出待批准的自动记忆\n" +
             "/memory approve <id> — 批准某条待审记忆（批准后才进上下文）\n" +
             "/memory reject <id> — 拒绝并删除某条待审记忆\n" +
@@ -5265,20 +5317,24 @@ unregisterSessionAbort(session?.id || "", abortedController);
    * 而 `ChatPanel` 传给 `onFork` 的 `origIndex` 是**这份窗口里的下标**。
    *
    * `store.forkSession(id, messageIndex)` 拿这个数当**绝对下标**去
-   * `MessageStorage.listMessages()`（全量会话）里切片。于是真机形态是：
+   * `MessageStorage.listDisplayMessages()`（全量会话）里切片。于是真机形态是：
    * 一个 100 条的会话里点最后一轮的分叉 → 窗口下标 9 → **复制了会话开头那 10 条**
    * （而不是分叉点之前的 100 条）→ 用户拿到一个内容完全不对的新会话。
    * 静默、无报错、而且短会话（≤10 条）下完全正常 —— 这正是它一直没被发现的原因。
    *
    * 换算本身抽在 `core/session/fork-index.ts`（纯函数，有专门的用例守着）——
-   * 这里只负责把"窗口"和"读全量"两个依赖注进去。
+   * 这里只负责把"窗口"注进去。
+   *
+   * ⚠️ P0-0（D11）：**"读全量"必须与 `forkSession` 的切片用同一个视图**
+   * （`listDisplayMessages`）。会话换过段时模型投影只有最新段，用它数偏移量会让
+   * 分叉点被往前挪 —— 所以这里不再自己注入 `listMessages`，改走
+   * `resolveForkIndexForSession`（它内部注入的就是 DisplayView）。
    */
   const resolveSessionAbsoluteIndex = useCallback((sessionId: string, windowIndex: number): number => {
-    const result = resolveForkIndex(
+    const result = resolveForkIndexForSession(
       sessionId,
       windowIndex,
       useAppStore.getState().messages,
-      (sid) => MessageStorage.listMessages(sid),
     );
     if (result.shifted) {
       console.log(
@@ -6087,6 +6143,11 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
               onClose={() => setShowMemoryManager(false)}
               sessionId={memoryScope.sessionId}
               projectId={memoryScope.projectId}
+              /*
+               * 任务 B：跨项目检索的 scope 选择来源 = **现有项目列表**（与项目选择器同一份 store）。
+               * 面板自己不去读全局 store —— 传进去让它在测试/插件覆盖里能独立 mount。
+               */
+              projects={projects}
             />
           </div>
         </div>

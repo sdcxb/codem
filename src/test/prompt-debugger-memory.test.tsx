@@ -75,10 +75,11 @@ describe("DBG-MEM-1：提示词调试器与真实发送同形（含记忆段与�
     expect(text.indexOf(MEMORY_STABLE_HEADER)).toBeLessThan(text.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY));
     expect(text.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY)).toBeLessThan(text.indexOf(MEMORY_VOLATILE_HEADER));
 
-    // date 段必须与引擎同形（分钟精度 + 真实时区偏移），不是 toLocaleDateString 的日期
-    expect(text, "date 段必须在（调试器原先用的是日期字符串）").toContain("# Current Date");
-    const dateMatch = /Current Date\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000[+-]\d{2}:\d{2})/.exec(text);
-    expect(dateMatch, "调试器的 date 必须是引擎同形的分钟精度时间串（带真实偏移）").toBeTruthy();
+    /*
+     * 2026-11-07：分钟精度日期已从 system 移到易变尾部（`time-context`），
+     * 否则 system 上的缓存断点每分钟失效。调试器与引擎同形 ⇒ 这里也**不许**出现 date 段。
+     */
+    expect(text, "system 里不许再出现 # Current Date（日期已移到易变尾部）").not.toContain("# Current Date");
 
     spy.mockRestore();
   });

@@ -236,7 +236,7 @@ describe("EXEC：后台/委派回合的 end 结果分类", () => {
       cwd: CWD,
       engine: fakeEngine([
         { type: "text_delta", text: "上下文快满了" },
-        { type: "end", result: { type: "overflow", message: "上下文窗口已满，请开启新对话。" } },
+        { type: "end", result: { type: "overflow", message: "上下文窗口已满，本轮未完成；可以重试。" } },
       ]),
     });
 

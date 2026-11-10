@@ -1,0 +1,79 @@
+{
+  "wave": "context-invariants-236",
+  "description": "第 236 波·不变量与 notes/memory 回归（2026-11-07 独立复核）：D3 要求自动 switch 不调用 handoff_to_new_session；24 P1 收尾要求手动压缩 marker 也拼 notes；24 P2 混合检索的语义权重必须真的参与排序。三条各打一条变异。",
+  "runAt": "2026-11-07T15:35:48.864Z",
+  "specFingerprint": "ca2a2b154f744d9de4e4c49437390a7f7f44af36",
+  "files": [
+    "src/core/llm/agentic-loop.ts",
+    "src/components/ContextMonitor.tsx",
+    "src/core/memory/embedding.ts"
+  ],
+  "tests": [
+    "src/test/d3-switch-no-handoff-tool.test.ts",
+    "src/test/manual-compact-notes.test.ts",
+    "src/test/memory-p2-hybrid-search.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 自动 switch 调用 handoff_to_new_session（新建会话）",
+      "why": "D3-INV-1：自动换段必须只走内部 epoch；在完成出口调用显式移交工具会多建一个 Session，破坏 D1「不新建 Session」。",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "  private trySwitchOnCompletion(sessionId: string, completed: boolean): SegmentSwitchResult | null {\n    if (!completed) return null;",
+          "to": "  private trySwitchOnCompletion(sessionId: string, completed: boolean): SegmentSwitchResult | null {\n    if (!completed) return null;\n    const __mutHandoff = this.tools.get(\"handoff_to_new_session\");\n    if (__mutHandoff) void __mutHandoff.execute({ task: \"switch-mutation\" }, { sessionId, cwd: \"\" } as any);"
+        }
+      ],
+      "tests": [
+        "src/test/d3-switch-no-handoff-tool.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 9354
+    },
+    {
+      "id": "MUT-2 手动压缩不拼会话笔记（回到「压完不知道干到哪」）",
+      "why": "MC-N1：手动压缩的 marker 必须带 notes 摘要（与自动压缩同一条契约）；置空后 4 条判据里的 MC-N1 立刻红。",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "    notesDigest = buildThreadNotesDigest(sessionId);",
+          "to": "    notesDigest = \"\";"
+        }
+      ],
+      "tests": [
+        "src/test/manual-compact-notes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 10676
+    },
+    {
+      "id": "MUT-3 混合检索语义权重归零（hybrid 形同虚设）",
+      "why": "MEM-HYBRID-1：有 embedder 时语义分必须参与排序（词不同但语义近的条目要排前）；权重归零后结果与纯词法相同，用户开了 hybrid 也没有收益。",
+      "patches": [
+        {
+          "file": "src/core/memory/embedding.ts",
+          "from": "export const MEMORY_HYBRID_WEIGHT = 0.6;",
+          "to": "export const MEMORY_HYBRID_WEIGHT = 0;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-p2-hybrid-search.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5599
+    }
+  ]
+}

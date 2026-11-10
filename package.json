@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.18.13",
+  "version": "1.18.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -67,6 +67,7 @@
     "verify": "npm run audit:docs && vitest run --coverage && node tools/audit/coverage-baseline.mjs --check && node tools/audit/coverage-per-file.mjs --check && node tools/audit/knip-gate.mjs && npx jscpd",
     "audit:probe-guard": "node tools/audit/probe-guard.selftest.mjs",
     "eval:selftest": "node tools/eval/paired-report.selftest.mjs",
+    "eval:context-os-replay": "node tools/eval/context-os-replay.mjs --check",
     "eval:repo-workspace": "node tools/eval/run-repo-arm.mjs --verify-workspace",
     "eval:repo-reference": "node tools/eval/run-repo-arm.mjs --verify-reference",
     "eval:repo-bug-tests": "node tools/eval/run-repo-arm.mjs --verify-bug-tests",

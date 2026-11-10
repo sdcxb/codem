@@ -665,15 +665,16 @@ This rule has the highest priority and overrides any other language-related cont
   }
 
   /**
-   * 16. `# Current Date` —— **收尾**（系统提示最后一段）。
+   * 16. 日期**不再进系统提示**（2026-11-07 起）。
    *
-   * 为什么收尾而不是排在易变记忆之前：date **每分钟**都变，排在记忆之前等于每分钟把
-   * 记忆一起顶掉（实测跨分钟公共前缀 94.64% < 只改易变记忆的 97.67%）。
-   * 收尾后它变化只顶掉它自己。判据 `MEM-PLACE-7/11`。
+   * 旧实现把分钟精度的 `# Current Date` 收尾在系统提示里；即便它只顶掉自己，
+   * 它仍在 system block 内 —— 而 `prompt-cache.ts` 的第一个缓存断点就在 system。
+   * 于是**每分钟整段 system 前缀失效**，跨分钟必然 miss。
+   *
+   * 现在日期只出现在易变尾部（`time-context` 的本地时间戳，含年月日），
+   * 位于所有缓存断点之后；system 因此跨分钟逐字节稳定。判据 `PC-8`。
+   * `config.date` 仍由调用方提供，保留给尾部/诊断使用。
    */
-  if (config.date) {
-    sections.push(`# Current Date\n\n${config.date}`);
-  }
 
   // Filter out any <system-reminder> tags that may have been injected
   return sections.join("\n\n---\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");

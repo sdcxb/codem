@@ -3,12 +3,17 @@ import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import {
+  formatCacheUsageLabel,
+  summarizeCacheUsage,
+  type CacheUsageSummary,
+} from "../core/llm/cache-percent";
+import {
   listVisibleMessages,
   createMessage,
   isHiddenStateAuthoritative,
   updateMessage,
 } from "../core/storage/message";
-import { getLLMEngine } from "../core/llm";
+import { getLLMEngine, peekLLMEngine } from "../core/llm";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
 import { pruneLargeToolResult } from "../core/llm/context-fold";
@@ -24,6 +29,8 @@ import {
   /* 第 228 波审计：识别"上一次的摘要标记"，避免它被渲染第二遍（会让上下文变大） */
   isCompactionMarker,
   estimateRawContextTokens,
+  /* P1-2：摘要上限与自动路径同一个常量（摘要 ≤6K 的唯一一处） */
+  COMPACTION_SUMMARY_MAX_CHARS,
 } from "../core/llm/compaction-budget";
 /* 第 228 波审计：手动与自动压缩必须互斥（共用同一把按会话的锁） */
 import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compaction-control";
@@ -37,6 +44,50 @@ import { reportActionFailure, reportPersistFailure } from "../core/storage/persi
 import { FALLBACK_CONTEXT_WINDOW, readContextWaterLevel, readLastExactWater } from "../core/context/water-level";
 import { readLastCompletedRequest } from "../core/llm/request-context";
 import { buildContextEpochMetadata, contextCutoffExclusions } from "../core/context/context-view";
+/**
+ * C04：请求清单（诊断入口，**只读**）。
+ *
+ * 为什么要在这里显示：`loadManifests/diffManifests/replayManifest` 早就有实现与判据，
+ * 但只有测试调用 —— 用户与复核者没有任何产品入口能回答「这一轮模型到底看到了什么、
+ * 比上一轮少了什么」。本区只读现有导出，**不新增 IPC / 存储 / 事件**
+ * （清单本身走独立 settings 键，见 `core/context/manifest.ts` 的说明）。
+ * 与 `segmentEpochs` 开关无关：它只是诊断，开关关闭时也能看。
+ */
+import {
+  loadManifests,
+  diffManifests,
+  type ContextManifest,
+  type ManifestDiff,
+} from "../core/context/manifest";
+/**
+ * P1-1 / 24 §9.4：**会话笔记**（Thread Notes）。
+ *
+ * 列表与全文是只读查询（`listThreadNotes`）；编辑/删除是用户显式动作，
+ * 走数据层唯一的写入口（`updateThreadNote` / `deleteThreadNote` ⇒ 确认落库）。
+ * 笔记是模型写的会话状态，必须能在界面上看到全文与改动结果（不做完全隐藏的模型私有状态）；
+ * 内容按 untrusted 展示，不是用户指令，也不是权限来源。
+ */
+import {
+  listThreadNotes,
+  latestThreadNoteId,
+  buildThreadNotesDigest,
+  updateThreadNote,
+  deleteThreadNote,
+  THREAD_NOTES_MAX_NOTE_CHARS,
+  type ThreadNote,
+} from "../core/context/thread-notes";
+/**
+ * C07 边界②：长文档编译流水线的**产品可见入口**（只读）。
+ *
+ * 为什么放在这里：`doc_compile` 早就把阶段进度/产物/diff 摘要写进了持久化状态，
+ * 但全仓只有工具与判据在读 —— 用户看不到「编译到哪一步了」。本区只消费导出的只读查询
+ * `listDocumentPipelines`，**不直接读设置键的私有形状、不写任何东西**。
+ */
+import {
+  listDocumentPipelines,
+  type DocPipelineDiffSummary,
+  type DocPipelineView,
+} from "../core/document/pipeline";
 import { FullHistoryPanel } from "./FullHistoryPanel";
 
 interface ContextMonitorProps {
@@ -74,12 +125,34 @@ const COMPACT_COOLDOWN_MS = 8000;
  */
 const MANUAL_KEEP_MESSAGES = 20;
 
+/**
+ * 手动压缩的 marker 里，**给摘要至少留多少字符**才允许拼会话笔记。
+ *
+ * 笔记（`buildThreadNotesDigest`）与摘要是同一条 `markerBudget` 里的两个消费者。
+ * 没有这条下限时，一段 8KB 的笔记可以在「移除 800 字符」的小会话里把摘要挤成 0，
+ * 于是用户点压缩得到的检查点「只有笔记、没有摘要」—— 主产物被次产物挤掉。
+ * 放不下就整段省略笔记：它随时可以用 `notes_list` / `notes_read` 回查，压缩不能被它阻断。
+ */
+const MANUAL_NOTES_MIN_SUMMARY_CHARS = 200;
+
 /** 一条消息里工具结果的字符总量（排序用：先裁最大的那条） */
 function toolCharsOf(m: any): number {
   if (!Array.isArray(m?.toolCalls)) return 0;
   let n = 0;
   for (const tc of m.toolCalls) n += typeof tc?.result === "string" ? tc.result.length : 0;
   return n;
+}
+
+/** C07：阶段状态的人读标记（只做展示；状态本身来自流水线，不在这里推断）。 */
+function docStageMark(status: string): string {
+  return status === "done" ? "✓" : status === "failed" ? "✗" : "…";
+}
+
+/** C07：最近一次 diff 的人读摘要（没有就是没有，不编一个 0）。 */
+function formatPipelineDiff(summary: DocPipelineDiffSummary): string {
+  return `最近 diff：+${summary.added} / -${summary.removed} · ${summary.lines} 行 · 基线${
+    summary.baseline === "supplied" ? "有" : "无"
+  }`;
 }
 
 interface ProviderBalance {
@@ -171,7 +244,7 @@ export function manualCompact(sessionId: string): {
   trimmedToolResults?: number;
   /** ★ 用户现场：压缩后的水位百分比（常驻提示线 70 / 紧急线 90） */
   percentAfter?: number;
-  /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向开启新对话） */
+  /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向压缩入口） */
   overTarget?: boolean;
 } {
   /**
@@ -322,6 +395,24 @@ export function manualCompact(sessionId: string): {
    * 现在：预算只由**真实内容**（非标记）决定，级联段永不参与裁剪。
    */
   const compressibleMessages = messagesToRemove.filter((m) => !isCompactionMarker(m));
+  /**
+   * ★ CMP-P-4（24 §P0-5）：**marker-only 投影不写回近等长标记**。
+   *
+   * 真机稳态：可见消息 = 「旧标记 + 最近 20 条」，保留 20 条 ⇒ 待删集只剩那条旧标记。
+   * 旧实现会把它的正文算进 `removedChars` 并写一条**近等长**的新标记（净变化≈0），
+   * 用户点一次压缩看到"完成"却一点没变小。旧标记的正文已经作为级联摘要整段保留，
+   * 它不是"这次新压掉的内容" ⇒ 没有真实内容可压时直接如实返回 skipped。
+   *
+   * 判据 `CMP-P-4`：去掉本段 ⇒ 构造 marker-only 视图会写新标记（红）。
+   */
+  if (compressibleMessages.length === 0) {
+    console.warn("[manualCompact] 待压缩内容只有压缩摘要标记（没有可压缩的真实历史）⇒ 本次不压缩");
+    return {
+      removed: 0,
+      kept: messages.length,
+      skipped: "待压缩内容只有压缩摘要标记，没有可压缩的真实历史",
+    };
+  }
   const messageChars = (m: (typeof messagesToRemove)[number]): number => {
     let chars = typeof m.content === "string" ? m.content.length : 0;
     if (Array.isArray(m.toolCalls)) {
@@ -353,7 +444,12 @@ export function manualCompact(sessionId: string): {
     userChars: 2000,
     assistantChars: 1500,
     toolChars: 400,
-    totalChars: Math.max(800, Math.min(8000, removedChars)),
+    /*
+     * P1-2 / COMPACT-1：摘要上限与自动路径**同一个常量**（4–6K 取 6K 上沿）。
+     * 原来这里是写死的 8000 —— 手动压缩因此能产出比自动路径更长的摘要，两套上限
+     * 会让「摘要 ≤6K」这条判据在一条路径上成立、另一条上不成立。
+     */
+    totalChars: Math.max(800, Math.min(COMPACTION_SUMMARY_MAX_CHARS, removedChars)),
   });
   /**
    * ★ 第 228 波审计修复：**手动压缩同样不许让上下文变大** —— 整条标记的字符上限按
@@ -374,8 +470,57 @@ export function manualCompact(sessionId: string): {
    * 现在的界是：整条标记 ≤ max(800, removedChars + 级联段长度)，且裁剪注记也计入预算。
    */
   const markerBudget = Math.max(800, removedChars + cascadePrefix.length);
-  const fixedLen = `[上下文已手动压缩]\n\n以下对话的摘要：\n${cascadePrefix}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`.length;
-  const historyBudget = Math.max(0, markerBudget - fixedLen);
+  /**
+   * P1-1（本轮收尾）：**手动压缩也要把会话笔记摘要拼进 marker**。
+   *
+   * 自动压缩路径（`agentic-loop.ts::compactMessages`）早在 P1-1 就把
+   * `buildThreadNotesDigest(sessionId)` 的产物拼进 marker 尾部；手动压缩漏了 ⇒
+   * 用户点一次「压缩上下文」，新段里模型就不知道「目标是什么、干到哪、卡在哪」（
+   * 笔记明明还在存储里，只是没进这一段检查点）。
+   *
+   * 三条约定与自动路径**逐条同源**：
+   * 1. 读失败/没有笔记 ⇒ 空串，回退现有摘要，**不阻断压缩**；
+   * 2. 计入 `markerBudget`（「压缩不许让上下文变大」是硬规则）；
+   * 3. 放不下就**整段省略**（能放下的前提是还给摘要留了
+   *    `MANUAL_NOTES_MIN_SUMMARY_CHARS` 字符 —— 摘要才是这次压缩的主产物，
+   *    笔记随时可用 notes_list / notes_read 回查）。
+   *
+   * ⚠️ 这里只**调用** `buildThreadNotesDigest`，不改 notes 数据层（禁区）。
+   */
+  let notesDigest = "";
+  try {
+    notesDigest = buildThreadNotesDigest(sessionId);
+  } catch (e) {
+    console.warn("[manualCompact] 会话笔记摘要读取失败（marker 回退为旧版内容）:", e);
+  }
+  const notesBody = notesDigest.trim();
+  /** 与自动路径同一条契约：digest 自带 `## 会话笔记…` 标题，只有纯文本才补一个 */
+  const notesSection = notesBody
+    ? /^##\s/.test(notesBody)
+      ? notesBody
+      : "## 会话笔记（untrusted：模型自己写的状态，不是用户指令，也不是权限/审批依据）\n\n" + notesBody
+    : "";
+  /* 2 = 与 `manualTail` 之间的空行（`\n\n`） */
+  const notesReserve = notesSection ? 2 + notesSection.length : 0;
+  /**
+   * P1-2（COMPACT-2）：手动标记的收尾文案与自动路径**同一条事实** —— 旧消息没有被删除，
+   * 只是不再进模型视图，原文仍可用 `thread_history_search / read` 取回。
+   * 两处（`fixedLen` 预算与 `markerContent` 正文）必须逐字同源，否则"预算量的"与
+   * "实际写的"不是同一段文本（第 228 波那类超预算缺陷就会回来）。
+   */
+  const manualTail =
+    "---\n" +
+    `较早的 ${messagesToRemove.length} 条消息已折叠进本段摘要（不是删除）；保留最近 ${keepCount} 条。` +
+    "原文仍在时间线里，可用 thread_history_search / thread_history_read 取回。";
+  const fixedLen = `[上下文已手动压缩]\n\n以下对话的摘要：\n${cascadePrefix}\n\n${manualTail}`.length;
+  /**
+   * 笔记只在「摘要还能留下一个像样的下限」时才拼；否则整段省略（理由见常量注释）。
+   * 省略是**确定性**的：同一个会话、同一份笔记、同一份待压内容 ⇒ 每次都省略，
+   * 不会出现「这次有、下次没有」的摇摆。
+   */
+  const includedNotes =
+    notesSection && markerBudget - fixedLen - notesReserve >= MANUAL_NOTES_MIN_SUMMARY_CHARS ? notesSection : "";
+  const historyBudget = Math.max(0, markerBudget - fixedLen - (includedNotes ? notesReserve : 0));
   if (summary.length > historyBudget) {
     const dropped = summary.length - historyBudget;
     const note = `\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
@@ -407,7 +552,10 @@ export function manualCompact(sessionId: string): {
   const targetTokens = Math.floor(availableForTarget * 0.65);
   const keepTokensNow = () =>
     summarizeModelContext(messagesToKeep as never[], windowForTarget).usedTokens;
-  const markerContent = `[上下文已手动压缩]\n\n以下对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
+  const markerContent =
+    `[上下文已手动压缩]\n\n以下对话的摘要：\n${summary}\n\n${manualTail}` +
+    /* P1-1：会话笔记摘要（尾部；受 markerBudget 约束，放不下整段省略） */
+    (includedNotes ? `\n\n${includedNotes}` : "");
   const messagesBefore = messages.length;
   const messagesAfter = keepCount + 1;
 
@@ -436,6 +584,8 @@ export function manualCompact(sessionId: string): {
           removedCount: messagesToRemove.length,
           keptCount: keepCount,
           trigger: "manual",
+          /* P1-2：有会话笔记才写 notesRef（没有就整个键不出现；旧 marker 兼容见读侧） */
+          notesRef: latestThreadNoteId(sessionId),
           excludedMessageIds: contextCutoffExclusions(
             messages as never[],
             messagesToKeep as never[],
@@ -502,6 +652,9 @@ export function manualCompact(sessionId: string): {
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
+  /** 24:1264：Bot Team 默认关闭；关闭时两个面板都不渲染。 */
+  useEffect(() => {
+  }, []);
   /**
    * ★ 全量审计：自动压缩阈值的**兜底默认**（与 `AgenticLoop` 的默认值同源）。
    * 设置面板那一档已经真的接进引擎（构造时读 + 保存时推送），这里只在配置读不到时兜底。
@@ -515,9 +668,28 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
    * 现场导出 —— 与进度条同一对数字，state 也就没必要存在了。
    */
   const [todayCost, setTodayCost] = useState(0);
+  /**
+   * C03 可观测性：本会话的缓存读数（来自 `CostTracker` 的会话累加）。
+   *
+   * `null` = 本会话还没有落账的调用；`reported=false` = 调用过但 provider 没报缓存字段。
+   * 两种情况都不许显示成「缓存命中 0%」—— 旧实现把聚合初始化成 0，界面因此长期自报 0%。
+   */
+  const [cacheUsage, setCacheUsage] = useState<CacheUsageSummary | null>(null);
   const [messageCount, setMessageCount] = useState(0);
   const [waterSource, setWaterSource] = useState<"exact" | "estimate" | "unknown">("unknown");
   const [lastRequestPrompt, setLastRequestPrompt] = useState(0);
+  /**
+   * ★ CMP-P-1：引擎**最近一拍**压力估算的构成（`toolsIncluded=false` ⇒ 那次没算工具表）。
+   *
+   * 为什么不在这里重算：工具表的真实发送集合只有 `AgenticLoop` 知道（会话/模式/附件过滤之后
+   * 的那一份），面板自己从 `engine.tools` 取会得到"全部工具"，与真实请求不是同一集合。
+   */
+  const [basisUsage, setBasisUsage] = useState<{
+    toolsIncluded: boolean;
+    toolCount: number;
+    systemIncluded: boolean;
+    mode: "actual" | "estimate";
+  } | null>(null);
   /** ★ 折叠阶梯痕迹：本轮静默折叠了多少条较远的工具输出（0 = 没折，不显示这一行） */
   const [foldedToolOutputs, setFoldedToolOutputs] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
@@ -551,7 +723,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     trimmedToolResults?: number;
     /** ★ 用户现场：压缩后的水位百分比（常驻提示线 70 / 紧急线 90） */
     percentAfter?: number;
-    /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向开启新对话） */
+    /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向压缩入口） */
     overTarget?: boolean;
   } | null>(null);
   /** 完整历史（含被压缩的旧消息）只读面板 */
@@ -578,6 +750,93 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [ctxConfig, setCtxConfig] = useState<CompactionConfig | null>(null);
   const [savedConfig, setSavedConfig] = useState(false);
+  /** P1-1：会话笔记（只读列表；点一条展开全文） */
+  const [threadNotes, setThreadNotes] = useState<ThreadNote[]>([]);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  /**
+   * 24 §9.4：笔记的**内联编辑 / 删除**。
+   *
+   * 三个状态刻意分开：
+   * - `editingNoteId`：正在编辑哪一条（同一时刻只允许一条，避免"保存后另一条悄悄覆盖"）；
+   * - `pendingDeleteNoteId`：删除的**二次确认**（第一次点只进入确认态，第二次才真删）；
+   * - `noteActionError`：失败必须可见 —— 包括"逻辑失败"（id 不存在/超上限）与
+   *   "落库未确认"（本次运行有效、重启可能回退）。
+   */
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [editingTag, setEditingTag] = useState("");
+  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<string | null>(null);
+  const [noteActionError, setNoteActionError] = useState<string | null>(null);
+
+  /** 动作之后立刻按**权威读数**重读（不拿本地猜测改列表） */
+  const refreshThreadNotes = () => {
+    if (!sessionId) {
+      setThreadNotes([]);
+      return;
+    }
+    try {
+      setThreadNotes(listThreadNotes(sessionId));
+    } catch (e) {
+      console.warn("[ContextMonitor] 会话笔记读取失败:", e);
+      setThreadNotes([]);
+    }
+  };
+
+  const startEditNote = (note: ThreadNote) => {
+    setEditingNoteId(note.id);
+    setEditingText(note.text);
+    setEditingTag(note.tag ?? "");
+    setPendingDeleteNoteId(null);
+    setNoteActionError(null);
+  };
+
+  const cancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditingText("");
+    setEditingTag("");
+  };
+
+  const saveEditedNote = () => {
+    if (!sessionId || !editingNoteId) return;
+    const result = updateThreadNote(sessionId, editingNoteId, { text: editingText, tag: editingTag });
+    if (!result.ok) {
+      /* 逻辑失败：内容没变；把原因留在界面上（并重读，防止显示的是已不存在的旧行） */
+      setNoteActionError(result.message);
+      refreshThreadNotes();
+      return;
+    }
+    setNoteActionError(
+      result.persisted
+        ? null
+        : "已保存到当前运行，但「未确认落库」：存储面不可用时重启后可能读到旧内容。",
+    );
+    setEditingNoteId(null);
+    setEditingText("");
+    setEditingTag("");
+    refreshThreadNotes();
+  };
+
+  const requestDeleteNote = (noteId: string) => {
+    setPendingDeleteNoteId(noteId);
+    setEditingNoteId(null);
+    setNoteActionError(null);
+  };
+
+  const confirmDeleteNote = () => {
+    if (!sessionId || !pendingDeleteNoteId) return;
+    const result = deleteThreadNote(sessionId, pendingDeleteNoteId);
+    if (!result.ok) {
+      setNoteActionError(result.message);
+    } else {
+      setNoteActionError(
+        result.persisted
+          ? null
+          : "已从当前运行删除，但「未确认落库」：存储面不可用时重启后它可能重新出现。",
+      );
+    }
+    setPendingDeleteNoteId(null);
+    refreshThreadNotes();
+  };
 
   // 更新 token 使用量和费用（每 3 秒）
   useEffect(() => {
@@ -593,8 +852,46 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           setMessageCount(0);
           /* ★ 全量审计（低）：没有会话时窗口也要复位（否则显示的是上一个会话的窗口） */
           setContextWindowTokens(DEFAULT_BUDGET.total);
+          setCacheUsage(null);
+          /* P1-1：没有会话时笔记区也必须清空（否则会显示上一个会话的笔记 —— 会话隔离的界面侧） */
+          setThreadNotes([]);
+          setExpandedNoteId(null);
+          setEditingNoteId(null);
+          setEditingText("");
+          setEditingTag("");
+          setPendingDeleteNoteId(null);
+          setNoteActionError(null);
           return;
         }
+
+        /**
+         * P1-1：会话笔记（只读）。
+         *
+         * 与其它诊断读数同频（3 秒）刷新：模型 `notes_append` 之后下个 tick 就能看到；
+         * 读失败按空处理（不把整个面板搞挂），并保持展开状态不变。
+         */
+        try {
+          setThreadNotes(listThreadNotes(sessionId));
+        } catch (e) {
+          console.warn("[ContextMonitor] 会话笔记读取失败:", e);
+          setThreadNotes([]);
+        }
+
+        /**
+         * 会话级缓存读数：数值来自 `CostTracker` 的**不裁剪累加**（按模型/会话累计），
+         * 缺报时 `cacheReported=false`；这里只做展示口径转换，不重新推断。
+         */
+        const sessionCost = costTracker.getSessionCost(sessionId);
+        setCacheUsage(
+          sessionCost
+            ? summarizeCacheUsage({
+                promptTokens: sessionCost.totalInputTokens,
+                cacheReadTokens: sessionCost.cacheReadTokens,
+                cacheWriteTokens: sessionCost.cacheWriteTokens,
+                cacheReported: sessionCost.cacheReported,
+              })
+            : null,
+        );
 
         /**
          * ## 第 47 轮（功能上下文审计 P2-D12）：“消息数 / 占用”必须与送往模型的口径一致
@@ -621,14 +918,27 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
          */
         const visible = listVisibleMessages(sessionId);
         setMessageCount(visible.length);
-        /**
-         * ★ 折叠阶梯的**一行痕迹**（用户提的机制）：
-         * 水位到 0.5 时程序会**静默**折叠较远的大段工具输出 —— 静默不等于无声，
-         * 否则用户只会觉得「数字怎么自己变了」。这里把条数带出来渲染一行说明（不弹窗、不打断），
-         * 并写明"最近几轮未动、原文可重跑工具取回"，让人知道发生了什么、以及怎么拿回来。
+        /*
+         * ★ CMP-P-3（24 §P0-5）：面板与常驻水位提示条**必须是同一个数**。
+         *
+         * 提示条走 `readContextWaterLevel`（模型侧口径：折叠后原始 token + 系统提示/工具定义，
+         * 分母 = 窗口 × 0.9）；面板旧实现自己再算一遍（不加 overhead、还把 used 夹到分母）
+         * ⇒ 同一会话同一时刻两个百分比。这里直接把水位的 `used/available` 拿来做进度条，
+         * 压力等级/百分比仍由 `summarizeDisplayPressure(budget.used, budget.available)` 导出，
+         * 于是「面板 pressure == 水位 level」在构造上成立（判据 `CMP-P-3`）。
+         *
+         * 读不到（`authoritative=false`）时**不冒充 0%**：退回面板自己的估算，但
+         * `data-water-source="unknown"` 已经如实标出「这不是同源读数」。
          */
+        let panelWater: ReturnType<typeof readContextWaterLevel> | null = null;
         try {
           const water = readContextWaterLevel(sessionId);
+          panelWater = water;
+          /*
+           * 折叠阶梯的**一行痕迹**（水位到 0.5 时程序会静默折叠较远的大段工具输出）：
+           * 静默不等于无声 —— 条数带出来渲染一行说明（不弹窗、不打断），并写明
+           * 「最近几轮未动、原文可重跑工具取回」，否则用户只会觉得「数字怎么自己变了」。
+           */
           setFoldedToolOutputs(water.foldedToolOutputs ?? 0);
           setWaterSource(water.source);
           setLastRequestPrompt(
@@ -636,10 +946,26 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               ?? readLastCompletedRequest(sessionId)?.promptTokens
               ?? 0,
           );
+          /*
+           * ★ CMP-P-1：引擎那一拍的构成读数。`peekLLMEngine()` **不构造**引擎（面板不该为了
+           * 显示一行提示而凭空造一个）；没有引擎/没有活动 loop ⇒ `null`（未知，不编造）。
+           */
+          const basis = peekLLMEngine()?.getPressureBasis(sessionId) ?? null;
+          setBasisUsage(
+            basis
+              ? {
+                  toolsIncluded: basis.toolsIncluded,
+                  toolCount: basis.toolCount,
+                  systemIncluded: basis.systemIncluded,
+                  mode: basis.mode,
+                }
+              : null,
+          );
         } catch {
           setFoldedToolOutputs(0);
           setWaterSource("unknown");
           setLastRequestPrompt(0);
+          setBasisUsage(null);
         }
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
@@ -671,11 +997,19 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
          */
         const contextManager = getContextManager();
         const b = contextManager.calculateBudgetFromMessages(visible as any[]);
+        /*
+         * CMP-P-3：水位**权威**时进度条直接用它的 `used/available`（与提示条、与引擎同一对数字）。
+         * 水位读不到（`authoritative=false`）才用面板自己的估算兜底 —— 并且 `waterSource`
+         * 已经写着 `unknown`，界面不会把兜底数冒充成"同源真实读数"。
+         */
+        const waterForPanel = panelWater?.authoritative === true ? panelWater : null;
+        const panelUsed = waterForPanel ? waterForPanel.used : usedTokens;
+        const panelAvailable = waterForPanel ? Math.max(1, waterForPanel.available) : budgetTokens;
         setBudget({
           ...b,
-          used: usedTokens,
-          available: budgetTokens,
-          remaining: Math.max(0, budgetTokens - usedTokens),
+          used: panelUsed,
+          available: panelAvailable,
+          remaining: Math.max(0, panelAvailable - panelUsed),
         });
       } catch (e) {
         console.error("[ContextMonitor] update failed:", e);
@@ -703,6 +1037,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     setCompactResult(null);
     setCompactError(null);
     setCompactCooldown(false);
+    /* 24 §9.4：换会话时笔记的编辑/确认/错误状态一并清空（否则会在 B 会话上保存 A 的编辑） */
+    setEditingNoteId(null);
+    setEditingText("");
+    setEditingTag("");
+    setPendingDeleteNoteId(null);
+    setNoteActionError(null);
+    setExpandedNoteId(null);
     if (cooldownTimerRef.current !== null) {
       clearTimeout(cooldownTimerRef.current);
       cooldownTimerRef.current = null;
@@ -905,6 +1246,57 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     }
   };
 
+  /**
+   * 最近 5 条请求清单 + **与真实上一条**的差异（C04 产品入口）。
+   *
+   * 为什么在切片**之前**算 diff：只取 `slice(-5)` 再用切片内前一条对比，
+   * 最老那条会显示「无上一份」——但内存环里其实还有更早的一份。
+   * 差异是诊断结论，不能因为显示窗口而变成假话。
+   */
+  const manifestRows: Array<{ manifest: ContextManifest; diff: ManifestDiff | null }> = (() => {
+    if (!sessionId) return [];
+    try {
+      const all = loadManifests(sessionId);
+      const start = Math.max(0, all.length - 5);
+      const rows: Array<{ manifest: ContextManifest; diff: ManifestDiff | null }> = [];
+      for (let i = start; i < all.length; i += 1) {
+        rows.push({ manifest: all[i], diff: i > 0 ? diffManifests(all[i - 1], all[i]) : null });
+      }
+      /* 最新在上：用户找的是"刚刚这一轮" */
+      return rows.reverse();
+    } catch (e) {
+      /* 诊断面失败不许把面板搞挂（loadManifests 自己已按空处理，这里兜底） */
+      console.warn("[ContextMonitor] 请求清单读取失败:", e);
+      return [];
+    }
+  })();
+
+  /**
+   * C07：本会话的文档编译进度（只读查询；无数据时给空态，不抛错）。
+   *
+   * 读的是导出视图而不是设置键：面板不该知道 `codem-document-pipeline:<sessionId>`
+   * 的内部形状，更不该自己去解析/回写。`listDocumentPipelines` 自带「重启后懒加载」。
+   */
+  const pipelineRows: DocPipelineView[] = (() => {
+    if (!sessionId) return [];
+    try {
+      return listDocumentPipelines(sessionId);
+    } catch (e) {
+      /* 诊断面失败不许把面板搞挂（与请求清单同一口径） */
+      console.warn("[ContextMonitor] 文档编译状态读取失败:", e);
+      return [];
+    }
+  })();
+
+  /**
+   * C13（用户不做上下文管理）：**默认不提供手动压缩入口**。
+   *
+   * 判据口径：只有「显式关闭」才恢复旧的手动入口/水位告警 ——
+   * `ctxConfig` 还没读到时按默认开启处理（`!== false`），否则首帧会闪一下按钮，
+   * 而默认配置下按钮本来就不该出现。
+   */
+  const segmentOn = ctxConfig?.segmentEpochs === true;
+
   return (
     <div className="context-monitor">
       <div className="context-monitor-header">
@@ -944,6 +1336,19 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             )}
             <span style={{ color: pressureColor }}>{usagePercent}%</span>
           </div>
+          {/*
+            ★ CMP-P-1：**未计入工具定义必须写出来**（24 §P0-5：不许静默漏算）。
+            只在引擎那一拍确实没算工具时出现；`mode="actual"` 时基准已含工具，不显示。
+          */}
+          {basisUsage && !basisUsage.toolsIncluded && (
+            <div
+              className="context-pressure-tools-note"
+              data-testid="context-pressure-tools-note"
+              title="这一拍压力估算发生在工具表生成之前，因此偏低；工具表就绪后的下一拍会重算（压缩判定以后者为准）"
+            >
+              本轮压力估算未计入工具定义（{basisUsage.mode === "estimate" ? "工具表尚未生成" : "未知"}）
+            </div>
+          )}
         </div>
 
         <div className="context-stats">
@@ -982,6 +1387,21 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               {`（窗口 ${Math.round((ctxConfig?.compactionThreshold ?? ENGINE_COMPACTION_THRESHOLD) * 100)}%，已在构造时接进引擎）`}
             </span>
           </div>
+          {/**
+           * C13：默认（段式上下文开启）由程序自动整理上下文，**用户不做上下文管理**。
+           * 这里只留一行中性状态，不再出现「即将满 / 请立即压缩」那种要求用户动手的告警；
+           * 诊断数字（占用/压力/阈值/消息数）一条不少。
+           */}
+          {segmentOn && sessionId && (
+            <div
+              className="context-stat"
+              data-testid="context-auto-organized"
+              title="上下文由程序自动整理（换段/压缩都在内部完成），用户不需要手动压缩"
+            >
+              <span className="context-stat-label">整理状态</span>
+              <span className="context-stat-value">已自动整理，无需操作</span>
+            </div>
+          )}
           <div className="context-stat">
             <span className="context-stat-label" title="与模型侧同一口径：listVisibleMessages（不含压缩隐藏的历史）">消息数</span>
             <span className="context-stat-value" title="送往模型的消息条数（与模型的可见集合一致）">{messageCount}</span>
@@ -1002,14 +1422,314 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </span>
             </div>
           )}
+          {/*
+            C03 可观测性：**缓存命中必须可度量**。
+            - 上报过：`缓存命中：X%（读 Y / 写 Z）`；
+            - 没上报：`provider 未上报缓存字段`（绝不显示 0% —— 那是把「未知」伪装成「确定未命中」）；
+            - 本会话还没调用：`本次会话暂无调用`（第三种中性态，不冒充前两种）。
+          */}
+          <div className="context-stat" data-testid="context-cache-stat">
+            <span className="context-stat-label">缓存用量</span>
+            <span
+              className="context-stat-value"
+              data-cache-reported={cacheUsage ? (cacheUsage.reported ? "true" : "false") : "none"}
+            >
+              {cacheUsage ? formatCacheUsageLabel(cacheUsage) : "本次会话暂无调用"}
+            </span>
+          </div>
           <div className="context-stat">
             <span className="context-stat-label">今日费用</span>
             <span className="context-stat-value">${todayCost.toFixed(4)}</span>
           </div>
         </div>
 
-        {/* 手动压缩按钮 */}
-        {sessionId && messageCount > 2 && (
+        {/*
+          C04：请求清单（只读诊断）—— 回答「这一轮模型看到了什么、比上一轮少了什么」。
+          不依赖 `segmentEpochs` 开关：换段关着也会记录清单，它只是诊断面。
+          无数据时给一句明确的空态，而不是让区域凭空消失（消失会被当成"功能坏了"）。
+        */}
+        <div className="context-manifests" data-testid="context-manifests">
+          <div className="context-manifests-title">
+            <span className="context-manifests-title-label">请求清单</span>
+            <span className="context-manifests-title-hint">
+              最近 5 条（只读诊断：模型这一轮看到了什么、比上一轮少了什么）
+            </span>
+          </div>
+          {manifestRows.length === 0 ? (
+            /* 空态用共享原语（COND-1）：不再新长一个自带内边距的空态类 */
+            <div className="empty-hint is-compact" data-testid="context-manifests-empty">
+              本次运行还没有记录
+            </div>
+          ) : (
+            manifestRows.map(({ manifest, diff }) => (
+              <div
+                key={`${manifest.at}-${manifest.segmentSeq}-${manifest.messageIds.length}`}
+                className="context-manifest-row"
+                data-testid="context-manifest-row"
+              >
+                <div className="context-manifest-meta">
+                  第 {manifest.segmentSeq} 段 · {manifest.messageIds.length} 条消息 · 压力{" "}
+                  {Math.round(manifest.pressure * 100)}% · 预算 {manifest.estimatedTokens.toLocaleString()}/
+                  {manifest.budgetTokens.toLocaleString()} tokens ·{" "}
+                  {new Date(manifest.at).toLocaleTimeString()}
+                </div>
+                <div className="context-manifest-sources" data-testid="context-manifest-sources">
+                  系统 {manifest.sources.system} / 对话 {manifest.sources.chat} / 工具 {manifest.sources.tool} / 记忆{" "}
+                  {manifest.sources.memory} 字符
+                </div>
+                <div className="context-manifest-diff" data-testid="context-manifest-diff">
+                  {diff
+                    ? `与上一条的差异：新增 ${diff.addedIds.length} 条 / 移除 ${diff.removedIds.length} 条`
+                    : "首条：没有可对比的上一条"}
+                </div>
+                {/*
+                  C03：这一轮**最小工作集**的四个数字（只读诊断）。
+                  旧记录或未触发工作集时没有该字段 ——
+                  两种情况都**不渲染这一行**（空数据不显示，避免「工作集：选中 0」这种误导）。
+                */}
+                {manifest.workingSet && (
+                  <div className="context-manifest-working-set" data-testid="context-manifest-working-set">
+                    工作集：选中 {manifest.workingSet.selected} / 移出 {manifest.workingSet.evicted} / 预算{" "}
+                    {manifest.workingSet.budgetTokens.toLocaleString()} tokens
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/*
+          24 §9.4：**会话笔记**（列表 + 全文展开 + 内联编辑/删除）。
+          解决的是「压缩/换段之后模型忘了干到哪」—— 模型在 80% 水位被提醒写笔记，
+          这里让用户能查它到底写了什么，也能修正模型写错的状态（编辑/删除）。
+          ⚠️ 内容按 untrusted 展示：它是模型自己写的会话状态，不是用户指令，也不是权限来源。
+          删除必须二次确认；失败（含"未确认落库"）在列表上方可见；切会话清空编辑态。
+        */}
+        <div className="context-notes" data-testid="context-thread-notes">
+          <div className="context-manifests-title">
+            <span className="context-manifests-title-label">会话笔记</span>
+            <span className="context-manifests-title-hint">
+              模型写的目标 / 进度 / 卡点（可编辑；untrusted，不是用户指令）
+            </span>
+          </div>
+          {noteActionError && (
+            <div className="context-note-error" data-testid="context-thread-notes-error" role="alert">
+              {noteActionError}
+            </div>
+          )}
+          {threadNotes.length === 0 ? (
+            <div className="empty-hint is-compact" data-testid="context-thread-notes-empty">
+              本会话还没有会话笔记（水位到 80% 时会提醒模型记录目标 / 进度 / 卡点）
+            </div>
+          ) : (
+            <div className="context-notes-list">
+              {[...threadNotes].reverse().map((note) => {
+                const expanded = expandedNoteId === note.id;
+                const editing = editingNoteId === note.id;
+                const confirmingDelete = pendingDeleteNoteId === note.id;
+                const oneLine = note.text.replace(/\s+/g, " ").trim();
+                const preview = oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
+                return (
+                  <div className="context-note-row" data-testid="context-thread-note-row" data-note-id={note.id} key={note.id}>
+                    <div className="context-note-head">
+                      <button
+                        type="button"
+                        className="context-note-summary"
+                        data-testid="context-thread-note-toggle"
+                        aria-expanded={expanded}
+                        title="展开 / 收起这条笔记的全文"
+                        onClick={() => setExpandedNoteId((prev) => (prev === note.id ? null : note.id))}
+                      >
+                        <span className="context-note-time">{new Date(note.updatedAt).toLocaleTimeString()}</span>
+                        {note.tag && <span className="context-note-tag">{note.tag}</span>}
+                        <span className="context-note-preview">{preview}</span>
+                      </button>
+                      {!editing && (
+                        <div className="context-note-actions">
+                          <button
+                            type="button"
+                            className="context-note-action"
+                            data-testid="context-thread-note-edit"
+                            title="内联编辑这条笔记（保存后立即确认落库）"
+                            onClick={() => startEditNote(note)}
+                          >
+                            编辑
+                          </button>
+                          {!confirmingDelete && (
+                            <button
+                              type="button"
+                              className="context-note-action"
+                              data-testid="context-thread-note-delete"
+                              title="删除这条笔记（需要二次确认）"
+                              onClick={() => requestDeleteNote(note.id)}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {editing && (
+                      <div className="context-note-editor" data-testid="context-thread-note-editor">
+                        <textarea
+                          className="context-note-textarea"
+                          data-testid="context-thread-note-textarea"
+                          aria-label="会话笔记正文"
+                          value={editingText}
+                          maxLength={THREAD_NOTES_MAX_NOTE_CHARS}
+                          rows={4}
+                          onChange={(event) => setEditingText(event.target.value)}
+                        />
+                        <input
+                          className="context-note-tag-input"
+                          data-testid="context-thread-note-tag-input"
+                          aria-label="会话笔记标签（可空）"
+                          value={editingTag}
+                          maxLength={40}
+                          placeholder="标签（可空）"
+                          onChange={(event) => setEditingTag(event.target.value)}
+                        />
+                        <div className="context-note-actions">
+                          <button
+                            type="button"
+                            className="context-note-action"
+                            data-testid="context-thread-note-save"
+                            onClick={saveEditedNote}
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            className="context-note-action"
+                            data-testid="context-thread-note-cancel"
+                            onClick={cancelEditNote}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {confirmingDelete && (
+                      <div className="context-note-confirm" data-testid="context-thread-note-delete-confirm">
+                        <span className="context-note-confirm-text">
+                          删除后不可恢复（只删这一条；不影响其它会话的笔记）。确认删除？
+                        </span>
+                        <div className="context-note-actions">
+                          <button
+                            type="button"
+                            className="context-note-action"
+                            data-testid="context-thread-note-delete-confirm-yes"
+                            onClick={confirmDeleteNote}
+                          >
+                            确认删除
+                          </button>
+                          <button
+                            type="button"
+                            className="context-note-action"
+                            data-testid="context-thread-note-delete-confirm-no"
+                            onClick={() => setPendingDeleteNoteId(null)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {expanded && !editing && (
+                      <div className="context-note-full" data-testid="context-thread-note-full">
+                        {note.text}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/*
+          P1-4：**Bot 团队**（只读状态 + 恢复/停止/标记已读三个真实动作）。
+          组件自己读存储并 5s 刷新；面板不显示任何 Bot 私有对话内容。
+        */}
+
+        {/*
+          P1-4 收尾：**群聊页（最小可用）** —— 25 号文要求「群聊页；Bot 状态；等待关系」。
+          这里只做「选 Team → 预演路由 → 发送一次」：发送走 `dispatchGroupMessage`，
+          预演走 `routeGroupMessage`（0 次模型调用）；路由规则（无 @ 只 admin / @ 只目标 /
+          @all 仅 admin）在界面上**可复核**。不显示 Bot 私有记忆与 mailbox 正文。
+        */}
+
+        {/*
+          C07：**文档编译**（只读）—— 回答「这份长文档编译到哪一步了」。
+          阶段标记（✓ 完成 / … 待执行 / ✗ 失败）、产物数与最近 diff 摘要都来自
+          `listDocumentPipelines`（同一份持久化状态，重启后还在）。
+          没有数据时给明确空态而不是隐藏整块（隐藏会被当成「功能没了」）。
+        */}
+        <div data-testid="doc-pipeline-section">
+          <div className="context-manifests-title">
+            <span className="context-manifests-title-label">文档编译</span>
+            <span className="context-manifests-title-hint">
+              本会话的 doc_compile 进度（只读：阶段 / 产物数 / 最近 diff 摘要）
+            </span>
+          </div>
+          {pipelineRows.length === 0 ? (
+            <div className="empty-hint is-compact" data-testid="doc-pipeline-empty">
+              本会话还没有文档编译（doc_compile）
+            </div>
+          ) : (
+            pipelineRows.map((row) => (
+              <div
+                key={row.documentId}
+                className="context-manifest-row"
+                data-testid="doc-pipeline-row"
+                data-document-id={row.documentId}
+              >
+                <div className="context-manifest-meta">
+                  {row.title} · {row.completed ? "已完成" : "未完成"} · 产物 {row.artifactCount} 个 · 分节{" "}
+                  {row.sectionProgress.done}/{row.sectionProgress.total}
+                </div>
+                <div
+                  data-testid="doc-pipeline-stages"
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    fontSize: "var(--fs-xs)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {row.stages.map((stage) => (
+                    <span
+                      key={stage.stage}
+                      data-stage={stage.stage}
+                      data-status={stage.status}
+                      style={{
+                        color:
+                          stage.status === "done"
+                            ? "var(--success)"
+                            : stage.status === "failed"
+                              ? "var(--error)"
+                              : "var(--text-muted)",
+                      }}
+                    >
+                      {stage.stage} {docStageMark(stage.status)}
+                    </span>
+                  ))}
+                </div>
+                {row.diffSummary && (
+                  <div className="context-manifest-diff" data-testid="doc-pipeline-diff">
+                    {formatPipelineDiff(row.diffSummary)}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/**
+          * C13：**手动压缩入口只在显式关闭段式上下文时保留**（灰度回滚 / 对照实验）。
+          * 默认配置下它是隐藏的 —— 「用户不做上下文管理」不是文案，而是入口不存在。
+          */}
+        {!segmentOn && sessionId && messageCount > 2 && (
           <div className="context-compact-section">
             <button
               className="context-compact-btn"
@@ -1058,12 +1778,16 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           </div>
         )}
 
-        {/* 压力等级提示 */}
-        {pressure >= 2 && sessionId && (
+        {/**
+          * 压力告警只在**显式关闭**段式上下文时保留：那种配置下确实没有自动换段，
+          * 用户仍需要手动入口。默认开启时由上面那行「已自动整理」替代 ——
+          * 既没有可点的压缩入口，就不该再让用户「立即压缩」。
+          */}
+        {!segmentOn && pressure >= 2 && sessionId && (
           <div className="context-pressure-warning">
             {pressure === 2
-              ? "⚠️ 上下文压力较高，建议压缩或开启新对话"
-              : "🔴 上下文即将满！请立即压缩或开启新对话"}
+              ? "⚠️ 上下文压力较高，建议压缩"
+              : "🔴 上下文即将满！请立即压缩"}
           </div>
         )}
 
@@ -1174,6 +1898,23 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                   onChange={(e) => setCtxConfig({ ...ctxConfig, preserveRecentToolOutputs: e.target.checked })}
                   style={{ cursor: "pointer" }} />
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>压缩时保留近期工具输出</span>
+              </label>
+
+              {/*
+                段式上下文（D1 / E3 / D11）：**默认关闭**；显式开启才产生 switch。
+                D11 要求的兼容判据（remote / fork / export-JSONL / 默认生效）已补齐，
+                见 `src/test/segment-default-on-compat.test.ts`；显式关闭仍可回到旧路径。
+              */}
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxConfig.segmentEpochs === true}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, segmentEpochs: e.target.checked })}
+                  style={{ cursor: "pointer", marginTop: 2 }} />
+                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>段式上下文（默认开启，可显式关闭）</span>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                    默认开启：换段不新建会话，旧消息仍可检索；关闭后回到旧路径（不切段）
+                  </span>
+                </span>
               </label>
 
               {/* 保存按钮 */}

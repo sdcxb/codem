@@ -1,0 +1,27 @@
+真机复验：工作集 marker 保护的渲染侧 console（CDP 9222 捕获）
+========================================================================
+
+会话: ws-marker-1793970261312
+marker: compact-1793970261312-1
+页面: WS-MARKER-工作集保护 21:04:21
+截图: docs/marketing/evidence/working-set-marker-real.png
+
+关键 console 行（[working-set] protected markers kept ... request ids=...）
+------------------------------------------------------------------
+[log] [agent-loop] [working-set] window=2000 outputReserve=4096 system=12625 memory=0 budget=0 selected=7 evicted=9 indexLines=9
+[log] [working-set] protected markers kept: compact-1793970261312-1; request messages=8; evicted=9; request ids=compact-1793970261312-1,ws-marker-1793970261312-msg-19,ws-marker-1793970261312-msg-20,ws-marker-1793970261312-msg-21,ws-marker-1793970261312-msg-22,ws-marker-1793970261312-msg-23,ctx-workingset-index,user-1793970682900
+
+provider 请求（postData）
+-------------------------
+{"url": "https://api.aicodewith.ai/v1/messages", "postDataLength": 93206, "markerIdInBody": true, "markerSummaryInBody": true, "contextEpochInBody": false}
+
+错误 / 异常
+-----------
+0 条
+
+事实
+----
+typed='只回复 OK' sent=True bubbles=26
+console 事件总数=172
+
+结论：PASS

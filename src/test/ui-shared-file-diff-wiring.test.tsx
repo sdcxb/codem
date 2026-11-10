@@ -228,7 +228,13 @@ function installTauriStub(): void {
       return [];
     }
     if (command === "execute_command") {
-      return { stdout: " M src/a.ts\n", stderr: "", exitCode: 0 };
+      /*
+       * 2026-11-10：这条判据只比较文件树 DOM，不测 git 状态。
+       * 原 stub 返回 git status，会让桌面树在异步刷新后多一个 badge，
+       * 而共享 FileTree 的 entries 没有 gitStatus ⇒ outerHTML 偶发不等（全量并行时红）。
+       * 固定为空，去掉与判据无关的异步维度。
+       */
+      return { stdout: "", stderr: "", exitCode: 0 };
     }
     return null;
   });

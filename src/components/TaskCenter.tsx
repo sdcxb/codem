@@ -8,6 +8,19 @@
  * `@codem/ui-library-ops` 启用时接管该页签，在「看板」里追加
  * 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 视图（原独立「图书馆」页签已并入）；
  * 插件关闭时回退到宿主自带 Issues 看板，页签数量与行为完全不变。
+ *
+ * ## P1-1 / P1-2 / P1-4 补欠账：为什么「Bot 团队」页签在这里
+ *
+ * 25 号文把「TaskCenter 显示 Bot」写进 P1-1，把「群记忆 scope / 成本读数」写进 P1-2，
+ * 把「群聊页 / Bot 状态 / 权限」写进 P1-4。此前这些能力只在 ContextMonitor 侧栏
+ * 出现（那是「看程序内部状态」的地方，不是计划要求的正式入口）。
+ *
+ * 自己刷新。这里只解决一件事：**切页签不丢状态**。
+ *
+ * 为什么在 TaskCenter 里保持挂载（而不是像别的页签那样卸载）：
+ * 用户切去看一眼概览再切回来，输入框里的群消息就没了。所以 Bot 页签一旦访问过就
+ * 保留在 DOM 里、非激活时 `display: none`；代价是它的 5s 轮询在面板打开期间继续跑
+ * （与 ContextMonitor 里的同一组件行为一致，不额外放大）。
  */
 
 import "../styles/task-center.css";
@@ -35,7 +48,9 @@ export type TaskCenterTab =
   | "delegation"
   | "subagents"
   | "automation"
-  | "inbox";
+  | "inbox"
+  /** P1-1 / P1-2 / P1-4：Bot 身份 / Team / 群聊（成本读数与权限都在这两个组件里） */
+  | "bots";
 
 /** 「看板」页签的扩展 slot（@codem/ui-library-ops 在此接管：看板/工具/错误/时间线） */
 export const TASK_CENTER_BOARD_SLOT = "task-center.board";
@@ -69,6 +84,14 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
   const lang = useLang();
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<TaskCenterTab>(() => normalizeTab(initialTab));
+  /** 24:1264：Bot Team 默认关闭；关闭时页签不渲染、切到 bots 也回退概览。 */
+  /**
+   * 访问过的页签（目前只有 Bot 页签用：一旦访问就保持挂载，切走只隐藏）。
+   * 见文件头「为什么在 TaskCenter 里保持挂载」。
+   */
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<TaskCenterTab>>(
+    () => new Set<TaskCenterTab>([normalizeTab(initialTab)]),
+  );
   // 收件箱点击穿透 / 外部事件请求聚焦的 Issue（消费后清空）
   const [focusIssueId, setFocusIssueId] = useState<string | null>(null);
 
@@ -77,6 +100,11 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
   useEffect(() => {
     setActiveTab(normalizeTab(initialTab));
   }, [initialTab]);
+
+  /* 记住访问过的页签：Bot 页签据此保持挂载（切走只隐藏，不卸载） */
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.has(activeTab) ? prev : new Set<TaskCenterTab>(prev).add(activeTab)));
+  }, [activeTab]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -92,6 +120,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     return () => window.removeEventListener("codem:open-task-center", handler as EventListener);
   }, []);
 
+
   const clearFocusIssue = useCallback(() => setFocusIssueId(null), []);
 
   const tabs: { id: TaskCenterTab; label: string; icon: typeof LayoutDashboard; available: boolean }[] = [
@@ -105,8 +134,10 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
   ];
 
-  // 看板（Issues 7 列）、子智能体（场景画布）、概览（含插件贡献的用量面板）都需要更宽的面板
-  const wide = activeTab === "board" || activeTab === "subagents" || activeTab === "overview";
+  /* 24:1264：Bot Team 默认关闭；关闭时页签不出现（不是灰掉，是不暴露）。 */
+
+  // 看板（Issues 7 列）、子智能体（场景画布）、概览（含插件贡献的用量面板）都需要更宽的面板；
+  const wide = activeTab === "board" || activeTab === "subagents" || activeTab === "overview" || activeTab === "bots";
   /**
    * 内容区是否**自己铺满一屏**（自己管滚动）。
    *
@@ -204,6 +235,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             return (
               <button
                 key={tab.id}
+                data-tab-id={tab.id}
                 onClick={() => tab.available && setActiveTab(tab.id)}
                 disabled={!tab.available}
                 style={{

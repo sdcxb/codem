@@ -422,7 +422,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
      */
     let copiedCount = 0;
     try {
-      const sourceMessages = MessageStorage.listMessages(sourceSessionId);
+      /**
+       * ★ P0-0（D1/E5/D11）：分叉复制的是 **DisplayView**，不是模型投影。
+       *
+       * 换过段的会话如果按投影复制，子会话会丢掉换段之前的全部消息（静默丢段）；
+       * 没换过段时 `listDisplayMessages` 回落 `listMessages`，行为与改前一致。
+       */
+      const sourceMessages = MessageStorage.listDisplayMessages(sourceSessionId);
       if (sourceMessages.length > 0) {
         let endIdx = Math.min(Math.max(messageIndex + 1, 0), sourceMessages.length);
         for (let i = Math.max(messageIndex + 1, 0); i < sourceMessages.length; i++) {
@@ -527,6 +533,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       import("./llm").then(({ getLLMEngine }) => {
         const engine = getLLMEngine();
         engine.cleanupSessionLoop?.(sessionId);
+        /*
+         * ★ MEM-EXTRACT-2（24 §P0-3）：**关闭会话要取消在途的记忆提取**。
+         *
+         * 自动提取是回合结束/压缩完成之后才发的独立请求，不属于 loop 的 abort 范围 ——
+         * 只 `abortSessionLoop` 的话，用户删掉会话后那次提取仍会打给 provider，
+         * 并把批次写回一个已经不存在的会话。这里复用引擎的单飞表把它中止。
+         */
+        engine.cancelMemoryExtraction?.(sessionId);
       }).catch(() => {});
     } catch (e) { console.warn('[store.ts]', e) }
     // Clean up abort controller if present

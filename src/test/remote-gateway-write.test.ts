@@ -45,6 +45,43 @@ function harness(overrides: Partial<GatewayDataDeps> = {}): Harness {
   const cancelled: GatewayCancelRunInput[] = [];
   const deps: GatewayDataDeps = {
     listSessions: () => [SESSION],
+    sync: {
+      pull: async () => ({
+        events: [],
+        nextSeq: 0,
+        hasMore: false,
+        devices: 0,
+        scannedSessions: 0,
+        missingBodies: 0,
+        droppedEntries: 0,
+        droppedUnpulled: 0,
+        resetRequired: false,
+        oldestSeq: 0,
+        filteredSessions: 0,
+        overCapacity: false,
+        serverTime: 0,
+      }),
+      push: async () => ({
+        accepted: 0,
+        duplicates: 0,
+        rejected: [],
+        hostSeqMax: 0,
+        devices: 0,
+        storageFailed: 0,
+        filteredSessions: 0,
+      }),
+      snapshot: async () => ({
+        sessionId: "",
+        messages: [],
+        nextBefore: null,
+        hasMore: false,
+        total: 0,
+        hostSeq: 0,
+        filteredSessions: 0,
+        serverTime: 0,
+      }),
+      mergeMemory: async () => ({ ok: true, payload: "", entries: 0, conflicts: [], changed: false }),
+    },
     getSession: () => ({ session: SESSION, messages: [] }),
     sendPrompt: async (input) => {
       sent.push(input);
@@ -272,7 +309,7 @@ describe("网关写路径第一批（M2）", () => {
     expect(h.cancelled).toHaveLength(0);
   });
 
-  it("GW-W9: capabilities = 16 条（含审批/文件面/变更面/项目面）；事件不是 RPC 方法，不得混进两张表", async () => {
+  it("GW-W9: capabilities = 19 条（含审批/文件面/变更面/项目面/多设备同步）；事件不是 RPC 方法，不得混进两张表", async () => {
     const hello = await gatewayRpcReply(rpc("host.hello", { protocolVersion: 1 }), harness().deps);
     const caps = (hello.result as any).capabilities;
     // 结构固定：不允许偷偷加一个"看起来支持事件"的字段（半套 UI 的温床）。

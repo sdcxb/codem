@@ -1,0 +1,204 @@
+{
+  "schema": "codem.context-os.verification.v1",
+  "pageSha256": "a80ef0206b576fea44f56b1bafbe79818b1fc12c316bec376672a90a7a5d608a",
+  "generatedAt": "2026-11-10T00:12:00+08:00",
+  "claims": {
+    "C01": {
+      "status": "verified",
+      "evidence": [
+        "src/test/segment-default-on-compat.test.ts",
+        "src/test/auto-compaction-trigger.test.ts",
+        "src/test/segment-switch-completion-wiring.test.ts",
+        "src/test/segment-epochs-flag.test.ts",
+        "src/core/context/context.ts",
+        "src/core/llm/agentic-loop.ts",
+        "docs/marketing/evidence/c01-segment-switch-current.json",
+        "src/core/llm/provider-errors.ts",
+        "src/test/context-overflow-handling.test.ts",
+        "docs/marketing/evidence/c01-c13-real-machine-20261109.txt",
+        "docs/marketing/evidence/c01-default-current.png",
+        "docs/marketing/evidence/c13-current-build.png",
+        "docs/marketing/evidence/c01-c13-real-machine-final-20261109.txt",
+        "docs/marketing/evidence/c01-switch-final-build.png",
+        "docs/marketing/evidence/input-draft-switch-current.png",
+        "docs/marketing/evidence/c01-phone-session-get-final.json"
+      ],
+      "notes": "【2026-11-08 当前构建重新取证，旧 2026-11-06 pressure 0.000 证据作废】默认 segmentEpochs=false（DEF-1 钉住默认配置不产生 switch）；显式 true + 默认阈值 0.7 的完成回合：pressure=0.724734296875、result=completed、switch=1、segmentSeq=2、旧消息 24 条全在；证据 docs/marketing/evidence/c01-segment-switch-current.json（C01_EVIDENCE=1 生成，命令写在文件里）。窗口满换段/压缩均失败时改为中性错误（error + detail.contextOverflow），Session 保留、可重试，不出现「请开启新对话」；AUTOCOMPACT-CEILING-SEGMENT（开启救援）与 AUTOCOMPACT-CEILING-EXPLICIT-OFF（关闭时中性错误、无劝退）覆盖。旧截图/旧 pressure 读数不再作为 C01 证据。 2026-11-09：provider-errors / agentic-loop 的用户可见溢出说明已删除「开一个新对话 / 新建对话」；OFLOW-2 反向断言禁止该建议，OFLOW-REAL-1/2 覆盖连续压缩上限与反应式压缩关闭两条真实出口。 2026-11-09：首页 C01 文案改为「开启 Context OS 后」，claims statement 改为「开启 segmentEpochs 后」；默认关闭路径只承诺中性错误/重试，不承诺默认连续。 2026-11-09 当前安装版真机：默认配置长历史只产生 compact、switch=0，页面无新对话劝退（通过）；显式 segmentEpochs=true 的完成回合仍只产生 compact，switch 未触发（**未通过**，自动压缩先触发；见 c01-c13-real-machine-20261109.txt）。输入草稿切换真机为空（**未通过**）；手机完整历史**未做**。 【2026-11-09 23:56 修复后重验，取代同日早先的未通过记录】根因是显式 segmentEpochs 首拍被预防性 compact 吃掉阈值；改为首拍 defer（segment-switch.ts shouldDeferBoundaryCompaction）后，最终安装版 F5C79CC2 真机 pressure=0.827、kind=switch、segment_seq=2、旧消息 31 条全在（session real-c01-swfinal-final-20261110）、同一 Session（evidence/c01-c13-real-machine-final-20261109.txt）。默认配置仍只 compact、switch=0。切换会话草稿根因（InputArea reset effect 调 clearDraft）已修，真机 Input.insertText 后切换再切回恢复 DRAFT-DB-CHECK。本机 HTTP 网关（127.0.0.1:41873）pair.claim + session.get 返回 34 条（含 swfix-0 旧段）；这只是本机协议验证，**真实手机验证：blocked**（本机无已配对真实手机，不能把本机 HTTP 写成“手机通过”）；session.get 的 200/500 与 hasMore=false 上限仍为已知边界。 证据边界：显式 switch 与默认路径的模型回合使用本机 127.0.0.1:18939 受控 OpenAI-compatible fixture provider，**不是公网真实模型**；真实公网模型未验。"
+    },
+    "C02": {
+      "status": "verified",
+      "evidence": [
+        "src/test/display-view-switch.test.ts",
+        "src/test/thread-history.test.ts",
+        "src/test/memory-retrieval.test.ts",
+        "src/core/storage/message.ts"
+      ],
+      "notes": "DV-1..DV-12：switch/compact 后 listTimelineMessages 仍含全部旧消息（不删除）；TH-2/TH-8：thread_history_search 命中压缩/换段前原文；MR-9：记忆提取源包含压缩前原文。删除路径不存在（copyMessageToSession 只新增，不删除源）。"
+    },
+    "C03": {
+      "status": "verified",
+      "evidence": [
+        "src/core/context/working-set.ts",
+        "src/core/context/manifest.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/components/ContextMonitor.tsx",
+        "src/test/working-set.test.ts",
+        "src/test/context-manifest.test.ts",
+        "src/test/context-monitor-manifest.test.tsx",
+        "docs/marketing/evidence/working-set-marker-real.png",
+        "docs/marketing/evidence/working-set-marker-real-db.txt",
+        "docs/marketing/evidence/working-set-marker-real-console.txt",
+        "docs/marketing/evidence/working-set-prefix-ab.txt",
+        "docs/marketing/evidence/cache-hit-real.txt",
+        "docs/marketing/evidence/cache-hit-real.png",
+        "docs/marketing/evidence/cache-hit-real-2.txt",
+        "docs/marketing/evidence/cache-hit-real-2.png",
+        "docs/marketing/evidence/cache-cross-minute.txt"
+      ],
+      "notes": "【2026-11-06 升级为 verified】Working Set 已落地为纯函数 `planWorkingSet`（`src/core/context/working-set.ts`）：必选全部 system 消息 + 最近 keepRecent 条非 system 消息 + 最后一条 user 消息；其余从新到旧填到预算，放不下的最旧一段移出视图，并为移出项生成 Pager 索引尾部消息（`indexLines`，原文仍可 thread_history_search/read 取回）；全放得下时 selected 与入参是同一个数组引用（逐字节零变化）。接线在 `agentic-loop.ts::buildMessages`（`applyWorkingSet`）。判据：WS-1..WS-7 覆盖纯函数语义与真循环（长历史+小窗口出现索引头且估算不超预算；短历史请求与改前逐字节一致；不调用 Date.now/Math.random）；CM-6..CM-8 覆盖清单版本/前缀 hash/淘汰项/持久化与清理；`context-monitor-manifest.test.tsx` 覆盖 UI。`ContextManifest.workingSet` 只记四个数字 `{budgetTokens,selected,evicted,indexLines}`（不记索引正文；WS-6 钉住「没走工作集不记」）。ContextMonitor「请求清单」展示「工作集：选中 X / 移出 Y / 预算 tokens」（WS-6c 钉住有字段才显示、无字段不渲染假行）。另：2026-11-06 真机工作集 marker 保护复验（Codem 1.18.13，真实 aicodewith provider）：工作集预算收紧到 2000 后，epoch marker compact-… 仍在发给 provider 的请求体里，console 有 [working-set] protected markers kept，查库见 metadata.contextEpoch / context_epochs / 24 条旧消息均在；证据 docs/marketing/evidence/working-set-marker-real.png / -db.txt / -console.txt。 2026-11-06 前缀 A/B 实测（WS-11）：两轮请求稳定前缀 82520 字节逐字节一致（占比 94.51%/98.35%）；未触发工作集与显式关闭的请求逐字节一致。provider 无缓存命中字段，故只证缓存前提，不冒充真实命中。 2026-11-07 缓存可观测性：链路已解析 Anthropic/OpenAI 缓存字段并落 cacheRead/cacheWrite；provider 未上报时显示「provider 未上报缓存字段」而非 0%（并修复聚合把未上报落成 0 的误报）。本机 aicodewith 未上报，故不声称真实命中。 2026-11-07 真实命中已取证：Anthropic 请求注入 2 个 cache_control 断点（system + 稳定前缀最后一条）后，provider 回报每轮 cache_creation≈10.2k、cache_read≈40.2k（4 轮累计读 161,369 / 写 40,344），每轮未命中仅 8 token、单轮命中率 99.98%，UI 显示累计 80%，与 DB 一致；无断点对照为「provider 未上报」。 2026-11-07 跨分钟边界修复：分钟精度日期已从 system 移到易变尾部（time-context），system 不再含任何分钟级时间；同一会话跨分钟 system 逐字节相同（cache-prefix-stability 与 MEM-PLACE-* 判据）。未重跑跨分钟真机 A/B（结构证据 + 同分钟真实命中读数）。"
+    },
+    "C04": {
+      "status": "verified",
+      "evidence": [
+        "src/test/context-manifest.test.ts",
+        "src/test/context-monitor-manifest.test.tsx",
+        "src/core/context/manifest.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/core/storage/session.ts",
+        "src/components/ContextMonitor.tsx"
+      ],
+      "notes": "CM-2：两次请求可算出 added/removed/段变化/cutoff 变化/来源与 token 差；CM-3：按 id 还原并如实报告 missingIds；CM-5：真循环留下请求清单（内存环形 + 防抖写 settings，跨进程可查）。CM-6：version=1、prefixHash 由「system + 第一条 user」求 sha256、evictedIds 由上一份同会话 manifest 的 diff 算出（首份为 []）；CM-7：清内存后 loadManifests 从 settings 读回，坏 JSON/旧版本/结构不全一律 []；CM-8：删会话后 settings 键与内存环一起清。**ContextMonitor 请求清单可查看/对比（最近 5 条）**：CM-UI-1 钉住段号/消息数/四类来源字符/pressure/预算与真实 added/removed 差异，CM-UI-2 钉住无记录时的空态；该入口只读现有导出，不新增 IPC/存储。刻意**不写事件**：事件总数会进模型可见前缀（D5 判据实测会破坏前缀缓存），CM-5 反向断言事件里没有它。"
+    },
+    "C05": {
+      "status": "verified",
+      "evidence": [
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/document/client.ts",
+        "src/core/document/structure.ts",
+        "src/test/doc-structure-refs.test.ts"
+      ],
+      "notes": "【2026-11-06 升级为 verified】`doc_outline` / `doc_search` / `doc_read` / `doc_status` 四个工具已带结构信息：outline 输出标题层级 + 页码（p.N），页码覆盖不全时 metadata.pageCoverage=partial 且未取到的标题不写页码；search 每条命中渲染 [file | page | §heading | chunk]，metadata.citations 同时给 documentId/chunkNo/pageFrom/pageTo/headingPath；read 对扫描页给 source: vision(model) 与「页状态: 扫描页 · OCR 已完成」，metadata 带 pageKind/ocrState/textSource；status 汇总表格/OCR 进度。页级状态优先真实 `documents.pages`（kind / ocr_state / text_source），入口是 `src/core/document/structure.ts` 的 `resolveDocumentPageState`：只有后端没给页表时才走派生口径，并明确写「页状态: 未知（派生：…）」；`documentPages` 返回的页表覆盖不足时 `pageDataCoverage` 标 partial、其余页不推断；metadata 新增 `pageStateSource`（pages/derived）与 `pageDataCoverage`（complete/partial/none）。判据 `src/test/doc-structure-refs.test.ts` 现 11 条（新增 C05-5 三条：有 pages 用页表、无 pages 派生并标注、页表覆盖不足标 partial）。边界：页级/OCR 状态仍取决于后端 `documents.pages`；没有页表时不猜测 kind，也不把 OCR 文本当原文。"
+    },
+    "C06": {
+      "status": "verified",
+      "evidence": [
+        "src/core/document/ledger.ts",
+        "src/core/document/citation.ts",
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/core/llm/completion-guards.ts",
+        "src/test/doc-ledger-coverage.test.ts",
+        "src/test/doc-ledger.test.ts",
+        "src/test/completion-nudge-detail.test.ts",
+        "src/core/context/context.ts"
+      ],
+      "notes": "【2026-11-06 升级为 verified】账本已持久化（`src/core/document/ledger.ts`）：键为 `codem-document-ledger:<collectionId>`，版本化信封（v=1）与懒加载，写盘 200ms 去抖并提供 `flushDocumentLedgerPersistence`，claims 上限 200、sections 上限 100（裁剪最旧且计数可观测），`claimSeq` 单调且 claim id 不撞车，读路径永不写盘；坏 JSON / 版本不符 / 结构不全一律回到空账本并 warn，绝不把坏数据当状态。`documentSyncCheck` 增加 `versioned` / `unreadable` / `versionless` 三个结构化字段（0 份带版本文档 ⇒ 硬闸不成立）。文档同步已从收尾提醒升级为硬闸（`agentic-loop.ts`）：代码改动 + 带版本账本记录落后 ⇒ 收尾先给一次提醒（document-sync nudge），同一状态未处理则在收尾以 `reason=\"document_sync_required\"` 结束回合并阻止标记完成（可见原因、`completionCard=false`）；硬闸每会话只拦一次（`MAX_DOCUMENT_SYNC_BLOCKS=1`），再次同状态放行但标「未验证」并记 `completed_unverified`（`DOCUMENT_SYNC_UNVERIFIED`），绝不无限拦。另修了 `applyObservedVersion`（文档更新后能回到已同步）与 claim id 撞车。判据：`src/test/doc-ledger-coverage.test.ts` 现 16 条，新增 C06-6 六条（重启 / 换模块实例 / 坏 JSON / 上限+id / 读不写 / 无存储端口）；C06-G 四条（硬闸 / 已同步反向对照 / 无账本不拦 / 只拦一次）在 `src/test/completion-nudge-detail.test.ts`。 2026-11-07 升级：硬闸按「文档 id + 观测版本」逐条记账（同一文档同一版本只拦一次；另一份文档/同文档新版本仍可拦），每会话总上限 3，达上限放行并标「未验证」；无文档/无版本/只检索命中不拦。判据 C06-G 系列（含 A→B 仍拦、同版本放行、上限 3、反向对照）。 拦截额度可配置：documentSyncMaxBlocks（默认 3，1..10，0=不限；非法值回默认并 warn 一次），同文档同版本仍只拦一次防死循环。"
+    },
+    "C07": {
+      "status": "verified",
+      "evidence": [
+        "src/core/document/pipeline.ts",
+        "src/core/llm/tools/document-tools.ts",
+        "src/core/llm/tools.ts",
+        "src/test/doc-pipeline.test.ts",
+        "src/components/ContextMonitor.tsx",
+        "src/test/doc-pipeline-panel.test.tsx"
+      ],
+      "notes": "【2026-11-06 升级为 verified】`src/core/document/pipeline.ts` 是 7 阶段机（outline→sections→merge→consistency→citations→coverage→diff），`DOC_PIPELINE_STAGES` 是唯一顺序来源；`runDocumentPipelineStage` 在执行前检查上一阶段 done，跳级返回「禁止跳级：上一阶段 X 还没完成」；每阶段落 {stage, ok, at, summary, artifacts:[{name,digest,bytes}]}，digest 由产物文本算 FNV-1a 双 32 位；sections 要求全部分节非空交付，merge 产出 mergePlan（sectionId/heading/from/to），consistency/citations/coverage 分别校验标题唯一、引用可解析、章节有正文且有引用，diff 生成 unified diff（有基线记 supplied，无基线记 none 并全记新增）；失败阶段标 failed、complete=false、blockedBy 给具体原因；分节重交会 invalidateFrom 作废下游旧证据。状态已持久化到 `codem-document-pipeline:<sessionId>`（版本化、300ms 去抖、pagehide flush），读回时做版本 / 阶段顺序 / 单调 / completed / digest 交叉校验，坏数据按「从未开始」+ warn 处理。产品可见：ContextMonitor「文档编译」只读区展示阶段 ✓/…/✗、产物数、分节进度、最近 diff 摘要与空态（`listDocumentPipelines`，重启后懒加载）。判据：`src/test/doc-pipeline.test.ts` 12 条、`src/test/doc-pipeline-panel.test.tsx` 3 条。边界：阶段机只承载阶段与产物摘要，不生成正文（正文由调用方按分节提交）；补丁正文不落盘（只留 summary，代码注释如实说明）；未接 Goal Runner（验收口径允许的等价阶段机）。"
+    },
+    "C08": {
+      "status": "verified",
+      "evidence": [
+        "src/core/memory/memory.ts",
+        "src/core/llm/tools/memory-tools.ts",
+        "src/test/memory-graph-c08.test.ts",
+        "src/components/MemoryManager.tsx",
+        "src/test/memory-c08-panel.test.tsx"
+      ],
+      "notes": "【2026-11-06 升级为 verified】MemoryEntry 增加 source/validUntil/confidence/conflictOf/conflictGroup；memory_search 行内输出 source=、scope、(project)、validUntil=、expired、confidence=、conflicts=，并汇总 expired 计数；memory_read 取全文（totalChars = 原正文长度）并输出 scope/source/usage/validUntil/expired/confidence/conflicts；`MemoryService.conflicts(ctx)` 按 scope+归属+key 分桶，内容逐字相同不算冲突，显式 conflictGroup/conflictOf 与自动 key 冲突都返回；注入侧过期条目行内「已过期」+ 块级 MEMORY_EXPIRED_NOTICE_PREFIX，未过期标「有效期至」；检索/读取/冲突都走 injectionScopeContext，跨项目同 key 不泄漏；同分时 usageCount 参与排序（注入与检索一致）。MemoryManager 已展示有效期（过期徽标）/置信度/冲突：冲突徽标点名对家 key 并可点击定位到那一条；新增只读 `conflictPeers()`（同 scope+归属+key 内容不同，或显式 conflictOf/conflictGroup；只连两条的 conflictOf 也不漏），面板与列表同一次刷新、不另写比较逻辑；没有这些字段的旧条目不渲染、不占位。判据：`src/test/memory-graph-c08.test.ts` 7 条 + `src/test/memory-c08-panel.test.tsx` 5 条。边界：冲突是静态字段 / 同 key 的确定性判定，不做语义级事实核验；面板只展示「与哪条冲突」，不替用户判断哪条才对。"
+    },
+    "C09": {
+      "status": "verified",
+      "evidence": [
+        "src/test/memory-scope-trust.test.ts",
+        "src/test/memory-dedup.test.ts",
+        "src/test/memory-retrieval.test.ts",
+        "src/core/memory/memory.ts",
+        "src/core/llm/tools/memory-tools.ts"
+      ],
+      "notes": "memory-scope-trust / memory-dedup 钉住「自动写入不覆盖 manual」「自动写入带 source/status（pending 不进上下文）」。取回链路要分开说：memory_search 是真只读（readOnly:true / sideEffectScope:none）；memory_read **不是只读**——它读正文后调 markUsed 把 usageCount/lastUsedAt 写回记忆库（契约 readOnly:false + sideEffectScope:\"memory\"，MR-5 证明落库、MR-12 钉住声明与事实一致）。它不删除、不改写条目正文，但把「只读路径」整体说成完全只读是错的，已按事实更正。"
+    },
+    "C10": {
+      "status": "verified",
+      "evidence": [
+        "src/core/agent-teams/engine.ts",
+        "src/core/agent-teams/completion.ts",
+        "src/core/agent-teams/verifier.ts",
+        "src/core/agent-teams/task-context.ts",
+        "src/core/agent-teams/types.ts",
+        "src/core/provider/agent-teams-service.ts",
+        "src/test/agent-teams-c10.test.ts",
+        "src/core/agent-teams/doc-sync.ts",
+        "src/core/goal/doc-sync.ts",
+        "src/core/goal/runner.ts",
+        "src/test/goal-runner.test.ts"
+      ],
+      "notes": "【2026-11-06 升级为 verified】claim/attempts/rollback（恢复领取时工件/证据、attempt 记 rolled_back、可重领）；任务切片只含任务/依赖/工件/证据（parentMessages 只计数、content 不进 prompt）；独立 Verifier（独立上下文、Verifier≠实现者）；完成门禁要求 code/doc/test/reference 四类证据 + test pass + 带版本共享工件 + pass 的独立 Verifier。文档同步已默认接线真实 C06 账本：AgentTeamsService 的 update/verify 先 `checkTaskDocumentSync`，检查范围是团队**全部非 removed 成员**（含队长、Verifier、调研员等，不只实现者+队长），任一成员账本里「读后变化 / 读不到」⇒ blocked 且 reason 点名**成员 + 文档**；无引用 / 无任何账本 / 只有检索命中（无版本事实）⇒ checked:false 不阻塞（防永久卡死）；removed 成员跳过（已无法补读，防死锁）；检查器抛错 fail-closed。判据 `src/test/agent-teams-c10.test.ts` 现 16 条（C10-1..6 + C10-4b/4c，新增 4 条）。边界：未接 Goal Runner/UI。 2026-11-07 升级：Goal Runner 里程碑完成前接入独立检查（GoalRunnerDeps.preCompletionCheck 可注入，默认接真实 C06 documentSyncCheck）；文档落后 ⇒ 里程碑 blocked 且 reason 含阶段+文档，同步后 completed，无引用不阻塞并标注未接入；检查器抛错 fail-closed。判据 GOAL-DOC-1..4。仍保留：目标级最终验收未接文档检查。 2026-11-07 补齐目标级：Goal 最终完成前也执行同一文档同步检查（goal.acceptance→C06），落后⇒goal blocked、同步⇒completed、无引用⇒checked:false；里程碑与目标共用唯一实现（goal/doc-sync.ts）。边界：仅检查 kind=artifact 的文档路径。"
+    },
+    "C11": {
+      "status": "verified",
+      "evidence": [
+        "src/test/local-first-c11.test.ts",
+        "src/core/storage/port.ts",
+        "src/core/storage/message.ts",
+        "src/core/storage/settings.ts",
+        "src/core/memory/memory.ts",
+        "src/core/privacy/egress.ts",
+        "src/core/llm/index.ts",
+        "src/core/settings/settings.ts",
+        "docs/marketing/evidence/provider-routing-real.png",
+        "docs/marketing/evidence/provider-routing-real-db.txt",
+        "docs/marketing/evidence/c11-jsonl-real.txt",
+        "docs/marketing/evidence/c11-jsonl-real.png",
+        "docs/marketing/evidence/cache-hit-real.txt",
+        "docs/marketing/evidence/cache-hit-real.png",
+        "docs/marketing/evidence/cache-hit-real-2.txt",
+        "docs/marketing/evidence/cache-hit-real-2.png"
+      ],
+      "notes": "【2026-11-06 升级为 verified】本地优先四条：① 消息与记忆真的写到本机存储端口（createMessage 后存储表有行；clearSessionLogCache 后 listTimelineMessages 仍完整；记忆 saveConfirmed 后 loadMemory 有 payload，reload 后仍在）；② LLMEngine.updateConfig 切 provider/model 后 listTimelineMessages 逐条不变，换引擎实例（≈重启）仍完整，且能往同一 session 追加新消息；③ privacy-memory-egress-redact 默认开，memory 注入与 memory_read 默认脱敏（[REDACTED_API_KEY]），显式关闭后原样返回，坏值回严格侧；④ 完全没有 provider 时会话/记忆/设置全链路可用；storage/settings/memory 五个模块静态无 fetch/XMLHttpRequest/sendBeacon，文档模块中只有实际存在的 ocr.ts 做了同一静态检查（library.ts / store.ts 在本树不存在，判据按缺失跳过，不冒充已检查）。判据 src/test/local-first-c11.test.ts 4 条全绿。真机 provider 切换见 docs/marketing/evidence/provider-routing-real.png / -db.txt（provider=aicodewith 时请求发往 api.aicodewith.ai、会话正常完成）。边界：单测无 Tauri 文件层，会话 JSONL 权威日志未单独真机验证（测试断言的是本机存储端口副本，PersistFailure 属预期）；文档落盘只做了静态无网络检查，未做文档真机落盘/清缓存复验。 2026-11-06 真机 JSONL 验证：默认配置真实回合后，sessions/*.jsonl 含 27 条唯一消息（与 DB 一致、missing/extra=0）与 switch marker 的 metadata.contextEpoch（kind/segmentSeq/cutoff）；append-only 同 id 后写按 id 去重，无坏行。 2026-11-07：缓存字段解析/落库/UI 两态与聚合误报回归判据已补（cache-hit-observability 10 条 + context-monitor-cache 2 条，含变异）。 2026-11-07：提示缓存断点默认开启（promptCache，显式 false 关闭，非 Anthropic 协议不注入），真机 A/B 命中读数见 cache-hit-real-2。"
+    },
+    "C12": {
+      "status": "verified",
+      "evidence": [
+        "src/test/context-epochs.test.ts",
+        "src/test/memory-approve-scope-batch.test.ts",
+        "src/test/context-rollback.test.ts",
+        "src/core/storage/context-switch.ts"
+      ],
+      "notes": "关键动作有审计：context_steward_decision（切段决策）是一等事件类型；请求清单走独立 settings 键（不写事件，避免污染前缀）；写入审批/拒绝由 memory-approve-scope-batch 覆盖；回滚（epoch/上下文）由 context-rollback 覆盖；失败均上报（reportPersistFailure / console.warn 留痕）。"
+    },
+    "C13": {
+      "status": "verified",
+      "evidence": [
+        "src/test/segment-divider.test.tsx",
+        "src/test/auto-compaction-trigger.test.ts",
+        "src/test/segment-epochs-flag.test.ts",
+        "src/test/segment-default-on-compat.test.ts",
+        "src/test/context-monitor-manual-entry.test.tsx",
+        "src/components/ChatPanel.tsx",
+        "src/components/ContextMonitor.tsx",
+        "src/core/llm/provider-errors.ts",
+        "src/core/llm/agentic-loop.ts",
+        "src/test/context-overflow-handling.test.ts",
+        "docs/marketing/evidence/c01-c13-real-machine-20261109.txt",
+        "docs/marketing/evidence/c01-default-current.png",
+        "docs/marketing/evidence/c13-current-build.png",
+        "docs/marketing/evidence/c01-c13-real-machine-final-20261109.txt",
+        "docs/marketing/evidence/c01-switch-final-build.png",
+        "docs/marketing/evidence/input-draft-switch-current.png",
+        "docs/marketing/evidence/c01-phone-session-get-final.json"
+      ],
+      "notes": "【2026-11-08 修正：默认关闭，只承诺开启后 0 次】默认 segmentEpochs=false（FLAG-1 / DEF-1）；页面信号已改为「开启后 0 次」，不写默认 0 次。兜底已移除：两条救援都失败时中性错误、Session 保留、可重试，不再出现「请开启新对话」（AUTOCOMPACT-CEILING-EXPLICIT-OFF 反向断言）。开启后 ContextMonitor 不渲染手动压缩按钮/水位告警（MC-1）；默认关闭时保留手动入口与告警（MC-2）。旧「默认开启/默认 0 次」表述作废。 2026-11-09：C13 的溢出路径不再建议新对话；provider-errors / agentic-loop 文案与 context-overflow-handling 的反向断言已加入证据。 2026-11-09 当前安装版真机截图无「开启新对话/新建对话/新会话」；WaterLevelBanner 的交接 CTA 已移除。 2026-11-09 23:56 当前安装版重验：页面无「开启新对话/新建对话/新会话」，WaterLevelBanner 交接 CTA 已移除；证据见 c01-c13-real-machine-final-20261109.txt。 证据边界：C13 页面/UI 来自安装版；C01 的模型回合使用本机 fixture provider，不是公网真实模型；真实手机：blocked。"
+    }
+  }
+}

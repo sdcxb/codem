@@ -435,6 +435,7 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
   const OWNED_ANCHORS = [
     "电脑操作已批准", // /computer 批准·撤销回执（内容不可复现：再输一次是切换不是查询）
     "记忆整合完成：合并", // /memory consolidate 结果（数字不可复现）
+    "记忆整合撤销：", // /memory consolidate undo：恢复条数与过期判定不可复现
     "已批准 ${targetId}：该自动记忆", // /memory approve：批准回执（状态变了，再查也不是同一件事）
     "已拒绝并删除", // /memory reject：删掉了就查不回来
     "undoResult.message", // /memory undo：撤销结果（批次号 + 删除条数不可复现）
@@ -473,7 +474,7 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
   it("XSESS-5a: 落库档全走 deliverToOwningSession，且锚点各自唯一对应一处", () => {
     const code = stripComments(handleSendBody());
     const chunks = code.split("deliverToOwningSession(").slice(1);
-    expect(chunks.length, "落库档数量变了（少一处 = 有一处退回了裸投递；多一处 = 新增了一条不可复现的回执）").toBe(11);
+    expect(chunks.length, "落库档数量变了（少一处 = 有一处退回了裸投递；多一处 = 新增了一条不可复现的回执）").toBe(12);
 
     for (const marker of OWNED_ANCHORS) {
       const hit = chunks.filter((c) => c.includes(marker));

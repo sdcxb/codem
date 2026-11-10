@@ -1,0 +1,54 @@
+真机复验：默认配置（不写 segmentEpochs）真实回合完成即自动切段
+========================================================================
+
+构建 / 安装
+------------
+安装包: src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe
+  LastWriteTime = 2026-11-06 19:44:37.315 (+08:00)
+  sha256 = 77FFBA949D545542C81012327C94F66E0C421CCBF3D860E6E2D93ED6AD2C2913
+安装后: C:\Users\abee\AppData\Local\Codem\codem.exe
+  LastWriteTime = 2026-11-06 19:43:26（构建产物时间），ProductVersion = 1.18.13
+旧包（18:56 构建，不含本轮改动）: sha256 = 683D4D7BA5ABA8058A92D34EA9AD87A587553B0FB04E41F3987FD48D80D22EFF
+
+配置快照（没有 segmentEpochs 键；默认值 true 生效）
+----------------------------------------------
+{
+  "maxContextWindow": 128000,
+  "outputReserve": 4096,
+  "systemPromptTokens": 2000,
+  "compactionThreshold": 0.8,
+  "maxMessagesAfterCompaction": 20,
+  "preserveRecentToolOutputs": true
+}
+segmentEpochs 键是否存在: False
+
+会话
+----
+('seg-default-1793965496222', '', 'SEG-DEFAULT-默认开 19:44:56', 'claude-haiku-4-5-20251001', 1793943896222, 1793965532921, 27)
+
+1) switch marker 查询
+   select id,metadata,... from messages where session_id=? and metadata like '%"kind":"switch"%'
+   count = 1
+   id = compact-1793965532922-1
+   metadata.contextEpoch = {"createdAt": 1793965532922, "cutoffMessageId": "seg-default-1793965496222-msg-06", "epochId": "compact-1793965532922-1", "keptCount": 20, "kind": "switch", "removedCount": 6, "segmentSeq": 2, "seq": 2, "trigger": "switch"}
+   status=done hidden=0 trimmed=0
+
+2) context_epochs（与 marker 同步）
+   select * from context_epochs where session_id=?
+   id=compact-1793965532922-1 seq=2 cutoff=seg-default-1793965496222-msg-06 removed=6 kept=20 trigger=switch kind=switch segment_seq=2 created_at=1793965532922
+
+3) session_events（steward 决策）
+   seq=202674 context_steward_decision {"action":"switch","at":1793965532922,"cutoffMessageId":"seg-default-1793965496222-msg-06","epochId":"compact-1793965532922-1","keptCount":20,"removedCount":6,"segmentSeq":2}
+
+4) 时间线条数
+   messages 总数 = 27（24 条预置历史 + user + assistant + 1 marker = 27）
+   预置 24 条仍在 = 24
+
+5) 本轮真实回合
+   user = [('user-1793965525724', '只回复 OK', 'done', 1793965525724)]
+   assistant = [('seg-default-1793965496222-msg-01', '已记录编号 01。', 'done', 1793943956222, None), ('seg-default-1793965496222-msg-03', '已记录编号 03。', 'done', 1793944076222, None), ('seg-default-1793965496222-msg-05', '已记录编号 05。', 'done', 1793944196222, None), ('seg-default-1793965496222-msg-07', '已记录编号 07。', 'done', 1793944316222, None), ('seg-default-1793965496222-msg-09', '已记录编号 09。', 'done', 1793944436222, None), ('seg-default-1793965496222-msg-11', '已记录编号 11。', 'done', 1793944556222, None), ('seg-default-1793965496222-msg-13', '已记录编号 13。', 'done', 1793944676222, None), ('seg-default-1793965496222-msg-15', '已记录编号 15。', 'done', 1793944796222, None), ('seg-default-1793965496222-msg-17', '已记录编号 17。', 'done', 1793944916222, None), ('seg-default-1793965496222-msg-19', '已记录编号 19。', 'done', 1793945036222, None), ('seg-default-1793965496222-msg-21', '已记录编号 21。', 'done', 1793945156222, None), ('seg-default-1793965496222-msg-23', '已记录编号 23。', 'done', 1793945276222, None), ('assistant-1793965525809', 'OK', 'done', 1793965532882, '{"turnEndTime":1793965532929,"turnOutcome":"completed","usage":{"cacheHitTokens":0,"completionTokens":4,"cost":0,"promptTokens":32251,"totalTokens":32255,"uncachedInputTokens":32251}}')]
+
+6) 失败痕迹
+   loop-outcome / Failed to fetch / LLM 调用失败 = 0 条
+
+结论：PASS

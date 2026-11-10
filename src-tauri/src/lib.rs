@@ -4999,6 +4999,9 @@ path_exists,
         phone::gateway::workspace::gateway_workspace_list,
         phone::gateway::workspace::gateway_workspace_stat,
         phone::gateway::workspace::gateway_workspace_read,
+        // 多设备同步（25 号文 P2）：客户端出站 RPC —— 渲染层 fetch 会撞 CORS/同源检查，
+        // 这条路不带 Origin（与 curl 同类），凭据仍是网关的设备 cookie（见 gateway_client.rs）
+        phone::gateway_client::gateway_client_rpc,
             // 存储引擎（Rust 原生 SQLite）：类型化仓储命令，不接受 SQL
             storage::storage_invoke,
             storage::storage_batch,

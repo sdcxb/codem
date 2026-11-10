@@ -89,7 +89,12 @@ describe("TC-AUDIT-P1-6 委派统计与列表同口径", () => {
     const stats = Array.from(container.querySelectorAll("span")).map((n) => n.textContent);
     expect(stats.filter((t) => t === "2").length).toBeGreaterThan(0);
     expect(stats).not.toContain("3");
-  });
+    /*
+     * 冷 import 图（DelegationTab → core/session、core/store、executor/fork-index）在满载机器上
+     * 实测 6.0–6.4s，超过 vitest 默认 5s；这是**导入/渲染耗时**，不是断言放宽。
+     * 断言一条未减，只给这一条显式 30s 截止。
+     */
+  }, 30000);
 
   it("无当前项目时列表与统计都为空", async () => {
     const { DelegationTab } = await import("../components/task-center/DelegationTab");

@@ -30,6 +30,8 @@ import {
   createAgentTeamsSendMessageTool,
   createAgentTeamsStatusTool,
   createAgentTeamsUpdateTool,
+  createAgentTeamsVerifyTool,
+  createAgentTeamsRollbackTool,
   registerAgentTeamsTools,
 } from "../core/agent-teams/tools";
 
@@ -41,6 +43,8 @@ const FACTORIES: Array<[string, () => ReturnType<typeof createAgentTeamsCreateTo
   ["agent_teams_reassign_task", createAgentTeamsReassignTool],
   ["agent_teams_claim_task", createAgentTeamsClaimTool],
   ["agent_teams_update_task", createAgentTeamsUpdateTool],
+  ["agent_teams_verify_task", createAgentTeamsVerifyTool],
+  ["agent_teams_rollback_task", createAgentTeamsRollbackTool],
   ["agent_teams_send_message", createAgentTeamsSendMessageTool],
   ["agent_teams_status", createAgentTeamsStatusTool],
   ["agent_teams_delete", createAgentTeamsDeleteTool],
@@ -61,10 +65,10 @@ describe("agent-teams 工具面（确定性覆盖）", () => {
     expect(String(tool.description ?? "").length).toBeGreaterThan(10);
   });
 
-  it("AT-T2 registerAgentTeamsTools 注册 10 个工具、顺序固定、全部 shouldDefer（省 token 的 deferred schema）", () => {
+  it("AT-T2 registerAgentTeamsTools 注册 12 个工具、顺序固定、全部 shouldDefer（省 token 的 deferred schema）", () => {
     const got: Array<{ id: string; shouldDefer?: boolean; searchHint?: string }> = [];
     registerAgentTeamsTools((t) => got.push(t as unknown as { id: string }));
-    expect(got).toHaveLength(10);
+    expect(got).toHaveLength(12);
     expect(got.map((t) => t.id)).toEqual(FACTORIES.map(([id]) => id));
     expect(got.every((t) => t.shouldDefer === true)).toBe(true);
     expect(got.every((t) => typeof t.searchHint === "string" && t.searchHint.length > 0)).toBe(true);

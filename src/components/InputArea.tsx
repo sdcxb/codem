@@ -17,7 +17,7 @@ import { useLang, S } from "../core/i18n/lang";
 import type { CollaborationMode } from "../core/agent/agent";
 import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { getSkillRegistry } from "../core/skill/skill";
-import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
+import { getSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { getCustomOperations, runCustomOperation } from "../core/environment";
 import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
@@ -713,7 +713,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   }, []);
 
   // P1 #12: Draft persistence — saves input per session
-  const draftKey = currentSession?.id || currentProject?.id || "__global__";
+  const draftKey = sessionKey || currentSession?.id || currentProject?.id || "__global__";
   const { draft, setDraft, clearDraft } = useDraftPersistence(draftKey);
 
   // 文本是否含 /xxx 模式（决定是否启用 backdrop 镜像层）——须在 draft 声明后
@@ -901,13 +901,19 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       prevSessionKey.current = sessionKey;
       setPendingAttachments([]);
       setSelectedSkills([]);
-      setInput("");
+      /*
+       * 2026-11-09 根因修复：切会话只重置显示态，**不能 clearDraft()**。
+       * clearDraft 会 removeSetting(旧 key)，把刚读回来的草稿永久删掉。
+       * 同时直接把目标会话自己的草稿喂回输入框：本 effect 排在 hydration effect
+       * 之后，若这里只 setInput("") 会把刚喂进去的草稿又清掉。
+       */
+      const nextDraftKey = sessionKey || currentSession?.id || currentProject?.id || "__global__";
+      setInput(getSetting(`composer-draft-${nextDraftKey}`) || "");
       setSlashFilter(null);
       /* 第 232 波 A4：切会话同样要收起 `@` 候选（与 setSlashFilter 同口径；
          否则输入被清空、旧候选还挂在 body 上 —— Portal 之后它可见）。 */
       setMentionQuery(null);
       setComposerBadges([]);
-      clearDraft();
     }
   }, [sessionKey]);
 

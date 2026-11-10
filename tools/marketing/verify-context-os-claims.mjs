@@ -126,14 +126,56 @@ for (const c of claims) {
 
 ok('claims=' + claims.length + ' shipped=' + shipped + ' partial=' + partial + ' target=' + target);
 
-// 4) gate 模式：只检查指定 tier 的 verified 报告
+// 4) 交叉校验：报告状态不能比清单更乐观
+//
+// 为什么必须有这一层：只检查「verified 有 evidence」挡不住最危险的一种写法 ——
+// 清单里明明还是 target（没实现），报告里却写 verified（有证据）。两边各自格式都对，
+// 合起来是假的。所以把两个文件的状态放在一起比：
+//   verification=verified ⇒ claims 必须 shipped（有实现、有可复查证据）
+//   verification=partial  ⇒ claims 必须是 shipped|partial（target 不许拿 partial 兜底）
+// 不满足就 FAIL，并把两边的状态打印出来（只说「不一致」而不给状态，复核者还得自己翻文件）。
+const verificationAbs = path.resolve(ROOT, verificationPath);
+const hasVerification = fs.existsSync(verificationAbs);
+let verification = null;
+if (hasVerification) {
+  verification = readJson(verificationPath);
+  const claimById = new Map(claims.map((c) => [c.id, c]));
+  const vClaims = verification.claims && typeof verification.claims === 'object' ? verification.claims : {};
+  let crossChecked = 0;
+  for (const [id, v] of Object.entries(vClaims)) {
+    const c = claimById.get(id);
+    if (!c) {
+      fail('verification 记录了清单中不存在的 claim: ' + id);
+      continue;
+    }
+    if (!v || typeof v !== 'object') {
+      fail(id + ' 的 verification 记录不是对象');
+      continue;
+    }
+    if (!['verified', 'partial', 'target'].includes(v.status)) {
+      fail(id + ' 的 verification.status 非法: ' + v.status);
+      continue;
+    }
+    crossChecked += 1;
+    if (v.status === 'verified' && c.status !== 'shipped') {
+      fail(id + ' 状态不一致：verification=verified，claims=' + c.status + '（只有 shipped 才能 verified）');
+    }
+    if (v.status === 'partial' && !['shipped', 'partial'].includes(c.status)) {
+      fail(id + ' 状态不一致：verification=partial，claims=' + c.status + '（target 不能用 partial 兜底）');
+    }
+  }
+  ok('交叉校验: verification 条目=' + crossChecked + '（verified↔shipped / partial↔shipped|partial）');
+} else {
+  warn('没有 verification 报告（' + verificationPath + '），跳过交叉校验');
+}
+
+// 5) gate 模式：只检查指定 tier 的 verified 报告
 if (mode === 'gate') {
-  if (!fs.existsSync(path.resolve(ROOT, verificationPath))) {
+  if (!hasVerification) {
     fail('缺少 verification 报告: ' + verificationPath);
     console.error('      先跑测试/截图，再按 docs/marketing/CONTEXT-OS-ACCEPTANCE.md 填写。');
     process.exit(1);
   }
-  const verification = readJson(verificationPath);
   if (verification.schema !== 'codem.context-os.verification.v1') {
     fail('verification.schema 不匹配');
   }

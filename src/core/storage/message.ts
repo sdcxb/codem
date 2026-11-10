@@ -20,7 +20,7 @@ import {
   domainReadOne,
   reportWriteNotAccepted,
 } from "./domain-store";
-import { applyContextCutoff, type ContextEpochMessageLike } from "../context/context-view";
+import { applyContextCutoff, hasSwitchEpoch, type ContextEpochMessageLike } from "../context/context-view";
 
 /** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
 const ATTACHMENT_TABLE = "attachments";
@@ -795,6 +795,63 @@ export function listTimelineMessages(sessionId: string, limit?: number): Message
     includeHidden: true,
     applyCheckpoint: false,
   });
+}
+
+/**
+ * **DisplayView**：用户 / 手机 / 分叉看到的视图（D1 / E5 / D11 的唯一读法收口）。
+ *
+ * ## 规则
+ *
+ * - 时间线里**出现过 `kind="switch"` 的 epoch** ⇒ 返回完整时间线（旧段全部保留）；
+ * - 否则 ⇒ 与 `listMessages` **逐条相同**（默认读法不变，灰度期零行为差异）。
+ *
+ * ## 为什么需要它（而不是各处自己判断）
+ *
+ * `session.get` 与 `fork` 原来读 `listMessages`（= 模型投影）。引入 switch 之后，
+ * 那个视图只剩最后一段：手机上少一段、分叉丢掉换段前的全部消息，而且**没有任何报错**。
+ * D11 把「兼容判据全绿」设成打开 `segmentEpochs` 的门禁，这个函数就是那条门禁的对象。
+ *
+ * ## 成本（已知并接受）
+ *
+ * 没有 switch 时会读两遍（时间线一次 + 投影一次）。这是**故意**的：
+ * 投影路径上有很多既有语义（工具调用回填、hidden 过滤、limit 语义、日志镜像合并），
+ * 在这里重写一遍等于制造第二套实现。两个调用点（手机 `session.get` / 分叉）都不是
+ * 逐 token 的热路径；等 P0-3 真正产生 switch 时，再把「检测+投影」折成一趟。
+ *
+ * ## 为什么判据必须看时间线
+ *
+ * `applyContextCutoff` 只保留**最新** marker，更早的 switch marker 在投影视图里不存在。
+ * 拿投影视图判断 = 换段后第一次压缩就把 switch 事实弄丢。
+ */
+export function listDisplayMessages(sessionId: string, limit?: number): Message[] {
+  const timeline = listTimelineMessages(sessionId);
+  if (!hasSwitchEpoch(timeline as unknown as ContextEpochMessageLike[])) {
+    return listMessages(sessionId, limit);
+  }
+  if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
+    return timeline.slice(-Math.floor(limit));
+  }
+  return timeline;
+}
+
+/**
+ * **记忆提取源**的选择器（P0-1 / 24 §0.2②）：取"模型视图"与"完整时间线"里**更完整的那个**。
+ *
+ * ## 为什么是纯函数、由调用方把两份列表传进来
+ *
+ * 提取器住在 `llm/index.ts`，而那些用例用 `vi.spyOn(MessageStorage, "listMessages")`
+ * 喂夹具 —— spy 只拦得住**经模块对象的属性访问**。如果这里自己调 `listMessages`，
+ * 十来个既有夹具会全部失效（它们会看到空时间线 ⇒ 提取器直接早退）。
+ * 把"选哪一份"抽成纯函数，调用点仍然走 `MessageStorage.xxx(...)`（spy 生效），
+ * 规则本身也能被单测直接钉住。
+ *
+ * ## 规则
+ *
+ * - 时间线更长 ⇒ 用时间线（含压缩前原文 / 被索引裁剪的行）；
+ * - 否则用模型视图（没有压缩时两者逐条相同，与改前**零差异**）。
+ */
+export function pickExtractionMessages<T>(visible: readonly T[], timeline: readonly T[]): readonly T[] {
+  return timeline.length > visible.length ? timeline : visible;
 }
 
 /**
@@ -1832,9 +1889,35 @@ export function copyMessageToSession(message: Message, targetSessionId: string, 
     id: newId,
     toolCalls: message.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${suffix}` })),
     ...(attachments ? { attachments } : {}),
+    /*
+     * P0-0（D11）：**epoch marker 不能原样复制**。
+     *
+     * 被守的缺陷（复核实测）：`metadata.contextEpoch.cutoffMessageId` 指向**源会话**的
+     * 消息 id，而子会话的消息 id 全部换了新值 ⇒ 子会话的 cutoff 永远「找不到」，
+     * 每次读都 fail-open + 告警（模型看到全量，但每次都在日志里喊）。
+     * 换过段的会话更糟：那个 cutoff 会把子会话的读法整个带偏。
+     *
+     * 处置＝25-P0-0 允许的「显式全量」：**丢掉 contextEpoch**（其余 metadata 保留）。
+     * 分叉出来的本来就是一份新会话，消息从第 0 条开始、一条不少 —— 让"压缩过"的
+     * 假投影跟着搬家只会制造一个悬空指针。
+     */
+    metadata: withoutContextEpoch(message.metadata),
   };
   createMessage(copy, targetSessionId);
   return newId;
+}
+
+/**
+ * 去掉 `metadata.contextEpoch`，其余 metadata 原样保留（见 `copyMessageToSession` 的说明）。
+ *
+ * 不是"清空 metadata"：`metadata` 里还可能有系统注入标记等**与 epoch 无关**的事实，
+ * 一并丢掉会让复制出的消息改变语义。
+ */
+function withoutContextEpoch(metadata: Message["metadata"]): Message["metadata"] | undefined {
+  if (!metadata || typeof metadata !== "object") return metadata;
+  if (!Object.prototype.hasOwnProperty.call(metadata, "contextEpoch")) return metadata;
+  const { contextEpoch: _epoch, ...rest } = metadata as Record<string, unknown>;
+  return Object.keys(rest).length > 0 ? (rest as Message["metadata"]) : undefined;
 }
 
 /** 复制附件时解析正文（顺序与理由见 `copyMessageToSession`） */

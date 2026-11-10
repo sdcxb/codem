@@ -26,6 +26,7 @@ import { allAcceptancePassed, acceptanceFingerprint, summarizeFailure } from "./
 import { goalPhaseMessageId } from "../storage/session";
 import type { PlannerComplete, ReplanArgs, ReplanResult } from "./planner";
 import { planReplan } from "./planner";
+import { checkGoalAcceptanceDocumentSync, checkGoalPhaseDocumentSync } from "./doc-sync";
 import type { GoalStore } from "./store";
 import { getGoalStore } from "./store";
 import type {
@@ -79,6 +80,34 @@ export interface GoalRunnerDeps {
   noProgressLimit?: number;
   /** 重规划上限（默认取契约里的 maxReplans=5） */
   maxReplans?: number;
+  /**
+   * **阶段完成前的独立检查**（Verifier 钩子；C10 × C06）。
+   *
+   * 可注入：判据用假实现驱动「落后 / 同步 / 无文档」三种分支。
+   * 默认实现见 {@link defaultPreCompletionCheck}：对阶段引用的文档做**真实**的
+   * C06 版本同步检查（版本比较复用 `documentSyncCheck`，不在这里重写）。
+   * 返回 `ok:false` ⇒ 该阶段**不标完成**、目标 blocked 且 reason 可见；
+   * `checked:false` ⇒ 没有可比的文档版本事实（代码/测试类里程碑），**不阻塞**且如实标注。
+   */
+  preCompletionCheck?: (args: {
+    goal: GoalContract;
+    plan: GoalPlan;
+    phase: PlanPhase;
+  }) => Promise<{ checked: boolean; ok: boolean; reason: string }>;
+  /**
+   * **目标完成前的独立检查**（Verifier 钩子；C06 × 目标级）。
+   *
+   * 与阶段级同一条纪律，但检查的是 `goal.acceptance` 引用的文档：
+   * 所有阶段 done、整体验收通过之后、`goal` 标 completed 之前执行。
+   * 可注入（判据用假实现驱动「落后 / 同步 / 无文档 / 抛错」四种分支）；
+   * 默认实现见 {@link defaultPreGoalCompletionCheck}，与阶段级**共用** `goal/doc-sync.ts`。
+   * 返回 `ok:false` ⇒ 目标**不标 completed**、blocked 且 reason 可见；
+   * `checked:false` ⇒ 没有可比的文档版本事实，**不阻塞**并在完成决策里如实标注。
+   */
+  preGoalCompletionCheck?: (args: {
+    goal: GoalContract;
+    plan: GoalPlan;
+  }) => Promise<{ checked: boolean; ok: boolean; reason: string }>;
 }
 
 export interface RunGoalArgs {
@@ -128,6 +157,35 @@ async function defaultRunTurn(args: GoalTurnArgs): Promise<GoalTurnResult> {
 /** 命令输出截断（喂回模型/落库都要有界） */
 function truncateDetail(text: string, max = 4000): string {
   return text.length > max ? `…（前 ${max} 字符已省略）\n${text.slice(-max)}` : text;
+}
+
+/**
+ * 默认的阶段完成前检查：**真实**的 C06 文档版本同步检查。
+ *
+ * 用**静态** import（而不是像 `defaultRunTurn` 那样动态 import）：knip / 可达性扫描
+ * 只把静态 import 当成接线，动态 import 会让 `checkGoalPhaseDocumentSync` 被记成
+ * 「没人用的导出」。真正的判定在 `goal/doc-sync.ts`（版本比较复用 C06 的 `documentSyncCheck`）。
+ */
+async function defaultPreCompletionCheck(args: {
+  goal: GoalContract;
+  phase: PlanPhase;
+}): Promise<{ checked: boolean; ok: boolean; reason: string }> {
+  return checkGoalPhaseDocumentSync({ sessionId: args.goal.sessionId, phase: args.phase });
+}
+
+/**
+ * 默认的目标完成前检查：**与里程碑级共用** `goal/doc-sync.ts` 的收集与比较。
+ *
+ * 检查对象是 `goal.acceptance`（不是阶段验收）：目标级验收可以引用里程碑之外的文档
+ * （例如「最终交付说明」），只做阶段级检查会漏掉它们。
+ */
+async function defaultPreGoalCompletionCheck(args: {
+  goal: GoalContract;
+}): Promise<{ checked: boolean; ok: boolean; reason: string }> {
+  return checkGoalAcceptanceDocumentSync({
+    sessionId: args.goal.sessionId,
+    acceptance: args.goal.acceptance,
+  });
 }
 
 /**
@@ -359,22 +417,69 @@ export class GoalRunner {
     return { kind: "paused", goalId, reason };
   }
 
-  private block(goalId: string, reason: string): GoalRunOutcome {
+  private block(
+    goalId: string,
+    reason: string,
+    extra: { planVersion?: number; phaseKey?: string; payload?: Record<string, unknown> } = {},
+  ): GoalRunOutcome {
     const goal = this.store.getGoal(goalId);
     if (!goal) return { kind: "failed", goalId, reason: "目标不存在" };
     this.store.updateGoal(goalId, { status: "blocked", blockedReason: reason });
-    this.decision(goalId, "goal_blocked", reason);
+    this.decision(goalId, "goal_blocked", reason, extra);
     emitGoalEvent({ type: "goal.blocked", sessionId: goal.sessionId, goalId, reason });
     return { kind: "blocked", goalId, reason };
   }
 
-  private complete(goalId: string): GoalRunOutcome {
+  private complete(
+    goalId: string,
+    docSync?: { checked: boolean; ok: boolean; reason: string },
+  ): GoalRunOutcome {
     const goal = this.store.getGoal(goalId);
     if (!goal) return { kind: "failed", goalId, reason: "目标不存在" };
     this.store.updateGoal(goalId, { status: "completed", completedAt: this.now(), blockedReason: "" });
-    this.decision(goalId, "goal_completed", "全部阶段与整体验收通过");
+    /**
+     * 目标级独立检查的结果要进**完成决策**：`checked:false` 表示目标验收没有文档引用
+     * （检查未接入），这是如实标注而不是「检查通过」。
+     */
+    const checkFact = docSync
+      ? docSync.checked
+        ? `（目标文档同步检查通过：${docSync.reason}）`
+        : `（目标文档同步检查未接入：${docSync.reason}）`
+      : "";
+    this.decision(goalId, "goal_completed", `全部阶段与整体验收通过${checkFact}`, {
+      ...(docSync
+        ? {
+            payload: {
+              docSync: { checked: docSync.checked, ok: docSync.ok, reason: docSync.reason },
+            },
+          }
+        : {}),
+    });
     emitGoalEvent({ type: "goal.completed", sessionId: goal.sessionId, goalId });
     return { kind: "completed", goalId };
+  }
+
+  /**
+   * 目标级完成前独立检查（C06）。
+   *
+   * 与阶段级同一纪律：检查器抛错 ⇒ **fail-closed**（无法证明文档已同步就不标完成，
+   * 不能让一个坏掉的检查器变成放行）；`checked:false` ⇒ 没有可比的版本事实，
+   * 不阻塞但如实标注「未接入」。
+   */
+  private async goalCompletionCheck(
+    goal: GoalContract,
+    plan: GoalPlan,
+  ): Promise<{ checked: boolean; ok: boolean; reason: string }> {
+    const check = this.deps.preGoalCompletionCheck ?? defaultPreGoalCompletionCheck;
+    try {
+      return await check({ goal, plan });
+    } catch (e) {
+      return {
+        checked: true,
+        ok: false,
+        reason: `目标完成前独立检查执行失败：${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
   }
 
   /** 预算判定（unlimited ⇒ 永远 false；这是 GOAL-11 的唯一判定点） */
@@ -561,13 +666,54 @@ export class GoalRunner {
       }
 
       if (allAcceptancePassed(results)) {
+        /**
+         * C10 × C06：**完成前独立检查**（Verifier 钩子）。
+         *
+         * 为什么必须放在 `updatePhase(done)` **之前**：里程碑完成路径不经过
+         * `agentic-loop` 的收尾守卫 ⇒ 缺了这一步，文档版本落后时目标照样会被标成
+         * completed。检查不通过 ⇒ 本阶段不标完成，目标 blocked 并带具体原因
+         * （用户可以在修好文档后点「继续目标」，已完成阶段不会重跑）。
+         *
+         * 检查是**可注入**的；默认实现只对「阶段引用的文档」做真实版本比对。
+         * 没引用/没版本事实时 `checked:false`：如实标注「未接入」，**不阻塞**。
+         */
+        const check = this.deps.preCompletionCheck ?? defaultPreCompletionCheck;
+        let gate: { checked: boolean; ok: boolean; reason: string };
+        try {
+          gate = await check({ goal: withUsage, plan, phase });
+        } catch (e) {
+          /*
+           * 检查器抛错 = 无法证明「文档已同步」⇒ 按未通过处理（fail-closed），
+           * 与 C10 的 `resolveDocSync` 同一口径；不能让一个坏掉的检查器变成放行。
+           */
+          gate = {
+            checked: true,
+            ok: false,
+            reason: `完成前独立检查执行失败：${e instanceof Error ? e.message : String(e)}`,
+          };
+        }
+        if (!gate.ok) {
+          this.decision(goal.id, "phase_failed", `阶段 ${phase.key} 验收通过但完成前独立检查未通过：${gate.reason}`, {
+            planVersion: plan.version,
+            phaseKey: phase.key,
+            payload: { docSync: { checked: gate.checked, ok: gate.ok, reason: gate.reason } },
+          });
+          return {
+            kind: "stopped",
+            outcome: this.block(goal.id, `阶段 ${phase.key} 完成前独立检查未通过：${gate.reason}`),
+          };
+        }
+        const checkFact = gate.checked
+          ? `独立检查通过：${gate.reason}`
+          : `独立检查未接入：${gate.reason}`;
         this.store.updatePhase(goal.id, plan.version, phase.key, {
           status: "done",
           completedAt: this.now(),
         });
-        this.decision(goal.id, "phase_passed", `阶段 ${phase.key} 通过全部验收`, {
+        this.decision(goal.id, "phase_passed", `阶段 ${phase.key} 通过全部验收（${checkFact}）`, {
           planVersion: plan.version,
           phaseKey: phase.key,
+          payload: { docSync: { checked: gate.checked, ok: gate.ok, reason: gate.reason } },
         });
         emitGoalEvent({
           type: "goal.phase",
@@ -890,7 +1036,27 @@ export class GoalRunner {
         if (!phase) {
           if (plan.phases.length > 0 && plan.phases.every((p) => p.status === "done")) {
             const verdict = await this.verifyGoalAcceptance(goal, cwd, plan);
-            if (verdict.ok) return this.complete(goalId);
+            if (verdict.ok) {
+              /**
+               * C06 × **目标级**：所有阶段 done、整体验收通过之后、`goal` 标 completed 之前，
+               * 再核对 `goal.acceptance` 引用的文档版本。
+               *
+               * 为什么还要这一道：里程碑级检查只看 `phase.acceptance`；目标级验收可能引用
+               * 里程碑之外的文档（例如最终交付说明）。缺了这一道，文档版本落后时目标仍会
+               * 被标成 completed —— 与里程碑级要修的缺陷同源。
+               */
+              const docGate = await this.goalCompletionCheck(goal, plan);
+              if (!docGate.ok) {
+                return this.block(goalId, `目标完成前独立检查未通过：${docGate.reason}`, {
+                  planVersion: plan.version,
+                  phaseKey: "goal",
+                  payload: {
+                    docSync: { checked: docGate.checked, ok: docGate.ok, reason: docGate.reason },
+                  },
+                });
+              }
+              return this.complete(goalId, docGate);
+            }
             const detail = summarizeFailure(verdict.results);
             const replanned = await this.tryReplan({
               goal,

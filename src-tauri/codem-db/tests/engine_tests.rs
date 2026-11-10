@@ -1490,6 +1490,62 @@ fn upsert_index_replaces_tool_calls_atomically() {
     assert_eq!(got["item"]["content"], json!("第二版"));
 }
 
+/// `messages.upsert_index` 必须把 `metadata` 写进索引（真机缺陷：它只被解析、没被写）。
+///
+/// 被守的形态：段式上下文的 switch/compact epoch 靠 `metadata.contextEpoch` 决定读侧
+/// cutoff。渲染侧 `createMessage` 只走这一条索引写路径。第一版两条 SQL 都没有
+/// `metadata` 列 ⇒ 真机上 `messages.metadata` 恒为 NULL（JSONL 与 `context_epochs`
+/// 里都有），用户按 `"kind":"switch"` 查库会得到空结果。
+///
+/// 两条不变量：① 给了就逐字落地；② **没给时不许清掉已有的**（普通内容更新会反复写同一行）。
+#[test]
+fn upsert_index_persists_metadata_and_preserves_it_when_omitted() {
+    let (_d, e) = temp_engine("upsert-index-metadata");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+
+    let metadata = json!({
+        "contextEpoch": {
+            "epochId": "compact-1",
+            "kind": "switch",
+            "segmentSeq": 2,
+            "cutoffMessageId": "m-old",
+        }
+    });
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m-meta", "session_id": "s1", "role": "user", "content": "[段切换 handoff] segment 2",
+            "timestamp": 100, "metadata": metadata.clone(),
+        }),
+    );
+    let got = call(&e, "messages.get", json!({ "id": "m-meta" }));
+    let md = got["item"]["metadata"]
+        .as_str()
+        .expect("metadata 必须是 JSON 文本（不许为 NULL）");
+    assert!(
+        md.contains("\"kind\":\"switch\"") && md.contains("\"segmentSeq\":2"),
+        "metadata 必须逐字进索引：{md}"
+    );
+
+    // 不带 metadata 的普通更新：内容变了，metadata 必须还在（COALESCE，不是覆盖成 NULL）
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m-meta", "session_id": "s1", "role": "user", "content": "内容更新",
+            "timestamp": 101,
+        }),
+    );
+    let after = call(&e, "messages.get", json!({ "id": "m-meta" }));
+    assert_eq!(after["item"]["content"], json!("内容更新"));
+    let md_after = after["item"]["metadata"].as_str().unwrap_or("");
+    assert!(
+        md_after.contains("\"kind\":\"switch\""),
+        "没给 metadata 的更新不许把已有 epoch 清掉：{md_after}"
+    );
+}
+
 /// ## 第 55 轮：**`tool_calls` 的量级用例**（这是审计里点名的缺口）
 ///
 /// 缺口原话：「`tool_calls` 大 payload 在真 CLI 契约中**无量级用例**」——
@@ -4099,6 +4155,62 @@ fn context_epochs_upsert_is_idempotent_and_lists_latest_first() {
     assert_eq!(items[1]["cutoff_message_id"], "m4");
 }
 
+/// P0（2026-11 重启缺陷）：`context_epochs.list` 必须 **`created_at` 优先**排序。
+///
+/// 被守的形态：`seq` 对 compact 路径来自 `nextCompactionMarkerId` 的**进程内计数器**
+/// （重启归零）。老会话里已有 `seq=9`，重启后新写的 epoch 是 `seq=1` ——
+/// 按 `seq DESC` 排会把老 epoch 摆到「最新」位置，完整历史/诊断读到的检查点就是错的
+/// （与模型视图 `selectLatestContextEpoch` 选错段同源）。
+///
+/// 两级一起钉住：`created_at DESC` 优先，同刻再 `seq DESC`。
+///
+/// 变红方式：SQL 改回 `ORDER BY seq DESC, created_at DESC` ⇒ 本条红。
+#[test]
+fn context_epochs_lists_latest_by_created_at_before_seq() {
+    let (_d, engine) = temp_engine("epochs-order");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+    // 老 epoch：序号大、创建得早
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-100-9", "session_id": "s1", "seq": 9,
+            "cutoff_message_id": "m2", "created_at": 100
+        }),
+    );
+    // 重启后新写的 epoch：计数器归零 ⇒ seq=1，但创建得更晚
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-200-1", "session_id": "s1", "seq": 1,
+            "cutoff_message_id": "m6", "created_at": 200
+        }),
+    );
+    // 同刻消歧：created_at 相同 ⇒ seq 大者在前
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "compact-200-5", "session_id": "s1", "seq": 5,
+            "cutoff_message_id": "m7", "created_at": 200
+        }),
+    );
+
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 3);
+    assert_eq!(
+        items[0]["id"], "compact-200-5",
+        "同 created_at 时 seq 大者在前"
+    );
+    assert_eq!(
+        items[1]["id"], "compact-200-1",
+        "created_at 更新的 epoch 必须排在 seq 更大的老 epoch 之前"
+    );
+    assert_eq!(items[2]["id"], "compact-100-9");
+}
+
 #[test]
 fn context_epochs_allows_duplicate_seq_and_rejects_unknown_session() {
     let (_d, engine) = temp_engine("epochs-dup");
@@ -4119,4 +4231,770 @@ fn context_epochs_allows_duplicate_seq_and_rejects_unknown_session() {
         &json!({ "id": "c", "session_id": "missing", "seq": 2, "cutoff_message_id": "m3", "created_at": 1 }),
     );
     assert!(bad.is_err(), "unknown session must fail, not silently write");
+}
+
+/// P0-0（D1/D3/E2）：`kind` / `segment_seq` 往返 + 旧调用点默认值。
+///
+/// 守两件事：
+/// 1. 不带这两个字段的 upsert（= 今天所有生产调用点）必须落成 `compact` / `1`，
+///    否则老数据会被读成“换过段”；
+/// 2. 同 id 重写时 `ON CONFLICT` 的列清单不许漏 —— 漏了就会“写了新段号、读回旧段号”。
+#[test]
+fn context_epochs_kind_and_segment_seq_roundtrip_and_default() {
+    let (_d, engine) = temp_engine("epochs-kind");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+
+    // 旧调用点：不带 kind / segment_seq
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "legacy", "session_id": "s1", "seq": 1,
+            "cutoff_message_id": "m2", "created_at": 10
+        }),
+    );
+    // 新调用点：显式 switch + 段号
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "switched", "session_id": "s1", "seq": 2,
+            "cutoff_message_id": "m5", "trigger_kind": "switch",
+            "kind": "switch", "segment_seq": 3, "created_at": 20
+        }),
+    );
+    // 同 id 重写：kind / segment_seq 必须跟着更新
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "switched", "session_id": "s1", "seq": 2,
+            "cutoff_message_id": "m6", "trigger_kind": "switch",
+            "kind": "switch", "segment_seq": 4, "created_at": 20
+        }),
+    );
+
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 2, "same id must update, not duplicate");
+    assert_eq!(items[0]["id"], "switched");
+    assert_eq!(items[0]["kind"], "switch");
+    assert_eq!(items[0]["segment_seq"], 4);
+    assert_eq!(items[0]["cutoff_message_id"], "m6");
+    assert_eq!(items[1]["kind"], "compact", "legacy upsert must default to compact");
+    assert_eq!(items[1]["segment_seq"], 1, "legacy upsert must default to segment 1");
+}
+
+/// P0-0（D11）：**老库**（没有 `kind` / `segment_seq` 两列）打开后必须被迁移补齐。
+///
+/// 补的是一个真实空洞：`schema_columns.rs` 只建**新库**（DDL 里已经有这两列），
+/// 上面的往返用例也只重开**已含新列**的库 —— 两者都不会让「migrations.json 漏一条
+/// ALTER」变红。这里手工把两列删掉，模拟 P0-0 之前的库，再重新打开：
+/// ① 迁移把列加回来；② 旧行读回 `compact` / `1`；③ 新写入的 switch 能落库。
+#[test]
+fn context_epochs_legacy_database_gets_columns_backfilled() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy.bin");
+
+    // ① 建一个完整的新库并写入一条"老形态"的 epoch（不带 kind/segment_seq）
+    {
+        let engine = Engine::open(&path).expect("open engine");
+        call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+        call(
+            &engine,
+            "context_epochs.upsert",
+            json!({
+                "id": "legacy", "session_id": "s1", "seq": 1,
+                "cutoff_message_id": "m2", "created_at": 10
+            }),
+        );
+    }
+
+    // ② 手工退回老结构
+    {
+        let conn = rusqlite::Connection::open(&path).expect("open raw db");
+        conn.execute_batch(
+            "ALTER TABLE context_epochs DROP COLUMN kind; \
+             ALTER TABLE context_epochs DROP COLUMN segment_seq;",
+        )
+        .expect("drop new columns");
+        let cols: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('context_epochs') \
+                 WHERE name IN ('kind','segment_seq')",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count columns");
+        assert_eq!(cols, 0, "前提：老结构里不该有这两列");
+    }
+
+    // ③ 重新打开：迁移必须把两列加回来，旧行拿到默认值
+    let engine = Engine::open(&path).expect("reopen legacy db");
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1, "老行必须还在（迁移不许重建表）");
+    assert_eq!(items[0]["id"], "legacy");
+    assert_eq!(items[0]["kind"], "compact", "老行必须补成 compact");
+    assert_eq!(items[0]["segment_seq"], 1, "老行必须补成第 1 段");
+
+    // ④ 迁移不是"加了个摆设"：新写入的 switch 必须真的落库
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "sw", "session_id": "s1", "seq": 2, "cutoff_message_id": "m3",
+            "kind": "switch", "segment_seq": 2, "created_at": 20
+        }),
+    );
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items[0]["kind"], "switch");
+    assert_eq!(items[0]["segment_seq"], 2);
+}
+
+/// P0-0（D1/E2）：`handoff_json` 可空、原样往返，**坏 JSON 不许把读路径打崩**。
+///
+/// 为什么这条必须存在：
+/// 1. 25 号文 P0-0 明确要求 `context_epochs.handoff_json` 可空；此前表里根本没有这一列，
+///    契约与实现直接对不上；
+/// 2. 它来自会话正文，历史上可能被手工/旧版本写入任意文本 ⇒ 读侧（完整历史/诊断）
+///    只把它当字符串，一个坏 JSON 不能变成「整张检查点表读不出来」；
+/// 3. 同 id 重写时 `ON CONFLICT` 的列清单漏了它 ⇒ 会「写了新 handoff、读回空」。
+///
+/// 变红方式：schema/migrations 少一列 ⇒ 首条 upsert 报错；读侧改用 `String`（非 Option）
+/// ⇒ 插一条 NULL/坏值后整次 list 报错。
+#[test]
+fn context_epochs_handoff_json_roundtrip_and_bad_json_is_readable() {
+    let (_d, engine) = temp_engine("epochs-handoff");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+
+    /* 正常 switch：带合法 JSON 摘要 */
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "sw-1", "session_id": "s1", "seq": 2, "cutoff_message_id": "m5",
+            "kind": "switch", "segment_seq": 2,
+            "handoff_json": "{\"v\":1,\"ref\":\"sw-1\",\"summary\":\"交接正文\"}",
+            "created_at": 20
+        }),
+    );
+    /* 旧调用点：不带 handoff_json ⇒ 保持 NULL（可空契约） */
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "legacy", "session_id": "s1", "seq": 1,
+            "cutoff_message_id": "m2", "created_at": 10
+        }),
+    );
+
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], "sw-1");
+    assert_eq!(
+        items[0]["handoff_json"],
+        "{\"v\":1,\"ref\":\"sw-1\",\"summary\":\"交接正文\"}"
+    );
+    assert_eq!(
+        items[1]["handoff_json"],
+        serde_json::Value::Null,
+        "旧调用点不写 handoff_json ⇒ 必须是 NULL，不是空串"
+    );
+
+    /* 坏 JSON：原样存、原样读；读路径不解析，因此不会把 list 打崩 */
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "bad", "session_id": "s1", "seq": 3, "cutoff_message_id": "m7",
+            "kind": "switch", "segment_seq": 3,
+            "handoff_json": "{not json",
+            "created_at": 30
+        }),
+    );
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items[0]["id"], "bad");
+    assert_eq!(items[0]["handoff_json"], "{not json", "坏 JSON 必须原样可读（不解析、不崩溃）");
+
+    /* 同 id 重写：handoff_json 必须跟着更新（ON CONFLICT 列清单不许漏） */
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "sw-1", "session_id": "s1", "seq": 2, "cutoff_message_id": "m6",
+            "kind": "switch", "segment_seq": 2,
+            "handoff_json": "{\"v\":1,\"ref\":\"sw-1\",\"summary\":\"新交接\"}",
+            "created_at": 20
+        }),
+    );
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    let rewritten = items.iter().find(|item| item["id"] == "sw-1").expect("sw-1");
+    assert_eq!(
+        rewritten["handoff_json"],
+        "{\"v\":1,\"ref\":\"sw-1\",\"summary\":\"新交接\"}",
+        "同 id 重写必须更新 handoff_json"
+    );
+}
+
+/// P0-0（D1/E2）：**老库**（没有 `handoff_json` 列）打开后必须被迁移补列。
+///
+/// 这条与 `context_epochs_kind_and_segment_seq_roundtrip_and_default` 分开：
+/// 那条守 kind/segment_seq 的默认值，这条只守 handoff_json 的「迁移补列 + 旧行 NULL +
+/// 新写入可落库」。混在一起时，漏任何一条 ALTER 都可能被前一条的断言掩盖。
+///
+/// 变红方式：migrations.json 少 `ALTER TABLE context_epochs ADD COLUMN handoff_json`
+/// ⇒ 重开后 pragma 查不到列；旧行读取会报错或新写入被拒。
+#[test]
+fn context_epochs_legacy_database_gets_handoff_json_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy-handoff.bin");
+
+    {
+        let engine = Engine::open(&path).expect("open engine");
+        call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+        call(
+            &engine,
+            "context_epochs.upsert",
+            json!({
+                "id": "legacy", "session_id": "s1", "seq": 1,
+                "cutoff_message_id": "m2", "created_at": 10
+            }),
+        );
+    }
+
+    {
+        let conn = rusqlite::Connection::open(&path).expect("open raw db");
+        conn.execute_batch("ALTER TABLE context_epochs DROP COLUMN handoff_json;")
+            .expect("drop handoff_json");
+        let cols: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('context_epochs') WHERE name = 'handoff_json'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count handoff_json");
+        assert_eq!(cols, 0, "前提：老结构里不该有 handoff_json");
+    }
+
+    let engine = Engine::open(&path).expect("reopen legacy db");
+    let cols: i64 = {
+        let conn = rusqlite::Connection::open(&path).expect("open raw db after migration");
+        conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('context_epochs') WHERE name = 'handoff_json'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count migrated column")
+    };
+    assert_eq!(cols, 1, "迁移必须把 handoff_json 列加回来");
+
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1, "老行必须还在");
+    assert_eq!(items[0]["handoff_json"], serde_json::Value::Null, "老行补 NULL");
+
+    call(
+        &engine,
+        "context_epochs.upsert",
+        json!({
+            "id": "sw", "session_id": "s1", "seq": 2, "cutoff_message_id": "m3",
+            "kind": "switch", "segment_seq": 2,
+            "handoff_json": "{\"v\":1,\"summary\":\"迁移后可写\"}",
+            "created_at": 20
+        }),
+    );
+    let listed = call(&engine, "context_epochs.list", json!({ "session_id": "s1" }));
+    let items = listed["items"].as_array().expect("items");
+    assert_eq!(items[0]["handoff_json"], "{\"v\":1,\"summary\":\"迁移后可写\"}");
+}
+
+// ========== P2-C：记忆独立表 + FTS 镜像（24 §P2） ==========
+//
+// 这一组判据钉住四件事（每条都能变红）：
+// ① **迁移存在**：升级前的老库里两张表都不存在 ⇒ 重开时 `schema::apply` 必须补建；
+// ② `replace_all` **幂等**：同一批行重复全量替换，检索结果不重复、不漂移；
+// ③ FTS **中文/英文都能命中**（CJK 切分在索引与查询两侧同源，见 `fts::tokenize`）；
+// ④ **项目过滤**默认收紧：`projectId=p1` 只返回 platform + p1，绝不泄漏 p2；
+//    `projectId` / `sessionId` 都不给 ⇒ 参数错误（fail-closed）。
+
+/// 一条镜像行的测试夹具（字段名与 `memories` 表列一一对应）
+fn mirror_row(
+    id: &str,
+    scope: &str,
+    project_id: Option<&str>,
+    session_id: Option<&str>,
+    key: &str,
+    content: &str,
+) -> serde_json::Value {
+    json!({
+        "id": id,
+        "scope": scope,
+        "project_id": project_id,
+        "session_id": session_id,
+        "key": key,
+        "content": content,
+        "source": "manual",
+        "status": "active",
+        "archived": false,
+        "usage_count": 0,
+        "updated_at": 1
+    })
+}
+
+/// 检索结果里的 id（按返回顺序）
+fn memory_search_ids(engine: &Engine, params: serde_json::Value) -> Vec<String> {
+    let out = call(engine, "memories.search", params);
+    out["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("memories.search 必须返回 items：{out}"))
+        .iter()
+        .map(|it| it["id"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+#[test]
+fn memories_mirror_is_created_for_existing_databases() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("memories-migrate.bin");
+
+    // ① 新库：内容表与全文表都已建好（replace_all 成功即证明两张表都在）
+    {
+        let engine = Engine::open(&path).expect("open engine");
+        let r = call(
+            &engine,
+            "memories.replace_all",
+            json!({ "memories": [mirror_row("m1", "platform", None, None, "构建", "跑 npm run build")] }),
+        );
+        assert_eq!(r["written"], json!(1));
+        let _ = engine.checkpoint();
+    }
+
+    // ② 模拟"升级前的老库"：两张表都不存在（真实历史库就是这样 —— 这个功能是新增的）
+    {
+        let conn = rusqlite::Connection::open(&path).expect("open raw db");
+        conn.execute_batch("DROP TABLE memories_fts; DROP TABLE memories;")
+            .expect("drop mirror tables");
+        let left: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name IN ('memories','memories_fts')",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count tables");
+        assert_eq!(left, 0, "前提：老库里不该有这两张表");
+    }
+
+    // ③ 重新打开 ⇒ schema::apply 必须把两张表补建（CREATE ... IF NOT EXISTS 幂等，
+    //    不需要单独的编号迁移：新增表没有列要 ALTER）
+    let engine = Engine::open(&path).expect("reopen legacy db");
+    let r = call(&engine, "memories.replace_all", json!({ "memories": [] }));
+    assert_eq!(r["written"], json!(0), "补建后的镜像表必须能接受空的全量替换");
+    assert_eq!(
+        memory_search_ids(&engine, json!({ "query": "构建", "projectId": "p1" })),
+        Vec::<String>::new(),
+        "空镜像检索必须返回 0 条（表存在且可查询）"
+    );
+
+    // ④ 补建出来的表是**真的能用**：写入后立刻检索得到
+    call(
+        &engine,
+        "memories.replace_all",
+        json!({ "memories": [mirror_row("m2", "platform", None, None, "构建", "补建后写入")] }),
+    );
+    assert_eq!(
+        memory_search_ids(&engine, json!({ "query": "构建", "projectId": "p1" })),
+        vec!["m2".to_string()]
+    );
+}
+
+#[test]
+fn memories_replace_all_is_idempotent() {
+    let (_d, e) = temp_engine("memories-idem");
+    let payload = json!({
+        "memories": [
+            mirror_row("m1", "project", Some("p1"), None, "构建命令", "跑 npm run build"),
+            mirror_row("m2", "project", Some("p1"), None, "测试命令", "跑 npm test"),
+        ]
+    });
+
+    let first = call(&e, "memories.replace_all", payload.clone());
+    let second = call(&e, "memories.replace_all", payload.clone());
+    assert_eq!(first["written"], json!(2));
+    assert_eq!(second["written"], json!(2), "同一批行重复替换，写入条数不变");
+
+    assert_eq!(
+        {
+            let mut ids = memory_search_ids(&e, json!({ "query": "命令", "projectId": "p1" }));
+            ids.sort();
+            ids
+        },
+        vec!["m1".to_string(), "m2".to_string()],
+        "重复全量替换不许把同一行变成多条（顺序由 bm25 决定，这里只比集合）"
+    );
+
+    // ③ 全量替换的语义：这一批里**没有**的行会消失（删条目靠它，不需要单独的 delete 命令）
+    call(
+        &e,
+        "memories.replace_all",
+        json!({ "memories": [mirror_row("m2", "project", Some("p1"), None, "测试命令", "跑 npm test")] }),
+    );
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "命令", "projectId": "p1" })),
+        vec!["m2".to_string()],
+        "全量替换后，上一批里的 m1 必须从镜像里消失"
+    );
+}
+
+#[test]
+fn memories_search_hits_cjk_and_ascii() {
+    let (_d, e) = temp_engine("memories-fts");
+    call(
+        &e,
+        "memories.replace_all",
+        json!({
+            "memories": [
+                mirror_row("m1", "project", Some("p1"), None, "构建命令", "跑 npm run build，不要直接 tsc"),
+                mirror_row("m3", "platform", None, None, "全局偏好", "回答用中文"),
+            ]
+        }),
+    );
+
+    // 中文按 CJK 切分命中（不切分的话这条恒为空 —— 与会话全文检索曾经的中文缺陷同一形态）
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "构建", "projectId": "p1" })),
+        vec!["m1".to_string()]
+    );
+    // 英文词（正文里）命中
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "tsc", "projectId": "p1" })),
+        vec!["m1".to_string()]
+    );
+    // platform 恒可见（与指定项目取并集）
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "中文", "projectId": "p1" })),
+        vec!["m3".to_string()]
+    );
+    // 不存在的词 ⇒ 0 条（不是"匹配全表"）
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "量子计算", "projectId": "p1" })),
+        Vec::<String>::new()
+    );
+    // 空查询是参数错误（不退化）
+    assert!(
+        dispatch(&e, "memories.search", &json!({ "query": "   ", "projectId": "p1" })).is_err(),
+        "空查询必须报参数错误，不许返回全表"
+    );
+}
+
+#[test]
+fn memories_search_never_leaks_other_projects() {
+    let (_d, e) = temp_engine("memories-scope");
+    call(
+        &e,
+        "memories.replace_all",
+        json!({
+            "memories": [
+                mirror_row("m1", "project", Some("p1"), None, "构建命令", "p1 的做法"),
+                mirror_row("m2", "project", Some("p2"), None, "构建命令", "p2 的做法（不许泄漏）"),
+                mirror_row("m3", "platform", None, None, "全局偏好", "回答用中文"),
+                mirror_row("m4", "conversation", None, Some("s1"), "本会话约定", "只在 s1 里有效"),
+                // 待批准 / 已归档的条目在镜像里必须存在，但检索**永远**看不到（fail-closed）
+                json!({
+                    "id": "m5", "scope": "project", "project_id": "p1",
+                    "key": "待批准的构建命令", "content": "还没批准", "status": "pending", "updated_at": 2
+                }),
+                json!({
+                    "id": "m6", "scope": "project", "project_id": "p1",
+                    "key": "已归档的构建命令", "content": "已经收起来", "archived": true, "updated_at": 3
+                }),
+            ]
+        }),
+    );
+
+    // ① 只给 p1 ⇒ platform + p1；p2 的条目一条都不许出现
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "构建", "projectId": "p1" })),
+        vec!["m1".to_string()],
+        "p1 的检索只许返回 platform + p1（待批准/已归档也不算）"
+    );
+    // ② 只给 p2 ⇒ 反过来
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "构建", "projectId": "p2" })),
+        vec!["m2".to_string()]
+    );
+    // ③ 只给会话 ⇒ project 作用域**整体不参与**（没有项目过滤 ⇒ 不能借会话过滤看项目条目）
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "构建", "sessionId": "s1" })),
+        Vec::<String>::new(),
+        "只给 sessionId 时 project 作用域的条目必须不可见（否则就是跨项目泄漏）"
+    );
+    assert_eq!(
+        memory_search_ids(&e, json!({ "query": "s1", "sessionId": "s1" })),
+        vec!["m4".to_string()],
+        "指定的会话作用域条目必须可见"
+    );
+    // ④ 两个都不给 ⇒ fail-closed（参数错误，不返回任何条目）
+    let err = dispatch(&e, "memories.search", &json!({ "query": "构建" })).unwrap_err();
+    assert!(
+        err.message.contains("projectId") && err.message.contains("sessionId"),
+        "跨会话检索没有过滤条件必须报参数错误（指名缺什么）：{err:?}"
+    );
+
+    // ⑤ 结果自带 scope / project_id（调用方据此标注"这条属于哪儿"）
+    let out = call(&e, "memories.search", json!({ "query": "p1", "projectId": "p1" }));
+    let item = &out["items"].as_array().unwrap()[0];
+    assert_eq!(item["scope"], json!("project"));
+    assert_eq!(item["project_id"], json!("p1"));
+}
+
+// ========== 向量持久化 / 检索（24 号文 P2-C）==========
+
+/// 把一组 (id, 向量) 写进镜像表（先 replace_all 建行，再 upsert 向量）。
+fn seed_embeddings(engine: &Engine, rows: serde_json::Value) {
+    call(engine, "memories.replace_all", json!({ "memories": rows }));
+}
+
+#[test]
+fn memories_upsert_embeddings_writes_vectors_and_rejects_bad_shapes() {
+    let (_d, e) = temp_engine("memories-embed-write");
+    seed_embeddings(
+        &e,
+        json!([
+            mirror_row("m1", "platform", None, None, "构建", "跑 build"),
+            mirror_row("m2", "platform", None, None, "测试", "跑 test"),
+        ]),
+    );
+
+    // ① 正常写入：两条都进库
+    let out = call(
+        &e,
+        "memories.upsert_embeddings",
+        json!({ "embeddings": [
+            { "id": "m1", "vector": [1.0, 0.0, 0.0] },
+            { "id": "m2", "vector": [0.0, 1.0, 0.0] },
+        ]}),
+    );
+    assert_eq!(out["written"], json!(2));
+    assert_eq!(out["skipped"], json!(0));
+
+    // ② 向量真的落库了（BLOB + 维度两列）：检索能把它查出来，就说明不是"只回了回执"
+    let ids = memory_vector_ids(&e, vec![1.0, 0.0, 0.0], json!({ "projectId": "p1" }));
+    assert_eq!(ids.first().map(String::as_str), Some("m1"), "查询向量与 m1 同向 ⇒ m1 排第一（top-k 仍会带回低分条目）");
+    assert_eq!(ids.last().map(String::as_str), Some("m2"), "正交的 m2 余弦为 0，排在后面");
+
+    // ③ id 不存在 ⇒ 跳过并计数（镜像允许滞后），不整批失败
+    let out = call(
+        &e,
+        "memories.upsert_embeddings",
+        json!({ "embeddings": [{ "id": "nope", "vector": [1.0, 0.0, 0.0] }] }),
+    );
+    assert_eq!(out["written"], json!(0));
+    assert_eq!(out["skipped"], json!(1));
+
+    // ④ 坏形状整批拒绝：空向量 / 非数字 / 维度超上限 / 非有限数
+    for bad in [
+        json!({ "embeddings": [{ "id": "m1", "vector": [] }] }),
+        json!({ "embeddings": [{ "id": "m1", "vector": [1.0, "x"] }] }),
+        json!({ "embeddings": [{ "id": "", "vector": [1.0] }] }),
+        json!({ "embeddings": [{ "id": "m1", "vector": vec![0.0; codem_db::memories::MEMORY_EMBEDDING_DIM_MAX + 1] }] }),
+    ] {
+        assert!(
+            dispatch(&e, "memories.upsert_embeddings", &bad).is_err(),
+            "非法向量必须整批拒绝：{bad}"
+        );
+    }
+
+    // ⑤ 整批拒绝之后，原来写进去的向量**一条都没变**（不是"写了一半"）
+    let after_bad = memory_vector_ids(&e, vec![1.0, 0.0, 0.0], json!({ "projectId": "p1" }));
+    assert_eq!(
+        after_bad.first().map(String::as_str),
+        Some("m1"),
+        "整批拒绝之后，之前写进去的向量必须原样还在（m1 仍然最相近）"
+    );
+    assert_eq!(after_bad.len(), 2, "m2 的向量没有被坏批次影响（两条都还在）");
+}
+
+/// 向量检索结果的 id（按返回顺序）
+fn memory_vector_ids(engine: &Engine, query: Vec<f64>, scope: serde_json::Value) -> Vec<String> {
+    let mut params = scope.as_object().cloned().unwrap_or_default();
+    params.insert(
+        "query_embedding".to_string(),
+        json!(query),
+    );
+    let out = call(engine, "memories.vector_search", serde_json::Value::Object(params));
+    out["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("memories.vector_search 必须返回 items：{out}"))
+        .iter()
+        .map(|it| it["id"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+#[test]
+fn memories_vector_search_orders_by_cosine_and_respects_scope() {
+    let (_d, e) = temp_engine("memories-vector-search");
+    seed_embeddings(
+        &e,
+        json!([
+            mirror_row("near", "project", Some("p1"), None, "构建", "同向"),
+            mirror_row("far", "project", Some("p1"), None, "构建", "反向"),
+            mirror_row("plat", "platform", None, None, "全局", "斜向"),
+            mirror_row("other", "project", Some("p2"), None, "构建", "别的项目（不许泄漏）"),
+            mirror_row("conv", "conversation", None, Some("s1"), "会话", "会话内"),
+            json!({
+                "id": "pending", "scope": "project", "project_id": "p1",
+                "key": "待批准", "content": "未批准不许被检索出来", "status": "pending", "updated_at": 1
+            }),
+            json!({
+                "id": "archived", "scope": "project", "project_id": "p1",
+                "key": "已归档", "content": "归档了就不进检索", "archived": true, "updated_at": 1
+            }),
+            // 维度不符的条目：必须被**跳过**（两个向量空间的余弦是噪声，不是"不相关"）
+            mirror_row("dim8", "project", Some("p1"), None, "构建", "维度不一样"),
+        ]),
+    );
+    call(
+        &e,
+        "memories.upsert_embeddings",
+        json!({ "embeddings": [
+            { "id": "near", "vector": [1.0, 0.0] },
+            { "id": "far", "vector": [-1.0, 0.0] },
+            { "id": "plat", "vector": [0.6, 0.8] },
+            { "id": "other", "vector": [1.0, 0.0] },
+            { "id": "conv", "vector": [1.0, 0.0] },
+            { "id": "pending", "vector": [1.0, 0.0] },
+            { "id": "archived", "vector": [1.0, 0.0] },
+            { "id": "dim8", "vector": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+        ]}),
+    );
+
+    // ① 排序：余弦降序（near=1.0 > plat=0.6 > far=-1.0）；其它项目/维度不符/待批准/已归档都不在
+    let ids = memory_vector_ids(&e, vec![1.0, 0.0], json!({ "projectId": "p1" }));
+    assert_eq!(
+        ids,
+        vec!["near".to_string(), "plat".to_string(), "far".to_string()],
+        "按余弦降序；p2 的条目、维度不符的条目、待批准/已归档的条目都不许出现"
+    );
+
+    // ② 只给会话 ⇒ project 作用域整体不参与（与 memories.search 同一条纪律）
+    assert_eq!(
+        memory_vector_ids(&e, vec![1.0, 0.0], json!({ "sessionId": "s1" })),
+        vec!["conv".to_string(), "plat".to_string()],
+        "只给 sessionId 时 project 条目不可见（否则就是跨项目泄漏）"
+    );
+
+    // ③ 两个过滤都不给 ⇒ 参数错误（fail-closed）
+    let err = dispatch(&e, "memories.vector_search", &json!({ "query_embedding": [1.0, 0.0] }))
+        .unwrap_err();
+    assert!(
+        err.message.contains("projectId") && err.message.contains("sessionId"),
+        "没有过滤条件必须报参数错误：{err:?}"
+    );
+
+    // ④ 空/非法查询向量 ⇒ 参数错误（不退化成长度 0 的全表扫描）
+    assert!(dispatch(
+        &e,
+        "memories.vector_search",
+        &json!({ "query_embedding": [], "projectId": "p1" })
+    )
+    .is_err());
+    assert!(dispatch(
+        &e,
+        "memories.vector_search",
+        &json!({ "query_embedding": "1,2,3", "projectId": "p1" })
+    )
+    .is_err());
+}
+
+#[test]
+fn memories_replace_all_preserves_embeddings_only_for_unchanged_content() {
+    let (_d, e) = temp_engine("memories-vector-carry");
+    let keep = mirror_row("keep", "project", Some("p1"), None, "构建", "内容没变");
+    let edit = mirror_row("edit", "project", Some("p1"), None, "构建", "内容会变");
+    call(&e, "memories.replace_all", json!({ "memories": [keep.clone(), edit] }));
+    call(
+        &e,
+        "memories.upsert_embeddings",
+        json!({ "embeddings": [
+            { "id": "keep", "vector": [1.0, 0.0] },
+            { "id": "edit", "vector": [1.0, 0.0] },
+        ]}),
+    );
+    assert_eq!(
+        memory_vector_ids(&e, vec![1.0, 0.0], json!({ "projectId": "p1" })).len(),
+        2,
+        "前提：两条都有向量"
+    );
+
+    // 全量替换（每次记忆保存都会发生）：内容没变的那条**保住向量**，内容变了的那条**丢掉旧向量**
+    let edited = mirror_row("edit", "project", Some("p1"), None, "构建", "内容变了");
+    call(&e, "memories.replace_all", json!({ "memories": [keep, edited] }));
+    let after = memory_vector_ids(&e, vec![1.0, 0.0], json!({ "projectId": "p1" }));
+    assert_eq!(
+        after,
+        vec!["keep".to_string()],
+        "内容没变的条目必须保留向量；正文改过的条目必须丢掉旧向量（否则就是拿旧向量给新内容打分）"
+    );
+}
+
+#[test]
+fn memories_embedding_columns_backfill_on_legacy_databases() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("memories-legacy-embed.bin");
+
+    // ① 先建一个"旧库"：memories 表存在，但**没有** embedding / embedding_dim 两列
+    {
+        let conn = rusqlite::Connection::open(&path).expect("open raw db");
+        conn.execute_batch(
+            "CREATE TABLE memories (\
+               id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT '', project_id TEXT, session_id TEXT, \
+               key TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', source TEXT, status TEXT, \
+               archived INTEGER NOT NULL DEFAULT 0, usage_count INTEGER NOT NULL DEFAULT 0, \
+               last_used_at INTEGER, updated_at INTEGER NOT NULL DEFAULT 0);",
+        )
+        .expect("create legacy memories table");
+        let cols: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('memories')").unwrap();
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        assert!(!cols.iter().any(|c| c == "embedding"), "前提：旧库没有 embedding 列");
+        assert!(!cols.iter().any(|c| c == "embedding_dim"), "前提：旧库没有 embedding_dim 列");
+    }
+
+    // ② 打开引擎 ⇒ migrations.json 的两条 ALTER 必须把列补上
+    let engine = Engine::open(&path).expect("reopen legacy db");
+    let cols: Vec<String> = engine
+        .with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT name FROM pragma_table_info('memories')")
+                .map_err(codem_db::DbError::from)?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(codem_db::DbError::from)?;
+            Ok(rows.filter_map(Result::ok).collect())
+        })
+        .expect("read columns");
+    assert!(cols.iter().any(|c| c == "embedding"), "旧库必须补上 embedding 列：{cols:?}");
+    assert!(cols.iter().any(|c| c == "embedding_dim"), "旧库必须补上 embedding_dim 列：{cols:?}");
+
+    // ③ 补列之后写入/检索都能用（不是"列在但写不进"）
+    seed_embeddings(
+        &engine,
+        json!([mirror_row("legacy1", "project", Some("p1"), None, "构建", "老库补列后写入")]),
+    );
+    call(
+        &engine,
+        "memories.upsert_embeddings",
+        json!({ "embeddings": [{ "id": "legacy1", "vector": [0.0, 2.0] }] }),
+    );
+    assert_eq!(
+        memory_vector_ids(&engine, vec![0.0, 1.0], json!({ "projectId": "p1" })),
+        vec!["legacy1".to_string()]
+    );
 }

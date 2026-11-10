@@ -1,0 +1,180 @@
+真实 provider 提示缓存 A/B（第二轮：请求里真的带上了 cache_control）
+=================================================================
+
+结论（先看这里）
+----------------
+1. **请求里确实带了 2 个缓存断点**（原始请求体的结构投影可证，见 §5）：
+   - 断点 1：`system[0]`（`cache_control: {type: "ephemeral"}`；system 已从字符串变成 block 数组）；
+   - 断点 2：**稳定前缀最后一条消息**的最后一个 content block（每轮随历史向后推进），
+     它之后的易变尾部（计划上下文 / 时间上下文 / 任务提示）**不带断点**。
+2. **provider 真的回报了缓存桶**（默认配置，未改任何设置）：
+   - 第 1 轮：`cache_creation_input_tokens` = **10,204（> 0，写缓存）**；
+     同一轮也报了 `cache_read_input_tokens` = 40,816；
+   - 第 2 / 3 / 4 轮：`cache_read_input_tokens` = **40,174 / 40,184 / 40,195（均 > 0）**，
+     每轮 `cache_creation_input_tokens` = 10,044 / 10,047 / 10,049；
+   - 每轮未命中输入只有 **8 token**（≈ 0.02%），单轮命中率 **99.98%**。
+3. **UI 显示命中率**：上下文状态面板 `缓存用量 缓存命中：80%（读 161369 / 写 40344）`
+   （`data-cache-reported=true`）；每条消息的状态行 `缓存命中：80%（读 … / 写 …）`。
+   会话累计 = 4 轮读数之和（读 40,816+40,174+40,184+40,195 = 161,369；
+   写 10,204+10,044+10,047+10,049 = 40,344），与 DB 逐条记录一致。
+4. **因果对照**：上一轮同一 provider / 同一模型（`aicodewith` / `claude-haiku-4-5-20251001`）
+   在请求**没有断点**时，三轮全部 `cacheReported:false`、无任何缓存字段
+   （见 `docs/marketing/evidence/cache-hit-real.txt`）。本轮唯一的变量就是
+   请求体里多了 `cache_control` ⇒ 从「从不命中、也测不到」变成「provider 稳定回报读/写两个桶」。
+5. **如实说明**：第 1 轮**同时**报了 read（40,816）与 creation（10,204）——两桶都非 0
+   （任务要求的是「第 1 轮 creation > 0、第 2/3 轮 read > 0」，这里两项目标都满足）。
+   观察到的恒等式是 `read = promptTokens − uncachedInputTokens`（每轮都是），写桶另计；
+   写桶量级（≈10.2k）与那段**长背景**按仓内估算器的量级（10,242）一致，但本文
+   **不推断** provider 网关/上游的内部拆分方式。能确证的是三件事：请求里有断点
+   （原始 body 投影 + sha256）、provider 回报了两个缓存桶、UI/DB 的读数与之一致。
+   另一个如实记录的差异：UI 状态行的「51K 入」= 读 + 写 + 未命中（51,028），
+   而 `usage.promptTokens`（40,824）按既有口径**不含写缓存桶** —— 这是
+   `usage-normalize.ts` 里写明的设计（与 OpenAI「prompt 含读、不含写」同一口径），不是漏算。
+
+构建 / 安装
+-----------
+- 构建（签名环境变量按规程注入；`tauri build` exit=0）：
+  - 日志：`.preview-shot/cache-hit2-build.log`
+  - 安装包：`src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe`
+    - sha256 = `970738FBF54855C88A6B252D51E38D9DCE778E9AE6E52F5A1BDB78882EE8511D`
+    - 大小 74,830,320 字节；LastWriteTime = 2026-11-07 12:26:39（+08:00）
+  - 签名：`Codem_1.18.13_x64-setup.exe.sig`（416 字节，12:26:40）同步产出
+- 静默安装：`Start-Process <setup.exe> -ArgumentList '/S' -Wait`
+  - installer exit=0，耗时 6.2 秒（≈12:27）
+- 安装后：`C:\Users\abee\AppData\Local\Codem\codem.exe`
+  - sha256 = `8C886B4E9807ADF7ECA104DF34F0CA8147EB3FEC9BAA7982A638FB65AF59EA4A`
+  - 大小 81,885,696 字节；LastWriteTime = 2026-11-07 12:25:16；ProductVersion = 1.18.13
+  - （与 `target/release/codem.exe` 的 sha256 不同是预期形态：bundle 会重写类型信息，大小一致）
+
+环境 / 配置（**未改任何设置**，默认配置）
+--------------------------------------
+- `mode = "api"`、`provider = "aicodewith"`、`model = "claude-haiku-4-5-20251001"`
+- baseUrl 走 `https://api.aicodewith.ai/v1`（Anthropic Messages / `streamAnthropic` 路径）
+- `codem-context-config` 原文（**没有 `promptCache` 键** ⇒ 默认开）：
+  `{"maxContextWindow": 128000, "outputReserve": 4096, "systemPromptTokens": 2000, "compactionThreshold": 0.8, "maxMessagesAfterCompaction": 20, "preserveRecentToolOutputs": true}`
+- A/B 之前的 `codem-last-session` = `"1793955363177-4yuxjivf0"`
+- 启动：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`
+  （CDP `/json/version` = 200，供 console 与请求体取证）
+
+场景
+----
+- 新会话：`1794026273267-guterdexh`（标题「对话 64」，created_at 1794026273267）
+- 第 1 轮：预置 **22,911 字符的固定背景**（140 段编号资料，逐字节固定、无时间戳；
+  按仓内 CJK 感知估算器 `≈10,242 token`，满足「≥8k token 稳定背景」的要求）；
+  助手回复 `OK`（0 工具调用，`turnOutcome=completed`）
+- 第 2/3/4 轮：连续 3 轮相同探针 `只回复 OK`
+- **同分钟控制**：起跑前等整分钟边界（实测等待 7.5s，开始时 `second=2`），
+  4 轮落在 12:38:02–12:38:17（同一分钟）——系统提示尾部是分钟精度日期，
+  跨分钟会让整段前缀失效（与断点位置无关），这一控制是为了不把时钟因素混进读数
+- 发送时刻（本地 +08:00）：12:38:02 / 12:38:09 / 12:38:13 / 12:38:17
+- 每轮请求：`promptTokens` 40,824 / 40,182 / 40,192 / 40,203（不含写缓存桶，见 §1.5）
+
+每轮缓存读数（DB `messages.metadata` 原文，逐字）
+-----------------------------------------------
+```
+assistant-1794026282355  第1轮（长背景）  {"turnEndTime":1794026286238,"turnOutcome":"completed","usage":{"cacheHitTokens":40816,"cacheReadTokens":40816,"cacheReported":true,"cacheWriteTokens":10204,"completionTokens":4,"cost":0,"promptTokens":40824,"totalTokens":40828,"uncachedInputTokens":8}}
+assistant-1794026288526  第2轮（只回复OK）{"turnEndTime":1794026291068,"turnOutcome":"completed","usage":{"cacheHitTokens":40174,"cacheReadTokens":40174,"cacheReported":true,"cacheWriteTokens":10044,"completionTokens":4,"cost":0,"promptTokens":40182,"totalTokens":40186,"uncachedInputTokens":8}}
+assistant-1794026292667  第3轮（只回复OK）{"turnEndTime":1794026294776,"turnOutcome":"completed","usage":{"cacheHitTokens":40184,"cacheReadTokens":40184,"cacheReported":true,"cacheWriteTokens":10047,"completionTokens":4,"cost":0,"promptTokens":40192,"totalTokens":40196,"uncachedInputTokens":8}}
+assistant-1794026296825  第4轮（只回复OK）{"turnEndTime":1794026299368,"turnOutcome":"completed","usage":{"cacheHitTokens":40195,"cacheReadTokens":40195,"cacheReported":true,"cacheWriteTokens":10049,"completionTokens":4,"cost":0,"promptTokens":40203,"totalTokens":40207,"uncachedInputTokens":8}}
+```
+`codem-cost-tracker` 里本会话 4 条记录（`cacheReported:true`，读/写两桶都在）：
+```
+{"id":"usage-1794026286236-5noi4uabk","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":40824,"outputTokens":4,"cacheReadTokens":40816,"cacheWriteTokens":10204,"cacheReported":true,"duration":3792,"success":true}
+{"id":"usage-1794026291066-9fz6pl5q7","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":40182,"outputTokens":4,"cacheReadTokens":40174,"cacheWriteTokens":10044,"cacheReported":true,"duration":2472,"success":true}
+{"id":"usage-1794026294775-d16trqwbj","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":40192,"outputTokens":4,"cacheReadTokens":40184,"cacheWriteTokens":10047,"cacheReported":true,"duration":2040,"success":true}
+{"id":"usage-1794026299367-o1sk3pf3l","model":"claude-haiku-4-5-20251001","provider":"aicodewith","inputTokens":40203,"outputTokens":4,"cacheReadTokens":40195,"cacheWriteTokens":10049,"cacheReported":true,"duration":2466,"success":true}
+```
+
+判定口径（`usage-normalize.ts`）：`cacheReadTokens` ← `cache_read_input_tokens`；
+`cacheWriteTokens` ← `cache_creation_input_tokens`；`promptTokens` = `input_tokens` + 读缓存
+（写缓存单独一桶，不计入 promptTokens —— 与 OpenAI「prompt 含读、不含写」同一条消费方口径）。
+UI 的 80% = 读 /（读 + 写 + 未命中）= 161,369 /（161,369 + 40,344 + 32）= 79.98% → 80%。
+
+请求体证据（CDP Network，**正文一律脱敏**）
+------------------------------------------
+4 轮各一次 `POST https://api.aicodewith.ai/v1/messages`（`Network.requestWillBeSent.postData`）。
+原始 body 未落盘（system 提示 45,099 字符、背景 22,911 字符）；只保存**结构投影 + sha256**：
+只保留 block 类型、文本长度、`cache_control` 落点，不保留任何正文。
+```
+第1轮  bodyLen=112150  sha256=8b7f778c49888e9af0353cdcaee03a7adb7580f2734780450ee1be96617d6b80
+       model=claude-haiku-4-5-20251001  max_tokens=16384  stream=true  tools=64
+       system = blocks[1]  { type:"text", textLen:45099, cache_control:{type:"ephemeral"} }
+       messages = 1 条  role=user
+         content[0] { type:"text", textLen:22911, cache_control:{type:"ephemeral"} }  ← 断点 2（长背景 = 稳定前缀末尾）
+         content[1] { type:"text", textLen:104,   cache_control:null }                ← 易变尾部（计划/时间上下文）
+         content[2] { type:"text", textLen:3622,  cache_control:null }                ← 易变尾部（任务提示，首轮较长）
+第2轮  bodyLen=108671  sha256=1f0d5ffc14cee918999f8c782ce2676d48279c221bbd3530abb3ecf51f175f6c
+       sites = system[0] + messages[2].content[0]（新一轮 user 消息 = 稳定前缀末尾）
+       其余：旧 user 22,911 字符 / assistant 2 字符 均无断点；尾部 104 / 45 字符无断点
+第3轮  bodyLen=108793  sha256=79a6551ae21cb4f205b2a1b29384b9a7e633ba8781c9dba35597f4339825405a
+       sites = system[0] + messages[4].content[0]
+第4轮  bodyLen=108914  sha256=093a7ae248213d5917cd1c549a3fd9155c89b703fef4115d3331b4bcd6265f37
+       sites = system[0] + messages[6].content[0]
+```
+结构投影（由上面真实 body 解析得到，正文以长度代替）：
+```json
+"system": [{ "type": "text", "text": "<redacted 45099 chars>", "cache_control": { "type": "ephemeral" } }],
+"messages": [ ..., { "role": "user", "content": [
+  { "type": "text", "text": "只回复 OK", "cache_control": { "type": "ephemeral" } },
+  { "type": "text", "text": "<redacted 104 chars>" },
+  { "type": "text", "text": "<redacted 45 chars>" }
+]}]
+```
+要点：断点**只落在稳定前缀**上；每轮易变尾部（计划上下文 / 时间上下文 / 任务提示）都**没有**
+`cache_control` —— 这正是「易变内容不进缓存」的设计（否则每轮必 miss）。
+断点总数 = 2（system 1 + 消息 1；Anthropic 上限 4）。
+
+渲染侧 console（CDP 捕获，原文）
+-------------------------------
+```
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 3, tools: 64
+[prompt-cache] 断点注入 system=1 message=1 source=anchor
+[agent-loop] Iteration 1: LLM stream ended. finishReason: stop, toolCalls: 0, text length: 2
+[prompt-cache] hit=40816 miss=8 prompt=40824 ratio=99.98%
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 5, tools: 64
+[prompt-cache] 断点注入 system=1 message=1 source=anchor
+[prompt-cache] hit=40174 miss=8 prompt=40182 ratio=99.98%
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 7, tools: 64
+[prompt-cache] 断点注入 system=1 message=1 source=anchor
+[prompt-cache] hit=40184 miss=8 prompt=40192 ratio=99.98%
+[agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 9, tools: 64
+[prompt-cache] 断点注入 system=1 message=1 source=anchor
+[prompt-cache] hit=40195 miss=8 prompt=40203 ratio=99.98%
+```
+- `source=anchor`：锚点来自循环侧真实计算（稳定前缀最后一条），不是协议层猜的
+  「倒数第 2 条」降级路径；
+- `[compact]`：本轮**没有**压缩行 —— 面板压力显示 4%（7,160 / 180,000 tokens），
+  远低于 80% 阈值，场景不需要压缩；usage 读数行（`[prompt-cache] hit=…`）就是每轮的 usage 证据；
+- `hit=?`（未上报）这一轮**没有出现**：provider 报了两个桶，界面不再走「未上报」分支。
+
+UI 文案（ContextMonitor / 状态行，原文）
+---------------------------------------
+- 上下文状态面板：`缓存用量 缓存命中：80%（读 161369 / 写 40344）`（`data-cache-reported=true`）
+- 每条消息状态行：
+  - 第 1 轮：`1 轮 · 1 步|缓存命中：80%（读 40816 / 写 10204）|51K 入 / 4 出`
+  - 第 2 轮：`1 轮 · 1 步|缓存命中：80%（读 40174 / 写 10044）|50.2K 入 / 4 出`
+  - 第 3 轮：`1 轮 · 1 步|缓存命中：80%（读 40184 / 写 10047）|50.2K 入 / 4 出`
+  - 第 4 轮：`1 轮 · 1 步|缓存命中：80%（读 40195 / 写 10049）|50.3K 入 / 4 出`
+- 截图：`docs/marketing/evidence/cache-hit-real-2.png`
+  （sha256 `2314CFDF952998AF703294D5656D95348F604B9ED3909896EFDEC7C7A8036D9A`，
+  画面里可见右侧「上下文状态 → 缓存用量：缓存命中：80%（读 161369 / 写 40344）」）
+
+原始观测落盘（不进 git，供复核）
+------------------------------
+- `.preview-shot/cache-hit2-ab.json`（4 轮 usage、console 全文、请求体结构投影、UI 文案）
+- `.preview-shot/cache-hit2-ab.png`（截图原图）
+- `.preview-shot/cache-hit2-db.json`（DB 读数快照：metadata 原文、成本记录、context-config）
+- `.preview-shot/cache-hit2-build.log`（构建全文）
+- 驱动脚本：`.preview-shot/cache-hit-ab2.mjs`（A/B）、`.preview-shot/cache-hit2-db.mjs`（库读数）、
+  `.preview-shot/cache-hit2-bg-tokens.mjs`（背景 token 估算）、`.preview-shot/cache-hit-restore.mjs`（还原）
+
+还原（A/B 之后）
+---------------
+- 关闭应用后执行 `node .preview-shot/cache-hit-restore.mjs .preview-shot/cache-hit2-ab.json`（exit=0）：
+  - `sessions` 1→0、`messages` 8→0、`session_events` 24→0、`session_fts` 8→0、`context_epochs` 0→0
+  - JSONL `%APPDATA%\com.codem.app\sessions\1794026273267-guterdexh.jsonl`：存在过、已删除
+  - 成本记录：删除本次会话的 records 与 sessionCosts
+  - `codem-last-session` 恢复为 `"1793955363177-4yuxjivf0"`（与 A/B 前逐字一致，回查 matches=true）
+- 旧会话完好：`1793955363177-4yuxjivf0`（标题「对话 65」）仍在库里（2 条消息），JSONL 仍在
+- 应用**正常启动**（不带 CDP 环境变量）：进程 Responding=true；
+  `http://127.0.0.1:9222` 不存在（socket 无监听）—— 还原后没有留下调试端口

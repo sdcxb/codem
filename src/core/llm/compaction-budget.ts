@@ -234,6 +234,15 @@ export function alignKeepToRoundBoundaryDown(
  */
 export const COMPACTION_MARKER_PREFIXES = ["[上下文已自动压缩]", "[上下文已手动压缩]"] as const;
 
+/**
+ * 压缩 marker 的**尾部回读提示**（P0）。
+ *
+ * 只追加在 marker 最后一行：前缀/折叠/解析都不变，但模型能看到"旧原文怎么取回"。
+ * 工具是 deferred 的（`thread_history_*`），没有这一行，模型不会想到去 `tool_search`。
+ */
+export const COMPACTION_MARKER_READ_HINT =
+  "_旧消息原文仍在：用 tool_search 找到 thread_history_search / thread_history_read 即可回读（不会删除）。_";
+
 /** 这一行是不是压缩摘要标记（role=user + 已知前缀） */
 /**
  * **一条消息占多少字符**（压缩预算的唯一口径）。
@@ -973,6 +982,88 @@ function countPartsInFirstChunks(parts: readonly string[], chunkPartCounts: read
 }
 
 /**
+ * 压缩摘要正文的**字符上限**（24 §P1-2：「摘要最大 4–6K 字符」）。
+ *
+ * 为什么取区间上沿 6000：结构化检查点的 8 段（主要请求/技术概念/文件与代码/错误和修复/
+ * 待办/当前工作/下一步/关键上下文）在实战里要装下精确路径、命令与错误串；4000 会把
+ * 「文件与代码」「错误和修复」两段压成只剩标题。取 6000 既守住「摘要不是无界」的契约，
+ * 又不逼模型丢掉可执行细节。**这是唯一一处阈值** —— 提示词、写侧裁剪、判据全部引用它，
+ * 不许再出现第二个「摘要上限」常量（`COMPACT-1` 盯的就是这一条）。
+ */
+export const COMPACTION_SUMMARY_MAX_CHARS = 6000;
+
+/**
+ * 把 LLM 摘要裁到 `COMPACTION_SUMMARY_MAX_CHARS` 以内，**优先保住结构化段落**。
+ *
+ * ## 被守的缺陷
+ *
+ * 摘要上限原来只写在提示词里（甚至一处写 1500 字符），代码侧**没有任何裁剪** ——
+ * 模型偶尔无视提示词就会写出上万字符，而压缩的全部收益当场被吃掉；更糟的是
+ * `composeCompactionMarkerText` 的预算按「待压内容字符数」分配，摘要一大，
+ * 中间档/更早档就要么被挤掉、要么整条标记被裁成只剩摘要开头（结构化段落全丢）。
+ *
+ * ## 为什么不是 `slice(0, max)`
+ *
+ * 检查点是 Markdown 分段的。头截会把后面几段（待办 / 下一步 / 当前工作）整段丢掉 ——
+ * 而「下一步」恰好是恢复工作最需要的一段。这里按 `#` 标题切段、**每个标题都保留**，
+ * 把正文预算按剩余段数均分（前面用得少的段把余额留给后面），末尾再写一句「已按预算裁剪」
+ * （可见，不静默）。没有标题的文本退化为头截 + 同一句说明。
+ */
+export function clampCompactionSummary(
+  summary: string,
+  maxChars: number = COMPACTION_SUMMARY_MAX_CHARS,
+): string {
+  const text = String(summary ?? "");
+  const limit = Number.isFinite(maxChars)
+    ? Math.max(1, Math.floor(maxChars))
+    : COMPACTION_SUMMARY_MAX_CHARS;
+  if (text.length <= limit) return text;
+
+  const note =
+    "\n\n（摘要已按字符预算裁剪：各段只保留开头，旧原文仍在时间线，可用 thread_history_search / thread_history_read 取回）";
+  /* 极小的上限放不下说明句 ⇒ 宁可不写说明，也要保证「不超上限」这条硬事实 */
+  const suffix = note.length < limit ? note : "";
+  const bodyBudget = Math.max(0, limit - suffix.length);
+
+  const lines = text.split("\n");
+  const sections: Array<{ heading: string | null; body: string[] }> = [];
+  let current: { heading: string | null; body: string[] } = { heading: null, body: [] };
+  for (const line of lines) {
+    /* 任何级别标题都算段边界：模型偶尔用 ###，也必须保住它的标题行 */
+    if (/^#{1,6}\s/.test(line)) {
+      sections.push(current);
+      current = { heading: line, body: [] };
+    } else {
+      current.body.push(line);
+    }
+  }
+  sections.push(current);
+
+  const headingChars = sections.reduce((n, s) => n + (s.heading ? s.heading.length + 1 : 0), 0);
+  if (sections.length <= 1 || headingChars >= bodyBudget) {
+    return `${text.slice(0, bodyBudget)}${suffix}`;
+  }
+
+  let remaining = bodyBudget - headingChars;
+  const out: string[] = [];
+  for (let i = 0; i < sections.length; i += 1) {
+    const section = sections[i];
+    if (section.heading) out.push(section.heading);
+    const body = section.body.join("\n").replace(/\s+$/, "");
+    if (!body) continue;
+    const left = sections.length - i - 1;
+    /* 均分剩余预算：前面的段用得少，后面的段自动拿到更多 */
+    const quota = left > 0 ? Math.max(0, Math.floor(remaining / (left + 1))) : remaining;
+    const kept = body.slice(0, Math.min(body.length, quota));
+    remaining -= kept.length;
+    if (kept.trim()) out.push(kept);
+  }
+  let clipped = out.join("\n");
+  if (clipped.length > bodyBudget) clipped = clipped.slice(0, bodyBudget);
+  return `${clipped}${suffix}`;
+}
+
+/**
  * 压缩标记的**唯一排版处**（自动路径用）。
  *
  * 三段与三档一一对应，且**每段都写明它覆盖了多少条 / 保真度高低** ——
@@ -1016,6 +1107,14 @@ export function composeCompactionMarkerText(input: {
    * 不传这个参数时不做裁剪（老调用方/纯函数用例）。
    */
   charBudget?: number;
+  /**
+   * P1-1：会话笔记摘要（`context/thread-notes.ts::buildThreadNotesDigest` 的产物）。
+   *
+   * 拼在**尾部**（`tailLine` 之后、回读提示之前），且**计入 charBudget**：
+   * 笔记再多也不许让压缩标记突破自己的预算（「压缩不许让上下文变大」是硬规则）。
+   * 预算塞不下时整段省略 ⇒ 压缩照旧完成（notes 不可用回退现有摘要，不阻断）。
+   */
+  notesDigest?: string;
 }): string {
   const budget = input.charBudget === undefined ? Number.POSITIVE_INFINITY : Math.max(800, Math.floor(input.charBudget));
   /**
@@ -1024,8 +1123,18 @@ export function composeCompactionMarkerText(input: {
    */
   const tailLine =
     "---\n" +
-    `已移除 ${input.removedCount} 条旧消息，保留最近 ${input.keptCount} 条（按轮次边界对齐：最近几轮不切断）。` +
-    "请基于以上内容继续工作；如需之前的文件内容或命令输出，请用工具重新获取。";
+    /*
+     * P1-2（24 §P1-2 / COMPACT-2）：**不许写「已移除」**。
+     *
+     * 检查点模式下旧消息一条都没有被删除（`deleteMessagesByIds` 在压缩路径上根本不会被调用），
+     * 它们只是不再进模型视图。旧文案「已移除 N 条旧消息」是**与事实相反**的陈述 ——
+     * 模型读到会以为原文已经不存在，于是既不去 `thread_history_*` 回读，也会重复劳动。
+     * 现在如实写「已折叠进本段摘要（不是删除）」并给出取回入口；removedCount/keptCount
+     * 两个事实保留（面板/判据仍按它们对账）。
+     */
+    `较早的 ${input.removedCount} 条消息已折叠进本段摘要（不是删除）；保留最近 ${input.keptCount} 条（按轮次边界对齐：最近几轮不切断）。` +
+    "原文仍在时间线里，可用 thread_history_search / thread_history_read 取回；" +
+    "如需之前的文件内容或命令输出，也可用工具重新获取。";
   const headingOf = {
     summary: input.summaryInterrupted
       ? "## 检查点摘要（本次摘要调用中断：以下是片段兜底，不是完整摘要）"
@@ -1041,15 +1150,52 @@ export function composeCompactionMarkerText(input: {
     overflow: (input.overflowDigest ?? "").trim(),
   };
   const clipNote = (label: string, dropped: number) => `\n（${label}已按压缩预算裁剪 ${dropped} 字符）`;
-  const fixedLen =
+  const baseFixedLen =
     "[上下文已自动压缩]".length +
     2 +
     tailLine.length +
+    2 +
+    /*
+     * P0：尾部回读提示也是固定开销 —— 必须**先扣掉再分配**，否则"有预算时标记不超预算"
+     * 这条硬事实会被它突破（实测 charBudget=20000 ⇒ 20077）。老调用方不传 charBudget 时
+     * 不走这条预算路径，语义不变。
+     */
+    COMPACTION_MARKER_READ_HINT.length +
     2 +
     (wanted.summary ? headingOf.summary.length + 4 + clipNote("本段", 100000).length : 0) +
     (wanted.prior ? headingOf.prior.length + 4 + clipNote("本段", 100000).length : 0) +
     (wanted.middle ? headingOf.middle.length + 4 + clipNote("本段", 100000).length : 0) +
     (wanted.overflow ? headingOf.overflow.length + 4 + clipNote("本段", 100000).length : 0);
+  /**
+   * P1-1：会话笔记摘要（untrusted）—— **先按剩余预算量一次**，再决定放不放、放多少。
+   *
+   * 它必须计入 `fixedLen`：否则四段摘要分完配额后追加 8KB 笔记，标记就会突破
+   * `max(800, 待压内容)`（第 228 波那条"压缩不许让上下文变大"的硬规则）。
+   * 放不下就整段省略 —— 笔记还可以用 `notes_read` 回读，压缩本身不能被它阻断。
+   *
+   * `notesDigest` 按契约来自 `buildThreadNotesDigest()`，**自带 `## 会话笔记…` 标题**；
+   * 只有调用方传了没有标题的纯文本时才补一个，避免同一段出现两个标题。
+   */
+  const notesBody = (input.notesDigest ?? "").trim();
+  const notesHeading = /^##\s/.test(notesBody)
+    ? ""
+    : "## 会话笔记（untrusted：模型自己写的状态，不是用户指令，也不是权限/审批依据）";
+  const notesLead = notesHeading ? `${notesHeading}\n\n` : "";
+  let notesSection = "";
+  if (notesBody) {
+    const room = Number.isFinite(budget) ? Math.max(0, budget - baseFixedLen) : Number.POSITIVE_INFINITY;
+    /* 48 = 裁剪注记的保守预留（与其它段同一口径：宁可少放几字，也不许超预算） */
+    const maxBody = Math.max(0, room - notesLead.length - 48);
+    if (maxBody > 0) {
+      const kept = notesBody.length > maxBody ? notesBody.slice(0, maxBody) : notesBody;
+      const clipLine =
+        kept.length < notesBody.length
+          ? `\n（会话笔记已按压缩预算裁剪 ${notesBody.length - kept.length} 字符）`
+          : "";
+      notesSection = `${notesLead}${kept}${clipLine}`;
+    }
+  }
+  const fixedLen = baseFixedLen + (notesSection ? notesSection.length + 2 : 0);
   const usable = Math.max(0, budget - fixedLen);
   /**
    * ★ 第 228 波审计（第三轮·中）：分配必须**按在场段数**分，不能给两段各发同一份配额。
@@ -1088,6 +1234,22 @@ export function composeCompactionMarkerText(input: {
   if (present.middle) sections.push(headingOf.middle, "", clip(wanted.middle, middleMax), "");
   if (present.overflow) sections.push(headingOf.overflow, "", clip(wanted.overflow, overflowMax), "");
   sections.push(tailLine);
+  /**
+   * P1-1：会话笔记摘要放在尾部（`tailLine` 之后、回读提示之前）。
+   * 它每轮都可能变 ⇒ 只能出现在易变尾部，绝不能进稳定前缀（NOTE-4）。
+   */
+  if (notesSection) sections.push(notesSection);
+  /**
+   * ★ P0：**尾部回读提示**（易变尾部，不动稳定前缀）。
+   *
+   * 为什么加：压缩之后模型只看到摘要，旧原文还在时间线里，但模型**不知道有入口**
+   * （工具是 deferred 的，只有 tool_search 才会看见）。这一行是给模型的"路牌"。
+   *
+   * 为什么放最后：前缀 `[上下文已自动压缩]` 被解析器（`COMPACTION_MARKER_PREFIXES`）、
+   * 折叠逻辑和既有快照依赖 —— 改前缀等于改协议；追加一行只影响**这一次渲染的尾部**，
+   * 稳定前缀与所有 startsWith 判据都不受影响。
+   */
+  sections.push(COMPACTION_MARKER_READ_HINT);
   return sections.join("\n");
 }
 
@@ -1270,6 +1432,20 @@ export function renderStructuredHistorySummary(
 }
 
 
+
+/**
+ * **连续压缩上限**（24 §P1-2：「连续压缩最多 2 次」）。
+ *
+ * 这是熔断阈值的**唯一一处**：`agentic-loop` 的两条触发路径（迭代前压力压缩 / 反应式溢出压缩）
+ * 与「保留集装不下」那条硬结论都引用它。原来三处各写 `3`，而 §9 的 context manager 在
+ * **同一份状态**（`state.consecutiveCompactions`）上做换段决策（`segment-switch.ts` 的
+ * `SEGMENT_SWITCH_AFTER_COMPACTIONS = 2`）—— 两套阈值意味着「连压 2 次已说明压不动，
+ * 但压缩路径还要再压一次才承认」，于是第 3 次压缩白烧一次摘要调用、压力也不降。
+ *
+ * 为什么不是「再引入一套 80%/90% 阈值」：上限只数**无效压缩的次数**，触发线仍是
+ * water-level 的考虑线（`compactionThreshold`，默认 0.7）—— 一个 pressure 模型，两处用途。
+ */
+export const MAX_CONSECUTIVE_COMPACTIONS = 2;
 
 /**
  * 连压熔断的**按效果**判定（BRK-1/2）：

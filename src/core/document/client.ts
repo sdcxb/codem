@@ -390,6 +390,88 @@ export async function documentOutline(
   return getBackend().command("documents.outline", { document_id: documentId, limit });
 }
 
+/**
+ * 页级元数据（`document_pages`）。
+ *
+ * 为什么需要它（C05「表格/OCR 文档有明确状态」）：只有块/页编号时，模型无法区分
+ * 「这一页是排版文本」还是「这一页是扫描件、由视觉模型转录」；把 `kind` 与
+ * `ocr_state`/`ocr_model` 带上来，引用里才能写明来源（`source: vision(...)`），
+ * 也才能在 `doc_outline`/`doc_status` 里报「还有 N 页待转录」而不是假装已就绪。
+ */
+export interface DocumentPageMeta {
+  page_no: number;
+  /** `text` | `scanned` | `mixed`（由提取器判定；未知为 null） */
+  kind?: string | null;
+  /** `layout`（文本层） | `vision`（视觉转录） */
+  text_source?: string | null;
+  text_bytes: number;
+  /** `pending` | `done` | `failed`；非扫描页为 null */
+  ocr_state?: string | null;
+  ocr_model?: string | null;
+  image_path?: string | null;
+}
+
+/** 页级状态（大纲/状态/阅读三处共用同一份口径）。 */
+export async function documentPages(documentId: string): Promise<DocumentPageMeta[]> {
+  const res = await getBackend().command<{ items?: DocumentPageMeta[] }>("documents.pages", {
+    document_id: documentId,
+  });
+  return Array.isArray(res?.items) ? res.items : [];
+}
+
+/** 带页码的大纲标题（`page` 由块元数据推导；未知时省略，不编造）。 */
+interface DocumentOutlineHeading {
+  heading: string;
+  block_no: number;
+  /** 该标题第一次出现的页码（来自块元数据；无块覆盖时为 undefined） */
+  page?: number;
+}
+
+export interface DocumentOutlineDetailed {
+  headings: DocumentOutlineHeading[];
+  /**
+   * 页码覆盖度：
+   * - `complete`：块元数据一次取全（没有 has_more），未命中的标题确实无页码；
+   * - `partial`：块元数据被 limit 截断，未命中的标题**可能**只是没取到；
+   * - `none`：完全没有块元数据。
+   */
+  pageCoverage: "complete" | "partial" | "none";
+}
+
+/**
+ * 大纲 + 页码（C05：结果带页码/章节引用）。
+ *
+ * 为什么不改 Rust 的 `documents.outline`：它的 SQL 只查 `document_blocks` 的
+ * `kind='heading'`，块表里没有页号；而 `documents.chunks` 已经带了
+ * `heading_path + page_from`。在渲染侧合并这两个已有查询，既不动后端契约，
+ * 也能把「页码未知」如实降到 `pageCoverage: partial/none`，而不是猜一个数字。
+ */
+export async function documentOutlineDetailed(
+  documentId: string,
+  limit = 80,
+): Promise<DocumentOutlineDetailed> {
+  const [outline, chunks] = await Promise.all([
+    documentOutline(documentId, limit),
+    documentChunks({ documentId, limit: 200 }),
+  ]);
+  /** heading_path → 首次出现的页码（取最小值；块按 chunk_no 升序返回） */
+  const pageOfHeading = new Map<string, number>();
+  for (const chunk of chunks.items) {
+    const heading = chunk.heading_path ?? "";
+    if (!heading) continue;
+    if (!pageOfHeading.has(heading)) pageOfHeading.set(heading, chunk.page_from);
+  }
+  const headings: DocumentOutlineHeading[] = outline.headings.map((h) => {
+    const page = pageOfHeading.get(h.heading);
+    return typeof page === "number" && page > 0
+      ? { heading: h.heading, block_no: h.block_no, page }
+      : { heading: h.heading, block_no: h.block_no };
+  });
+  const pageCoverage: DocumentOutlineDetailed["pageCoverage"] =
+    chunks.items.length === 0 ? "none" : chunks.has_more ? "partial" : "complete";
+  return { headings, pageCoverage };
+}
+
 // ═══════════════════════ 视觉转录（P1，ADR-0008 §15） ═══════════════════════
 
 export interface OcrPendingPage {
@@ -477,15 +559,37 @@ export async function readDocumentChunk(
   return getBackend().readText(documentId, chunkNo);
 }
 
-/** 读某一页：按页取块 → 逐块读正文（预算内），拼成 ≤maxTokens 的文本。 */
+/**
+ * 读某一页：按页取块 → 逐块读正文（预算内），拼成 ≤maxTokens 的文本。
+ *
+ * 返回里带 `pageMeta`（这一页的 `kind`/`ocr_state`/`ocr_model`）：C05 要求
+ * 「表格/OCR 文档有明确状态」—— 读正文时如果这一页是扫描页、文本来自视觉转录，
+ * 调用方必须在引用里写明 `source: vision(...)`，否则模型会把 OCR 文本当成原文。
+ */
 export async function readDocumentPage(
   documentId: string,
   page: number,
   maxTokens = 4000,
-): Promise<{ text: string; citation: any; hasMore: boolean }> {
-  const chunks = await documentChunks({ documentId, page, limit: 8 });
+): Promise<{
+  text: string;
+  citation: any;
+  hasMore: boolean;
+  pageMeta?: DocumentPageMeta;
+  /**
+   * C05：这次读之前 `documents.pages` 返回了几行。
+   *
+   * 调用方要靠它区分「后端没有页级数据」（=0，只能派生并标注）与
+   * 「有页表但这页不在里面」（>0，标 partial）—— 只看 `pageMeta` 会把两者混成同一种沉默。
+   */
+  pageTableSize: number;
+}> {
+  const [chunks, pages] = await Promise.all([
+    documentChunks({ documentId, page, limit: 8 }),
+    documentPages(documentId).catch(() => [] as DocumentPageMeta[]),
+  ]);
+  const pageMeta = pages.find((p) => p.page_no === page);
   if (chunks.items.length === 0) {
-    return { text: "", citation: { page }, hasMore: false };
+    return { text: "", citation: { page }, hasMore: false, ...(pageMeta ? { pageMeta } : {}), pageTableSize: pages.length };
   }
   let text = "";
   let used = 0;
@@ -496,7 +600,13 @@ export async function readDocumentPage(
       const { text: clipped } = truncateToTokens(part.text, Math.max(0, maxTokens - used));
       text += clipped;
       used += estimateDocTokens(clipped);
-      return { text, citation: part.citation, hasMore: true };
+      return {
+        text,
+        citation: part.citation,
+        hasMore: true,
+        ...(pageMeta ? { pageMeta } : {}),
+        pageTableSize: pages.length,
+      };
     }
     text += part.text;
     used += cost;
@@ -505,6 +615,8 @@ export async function readDocumentPage(
     text,
     citation: { page, headingPath: chunks.items[0]?.heading_path ?? null },
     hasMore: chunks.has_more,
+    ...(pageMeta ? { pageMeta } : {}),
+    pageTableSize: pages.length,
   };
 }
 

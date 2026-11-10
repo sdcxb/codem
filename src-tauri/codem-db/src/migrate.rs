@@ -94,6 +94,10 @@ pub const IMPORT_ORDER: &[&str] = &[
     "accounts",
     "mcp_servers",
     "memory",
+    // P2-C：记忆镜像表（结构镜像，权威仍是 settings 的 `memory` 字段）。
+    // 放在 `memory` 之后：旧库（sql.js 时代）没有这张表 ⇒ `legacy.read_table` 会跳过，
+    // 新库/升级库则会被照搬一次（镜像可重建，多搬一次无害）。
+    "memories",
     "recovery_data",
     "agent_profiles",
     "cost_records",

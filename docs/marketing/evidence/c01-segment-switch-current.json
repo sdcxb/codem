@@ -1,0 +1,12 @@
+{
+  "schema": "codem.c01.segment-switch-evidence.v1",
+  "collectedAt": "2026-11-08T15:20:42.465Z",
+  "command": "C01_EVIDENCE=1 npx vitest run src/test/segment-default-on-compat.test.ts -t DEF-1c",
+  "sessionId": "sess-default-on-compat",
+  "resultReason": "completed",
+  "pressure": 0.724734296875,
+  "threshold": 0.7,
+  "switches": 1,
+  "segmentSeq": 2,
+  "oldMessages": 24
+}

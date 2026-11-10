@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
   "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。 ⚠️「界面：拆掉选中集合随待批准列表收敛（幽灵选中）」这条**已撤掉**：一次性修复后它不再能让任何判据变红（该能力仍由 memory-pending-batch 的行为用例守着），按纪律不保留无效变异。",
-  "runAt": "2026-10-17T06:45:22.071Z",
-  "specFingerprint": "171c0212136018673ba5b58a9bdda68e7c35a4ed",
+  "runAt": "2026-11-08T09:56:01.251Z",
+  "specFingerprint": "bb7a72a603dd65b7958b458118de420a6fe9d0a1",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8035
+      "ms": 7916
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8273
+      "ms": 7191
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7134
+      "ms": 7642
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -82,8 +82,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "  return getWriteApprovalSetting()[scope] === true;",
-          "to": "  return getWriteApprovalSetting().platform === true;"
+          "from": "  const key: keyof ApprovalScopeSetting = scope === \"team\" ? \"conversation\" : scope;\n  return getWriteApprovalSetting()[key] === true;",
+          "to": "  void scope;\n  return getWriteApprovalSetting().platform === true;"
         }
       ],
       "tests": [
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7152
+      "ms": 7692
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -102,8 +102,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      this.entries.set(id, { ...entry, status: \"active\" });\n      changed++;",
-          "to": "      this.entries.set(id, { ...entry, status: \"active\" });\n      this.save();\n      changed++;"
+          "from": "      this.entries.set(id, this.touchCopy(entry, { status: \"active\" }));\n      changed++;",
+          "to": "      this.entries.set(id, this.touchCopy(entry, { status: \"active\" }));\n      this.save();\n      changed++;"
         }
       ],
       "tests": [
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7331
+      "ms": 7782
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -122,8 +122,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
-          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
+          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);",
+          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      /* 24 号文 P2-A：批量拒绝也是删除（用户明确说\"这些提议我不要\"）⇒ 留墓碑 */\n      this.recordTombstone(entry);\n      this.entries.delete(id);"
         }
       ],
       "tests": [
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7078
+      "ms": 7194
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7552
+      "ms": 8353
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 6787
+      "ms": 8198
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -194,7 +194,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 7783
+      "ms": 8422
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -216,7 +216,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 6982
+      "ms": 7675
     }
   ]
 }

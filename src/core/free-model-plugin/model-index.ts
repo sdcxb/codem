@@ -47,26 +47,133 @@ export function routeProviderForModel<T extends { providerId: string; modelId: s
 }
 
 /**
- * **从"当前设置 + 已登记的供应商"算出这次该用哪个模型 / 哪个供应商**（纯函数，第 208 波）。
+ * 选供应商的结果。
+ *
+ * `unavailable` 是**终止信号**（2026-11 安全修复，用户可见行为变更）：
+ * 显式 provider 未注册、或该 provider 没有默认模型时，调用方必须**报错**，
+ * 绝不能继续拿 `providerId` 去发请求。**宁可报错，也不悄悄发往别家。**
+ */
+export interface ModelSelection {
+  providerId: string;
+  modelId: string;
+  /** true = 这次选择不可用；调用方必须抛 `error`，不得继续发请求 */
+  unavailable?: true;
+  /** 给用户看的可执行原因（调用方直接作为 Error.message） */
+  error?: string;
+}
+
+/**
+ * **从"当前设置 + 已登记的供应商"算出这次该用哪个模型 / 哪个供应商**（纯计算，第 208 波）。
+ * 2026-11 起显式 provider 不存在时**不再 warn + 启发式回退**，而是返回 `unavailable`
+ * 让调用方报错（安全：宁可报错也不悄悄发往别家）—— 本函数因此仍然**没有副作用**。
  *
  * 为什么要有它：用户选了免费模型却发去 deepseek/openai —— 因为引擎手里那份 `config.defaultModel`
  * 是**启动时抄下来的副本**，设置里改了它并不知道（真机日志：`slot=chat → fallback:
  * provider=deepseek, model=deepseek-flash`，而设置里已经被改成免费模型）。设置是**唯一真相**，
  * 引擎每次兜底都该现读现算，而不是信自己的旧副本。
  *
+ * ## 第 237 波（用户实报）：**显式 provider 必须优先于模型名**
+ *
+ * 真机现场：设置里 `provider=aicodewith`、`model=claude-haiku-4-5-20251001`，真实回合必然失败：
+ *
+ * ```
+ * Access to fetch at 'https://api.anthropic.com/v1/chat/completions' from origin
+ * 'http://tauri.localhost' has been blocked by CORS policy
+ * [LLMEngine.getAgenticLoop] … provider.id=claude, provider.baseUrl=https://api.anthropic.com/v1
+ * ```
+ *
+ * 根因就是下面那条"按模型名找供应商"的启发式：`claude-haiku…` 以 `claude-` 开头 ⇒ 命中内置
+ * `claude`（Anthropic 直连），**把用户显式选的 `aicodewith` 顶掉了**。`gpt-*` / `gemini-*` /
+ * `deepseek-*` 等前缀同理（聚合供应商的模型 id 与原生前缀同形）。
+ *
+ * 优先级（本函数的唯一口径）：
+ * 1. **模型为空**时：显式 provider 已登记 ⇒ 用它 + **该 provider 的默认模型**；
+ *    没有默认模型 ⇒ 不可用（报错）；provider 未登记 ⇒ 不可用（报错）；
+ * 2. 显式 provider（非空、非 `auto`、且**在已登记清单里**）⇒ 一律用它；模型名只用于列表/能力判断；
+ * 3. 显式 provider **不在已登记清单里** ⇒ **不可用**（`unavailable: true` + `error`），
+ *    **不再**按模型名启发式回退 —— 旧行为会把 `claude-*` 判给内置 `claude`，
+ *    真机因此把请求发去了 `api.anthropic.com`（用户选的是 `aicodewith`）。安全取舍：
+ *    宁可报错让用户重选，也不悄悄发往别家（这个取舍是**用户可见行为变更**，见文件头）；
+ * 4. `auto` / 空 / 未设置 ⇒ 才按模型名启发式（既有行为，不回归）。
+ *
  * @param model 设置里的模型 id（用户在模型管理 / 选择器里选的）
- * @param providers 已登记的供应商 id 列表（用于判断"这个模型属于哪家"）
- * @param fallback 设置里没有模型时的兜底（保持原行为）
+ * @param providers 已登记的供应商 id 列表（既是"存在性"依据，也是"这个模型属于哪家"的启发式依据）
+ * @param fallback 设置里没有模型时的兜底（仅在**没有显式 provider** 时使用）
+ * @param explicitProvider 设置里**显式**记录的供应商 id（`codem-settings.provider`）
+ * @param providerDefaults providerId → 该 provider 的默认模型 id（模型为空时用它，避免拿兜底供应商的模型）
  */
 export function resolveModelSelection(
   model: string | null | undefined,
   providers: readonly string[],
   fallback: { providerId: string; modelId: string },
-): { providerId: string; modelId: string } {
-  if (typeof model !== "string" || !model) return fallback;
-  /* ① 插件提供的免费模型 ⇒ 走插件（不需要任何 Key） */
-  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };
-  /* ② 否则按"哪个供应商认得这个模型"来定；认不出就沿用兜底的供应商（模型仍然要听设置的） */
+  explicitProvider?: string | null,
+  providerDefaults?: Readonly<Record<string, string | null | undefined>>,
+): ModelSelection {
+  /*
+   * `auto`（含大小写/空白）等于"没指定"，继续走启发式 —— 否则用户从没选过供应商时
+   * 会被凭空判成"你指定的供应商不存在"并打 warn。
+   */
+  const explicit = typeof explicitProvider === "string" ? explicitProvider.trim() : "";
+  const explicitRequested = explicit.length > 0 && explicit.toLowerCase() !== "auto";
+
+  /**
+   * 显式 provider **不可用**的唯一构造点（模型为空 / 非空共用，避免两套措辞）。
+   *
+   * `providerId` 保留用户选的那个 id（**不是**启发式猜出来的内置供应商）：
+   * 调用方与判据都能一眼看出"这次没有回退到 claude / 模型名路由"。
+   */
+  const unavailable = (reason: "unregistered" | "no-default-model"): ModelSelection => ({
+    providerId: explicit,
+    modelId: typeof model === "string" ? model : "",
+    unavailable: true,
+    error:
+      reason === "unregistered"
+        ? `provider ${explicit} 未注册，请在设置里重选`
+        : `provider ${explicit} 没有默认模型，请在设置里选择模型`,
+  });
+
+  /*
+   * ⓪ **模型为空时也要先尊重显式 provider**（C 项修复）。
+   *
+   * 改前第一行是 `if (!model) return fallback` —— 于是设置里明确选了 provider、
+   * 只是模型字段暂时为空（换供应商期间/清空后还没选模型）时，供应商会被一起丢掉，
+   * 请求发往兜底的 openai。现在：供应商听用户的，模型用**该供应商自己的默认模型**；
+   * 没有默认模型就报错 —— 不许静默拿兜底供应商的模型（那会让请求带着 A 家的模型
+   * 发去 B 家）。
+   */
+  if (typeof model !== "string" || !model) {
+    if (explicitRequested) {
+      if (!providers.includes(explicit)) return unavailable("unregistered");
+      const defaultModel = String(providerDefaults?.[explicit] ?? "");
+      if (!defaultModel) return unavailable("no-default-model");
+      return { providerId: explicit, modelId: defaultModel };
+    }
+    return fallback;
+  }
+
+  /*
+   * ① 显式 provider 优先（第 237 波）。
+   */
+  if (explicitRequested) {
+    if (providers.includes(explicit)) {
+      return { providerId: explicit, modelId: model };
+    }
+    /**
+     * 设置了具体 id、但它不在已登记清单里（供应商被删 / id 拼错 / 自定义供应商没起来）。
+     *
+     * **不再回退启发式**：旧行为按模型名把 `claude-*` 判给内置 `claude`，真机于是把
+     * 用户明明选了 `aicodewith` 的请求发去 `api.anthropic.com`（CORS 直接失败）。
+     * 这里返回不可用，由调用方报「provider X 未注册，请在设置里重选」。
+     * 安全取舍写清楚：**宁可报错，也不悄悄发往别家。**
+     */
+    return unavailable("unregistered");
+  }
+
+  /* ② 插件提供的免费模型 ⇒ 走插件（不需要任何 Key） */
+  if (isFreeModelId(model)) {
+    return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };
+  }
+  /* ③ 否则按"哪个供应商认得这个模型"来定；认不出就沿用兜底的供应商（模型仍然要听设置的） */
   const owned = providers.find((p) => model.startsWith(`${p}-`) || model.includes(p));
   return { providerId: owned ?? fallback.providerId, modelId: model };
 }

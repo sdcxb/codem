@@ -1,0 +1,52 @@
+C01 / C13 当前构建真机验收（2026-11-10 00:09，defer + clearDraft 根因修复后）
+================================================
+
+构建：Codem 1.18.13，NSIS 2026-11-10 00:09:36
+安装包 sha256：F5C79CC264A7062F7F977105ABEAC037593CF54260C51D852C013AFA7C9500A2
+运行：安装版 + WebView2 CDP（127.0.0.1:9222），数据目录 %APPDATA%\com.codem.app
+Provider：本机 127.0.0.1:18939 受控 OpenAI-compatible fixture（不是公网真实模型）
+
+1) 默认配置长历史（segmentEpochs 缺省 = false）
+session：real-c01-default-20261109-3
+- 61 条预置长消息；真实回合完成
+- context_epochs：2 条，均为 kind=compact，switch=0
+- 页面文本不含「开启新对话 / 请开启新对话 / 新建对话 / 新会话」
+- 截图：docs/marketing/evidence/c01-default-current.png
+结论：**通过**（未自动切段；未出现劝退；同一 Session 继续）
+
+2) 显式开启 segmentEpochs=true，完成态达到阈值产生 switch
+session：real-c01-swfinal-final-20261110
+- context-config：segmentEpochs=true，compactionThreshold=0.7
+- 31 条预置长消息；真实回合完成
+- console：`[segment-defer] first-iteration pressure 0.827 >= consider ⇒ 推迟预防性压缩（本拍到完成则直接 switch）`
+- console：`[segment-switch] completed at pressure 0.827 ⇒ segment 2（移出视图 13 条）`
+- context_epochs：1 条，kind=switch，segment_seq=2，trigger_kind=switch
+- messages.metadata 中 switch marker=1
+- 旧消息 swfinal-0..30 共 31 条全在；Session id 未变；message_count=34
+- 截图：docs/marketing/evidence/c01-switch-final-build.png
+结论：**通过**（首拍不再先 compact；完成态直接 switch）
+
+3) 切换会话输入不丢
+- 真机用 CDP `Input.insertText`（真实键盘事件，绕过 value tracker）输入 DRAFT-DB-CHECK
+- 切到「对话 65」再切回 `real-c01-swfix-fixed-20261109`
+- 输入框恢复 DRAFT-DB-CHECK；settings 行 composer-draft-real-c01-swfix-fixed-20261109=DRAFT-DB-CHECK
+- 根因：InputArea 切会话 reset effect 调 `clearDraft()`，把刚读回的草稿 removeSetting；已删除该调用，并让 reset 直接读目标会话草稿。
+- 截图：docs/marketing/evidence/input-draft-switch-current.png
+结论：**通过**
+
+4) 手机端读完整历史：**真实手机验证 blocked**（本机 HTTP 网关协议已验，不等于手机通过）
+- 网关：127.0.0.1:41873；CDP invoke `gateway_pair_start` 拿一次性码 → POST /rpc `pair.claim` 拿 HttpOnly cookie
+- POST /rpc `session.get` {sessionId: real-c01-swfinal-final-20261110, limit: 200}
+- 返回 messages=34，首条 swfinal-0，末条 switch marker，旧段 swfinal-0 在；hasMore=false（34 < 200）
+- 证据：docs/marketing/evidence/c01-phone-session-get-final.json
+结论：**本机 HTTP 协议通过（34 条全部返回）；真实手机验证 blocked**（本机无已配对真实手机，不能写成“手机通过”）。已知边界：session.get limit 200/500 与 hasMore 恒 false 仍是更大历史的上限，本轮未改。
+
+5) C13 当前构建页面
+- 页面文本不含「开启新对话 / 请开启新对话 / 新建对话 / 新会话」
+- 截图：docs/marketing/evidence/c13-current-build.png
+结论：**通过**
+
+限制：
+- 显式 switch 的真机验证使用 fixture provider；不是公网真实模型。
+- 手机验证只走本机 HTTP + 真实 Rust 网关 + 真实 TS 数据面；**真实手机 blocked**（无设备，cookie/SSE/渲染未验）。
+- 手机完整历史受 session.get 200 条上限约束；本轮只证明 switch 会话的旧段在返回里。

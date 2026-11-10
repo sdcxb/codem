@@ -7,11 +7,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    if (payload === this.lastPersistedPayload) {\n      // 内容与\"已接受的那一份\"相同：仍要等前面在途的确认落地，不能直接说成功\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }",
-          "to": "    if (false) {\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }"
+          "from": "    if (payload === this.lastPersistedPayload) {\n      // 内容与\"已接受的那一份\"相同：仍要等前面在途的确认落地，不能直接说成功\n      this.afterMemoryPersisted(payload);\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;",
+          "to": "    if (false) {\n      this.afterMemoryPersisted(payload);\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;"
         }
       ],
-      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "tests": [
+        "src/test/memory-write-amplification.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -20,11 +22,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    // ② 无变化不写（内容逐字相同 ⇒ 库里已经是这份，不需要再发一次 IPC）\n    if (payload === this.lastPersistedPayload) return true;",
-          "to": "    if (false) return true;"
+          "from": "    if (payload === this.lastPersistedPayload) {\n      /*\n       * 内容没变也可能是**本进程还没落过索引缓存**（刚启动、缓存缺失/被裁过）。",
+          "to": "    if (false) {\n      /*\n       * 内容没变也可能是**本进程还没落过索引缓存**（刚启动、缓存缺失/被裁过）。"
         }
       ],
-      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "tests": [
+        "src/test/memory-write-amplification.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -33,11 +37,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    this.chainPersist(payload);",
+          "from": "    this.chainPersist(payload, { snapshot: this.captureWriteSnapshot() });",
           "to": "    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));"
         }
       ],
-      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "tests": [
+        "src/test/memory-write-amplification.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +56,9 @@
           "to": "  // 反向对照：只加一行注释\n  private serializeChecked(): string {"
         }
       ],
-      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "tests": [
+        "src/test/memory-write-amplification.test.ts"
+      ],
       "expectRed": false
     }
   ]

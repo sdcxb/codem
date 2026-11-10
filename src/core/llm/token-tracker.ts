@@ -182,6 +182,15 @@ export interface TurnTokenUsage {
    * （例如 `StatsLine` 的 `cacheReported` 判据）。
    */
   cacheHitTokens?: number;
+  /**
+   * 本轮「读缓存」token（`cacheReadTokens` 的会话级口径）。
+   * 缺失时按 0 记 —— 但必须同时看 `cacheReported`，否则「未上报」会被读成「确定 0」。
+   */
+  cacheReadTokens: number;
+  /** 本轮「写缓存」token（Anthropic `cache_creation_input_tokens`；OpenAI 没有 ⇒ 0） */
+  cacheWriteTokens: number;
+  /** 本轮 provider 是否上报过缓存字段（false ⇒ 上面的 0 是「未知」而不是「确定未命中」） */
+  cacheReported: boolean;
 }
 
 /**
@@ -189,11 +198,15 @@ export interface TurnTokenUsage {
  * 累积每轮 usage，提供上下文压力计算。
  */
 export class TokenTracker {
-  /** 累积 usage */
+  /** 累积 usage（缓存桶按「缺失=0 + cacheReported=false」的聚合口径累计） */
   private cumulative: TokenUsage = {
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
+    cacheHitTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cacheReported: false,
   };
 
   /** 每轮 usage 历史（最近 N 轮） */
@@ -235,6 +248,23 @@ export class TokenTracker {
      */
     const cacheHitTokens = usage.cacheHitTokens;
 
+    /**
+     * 缓存读 / 写与「是否上报」三个字段：**读优先新字段**（`cacheReadTokens`），
+     * 旧名 `cacheHitTokens` 兜底；缺报时数值记 0，但 `cacheReported=false`。
+     * 这样「会话累计」既有稳定数字（0），又不会把「未知」伪装成「确定未命中」。
+     *
+     * ⚠️ 上报与否**优先信显式布尔**：聚合形状（如 `LoopState.totalUsage`）永远带
+     * `cacheReadTokens: 0`，按「键存在」判会把「未上报」读成「已上报」。
+     */
+    const cacheReported =
+      typeof usage.cacheReported === "boolean"
+        ? usage.cacheReported
+        : usage.cacheReadTokens !== undefined ||
+          usage.cacheHitTokens !== undefined ||
+          usage.cacheWriteTokens !== undefined;
+    const cacheReadTokens = cacheReported ? (usage.cacheReadTokens ?? usage.cacheHitTokens ?? 0) : 0;
+    const cacheWriteTokens = cacheReported ? (usage.cacheWriteTokens ?? 0) : 0;
+
     const turn: TurnTokenUsage = {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
@@ -242,6 +272,9 @@ export class TokenTracker {
       isActual: true,
       toolDefTokens,
       cacheHitTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      cacheReported,
     };
 
     this.history.push(turn);
@@ -252,6 +285,11 @@ export class TokenTracker {
     this.cumulative.completionTokens += usage.completionTokens;
     this.cumulative.totalTokens =
       this.cumulative.promptTokens + this.cumulative.completionTokens;
+    // 缓存桶：数值缺报按 0 累计；`cacheReported` 一旦为 true 就保持（会话里报过一次即可显示）
+    this.cumulative.cacheReadTokens = (this.cumulative.cacheReadTokens ?? 0) + cacheReadTokens;
+    this.cumulative.cacheWriteTokens = (this.cumulative.cacheWriteTokens ?? 0) + cacheWriteTokens;
+    this.cumulative.cacheHitTokens = (this.cumulative.cacheHitTokens ?? 0) + cacheReadTokens;
+    if (cacheReported) this.cumulative.cacheReported = true;
 
     if (usage.cost) {
       this.cumulative.cost = (this.cumulative.cost || 0) + usage.cost;
@@ -261,35 +299,61 @@ export class TokenTracker {
   }
 
   /**
+   * 最近一次 `estimatePressure()` 走的是哪条路（CMP-P-1 的读数）。
+   *
+   * - `actual`：有真实 promptTokens 作基准 ⇒ system + tools **已含在基准里**，不再加一次；
+   * - `estimate`：纯估算 ⇒ 本轮必须显式把 system 与 tools 加进去。
+   */
+  private lastPressureMode: "actual" | "estimate" = "estimate";
+
+  /**
    * 估算当前消息列表的上下文压力（0-1）。
    *
    * 当有实际 usage 时，使用最近一轮的 promptTokens 作为基准；
    * 否则用 estimateTokens 估算。
    *
+   * ## CMP-P-1：**纯估算路径必须计入 system 提示词**
+   *
+   * 被守的缺陷（24 §P0-5）：首轮（还没有任何真实 usage）时压力只算了消息 + 工具定义，
+   * **系统提示词一个字都没算** —— 而系统提示词往往是数万字符（工具表 + 技能目录 + 记忆索引）。
+   * 后果是首轮压力系统性偏低 ⇒ 第一次压缩偏晚 ⇒ 溢出后才发现。
+   *
+   * 为什么只在纯估算路径加：真实基准（`promptTokens`）是 provider 量的**整份请求**，
+   * 已经包含系统提示与工具定义；在那条路上再加一次就是双算（CW-06 钉的就是它）。
+   *
    * @param messages 消息列表
-   * @param tools 工具定义列表
+   * @param tools 工具定义列表（**本轮真实发送集合**；拿不到时调用方必须显式传空数组并留痕）
+   * @param systemPrompt 系统提示词正文（纯估算路径计入；actual 路径忽略）
    * @returns 0-1 的压力值
    */
-  estimatePressure(messages: any[], tools: unknown[]): number {
+  estimatePressure(messages: any[], tools: unknown[], systemPrompt: string = ""): number {
     // 如果有最近的实际 usage，用它作为基准 + 新增消息估算
     const lastActual = [...this.history].reverse().find((h) => h.isActual);
 
     let estimatedTokens: number;
     if (lastActual) {
-      // 基准 = 上次实际 promptTokens（已含工具定义），
+      this.lastPressureMode = "actual";
+      // 基准 = 上次实际 promptTokens（已含系统提示 + 工具定义），
       // estimateMessagesTokens 在此基础上叠加当前消息的有符号估算差值；
-      // 不再重复加 toolDefTokens（避免双算）。
+      // 不再重复加 toolDefTokens / systemPrompt（避免双算）。
       estimatedTokens = this.estimateMessagesTokens(
         messages,
         lastActual.promptTokens,
       );
     } else {
-      // 无实际 usage — 纯估算（消息 + 工具定义）
+      this.lastPressureMode = "estimate";
+      // 无实际 usage — 纯估算（消息 + 工具定义 + 系统提示词）
       estimatedTokens = this.estimateMessagesTokens(messages, 0) +
-        estimateToolDefinitionTokens(tools);
+        estimateToolDefinitionTokens(tools) +
+        estimateTokens(systemPrompt);
     }
 
     return Math.min(1, estimatedTokens / this.contextWindow);
+  }
+
+  /** 最近一次压力估算的模式（`actual` = 用真实 promptTokens 作基准；`estimate` = 纯估算）。 */
+  getLastPressureMode(): "actual" | "estimate" {
+    return this.lastPressureMode;
   }
 
   /**
@@ -354,7 +418,15 @@ export class TokenTracker {
 
   /** 重置（新会话开始时） */
   reset(): void {
-    this.cumulative = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    this.cumulative = {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cacheHitTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cacheReported: false,
+    };
     this.history = [];
   }
 

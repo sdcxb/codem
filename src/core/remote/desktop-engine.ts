@@ -78,6 +78,10 @@ import {
 import { GatewayRunRegistry } from "./gateway-runs";
 // M3 文件面：桌面唯一工作区的只读数据 + 敏感审批（网关引擎只拿注入后的数据层）。
 import { createGatewayWorkspace } from "./gateway-workspace";
+// 多设备同步（25 号文 P2）：数据面在 `gateway-sync.ts`（纯逻辑），这里只把宿主的
+// 事件日志/会话表/记忆接到它上面。网关引擎本身**不 import 存储**（GW-5）。
+import { createHostSyncApi } from "./gateway-sync";
+import { createHostSyncPorts } from "./gateway-sync-host";
 // M3 变更面：桌面 `turn_file_changes` 与桌面 git 对象；服务实现与 Host 共用一份。
 import { FileChangeStorage, queryChangesPage } from "../storage/file-change-storage";
 import { FileChangeTracker } from "../environment/file-change-tracker";
@@ -306,11 +310,23 @@ export function flattenSessions(): RemoteSessionView[] {
  * 会话消息的**唯一同步读取点**（AA 与桌面网关共用）。
  *
  * 为什么抽出来：仓库有「数据层之外不许再加同步整会话读」的冻结基线
- * （`no-sync-mirror-reads`）。新增 `session.get` 不能再加第二个 `listMessages(`
+ * （`no-sync-mirror-reads`）。新增 `session.get` 不能再加第二个无界读
  * 调用点；两边都走这里，基线保持 1。
+ *
+ * ## 为什么导出（P0-0）
+ *
+ * 它是 `session.get` 的真实数据入口。导出后判据可以直接喂假端口验证
+ * 「换段会话的消息不会在手机上丢」，而不是只断言源码里出现某个函数名
+ * （源码断言抓不到"函数被换掉/参数写错"这类缺陷）。
  */
-function readRemoteMessages(sessionId: string, limit: number, withReasoning = false) {
-  return mapMessages(MessageStorage.listMessages(sessionId, limit), withReasoning);
+export function readRemoteMessages(sessionId: string, limit: number, withReasoning = false) {
+  /**
+   * ★ P0-0（D1/E5/D11）：手机看到的是 **DisplayView**，不是模型投影。
+   *
+   * 换过段的会话（`kind="switch"` epoch）必须把旧段一起给手机；
+   * 没换过段时会话行为与改前逐字一致（`listDisplayMessages` 内部回落 `listMessages`）。
+   */
+  return mapMessages(MessageStorage.listDisplayMessages(sessionId, limit), withReasoning);
 }
 
 /**
@@ -1077,6 +1093,9 @@ async function handleRemoteRequest(req: RemoteProxyRequest): Promise<void> {
         listProjects: gatewayListProjects,
         createProject: gatewayCreateProject,
         createSession: gatewayCreateSession,
+        // 多设备同步：账本/事件/记忆都在宿主侧（这里每次新建一个 API 实例，
+        // 它本身无状态 —— 账本从 settings 读、游标写回 settings）
+        sync: createHostSyncApi(createHostSyncPorts()),
       },
     )
   ) {

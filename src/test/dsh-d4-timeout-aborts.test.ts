@@ -26,6 +26,15 @@
  * 于是"超时先于工具起步"）。那不是产品缺陷，而是**判据自己的时间预算比被测机器的
  * 事件循环延迟还小**。放宽到 250ms / 1.5s 后不变式（超时 ≪ 干活）仍然成立，
  * 而"超时必须 abort 工具"这件事被证明的强度完全相同。
+ *
+ * ⚠️ 2026-11-07（默认 8 worker 全量偶发红治理）：250ms 在**满载**下仍可能被读盘/调度
+ * 排队抢跑（报告的失败形态是「超时后 5s 内未观察到 abort」；可能是判据自己的 5s 预算
+ * 先被顶穿，也可能是 250ms 抢在工具派发之前）。这次不靠「把数字再猜大一点」，而是
+ * 两件事一起做：
+ *   1. 超时窗口放宽到 **1s**、工具干活 **4s**（仍满足「超时 ≪ 干活」，强度不变）；
+ *   2. 判据等的是**观察到 abort**（`waitForCondition`，宽松上限 10s），不是"跑完立刻断言"；
+ *      用例本身显式 **30s**，不再用 vitest 默认 5s 去赌机器负载。
+ * 「必须观察到 abort」「超时必须是结构化失败」两条断言一字未改。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -38,11 +47,29 @@ const CWD = "C:\\d4-timeout";
 const TOOL_NAME = "probe_slow";
 
 /**
- * 超时预算：**远小于**工具自己的睡眠时长（1.5s）。见下面那句为什么不是 50ms。
+ * 超时预算：**远小于**工具自己的睡眠时长（4s）。见上面那句为什么不是 50ms / 250ms。
+ * 1s 是「满载时事件循环能把派发拖多久」的预算，不是判据强度的一部分。
  */
-const TOOL_TIMEOUT_MS = 250;
-/** 工具"干活"的时长：确保超时必然先到 */
-const TOOL_WORK_MS = 1500;
+const TOOL_TIMEOUT_MS = 1000;
+/** 工具"干活"的时长：确保超时必然先到（4× 超时，不变式仍是「超时 ≪ 干活」） */
+const TOOL_WORK_MS = 4000;
+
+/**
+ * 轮询到条件成立（宽松上限 10s）。
+ *
+ * 超时中止是**异步观察**：定时器可能在工具派发前后任意一个调度间隙触发。
+ * 原来"跑完立刻断言"把「观察窗口」压成一次采样 —— 满载时工具还没被派发，
+ * 断言就先失败了（`sawSignal === false`）。等到条件成立立刻返回；
+ * 上限只用于「真的没发生」时判红，不会把红判据变成绿。
+ */
+async function waitForCondition(predicate: () => boolean, timeoutMs = 10_000, stepMs = 10): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return predicate();
+}
 
 /** 一次回复里给一个慢工具调用 */
 function oneCall(): any[] {
@@ -132,7 +159,7 @@ describe("D4：超时必须 abort 掉工具的 controller", () => {
     return registry;
   }
 
-  it("D4-A: 超时触发时工具必须观察到 abort（改前它一直跑到自己结束）", async () => {
+  it("D4-A: 超时触发时工具必须观察到 abort（改前它一直跑到自己结束）", { timeout: 30_000 }, async () => {
     const provider = new ScriptedProvider();
     provider.setScript([
       oneCall(),
@@ -148,10 +175,15 @@ describe("D4：超时必须 abort 掉工具的 controller", () => {
     const events: any[] = [];
     for await (const e of loop.run(SESSION_ID, "跑一个慢工具", CWD, "system prompt")) events.push(e);
 
+    /*
+     * 等的是「观察到了 abort」这个**状态**（宽松上限 10s），不是"跑完刚好也观察到了"。
+     * 若产品真的没把中止传到工具，10s 后这里仍然 false ⇒ 照红（不会变成假绿）。
+     */
+    const sawAbort = await waitForCondition(() => observed.sawSignal && observed.aborted);
     expect(observed.sawSignal, "前置：工具必须真的拿到 per-call 的 abort signal").toBe(true);
     expect(
-      observed.aborted,
-      `超时必须 abort 掉工具自己那份 controller —— 工具观察到 ctx.abort 被中止才算真的停下（改前这里恒为 false：race 只放弃等待，工具继续跑完）`,
+      sawAbort,
+      `超时后 10s 内没有观察到 ctx.abort 被中止 —— 工具观察到 ctx.abort 被中止才算真的停下（改前这里恒为 false：race 只放弃等待，工具继续跑完）`,
     ).toBe(true);
 
     const timeoutErrors = events.filter(
@@ -161,6 +193,6 @@ describe("D4：超时必须 abort 掉工具的 controller", () => {
       timeoutErrors.length,
       `超时结果必须是**结构化失败**（机器可读码 ${TOOL_TIMEOUT}），不能只靠文本匹配分类`,
     ).toBe(1);
-    expect(String(timeoutErrors[0].error)).toMatch(/timed out after 250ms/);
+    expect(String(timeoutErrors[0].error)).toMatch(new RegExp(`timed out after ${TOOL_TIMEOUT_MS}ms`));
   });
 });

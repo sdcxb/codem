@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 284,
-    "triaged": 284,
+    "total": 314,
+    "triaged": 314,
     "pending": 0
   },
   "sites": [
@@ -557,6 +557,13 @@
       "round": 104
     },
     {
+      "site": "src/core/llm/index.ts::loop.onEvent::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "Bot/子智能体事件的落库钩子抛错 ⇒ 这一次的工具调用/结果没写进消息表（下一轮模型看不到它、可能重发同一调用）—— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
+    },
+    {
       "site": "src/core/llm/model-profile.ts::modelProfile.save::#1",
       "kind": "persist",
       "status": "triaged",
@@ -641,6 +648,27 @@
       "round": 187
     },
     {
+      "site": "src/core/memory/memory.ts::memory.embedding::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "存储端口没有结构化命令能力，向量未写入（记忆本身已保存、检索回退词法）：与 memory.mirror 同一形态的部署能力缺失，advisory",
+      "round": 259
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.embedding::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "向量计算失败（embedder 抛错）：记忆已保存、检索回退词法，下一次保存会自动重试 ⇒ advisory（不是记忆落库失败）",
+      "round": 259
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.embedding::#3",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "向量写库失败（引擎报错/行还没镜像过去）：记忆已保存，下一次保存重试（有界）⇒ advisory（与 memory.mirror 同一条纪律）",
+      "round": 259
+    },
+    {
       "site": "src/core/memory/memory.ts::memory.entriesDropped::#1",
       "kind": "advisory",
       "status": "triaged",
@@ -688,6 +716,34 @@
       "status": "triaged",
       "reason": "第 189 波 MEM-LOAD-VISIBLE-1（四个结论性分支 + 迁移抛出合并到一处上报，取代 187 波的 #2/#3/#4 与 188 波的 #5）：读到过、重试后**仍然**读不出来（JSON 坏 / 容器形状不认识 / 迁移阶段抛出）⇒ 记忆本轮真的不可用（fail-closed：不迁移、不覆盖），用户必须能看到，并能据此回退（文案给『导出留档 → 设置 → 记忆体检 → 回退到迁移前 → 反馈原文』）。不是 persist：没有任何写盘动作失败，旧数据逐字未动。",
       "round": 189
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.mergeConflict::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "检测到并发写冲突：双方内容都已保留（一方成为 conflictOf 副本），用户可到记忆面板核对/删除多余的那条 ⇒ 用户有介入动作，advisory（不是写失败）",
+      "round": 259
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.mergeSkipped::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "并发写合并前读不到库里的当前内容，本次按本地整份写入：可能有其它客户端的改动被覆盖。系统下一次保存会自动再试，用户此刻没有必须立即做的动作 ⇒ advisory（发现，不是动作失败）",
+      "round": 259
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.mirror::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "P2-C：存储端口没有 `command` 能力 ⇒ 记忆独立表镜像这次没写。**不是**记忆保存失败（settings 仍是权威、记忆已落库），也不是 action（用户没有动作可做：能力是端口实现决定的）；这是『索引没建起来』的发现，检索会自动回退设置扫描 —— 走 advisory 让它在日志里可见，且不说成写盘失败。",
+      "round": 268
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.mirror::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "P2-C：`memories.replace_all` 抛错（引擎忙/被拒）⇒ 镜像滞后。记忆本身**已保存成功**，所以既不是 persist（没有记忆写盘失败）也不是 action（功能没失效：跨会话检索回退设置扫描）；按第 50 波口径走 advisory（用户可介入：看到提示后可在下次保存时自动重试，或重启让镜像重建）。",
+      "round": 268
     },
     {
       "site": "src/core/memory/memory.ts::memory.orderBackfill::#1",
@@ -816,6 +872,13 @@
       "round": 104
     },
     {
+      "site": "src/core/privacy/egress.ts::privacy.memoryEgress::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "记忆出口脱敏开关没保存 ⇒ persist：用户以为关掉了（或打开了），重启后回到默认的开，边界设置与实际不符，必须让他知道「这次没落库」。",
+      "family": "src/core/privacy/egress.ts（敏感数据边界开关的写失败）"
+    },
+    {
       "site": "src/core/provider/agent-teams-service.ts::agentTeams.persist::#1",
       "kind": "persist",
       "status": "triaged",
@@ -835,6 +898,69 @@
       "status": "triaged",
       "reason": "恢复状态写盘失败 ⇒ persist。",
       "round": 104
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostAppend::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "宿主把远端事件写进本机事件日志失败 ⇒ persist：账本已收下（对端仍能拉到），但本机看不到这条消息。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostEnsureSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "远端事件的目标会话建不出来 ⇒ persist：那条事件被拒收（session-unknown），客户端会在设置里看到最后错误。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostJournal::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "宿主同步账本写不进设置 ⇒ persist：游标只在本进程有效（重启后客户端会重复拉取，但事件不丢）。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostListSessions::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "宿主会话列表读不出来 ⇒ persist：本次同步只覆盖客户端请求过的会话（用户可在 Host 上重开同步）。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostReadEvents::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "宿主事件读取失败 ⇒ persist：本次补扫跳过该会话（游标不动，下一轮重试），不假装没有事件。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync-host.ts::sync.hostReadMessages::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "宿主会话消息镜像未就绪/读取失败 ⇒ persist：本次快照没做成（网关答 INTERNAL，客户端下一轮重试），**不能**回空快照让客户端以为这个会话没有内容。",
+      "round": 262
+    },
+    {
+      "site": "src/core/remote/gateway-sync.ts::sync.hostAppend::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "推送已入账但宿主事件日志 seq=0（未落库）⇒ persist：本机投影缺这条，必须让人看见。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync.ts::sync.hostScanFailed::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "补扫单个会话读失败 ⇒ advisory（发现）：同步继续，下一轮重试；用户没有可介入动作。",
+      "round": 257
+    },
+    {
+      "site": "src/core/remote/gateway-sync.ts::sync.pushConflict::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "同一 eventId 被改写成不同内容 ⇒ advisory（发现）：拒绝接收并留证，排查靠日志。",
+      "round": 257
     },
     {
       "site": "src/core/retry/retry.ts::loop.retryBudget::#1",
@@ -926,6 +1052,27 @@
       "status": "triaged",
       "reason": "会话排序偏好没保存 ⇒ persist：用户的选择重启后回默认（本次仍按所选顺序渲染）。为什么不是 advisory：这是**用户自己发起的动作**没落盘，用户有可介入动作（重选一次 / 看持久化失败提示），不是自检发现。（本处：writeSessionSortPreference，第 96 行）",
       "round": 195
+    },
+    {
+      "site": "src/core/session/tool-call-persistence.ts::toolCall.persistError::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具失败结果没回填进消息表（updateToolCall 抛错）⇒ 模型看不到失败原因，会把注定失败的调用再发一次 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
+    },
+    {
+      "site": "src/core/session/tool-call-persistence.ts::toolCall.persistStart::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具开始状态没写进助手消息（addToolCall 抛错）⇒ 这次调用在历史里不存在，下一轮模型会重发 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
+    },
+    {
+      "site": "src/core/session/tool-call-persistence.ts::toolCall.persistSuccess::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具结果没回填进消息表（规范化/溢出/updateToolCall 抛错）⇒ 模型下一轮看不到结果、会重发同一调用 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
     },
     {
       "site": "src/core/settings/settings.ts::settings.saveFile::#1",
@@ -1700,11 +1847,53 @@
       "round": 260
     },
     {
+      "site": "src/core/storage/sync-engine.ts::sync.applyEventFailed::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "应用单条远端事件失败 ⇒ advisory（发现）：下一轮重试（幂等键保证不重复），不中断整次同步。",
+      "round": 257
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::sync.applySkipped::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "有远端事件没落地（会话建不出来/事件日志未就绪）⇒ advisory（发现）：下一轮重试，可见。",
+      "round": 257
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::sync.applyUnknownType::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "远端事件类型注册不了 ⇒ advisory（发现）：跳过这一条并在设置区可见，不伪装拉取成功。",
+      "round": 257
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::sync.pushRejected::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "宿主拒收了若干事件 ⇒ advisory（发现）：游标仍前进（避免一条坏事件堵死后续），拒收内容进日志。",
+      "round": 257
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::sync.runFailed::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "一次同步未完成 ⇒ advisory（发现）：失败原因写进设置区，用户可重试；不弹横幅。",
+      "round": 257
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::sync.runFailed::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "同步整体异常 ⇒ advisory（发现）：同上，错误进设置区 + 日志。",
+      "round": 257
+    },
+    {
       "site": "src/core/storage/sync-engine.ts::syncEngine.autoSync::#1",
       "kind": "persist",
       "status": "triaged",
-      "reason": "自动同步写盘失败 ⇒ persist。",
-      "round": 104
+      "reason": "定时同步的**意外**失败（syncNow 已把可预期失败写进状态并返回；走到 catch 的是状态都没写下去的那种）⇒ persist，PF-4 钉住这条接线。",
+      "round": 257
     },
     {
       "site": "src/core/storage/v2-session.ts::v2Session.delete::#1",
@@ -1817,6 +2006,27 @@
       "status": "triaged",
       "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 142 行）",
       "round": 104
+    },
+    {
+      "site": "src/core/subagent/tool-call-recorder.ts::subagent.toolCall.createAssistant::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "承载工具调用的助手行没建起来（createMessage 抛错）⇒ 调用与结果无处挂载、下一轮模型看不到它们 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
+    },
+    {
+      "site": "src/core/subagent/tool-call-recorder.ts::subagent.toolCall.settleAssistant::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "助手行定稿（status=done）没写进去 ⇒ 界面上永远停在流式中，且定稿的那份日志快照缺失 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
+    },
+    {
+      "site": "src/core/subagent/tool-call-recorder.ts::subagent.toolCall::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "记录器处理事件时落库失败的最后一道网（各站点自己没接住的异常）⇒ 这一轮的工具结果可能进不了模型上下文 —— 真写盘失败",
+      "family": "Bot/子智能体回合的工具调用落库：工具调用、结果或「模型看不到它们」这条链上的写失败"
     },
     {
       "site": "src/core/telemetry/telemetry.ts::<动态>::#1",
@@ -1992,9 +2202,16 @@
     "src/core/storage/message.ts": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败",
     "src/core/store.ts": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）",
     "src/store.ts": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）",
+    "src/core/session/tool-call-persistence.ts": "Bot 与 UI 执行器共用的工具调用/结果落库：调用、结果、失败原因没写进消息表 ⇒ 下一轮模型看不到它们（真写盘失败）",
+    "src/core/subagent/tool-call-recorder.ts": "Bot/子智能体回合的记录器：助手行建不出来/定稿写不进去/事件处理兜底失败 ⇒ 工具结果进不了模型上下文（真写盘失败）",
+    "src/core/llm/index.ts": "引擎侧落库钩子：Bot/子智能体事件转发前的写入失败（这一条可能进不了下一轮上下文）",
     "src/core/storage/bootstrap.ts": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现",
     "src/core/storage/event-log.ts": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现",
     "src/core/telemetry/telemetry.ts": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）",
-    "src/core/storage/self-heal.ts": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+    "src/core/storage/self-heal.ts": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」",
+    "src/core/privacy/egress.ts": "记忆出口脱敏开关（C11 敏感边界）写失败：开关只在本次运行有效，重启回到默认",
+    "src/core/remote/gateway-sync.ts": "多设备同步的宿主账本：推送冲突/补扫失败（发现）与「已入账但宿主事件日志没写下」（写盘失败）",
+    "src/core/remote/gateway-sync-host.ts": "多设备同步的生产接线：账本/会话/事件/消息读写失败（写盘失败）+ 会话建不出来（写盘失败）",
+    "src/core/storage/sync-engine.ts": "多设备同步的客户端：一次同步的失败与拒收/跳过（发现）；自动同步的写盘失败已随「按配置对齐运行时」重构移除"
   }
 }

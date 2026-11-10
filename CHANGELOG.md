@@ -2,6 +2,23 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.18.14] - 2026-11-10
+
+### 新增
+
+- Context OS 段式上下文接入现有会话：显式开启 `segmentEpochs` 后，完成任务达到阈值会在同一 Session 内换段，旧消息保留；默认仍关闭，不改变默认行为。
+- 分层记忆：platform / project / team / conversation 四种作用域，团队记忆长在现有 AgentTeam 上，TaskCenter 提供团队记忆入口；自动提取按空闲批次延迟执行，并支持审批、撤销批次与跨会话检索。
+- 文档任务、长程 Goal 与 Agent Teams 协同接入现有会话/任务中心；团队任务 DAG、claim/attempt、mailbox 与协调者复用现有实现。
+- 手机网关与多设备同步：会话读取、远程新建项目/会话、Tailscale Serve 零配对码、设备级 cookie 鉴权与同步账本。
+- 工作集（Working Set）标记与上下文压缩保护，避免压缩误删关键段标记。
+
+### 修复
+
+- 显式 `segmentEpochs` 的完成回合不再被首拍预防性压缩吃掉阈值；首拍在安全余量内推迟压缩，完成态直接写 `switch`，不新建 Session、不删旧消息。
+- 切换会话时输入草稿不再被重置逻辑删除：草稿按会话 key 冲刷，切回时恢复目标会话自己的草稿。
+- 上下文溢出/压缩失败不再建议「开启新对话」；改为中性错误、保留 Session、允许重试，并给出可执行的下一步。
+- 修复网关白名单测试的陈旧断言（用调用前快照判断“未实现方法不转发”，不再写死转发数）。
+
 ## [1.18.13] - 2026-11-06
 
 ### 新增

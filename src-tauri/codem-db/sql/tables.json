@@ -11,6 +11,7 @@
     "settings",
     "mcp_servers",
     "memory",
+    "memories",
     "recovery_data",
     "turn_file_changes",
     "agent_profiles",

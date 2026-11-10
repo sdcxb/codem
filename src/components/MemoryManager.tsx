@@ -7,6 +7,8 @@ import {
   setWriteApprovalSettingConfirmed,
   MEMORY_AUTO_GROUP_HINT,
   MEMORY_INJECT_KEY_MAX,
+  /* UI-1：注入行宽（截断原因与注入侧同一常量） */
+  MEMORY_INJECT_LINE_MAX,
   MemoryService,
   type ApprovalScopeSetting,
   type MemoryBatch,
@@ -19,12 +21,20 @@ import {
   memorySourceOf,
   // S4 / O-45：待批准判据**全仓唯一一处**（本文件原来也在两处各写了一遍）
   isPendingMemoryEntry,
+  // P1-3：归档判据同样只认 `memory.ts` 的唯一实现（面板只负责展示/恢复）
+  isArchivedMemoryEntry,
+  // C08：有效期/过期判定与注入、检索**同一口径**（这里只读展示，不改写入语义）
+  validUntilOf,
+  isExpiredMemoryEntry,
   injectionScopeContext,
-  /* ★ 第 228 波审计：注入截断的如实披露（条目 10000 字符上限 vs 每行注入只取前 200） */
+  /* ★ 第 228 波审计：注入截断的如实披露（条目 10000 字符上限 vs 每行只注入摘要上限 `MEMORY_INJECT_LINE_MAX`） */
   injectionTruncationNote,
   // 第 199 波：作用域徽标文案的唯一来源（与三态表同一条纪律）
   MEMORY_SCOPE_BADGE_LABEL,
   type MemoryPayloadByteStats,
+  type MemoryConsolidationUndoView,
+  // P2-B：可观测指标（服务 API；面板只读展示，计数与检索/注入同一处口径）
+  type MemoryObservability,
 } from "../core/memory/memory";
 import { formatMemoryImportReceipt } from "../core/memory/checkup";
 import { localDateString } from "../core/time/local-time";
@@ -39,17 +49,26 @@ interface MemoryManagerProps {
   sessionId?: string;
   /** 当前项目 id（项目级记忆的归属键，由工作目录推出）。缺省 ⇒ 项目级记忆显示"未归属" */
   projectId?: string;
+  /**
+   * **现有项目列表**（任务 B：跨项目检索的 scope 选择来源）。
+   *
+   * 由 `App.tsx` 从 `useProjectStore()` 直接传入，面板自己不去读全局 store ——
+   * 这样面板在测试/插件覆盖里可以独立 mount，不连带 store 的加载副作用。
+   * 缺省 ⇒ 仍可手动输入项目 id（输入框本身就是唯一必填项）。
+   */
+  projects?: ReadonlyArray<{ id: string; name: string }>;
 }
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString("zh-CN");
 }
 
-const SCOPE_ORDER: MemoryScope[] = ["platform", "project", "conversation"];
+const SCOPE_ORDER: MemoryScope[] = ["platform", "project", "team", "conversation"];
 
 function getScopeLabel(scope: MemoryScope): string {
   switch (scope) {
     case "project": return "项目";
+    case "team": return "团队";
     case "conversation": return "对话";
     case "platform": return "平台";
     default: return scope;
@@ -59,6 +78,7 @@ function getScopeLabel(scope: MemoryScope): string {
 function getScopeColor(scope: MemoryScope): string {
   switch (scope) {
     case "project": return "var(--accent)";
+    case "team": return "var(--info, var(--accent))";
     case "conversation": return "var(--success)";
     case "platform": return "var(--warning)";
     default: return "var(--text-muted)";
@@ -82,6 +102,7 @@ function pendingScopeTitle(entry: MemoryEntry): string {
   switch (entry.scope) {
     case "platform": return "平台级：批准后对**所有项目、所有对话**生效";
     case "project": return "项目级：批准后对**这个项目以后的每个对话**生效";
+    case "team": return "团队级：批准后对**该团队（同项目）的成员请求**生效（跨群共享）";
     case "conversation": return "对话级：批准后只对**当前这个对话**生效";
     default: return "作用域无法识别：批准后也不会进上下文（可先归位或删除）";
   }
@@ -91,6 +112,7 @@ function pendingScopeTitle(entry: MemoryEntry): string {
 function hasPendingOwner(entry: MemoryEntry): boolean {
   if (entry.scope === "platform") return true;
   if (entry.scope === "project") return Boolean(entry.projectId);
+  if (entry.scope === "team") return Boolean(entry.teamId);
   return Boolean(entry.sessionId);
 }
 
@@ -127,8 +149,8 @@ function entryStatusText(entry: MemoryEntry, injected: boolean, notInjectedReaso
   if (injected) {
     /**
      * ★ 第 228 波审计修复（低）：**注入时截断要披露**。
-     * 条目允许 10000 字符而每行注入只取前 200 —— 此前界面照样写「已生效（参与上下文）」，
-     * 用户以为整条都在上下文里（条数上限与字符预算都有披露，唯独这一处没有）。
+     * 条目允许 10000 字符而每行只注入摘要上限（`MEMORY_INJECT_LINE_MAX`）—— 此前界面照样写
+     * 「已生效（参与上下文）」，用户以为整条都在上下文里（条数上限与字符预算都有披露，唯独这一处没有）。
      */
     /* 用**真正会被注入的那段文本**判定（链接展开后长度会变，只看原文会漏报） */
     const injectedText = getMemoryService().injectionTextFor({
@@ -140,6 +162,49 @@ function entryStatusText(entry: MemoryEntry, injected: boolean, notInjectedReaso
     return note ? `已生效（参与上下文；${note}）` : "已生效（参与上下文）";
   }
   return `不进上下文${notInjectedReason ? `：${notInjectedReason}` : ""}`;
+}
+
+/** UI-1：列表预览的字符数（超过即截断，并给「查看全文」） */
+const ENTRY_PREVIEW_CHARS = 100;
+
+/**
+ * UI-1：长条目在**列表**里的截断原因（无截断 ⇒ 空数组 ⇒ 界面一个节点都不渲染）。
+ *
+ * 两类原因、两处同源判定：
+ * - **单条上限**：`truncatedAtWrite === true`（由 `add`/`update`/导入在**写入时**落库的持久事实）——
+ *   超出部分当时就没保存，界面不假装能恢复；
+ * - **注入预算**：注入行只取 `MEMORY_INJECT_LINE_MAX` 字符（`injectionTruncationNote`，与详情面板
+ *   共用），或该条本轮因每作用域条数 / 总字符预算**未进上下文**（`injectionExplanations` 的原因）。
+ *
+ * ⚠️ 注入判定用 `entry.content.length > MEMORY_INJECT_LINE_MAX` 先做**便宜的预筛**：
+ * 短条目 + `[[链接]]` 展开后超长的极端形态由详情面板（`entryStatusText`）精确判定，
+ * 列表不为 5000 条各展开一次链接（那会把面板刷新变成 O(总字符)）。
+ */
+function listTruncationReasons(input: {
+  entry: MemoryEntry;
+  injected: boolean;
+  notInjectedReason?: string;
+  maxContentLength: number;
+}): string[] {
+  const { entry, injected, notInjectedReason, maxContentLength } = input;
+  const reasons: string[] = [];
+  if (entry.truncatedAtWrite === true) {
+    reasons.push(`单条上限：写入时超过 ${maxContentLength} 字符，已截断（超出部分当时未保存）`);
+  }
+  if (injected && entry.content.length > MEMORY_INJECT_LINE_MAX) {
+    let note: string | null = null;
+    try {
+      note = injectionTruncationNote(entry, getMemoryService().injectionTextFor(entry));
+    } catch {
+      /* 链接解析失败只影响"是否多一行说明"，不该让整条列表渲染挂掉 */
+      note = null;
+    }
+    if (note) reasons.push(`超预算：${note}`);
+  }
+  if (!injected && notInjectedReason && notInjectedReason.includes("超出注入上限")) {
+    reasons.push("超预算：超出本轮注入上限（每作用域每来源条数 / 总字符预算），本轮未进上下文");
+  }
+  return reasons;
 }
 
 /**
@@ -161,6 +226,10 @@ function pendingOwnerText(entry: MemoryEntry, projectId?: string, sessionId?: st
     if (!entry.sessionId) return "无归属对话 ⇒ 即使批准也不会进任何上下文（先用「归位」指定对话，或直接拒绝）";
     return `${entry.sessionId}${entry.sessionId === sessionId ? "（就是当前对话）" : "（不是当前对话：批准后在那个对话里生效）"}`;
   }
+  if (entry.scope === "team") {
+    if (!entry.teamId) return "无归属团队 ⇒ 即使批准也不会进任何上下文（团队记忆的归属键是 AgentTeam id）";
+    return `${entry.teamId}（团队级：批准后对该团队同项目的成员请求生效，跨群共享）`;
+  }
   return hasPendingOwner(entry)
     ? "作用域无法识别：批准后会不会生效无法确定，建议先归位"
     : "作用域无法识别且没有归属键 ⇒ 即使批准也不会进上下文";
@@ -172,6 +241,8 @@ function getScopeHint(scope: MemoryScope, entry?: MemoryEntry): string {
     case "platform": return "所有项目、所有对话";
     case "project":
       return entry && !entry.projectId ? "无归属项目（不进任何上下文）" : "仅本项目内的所有对话";
+    case "team":
+      return entry && !entry.teamId ? "无归属团队（不进任何上下文）" : "仅该团队（同项目）的成员请求（跨群共享）";
     default:
       return entry && !entry.sessionId ? "无归属对话（不进任何上下文）" : "仅当前对话";
   }
@@ -200,6 +271,33 @@ function sourceHint(source: MemorySource | undefined): string {
   return "注入时单独标注（由自动流程从对话中提取，未经人工确认）";
 }
 
+/**
+ * C08 有效期的**只读展示**（缺省/非法 = 永不过期 ⇒ 返回 null，一个节点都不渲染）。
+ *
+ * 过期态必须**一眼可见**：注入/检索侧早就会标 `·已过期`，面板此前完全不显示 ——
+ * 用户会拿一个月前的约定当现行约定。日期口径与导出文件名一样走 `localDateString`（本地日）。
+ */
+function memoryExpiryOf(entry: MemoryEntry): { expired: boolean; label: string } | null {
+  const until = validUntilOf(entry);
+  if (until === undefined) return null;
+  const date = localDateString(new Date(until));
+  return isExpiredMemoryEntry(entry)
+    ? { expired: true, label: `已过期（有效期至 ${date}）` }
+    : { expired: false, label: `有效期至 ${date}` };
+}
+
+/**
+ * C08 置信度的**只读展示**（0..1 才是标注过；缺省/越界 ⇒ undefined ⇒ 不占位）。
+ *
+ * 0 是合法值（「几乎不可信」），与「没标注」是两件事 —— 所以判据是 `!== undefined`，
+ * 不是真值判断。
+ */
+function memoryConfidenceOf(entry: MemoryEntry): number | undefined {
+  const value = entry.confidence;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) return undefined;
+  return value;
+}
+
 interface EditForm {
   key: string;
   content: string;
@@ -224,7 +322,7 @@ const SearchIcon = ActionIcons.search;
 const EditIcon = ActionIcons.edit;
 const DeleteIcon = ActionIcons.delete;
 
-export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerProps) {
+export function MemoryManager({ onClose, sessionId, projectId, projects }: MemoryManagerProps) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [pending, setPending] = useState<MemoryEntry[]>([]);
   /**
@@ -284,16 +382,48 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([]);
   const [filterScope, setFilterScope] = useState<MemoryScope | "all" | "pending">("all");
   const [selectedEntry, setSelectedEntry] = useState<MemoryEntry | null>(null);
+
+  /**
+   * 任务 B（24 §P2「跨作用域检索的面板入口」）：**只读的跨项目检索**状态。
+   *
+   * 与被守的形态（改前）：跨项目检索只有工具面（`memory_search` + `scopeMode=all`），
+   * 用户在面板里没有任何入口 —— 而"上周在另一个项目里定过的那条约定"恰恰是用户最想找的东西。
+   *
+   * 三条纪律：
+   * - **默认关闭**：跨项目查询是显式 opt-in（与工具面 `scopeMode=all` 同一纪律），
+   *   打开必须由用户自己勾，不是一进面板就跨项目搜索；
+   * - **只读**：这里没有任何编辑/删除/批准动作，也不写记忆、不记 usage、不落盘 ——
+   *   它只是把服务层已有的 `searchAcrossScopes` 暴露给用户；
+   * - **范围必填**：没有 projectId 时搜索按钮禁用并给出可读提示（服务层本身也 fail-closed，
+   *   这里先挡住，避免一次缺参查询被渲染成"没有相关记忆"）。
+   */
+  const [crossScopeEnabled, setCrossScopeEnabled] = useState(false);
+  const [crossProjectId, setCrossProjectId] = useState("");
+  const [crossQuery, setCrossQuery] = useState("");
+  const [crossSearching, setCrossSearching] = useState(false);
+  const [crossSearched, setCrossSearched] = useState(false);
+  const [crossResults, setCrossResults] = useState<MemorySearchResult[]>([]);
+  const [crossError, setCrossError] = useState("");
+  /**
+   * C08：当前可见范围内的**冲突关系**（id → 与它冲突的条目）。
+   *
+   * 与列表同一次刷新、只读：`conflicts()` 是记忆层的**唯一**冲突判定（自动同 key 内容不同 +
+   * 显式 `conflictOf` / `conflictGroup`），这里不在组件里另写一套比较逻辑 ——
+   * 两套判定迟早会对同一条目给出两种结论（本仓反复吃过的亏）。
+   */
+  const [conflictPeers, setConflictPeers] = useState<Map<string, MemoryEntry[]>>(() => new Map());
   const [approval, setApproval] = useState<ApprovalScopeSetting>(() => getWriteApprovalSetting());
   const [notice, setNotice] = useState("");
   const [stats, setStats] = useState({
     totalEntries: 0,
-    byScope: { platform: 0, project: 0, conversation: 0 } as Record<MemoryScope, number>,
+    byScope: { platform: 0, project: 0, team: 0, conversation: 0 } as Record<MemoryScope, number>,
     bySource: { manual: 0, auto: 0, unknown: 0 } as Record<MemorySourceKind, number>,
     pendingEntries: 0,
     notInjected: 0,
     unknownScope: 0,
     legacyPool: 0,
+    /* P1-3：已归档条数（不注入、可恢复；面板必须能显示"有多少条被收起来了"） */
+    archivedEntries: 0,
   });
   /** F5：面板的「进不进上下文」判定（与注入侧同一处口径） */
   const [injection, setInjection] = useState<{
@@ -304,12 +434,33 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     budget: number;
   }>(() => ({ injected: new Set(), reasons: new Map(), truncated: 0, chars: 0, budget: 0 }));
   /**
+   * UI-1：**列表里已展开全文的条目**（按 id；一次只展开展开过的那几条）。
+   *
+   * 为什么列表也要能展开：列表预览只有 100 字符，而"这条到底是不是我要的约定"
+   * 往往要读完正文才知道；详情面板虽然也有全文，但要点一下选中 + 视线移到右侧，
+   * 在长列表里逐条核对时很别扭。展开是**只读**的，不写任何数据。
+   */
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
+  /**
    * O-36：记忆 payload 的**体积读数**（可观测的那一半）。
    *
    * 它是「记忆镜像字节预算」的唯一用户可见出口：超预算时给一条**可操作**的说明
    * （删条目 / 导出后清理），而不是让用户只感觉到卡。
    */
   const [bytes, setBytes] = useState<MemoryPayloadByteStats | null>(null);
+  /**
+   * P1-3：最近一次整合的**可撤销记录**（视图；不含快照）。
+   * 有它才点亮「撤销整合」按钮 —— 没有记录时按钮不出现（不给一个点了没反应的入口）。
+   */
+  const [consolidationUndo, setConsolidationUndo] = useState<MemoryConsolidationUndoView | null>(null);
+  /**
+   * P2-B：可观测指标（注入 / 检索命中 / 归档 / 撤销可用性）。
+   *
+   * 与服务层 `memoryObservability(ctx)` **同一次刷新、同一个 ctx**（与上面 `stats` 一致）：
+   * 指标面板不许成为跨项目泄漏面 —— 它展示的归档数与 usage top 都只取当前可见范围。
+   * 初始为 `null` ⇒ 首帧不渲染这块（避免先画一排 0 再跳成真值）。
+   */
+  const [observability, setObservability] = useState<MemoryObservability | null>(null);
 
   // F1.1: Edit/Create state
   const [editMode, setEditMode] = useState<"none" | "create" | "edit">("none");
@@ -317,10 +468,30 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   const [editError, setEditError] = useState("");
 
   useEffect(() => {
-    // Reload from DB in case singleton was created before DB was ready
-    getMemoryService().reload();
-    setApproval(getWriteApprovalSetting());
+    /**
+     * RELOAD-1：`reload()` 现在是**异步**的 —— 它会先等所有在途写入落定，再读最新的
+     * 已确认内容（旧实现先清表再立刻读，会把刚提交、还没落库的改动读成旧快照）。
+     *
+     * 分两拍是刻意的：
+     * - **第一拍**用当前内存态立刻画出来（面板不该为了等一次落定而白屏一拍）；
+     * - **第二拍**等 reload 完成后用"已确认"的内容再刷一次（这才是权威读数）。
+     * 组件卸载后不再 setState（避免对已卸载组件写状态）。
+     */
+    let cancelled = false;
     loadEntries();
+    void (async () => {
+      try {
+        await getMemoryService().reload();
+      } catch (e) {
+        console.warn("[MemoryManager] 记忆重读失败（面板仍显示内存态）:", e);
+      }
+      if (cancelled) return;
+      setApproval(getWriteApprovalSetting());
+      loadEntries();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadEntries = () => {
@@ -337,7 +508,31 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      * 旧写法是 `listAll(ctx)`（按 `timestamp` 倒序），于是"编辑一条"之后面板顺序与注入顺序分叉，
      * 而面板又把 `timestamp` 标成「创建时间」⇒ 用户无从自知。
      */
-    setEntries(service.listAllForPanel(ctx));
+    const panelEntries = service.listAllForPanel(ctx);
+    setEntries(panelEntries);
+    /*
+     * C08：冲突关系与列表**同一次刷新**（只读展示）。
+     *
+     * 判定走记忆层的 `conflictPeers()`（与 `conflictPeerMap` 同一份实现）：同 scope + 归属 + key
+     * 但内容不同，或显式 `conflictOf` / `conflictGroup`。这里带上 `includePending` /
+     * `includeUnscoped`，是为了覆盖面板**看得见的全部条目**（主列表本来就含待批准与孤儿），
+     * 避免出现「列表里有两条、冲突却判不出来」的口径分叉。
+     *
+     * ⚠️ 不用 `conflicts()`：它按「组」返回，`conflictOf` 这种只连两条的显式断言不会成组，
+     * 面板会漏标。逐条边才是这一屏需要的形状（判定仍是同一条实现）。
+     */
+    const conflictCtx = { ...ctx, includePending: true, includeUnscoped: true };
+    const entriesById = new Map(panelEntries.map((entry) => [entry.id, entry] as const));
+    const peers = new Map<string, MemoryEntry[]>();
+    for (const [id, peerIds] of service.conflictPeers(conflictCtx)) {
+      const entry = entriesById.get(id);
+      if (!entry) continue;
+      const others = peerIds
+        .map((peerId) => entriesById.get(peerId))
+        .filter((peer): peer is MemoryEntry => Boolean(peer));
+      if (others.length > 0) peers.set(id, others);
+    }
+    setConflictPeers(peers);
     // 待批准列表**同样按当前位置过滤**（旧实现全量返回 ⇒ 项目 A 能看到项目 B 的待批准内容）
     setPending(service.listPending(undefined, ctx));
     /*
@@ -372,6 +567,17 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     setInjection(service.injectionExplanations(injectionScopeContext(projectId, sessionId)));
     // O-36：体积读数与上面的统计**同一次刷新**（用户删掉条目后要立刻看到体积下来）
     setBytes(service.getByteStats());
+    /* P1-3：撤销记录的可用性也随同一次刷新（整理/撤销后按钮状态必须立刻变） */
+    try {
+      setConsolidationUndo(getLLMEngine().getMemoryConsolidationUndo());
+    } catch {
+      setConsolidationUndo(null);
+    }
+    /*
+     * P2-B：指标与统计**同一次刷新、同一个 ctx**（同一屏上的数字不许来自两种口径）。
+     * `memoryObservability` 只读、不写正文、不跨项目取数（内部按 ctx 过滤）。
+     */
+    setObservability(service.memoryObservability(ctx));
   };
 
   /** 条目是否会进入上下文（界面必须能一眼看出"未归属 = 不进"，不能假装它在生效） */
@@ -380,6 +586,54 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   /** 不进上下文的**真实原因**（F5：不许只给一个徽标让用户猜） */
   const notInjectedReason = (entry: MemoryEntry): string | undefined =>
     injection.injected.has(entry.id) ? undefined : injection.reasons.get(entry.id);
+
+  /**
+   * C08 只读元数据（有效期 / 置信度 / 冲突）—— 详情面板与待批准展开块**共用这一份**。
+   *
+   * 三条纪律：
+   * ① 没有字段的旧条目**一个节点都不渲染**（空值不占位，也不编造「未标注」的假状态）；
+   * ② 冲突只说「与哪条冲突」并给出**可点击定位**，不替用户判断哪条才对（那是用户的决定）；
+   * ③ 展示文案只在这里拼一次 —— 两个详情入口各写一份就会出现「一处说已过期、一处说有效」。
+   */
+  const renderC08Sections = (entry: MemoryEntry) => {
+    const expiry = memoryExpiryOf(entry);
+    const confidence = memoryConfidenceOf(entry);
+    const peers = conflictPeers.get(entry.id) ?? [];
+    return (
+      <>
+        {expiry && (
+          <div className="memory-detail-section" data-testid="memory-expiry-section">
+            <label>有效期</label>
+            <span className={expiry.expired ? "memory-expired-text" : undefined}>{expiry.label}</span>
+          </div>
+        )}
+        {confidence !== undefined && (
+          <div className="memory-detail-section" data-testid="memory-confidence-section">
+            <label>置信度</label>
+            <span>{confidence}（0..1；未标注表示没有人标过）</span>
+          </div>
+        )}
+        {peers.length > 0 && (
+          <div className="memory-detail-section" data-testid="memory-conflict-section">
+            <label>冲突</label>
+            <div className="memory-conflict-links">
+              {peers.map((peer) => (
+                <button
+                  key={peer.id}
+                  type="button"
+                  className="memory-conflict-link"
+                  title={`与「${entry.key}」冲突的另一条记忆；点击查看它`}
+                  onClick={() => setSelectedEntry(peer)}
+                >
+                  {peer.key}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
 
   const handleSearch = () => {
     if (!searchQuery.trim()) {
@@ -396,6 +650,56 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      */
     const results = service.search(searchQuery, scope, 10, { projectId, sessionId });
     setSearchResults(results);
+  };
+
+  /**
+   * 任务 B：**跨项目只读检索**（调用与 `memory_search` 同一条服务 API）。
+   *
+   * 为什么不直接调引擎的 `memories.search`：那会绕过服务层的作用域复核
+   * （`hydrateMirrorHits` 要拿权威条目重查作用域/状态/归档）与 fail-closed 校验 ——
+   * 面板和工具必须看到同一份事实，否则"面板能搜到、模型搜不到"（或反过来）就会变成新的分叉。
+   *
+   * 不写任何数据：不 `markUsed`（不刷 usage）、不 `recordSearchHit`（指标只记工具面的检索）、
+   * 不落盘。搜索失败如实显示（不把"失败"说成"没有相关记忆"）。
+   */
+  const handleCrossScopeSearch = async () => {
+    const targetProject = crossProjectId.trim();
+    if (!targetProject) {
+      setCrossError("请先选择或填写项目 id：跨项目检索必须显式指定范围（不提供「全库搜索」）。");
+      return;
+    }
+    const query = crossQuery.trim();
+    if (!query) {
+      setCrossError("请输入查询词。");
+      return;
+    }
+    setCrossSearching(true);
+    setCrossError("");
+    try {
+      const out = await getMemoryService().searchAcrossScopes(
+        query,
+        { projectId: targetProject },
+        { limit: 10, callerSessionId: sessionId },
+      );
+      setCrossResults(out.results);
+      setCrossSearched(true);
+    } catch (e) {
+      setCrossResults([]);
+      setCrossSearched(true);
+      setCrossError(`跨项目检索失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setCrossSearching(false);
+    }
+  };
+
+  /** 关掉开关时清掉上一次跨项目查询的瞬态结果（避免下次打开看到过期的"别人的记忆"） */
+  const toggleCrossScope = (enabled: boolean) => {
+    setCrossScopeEnabled(enabled);
+    if (!enabled) {
+      setCrossResults([]);
+      setCrossSearched(false);
+      setCrossError("");
+    }
   };
 
   /**
@@ -649,6 +953,50 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     loadEntries();
   };
 
+  /**
+   * 24 §P1-3：整合（**只归档、可撤销**）。
+   *
+   * 回执必须同时说清三件事：归档了多少（不是"删除"）、这次**可以撤销**、以及撤销窗口。
+   * 旧回执写"清理 N 条 / 裁剪 M 条"——那是删除语义，与"一条都没删"的新实现不符。
+   */
+  const handleConsolidate = () => {
+    const result = getLLMEngine().consolidateMemories({ sessionId });
+    const msg =
+      `整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条；被合并的条目已**归档**，未删除）、` +
+      `按时间归档 ${result.staleArchived} 条超过 90 天的自动条目、按容量归档 ${result.capacityArchived} 条。\n` +
+      `手动条目、对话级条目与待批准条目一条未动；容量归档被拒绝的桶：${result.capacityBlocked} 个。\n` +
+      (result.undoToken
+        ? `本次整理**可撤销**（${result.undoToken}，24 小时内有效）：撤销会把每一条恢复到整合前的快照（id 不变）。`
+        : "本次没有生成撤销记录（设置写入失败或没有任何变更）。") +
+      `\n说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），整理只在你点这个按钮或调用 /memory consolidate 时发生。`;
+    void alertDialog(msg);
+    loadEntries();
+  };
+
+  /** 撤销最近一次整合（单次有效；过期/令牌不符由记忆层拒绝并给出原因） */
+  const handleUndoConsolidation = async () => {
+    const view = consolidationUndo;
+    if (!view) return;
+    const confirmed = await confirmDialog(
+      `撤销最近一次记忆整合（${view.changes} 条）？撤销会把每一条恢复到整合前的快照（归档的条目逐条复活，id 不变），` +
+        "覆盖整合之后对这些条目的修改；整理后新建的条目不在此范围内。",
+    );
+    if (!confirmed) {
+      setNotice("已取消撤销整合（没有改动任何条目）。");
+      return;
+    }
+    const result = getLLMEngine().undoMemoriesConsolidation(view.token);
+    void alertDialog(result.message);
+    loadEntries();
+  };
+
+  /** 恢复一条已归档条目（24 §P1-3：归档可恢复；只清归档标记，不动正文） */
+  const handleRestoreArchived = (id: string) => {
+    const result = getLLMEngine().restoreArchivedMemory(id);
+    setNotice(result.message);
+    loadEntries();
+  };
+
   const handleToggleApproval = async (scope: keyof ApprovalScopeSetting) => {
     /**
      * ★ 全量审计（高）：这个开关是**安全开关**（关掉审批 = 自动记忆直接进上下文），
@@ -862,6 +1210,18 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     ? searchResults.map((r) => r.entry)
     : filteredEntries;
 
+  /**
+   * UI-1：单条上限读数（一次取；列表逐条渲染不再各取一遍）。
+   * 读不到时给一个与 `MemoryConfig` 默认值一致的兜底（只影响"截断原因"这一行文案）。
+   */
+  const limits = (() => {
+    try {
+      return getMemoryService().getMemoryLimits();
+    } catch {
+      return { maxEntriesPerScope: 0, maxTotalEntries: 0, payloadBudgetBytes: 0, maxContentLength: 10_000 };
+    }
+  })();
+
   /** 三级分组：手动在前、来源未知（旧数据）居中、自动在后
    *  —— 与注入文本里的三桶顺序（`computeInjection` 的 KINDS）**同一口径** */
   const grouped = SCOPE_ORDER.map((scope) => {
@@ -874,10 +1234,33 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     };
   }).filter((g) => g.manual.length + g.unknown.length + g.auto.length > 0);
 
-  const renderItem = (entry: MemoryEntry) => (
+  const renderItem = (entry: MemoryEntry) => {
+    const expiry = memoryExpiryOf(entry);
+    const confidence = memoryConfidenceOf(entry);
+    const peers = conflictPeers.get(entry.id) ?? [];    /**
+     * UI-1：长条目的**截断原因 + 全文展开**。
+     *
+     * - `reasons` = 这条为什么"不是完整形态"（单条上限 / 注入预算），与写入侧、注入侧
+     *   **同一组常量与判定函数**（`truncatedAtWrite` 由 `add`/`update` 落库、
+     *   `injectionTruncationNote` 与详情面板共用）；
+     * - `previewTruncated` = 列表预览确实被截了（>100 字符）⇒ 才给「查看全文」；
+     *   没有截断的短条目**一个多余节点都不渲染**（判据 `UI-1` 的反向对照）。
+     */
+    const injected = isInjected(entry);
+    const reasons = listTruncationReasons({
+      entry,
+      injected,
+      notInjectedReason: notInjectedReason(entry),
+      maxContentLength: limits.maxContentLength,
+    });
+    const previewTruncated = entry.content.length > ENTRY_PREVIEW_CHARS;
+    const expanded = expandedEntryIds.has(entry.id);
+    return (
     <div
       key={entry.id}
       className={`memory-item ${selectedEntry?.id === entry.id ? "selected" : ""}`}
+      data-testid="memory-item"
+      data-memory-id={entry.id}
       onClick={() => setSelectedEntry(selectedEntry?.id === entry.id ? null : entry)}
     >
       <div className="memory-item-header">
@@ -892,12 +1275,82 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           {isPendingMemoryEntry(entry) && (
             <span className="memory-source-badge pending">待批准</span>
           )}
+          {/* P1-3：归档徽标（不进上下文，但正文仍在、可恢复） */}
+          {isArchivedMemoryEntry(entry) && (
+            <span className="memory-source-badge orphan" title="已归档：不再进上下文；正文与 id 都在库里，可恢复">
+              已归档
+            </span>
+          )}
+          {/* C08：有效期 —— 过期用明显状态（缺省 = 永不过期，不占位） */}
+          {expiry && (
+            <span className={`memory-source-badge ${expiry.expired ? "expired" : "expiring"}`}>
+              {expiry.label}
+            </span>
+          )}
+          {/* C08：置信度 —— 0 也要显示（0 与「没标注」是两件事） */}
+          {confidence !== undefined && (
+            <span className="memory-source-badge confidence" title="置信度（0..1）；未标注的条目不猜">
+              置信度 {confidence}
+            </span>
+          )}
+          {/* C08：冲突 —— 标明与哪条冲突，点一下定位到那一条 */}
+          {peers.length > 0 && (
+            <button
+              type="button"
+              className="memory-source-badge conflict"
+              title={`与这些条目冲突：${peers.map((peer) => peer.key).join("、")}（点击定位）`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedEntry(peers[0]);
+              }}
+            >
+              冲突 · {peers[0].key}{peers.length > 1 ? ` 等 ${peers.length} 条` : ""}
+            </button>
+          )}
           {!isInjected(entry) && <span className="memory-source-badge orphan">不进上下文</span>}
         </span>
       </div>
-      <div className="memory-item-preview">
-        {entry.content.substring(0, 100)}...
+      <div className="memory-item-preview" data-testid="memory-item-preview">
+        {entry.content.substring(0, ENTRY_PREVIEW_CHARS)}
+        {previewTruncated ? "…" : ""}
       </div>
+      {/*
+        UI-1：**截断原因必须可见**（超预算 / 单条上限），且与「查看全文」同一个判定链。
+        没有截断的短条目 ⇒ `reasons` 为空、`previewTruncated=false` ⇒ 下面两块都不渲染。
+      */}
+      {reasons.length > 0 && (
+        <div className="memory-item-truncation" data-testid="memory-item-truncation">
+          {reasons.map((reason) => (
+            <span className="memory-item-truncation-reason" key={reason}>
+              {reason}
+            </span>
+          ))}
+        </div>
+      )}
+      {previewTruncated && (
+        <button
+          type="button"
+          className="memory-item-expand"
+          data-testid="memory-item-expand"
+          aria-expanded={expanded}
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpandedEntryIds((previous) => {
+              const next = new Set(previous);
+              if (next.has(entry.id)) next.delete(entry.id);
+              else next.add(entry.id);
+              return next;
+            });
+          }}
+        >
+          {expanded ? "收起全文" : "查看全文"}
+        </button>
+      )}
+      {expanded && (
+        <pre className="memory-item-full" data-testid="memory-item-full">
+          {entry.content}
+        </pre>
+      )}
       <div className="memory-item-meta">
         <span>{formatTime(entry.timestamp)}</span>
         {entry.tags && entry.tags.length > 0 && (
@@ -905,9 +1358,24 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
             {entry.tags.slice(0, 3).join(", ")}
           </span>
         )}
+        {/* P1-3：归档条目必须有一条**真的可点**的恢复入口（承诺「归档可恢复」不能只写在文案里） */}
+        {isArchivedMemoryEntry(entry) && (
+          <button
+            type="button"
+            className="memory-undo-btn"
+            title="恢复这条归档记忆：它从现在起重新参与上下文（正文与时间戳不变）"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleRestoreArchived(entry.id);
+            }}
+          >
+            恢复
+          </button>
+        )}
       </div>
     </div>
-  );
+    );
+  };
 
   /**
    * 待批准条目的**判断依据**（第 226 波，用户要求：审批时看不到详细信息）。
@@ -950,6 +1418,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           {sourceLabel(entry.source)}（{sourceHint(entry.source)}）
         </span>
       </div>
+      {/* C08：有效期 / 置信度 / 冲突（只读；没有字段的旧条目一个节点都不渲染） */}
+      {renderC08Sections(entry)}
       <div className="memory-detail-section">
         <label>状态</label>
         <span>{entryStatusText(entry, isInjected(entry), notInjectedReason(entry))}</span>
@@ -1009,8 +1479,9 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
         {demotedOpen && (
           <div className="memory-demoted-body">
             <div className="memory-demoted-hint">
-              待批准积压达到上限后，这 {n} 条没能进入待批准区，被**降级为对话级直接生效** ——
-              它们已进入本会话上下文（未经你逐条批准）。要撤销就删掉它们，或把作用域改回原样。
+              这 {n} 条没能按原作用域写入（待批准积压达到上限，或这次提取**没有项目身份**），
+              被**降级为对话级直接生效** —— 它们已进入本会话上下文（未经你逐条批准）。
+              要撤销就删掉它们，或把作用域改回原样。
             </div>
             {demotedBacklog.map((entry) => (
               <div className="memory-demoted-item" key={entry.id}>
@@ -1018,6 +1489,9 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                 <span className="memory-demoted-time">{formatTime(entry.timestamp)}</span>
                 <span className="memory-demoted-scope">
                   原作用域：{MEMORY_SCOPE_BADGE_LABEL[entry.demotedFrom as MemoryScope] ?? String(entry.demotedFrom)}
+                  {entry.demotedReason === "no-project-identity"
+                    ? "（无项目身份，内容不丢、只在本会话生效）"
+                    : "（待批准积压达上限）"}
                 </span>
               </div>
             ))}
@@ -1056,23 +1530,34 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                   onChange={handleImportJSON}
                 />
               </label>
-              {/* F3.1: Memory consolidation button */}
+              {/* F3.1: Memory consolidation button（P1-3：只归档、可撤销） */}
               <button
                 className="memory-action-btn"
-                title="整合记忆（手动触发）：合并自动条目的重复、清理超过 90 天的自动条目；手动/对话级/待批准条目永不动"
-                onClick={() => {
-                  const result = getLLMEngine().consolidateMemories();
-                  const msg =
-                    `整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条），` +
-                    `清理 ${result.staleRemoved} 条超过 90 天未写入的自动条目，裁剪 ${result.capacityTrimmed} 条超额。\n` +
-                    `手动条目、对话级条目与待批准条目一条未动；容量裁剪被拒绝的桶：${result.capacityBlocked} 个。\n` +
-                    `说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），清理只在你点这个按钮或调用 /memory consolidate 时发生。`;
-                  void alertDialog(msg);
-                  loadEntries();
-                }}
+                title="整合记忆（手动触发）：合并自动条目的重复、归档超过 90 天的自动条目；只归档不删除，可撤销；手动/对话级/待批准条目永不动"
+                onClick={handleConsolidate}
               >
                 整合
               </button>
+              {/*
+                P1-3：撤销入口只在**真的有可撤销记录**时出现（不给点了没反应的按钮）。
+                已过期仍然显示（置灰 + 说明），因为"上一次整理过期了"本身是用户需要知道的事实。
+              */}
+              {consolidationUndo && (
+                <button
+                  className="memory-action-btn"
+                  disabled={consolidationUndo.expired}
+                  title={
+                    consolidationUndo.expired
+                      ? `最近一次整合（${consolidationUndo.changes} 条）已超过 24 小时撤销窗口；归档条目仍可在列表里逐条恢复`
+                      : `撤销最近一次整合（${consolidationUndo.changes} 条）：逐条恢复到整合前快照，id 不变`
+                  }
+                  onClick={() => {
+                    void handleUndoConsolidation();
+                  }}
+                >
+                  撤销整合
+                </button>
+              )}
             </>
           )}
           {/* 纯图标按钮 ⇒ 必须有可访问名（只加属性，不动布局与样式） */}
@@ -1097,6 +1582,11 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           <span className="memory-stat-value project">{stats.byScope.project}</span>
           <span className="memory-stat-label">项目</span>
         </div>
+        {/* 25:668：团队级（跨群共享）—— 与项目级分开数，否则没法判断"团队记忆有没有写进来" */}
+        <div className="memory-stat" title="团队级：只在对应团队成员（同项目）的请求里注入；跨群共享">
+          <span className="memory-stat-value team">{stats.byScope.team}</span>
+          <span className="memory-stat-label">团队</span>
+        </div>
         <div className="memory-stat">
           <span className="memory-stat-value conversation">{stats.byScope.conversation}</span>
           <span className="memory-stat-label">对话</span>
@@ -1105,6 +1595,13 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           <span className="memory-stat-value pending">{stats.pendingEntries}</span>
           <span className="memory-stat-label">待批准</span>
         </div>
+        {/* P1-3：已归档条数 —— 它们仍在库里、可恢复，不计入注入；要数得出来，否则用户以为被删了 */}
+        {stats.archivedEntries > 0 && (
+          <div className="memory-stat" title="已归档：不再进上下文，但正文与 id 都还在，可在列表里逐条恢复">
+            <span className="memory-stat-value other">{stats.archivedEntries}</span>
+            <span className="memory-stat-label">已归档</span>
+          </div>
+        )}
         {/* M-5：作用域不是三者之一的条目 —— 过去在所有界面都看不见，现在至少数得出来 */}
         {stats.unknownScope > 0 && (
           <div className="memory-stat">
@@ -1131,6 +1628,78 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           </div>
         )}
       </div>
+
+      {/*
+        P2-B（24 §P2「观测面板」）：可观测指标的**最小可见出口**。
+
+        被守的形态（改前）：注入条数/字符/截断、检索命中、读取命中都只存在于服务内部，
+        面板格子里只有"总计/各作用域/待批准/归档/体积"—— 用户无法回答
+        「这一轮到底注入了多少记忆」「我刚才那次检索命中了吗」。
+
+        三条纪律：
+        - **与上面同一次刷新、同一个 ctx**（`memoryObservability(ctx)`）：指标不许另算一遍，
+          也不许跨项目取数（归档数 / usage top 都只在当前可见范围内）；
+        - 数字为 0 时**照常显示 0**（「没有注入」是事实，不是空数据），另给一行空态说明
+          解释「什么时候才会有数」（否则用户以为坏了）；
+        - 只展示**计数**，不展示正文（这个面板不是记忆列表的重复，点条目看正文仍在下面）。
+      */}
+      {observability && (
+        <>
+          <div className="memory-stats" data-testid="memory-observability">
+            <div
+              className="memory-stat"
+              title={`本会话累计注入 ${observability.injection.lines} 条 / ${observability.injection.chars} 字符；因条数上限或字符预算被挡下 ${observability.injection.truncated} 条`}
+            >
+              <span className="memory-stat-value" data-testid="memory-obs-injected">
+                {observability.injection.lines}
+              </span>
+              <span className="memory-stat-label">注入</span>
+            </div>
+            <div
+              className="memory-stat"
+              title={`本会话累计检索 ${observability.search.queries} 次、命中 ${observability.search.hits} 条（含跨作用域检索）`}
+            >
+              <span className="memory-stat-value" data-testid="memory-obs-search-hits">
+                {observability.search.hits}
+              </span>
+              <span className="memory-stat-label">检索命中</span>
+            </div>
+            <div className="memory-stat" title="已归档：不再进上下文，但正文与 id 都还在，可逐条恢复">
+              <span className="memory-stat-value other" data-testid="memory-obs-archived">
+                {observability.archived}
+              </span>
+              <span className="memory-stat-label">归档</span>
+            </div>
+            <div
+              className="memory-stat"
+              title={
+                observability.consolidationUndo.available
+                  ? `最近一次整合可撤销（${observability.consolidationUndo.changes} 条变更，24 小时内有效）`
+                  : observability.consolidationUndo.expired
+                    ? "最近一次整合已超过 24 小时撤销窗口；归档条目仍可在列表里逐条恢复"
+                    : "当前没有可撤销的整合"
+              }
+            >
+              <span
+                className={`memory-stat-value ${observability.consolidationUndo.available ? "" : "other"}`}
+                data-testid="memory-obs-undo"
+              >
+                {observability.consolidationUndo.available
+                  ? `可用(${observability.consolidationUndo.changes})`
+                  : "不可用"}
+              </span>
+              <span className="memory-stat-label">撤销</span>
+            </div>
+          </div>
+          {observability.injection.lines === 0 &&
+            observability.search.queries === 0 &&
+            observability.read.hits === 0 && (
+              <div className="memory-pending-hint" data-testid="memory-observability-empty">
+                本会话还没有注入 / 检索记录：指标会在模型真正用到记忆之后累计（换一个对话会看到另一组数）。
+              </div>
+            )}
+        </>
+      )}
 
       {/*
         O-36：超预算 ⇒ 一条**可操作**的说明（不是"失败"，因为什么都没丢）。
@@ -1517,7 +2086,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           </div>
 
           <div className="memory-filters">
-            {(["all", "platform", "project", "conversation", "pending"] as const).map((scope) => (
+            {(["all", "platform", "project", "team", "conversation", "pending"] as const).map((scope) => (
               <button
                 key={scope}
                 className={`memory-filter-btn ${filterScope === scope ? "active" : ""}`}
@@ -1528,6 +2097,106 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
             ))}
           </div>
         </>
+      )}
+
+      {/*
+        任务 B：**跨项目只读搜索**入口（24 §P2「跨作用域检索的面板入口」）。
+
+        改前：跨项目检索只在工具面存在（`memory_search` + `scopeMode=all`），用户在面板里
+        没有任何入口，也无从知道"别的项目里定过的约定"其实检索得到。
+
+        刻意只做**只读**（没有任何编辑/删除/批准按钮）：
+        - 跨项目命中来自别的项目，误点删除的代价远高于"多一步去对应项目处置"；
+        - 这里不写记忆、不刷 usage、不记检索指标 —— 判据 `MEM-CROSS-PANEL-*` 钉住。
+
+        结果行必须自带 **scope / project / session** 归属：`scope` 只有三个值，
+        光看它分不清「项目级」到底是哪个项目（这正是跨项目命中必须能自证归属的原因）。
+      */}
+      {editMode === "none" && (
+        <div data-testid="memory-cross-scope">
+          <div className="memory-approval-bar">
+            <label>
+              <input
+                type="checkbox"
+                checked={crossScopeEnabled}
+                onChange={(e) => toggleCrossScope(e.target.checked)}
+                data-testid="memory-cross-scope-toggle"
+              />{" "}
+              跨项目搜索（只读；只查已批准、未归档条目）
+            </label>
+          </div>
+          {crossScopeEnabled && (
+            <>
+              <div className="memory-search">
+                <input
+                  type="text"
+                  list="memory-cross-scope-projects"
+                  value={crossProjectId}
+                  onChange={(e) => setCrossProjectId(e.target.value)}
+                  placeholder="项目 id（可输入，或从现有项目中选择）"
+                  aria-label="跨项目搜索的项目 id / Project id for cross-project search"
+                  data-testid="memory-cross-scope-project"
+                />
+                {/* 现有项目列表来源由 App 从项目 store 传入（面板不自己读全局 store） */}
+                <datalist id="memory-cross-scope-projects">
+                  {(projects ?? []).map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div className="memory-search">
+                <input
+                  type="text"
+                  value={crossQuery}
+                  onChange={(e) => setCrossQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void handleCrossScopeSearch()}
+                  placeholder="在指定项目里搜索记忆..."
+                  aria-label="跨项目搜索的查询词 / Query for cross-project search"
+                  data-testid="memory-cross-scope-query"
+                />
+                <button
+                  type="button"
+                  disabled={crossSearching || !crossProjectId.trim()}
+                  onClick={() => void handleCrossScopeSearch()}
+                  aria-label="跨项目搜索记忆 / Search memories across projects"
+                  data-testid="memory-cross-scope-search"
+                ><SearchIcon size={16} /></button>
+              </div>
+              {!crossProjectId.trim() && (
+                <div className="memory-pending-hint" data-testid="memory-cross-scope-hint">
+                  先选择或填写项目 id：跨项目检索必须显式给出范围，不提供「全库搜索」。
+                </div>
+              )}
+              {crossError && (
+                <div className="memory-notice" data-testid="memory-cross-scope-error">{crossError}</div>
+              )}
+              {crossSearched && !crossError && crossResults.length === 0 && (
+                <div className="empty-hint" data-testid="memory-cross-scope-empty">
+                  没有匹配的记忆（只返回已批准、未归档，且属于 platform 或该项目作用域的条目）。
+                </div>
+              )}
+              <div data-testid="memory-cross-scope-results">
+                {crossResults.map((hit) => (
+                  <div
+                    key={hit.entry.id}
+                    data-testid="memory-cross-scope-result"
+                    data-scope={hit.entry.scope}
+                    data-project={hit.entry.projectId ?? ""}
+                    data-session={hit.entry.sessionId ?? ""}
+                  >
+                    <div className="memory-group-title">
+                      {getScopeLabel(hit.entry.scope)}
+                      {hit.entry.projectId ? ` · project=${hit.entry.projectId}` : ""}
+                      {hit.entry.sessionId ? ` · session=${hit.entry.sessionId}` : ""}
+                      <span>{hit.entry.key}</span>
+                    </div>
+                    <div className="memory-batch-note">{hit.snippet.replace(/\s+/g, " ").slice(0, 200)}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {editMode === "none" && (
@@ -1594,6 +2263,9 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                 <label>来源</label>
                 <span>{sourceLabel(selectedEntry.source)}（{sourceHint(selectedEntry.source)}）</span>
               </div>
+
+              {/* C08：有效期 / 置信度 / 冲突（只读；与待批准展开块共用同一个渲染函数） */}
+              {renderC08Sections(selectedEntry)}
 
               <div className="memory-detail-section">
                 <label>状态</label>

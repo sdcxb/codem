@@ -1,6 +1,6 @@
 # 25 · 无限上下文与 Bot 团队：DS-Bot ICM 源码对标 + Codem 演进计划
 
-> **状态**：分析 / 规划稿；本文不改变任何运行行为。
+> **状态（2026-11-08，B 收口）**：P0 无限上下文/记忆/历史已完成；**独立 Bot 产品层已按用户原意撤除**（无 `botTeam` 开关、无「Bot 团队」页签、无 `list_bots`/`message_bot`、无 Bot/群绑定）。保留 **团队记忆 `team` scope**，接入现有会话与 TaskCenter「团队」页；团队协同继续走 agent-teams。§4.7 / P1a-P1c / Main Bot 等段落只作为**历史设计记录**，不是当前实现。
 > **DS-Bot 基线**：`github.com/Fei2411/DS-Bot`，浅克隆 commit `71d344bf193f3f18185f25de3d8e5c483046910a`（2026-11-03，v0.2.7 合并后）。
 > **Codem 基线**：`master`，v1.18.13（2026-11-06）。
 > **Codex 基线**：commit `da279f6f`，详见 [24-MEMORY-BENCHMARK-AND-ROADMAP.md](docs/project-guide/24-MEMORY-BENCHMARK-AND-ROADMAP.md)。
@@ -725,12 +725,12 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 
 **P0-0 契约：Session=Thread，Epoch=Segment**
 
-- `context_epochs` 加 `segment_seq`、`kind("compact"|"switch")`、`handoff_json` 可空；
+- `context_epochs` 加 `segment_seq`、`kind("compact"|"switch")`、`handoff_json` 可空（2026-11-07 已落地：switch 投影写摘要，8KB 截断并标注）；
 - 不新建 `threads` / `thread_segments`，不改 `sessions` / `messages` / `MemoryEntry` / conversation scope；
 - `DisplayView` 统一用 `listTimelineMessages`；`ContextView` 仍取最新 epoch；
 - remote `session.get`、导出、fork 改读 DisplayView；fork 需重写 cutoff id 或显式全量；
 - 旧 epoch 默认 `kind=compact, segment_seq=1`；旧 marker 无 metadata 保持兼容；
-- 功能开关 `context.segmentEpochs`（默认 off，灰度）。
+- 功能开关 `context.segmentEpochs`（**默认 off**；显式 `true` 才产生 switch；DEF-1 锁定）。
 
 **P0-1 Memory 检索（先于 switch）**
 
@@ -753,7 +753,9 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 
 - 回合结束版：当前段 token 过阈值 → 规则版 compact/switch；
 - 先影子小模型（只记录不生效），再灰度生效；
-- 规则护栏：未完成/中途 → compact；完成/连续压缩≥2/接近 hard → switch；失败回退；
+- 规则护栏（2026-11 修订）：未完成/中途 → compact；完成**且压力达到考虑线** → switch；
+  连压 ≥2 / 接近 hard → switch（救援信号，不要求水位达标）；低压力完成 ⇒ 继续当前段；
+  失败回退；
 - `compact` 复用现有 checkpoint；
 - `switch` 写 handoff epoch（8 段 note + recent + anchors），不新建 Session；
 - 同时落 **thread notes**（压缩前提醒/switch 前交接；短任务状态，不是长期记忆）；
@@ -770,8 +772,11 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 
 **P0 验收**：
 
-- 200 轮/3 次 switch 后，早期事实仍能通过 thread history 找回；
-- 未完成任务在阈值处 compact，不 switch；完成任务 switch；
+- **规模化**验收：200 轮真实用户回合 / 3 次 switch 后，早期事实仍能通过 thread history 找回
+  （2026-11 起 `ICM-1` 是**真正的 200 个用户回合**：每回合 user+assistant、fake provider 真实循环、
+  压力真的跨阈值 3 次 ⇒ 恰好 3 个 switch epoch；旧版"152 条种子 + 3 个完成回合"已作废——
+  它靠的是当时的"完成即边界"，而那条规则会让每回合都切一段）；
+- 未完成任务在阈值处 compact，不 switch；完成任务**在水位达标处** switch（低压力完成继续当前段）；
 - steward 失败不丢输入；切换中消息不重复/不丢；
 - 旧消息完整、可搜索、不可变；
 - conversation memory 换段后仍可见（session 不变）；
@@ -795,6 +800,28 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 - 群记忆 scope；
 - 成本读数。
 
+> **历史状态（B 收口前）**：P1-1/P1-2 曾按 Bot 产品层实现，现已被 B 决策取代 ——
+> TaskCenter 新增「Bot 团队」页签（复用 BotTeamPanel/GroupChatPanel，切页签保留草稿/身份）；
+> 群记忆以群会话 `groupSessionId` 的 conversation scope 真正注入（≤4KB、脱敏、独立上下文块，
+> 与 Bot 私有记忆隔离）；群聊显示本轮 token（按成员、未上报不伪造 0）与 admin/member、
+> @all 权限；判据 `task-center-bot-team` / `bots-group-usage` / `group-chat-usage-permission` /
+> `bots-group-memory`。
+>
+> **2026-11-08 边界收口**：
+> ① 审批持久化（`approval-store`，≤50 条；重启对账 ⇒ expired + 审计 + Bot 回 idle；群聊「历史审批」可见、过期可重发，`bots-approval-persistence.test.ts` 8 条）；
+> ② 群记忆写权限（admin/群主可写，member/群外拒绝，`bots-group-memory-permission.test.ts` 13 条）；
+> ③ 群记忆自动候选（默认 **false**，严格 true 才开；auto/conversation、≤2KB、24h 去重、审批开 ⇒ pending，`bots-group-memory-auto-wiring.test.ts` 6 条）；
+> ④ 成本价格表（用户配置 `tokenPrices`，四档价，缺任一模型 ⇒ 未知，不按 0；`token-prices.test.ts` + 面板）。
+> 真机真实模型工具回合：read 1 次、第二轮 provider 请求含 tool_result、最终回答含随机串（`docs/marketing/evidence/bot-tool-real.txt`）。
+>
+> **历史（B 收口前）· P1a/P1b/P1c 曾按 24:1261 / 25:641-668 收口；B 决策后以下 Bot 产品层已撤除，仅作记录**：
+> - **模型工具面只剩原文点名的 `list_bots` / `message_bot`**；计划外的 `bot_manage` 已删除，创建/建群/停止/权限回到 TaskCenter UI 与 agent-teams 管理面；
+> - **Bot = agent-teams 成员的 Bot 身份层**：`Bot.teamId/memberId`，`createBotFromTeamMember` 只升级既有 `TeamMember`，`sessionId = member.id`，不另建会话；状态从 `TeamMember.status` 映射；
+> - **群绑定 = AgentTeam + groupSessionId**：`BotTeam.teamId` 带团队时 admin/成员必须是该团队升级 Bot；旧式无 teamId 数据保留只读/派发兼容；
+> - **peer work = TeamTask，mailbox = AgentTeam.mailbox**：`message_bot` 的 requestId 幂等、parentTaskId handoff tree、deadline、超时结算、未读合并都落在任务图/团队邮箱；团队路径不再新建第二套 BotWork；
+> - **协调者会话**：复用既有 `createCoordinatorSession` / `buildCoordinatorContext`（项目状态里的 `coordinatorSessionId`），Bot 派发只注入现有协调者上下文，不新建第二套协调者会话；
+> - 判据：`bots-team-identity`（12）、`bots-peer-team-task`（13）、`bots-coordinator-session`（5）、`bots-team-upgrade-panel`；变异覆盖“另建 session / 不校验成员 / 另建 BotWork / 不写 TeamTask / 丢协调者上下文”。
+
 **P1-3 Peer message / handoff tree**
 
 - `message_bot`、requestId、mailbox、未读合并；
@@ -807,6 +834,36 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 - 群聊页；Bot 状态；等待关系；停止；审批；
 - 不泄露私有记忆；权限。
 
+> **2026-11-07 状态**：P1-1 / P1-2 / P1-3 已落地并带判据 ——
+> Bot 身份与持久恢复（`src/core/bots/`，`codem-bots`/`codem-bot-teams`，34 条）；
+> 群聊管理员路由（无 @ 只 admin、@ 只目标、@all 仅 admin、普通消息 1 次调用，18 条）；
+> peer message + work 树 + deadline + 防环 + 幂等结算 + agent-teams 证据（21 条）；
+> **P1-3 收尾**：mailbox 已读回执 / 消费（`readBotMailbox` / `consumeBotMailbox`：
+> 未读→已读持久化、幂等、越权整批拒绝；6 条 + 面板「标记已读」1 条）。
+>
+> **P1-4 最小版已落地**：只读 Bot 团队面板（列表/状态/恢复/停止/标记已读/最近 work，6 条）
+> + **群聊页**（`GroupChatPanel`：选 Team → 预演路由（0 次模型调用）→ 发送；显示收件人 /
+> 拒绝原因 / 最近群消息 / 成员 work 状态；不渲染 `memoryScope` 与 mailbox 正文，7 条）。
+> **P1-4 收尾（2026-11-08）**：按 Bot 的 provider/model 真实路由（未注册/未配置可见失败，不回退；
+> `bots-provider-routing.test.ts` 6 条）、群消息落库/导出（`group-messages.ts`，7 条 + 面板 6 条）、
+> 审批/拒绝/超时/停止结算（`bots-approval.test.ts` 8 条）。
+> **权限审批生产接线（2026-11-08 完成）**：`agentic-loop` 真正 yield `permission_request`，
+> `approval-broker.ts` 保留生成器与 resolve，批准后**续跑同一生成器**（不重跑整轮）、拒绝/超时/重启
+> 一律 expired；`bots-approval-broker.test.ts` BRK-1..10。
+> **TaskCenter / 成本 / 权限 UI（2026-11-08 完成）**：TaskCenter「Bot 团队」页签复用两个面板；
+> 群聊显示本轮 tokens（按成员/未上报不伪造）与 admin/member、@all 权限；判据 USAGE/GCU/GCP/TC-BOT。
+> **仍不做（仅未来预期）**：完整聊天**流式** UI。除非用户明确要求，否则不实现；当前非流式完整块
+> 已满足 P1-4 的字面验收。
+>
+> **群记忆 scope（2026-11-08 补齐）**：群会话 `groupSessionId` 就是群记忆的 `conversation`
+> 归属键（`buildMemoryPrompt("conversation", projectId, groupSessionId)`）；群派发把有界（≤4KB）、
+> 脱敏、标「群记忆」的摘要作为**独立上下文块**注入每个收件 Bot，Bot 私有记忆仍按自己的
+> `sessionId` 注入，两者隔离；`rememberGroupMemory`（TaskCenter/显式服务）提供写入（恒
+> `source: auto`，不冒充 manual）；`bots-group-memory.test.ts` 12 条。
+>
+> **附**：手动压缩的 marker 现在也拼会话笔记摘要（`buildThreadNotesDigest`，与自动压缩
+> 同一条预算/回退契约，4 条判据）。
+
 ### P2：自适应/规模化
 
 - Steward 策略按模型/任务/成本自适应；
@@ -816,15 +873,143 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 - 自动化 consolidation（仅归档/待批准）；
 - 评测集/回放。
 
+> **2026-11-08 状态**：本节的 P2（自适应/规模化）**落地** ——
+> 自适应 steward（`steward-policy.ts`：窗口/单轮观测/连压只降不升，默认 0.7/0.9/20 与旧行为逐字等价，16 条）；
+> 混合检索 + 向量持久化（`memories.embedding`/`vector_search`，见 24 号文 P2）；
+> 跨 session/项目检索（24 号文 P2）；自动 consolidation（默认 **false**，只处理 auto/非 pending/未归档，可撤销，6 条）；
+> 评测/回放（`tools/eval/context-os-replay.mjs --check`，3 场景 22 例，纯函数回放）；
+> **多设备 Host 同步已完成**（见下）。
+>
+> **历史（B 收口前）· 4.7 的 P2 / Main Bot 曾落地；B 决策后随 Bot 产品层撤除**：
+> **跨群/团队记忆**已落地（团队作用域 `team:<AgentTeam.id>`；判据 `bots-team-memory.test.ts`，
+> 变异自证 `team-memory-241` 6 条）。
+> **Main Bot 管理**（25:661「Main Bot 高权限但删除需用户确认」/ 25:668 P2）：
+>
+> - `setMainBot({ botId })`：**只有用户**能调用（带 `actorBotId` ⇒ `permission_denied`）；
+>   **全表唯一**（设新的会清掉旧 `isMain`，原始 JSON 里只剩一条）；再设同一个是
+>   **幂等成功**（`changed:false`，不写库、不写 `bot_main_set` 审计）；审计只记新旧 id，不含正文；
+> - 高权限**只有两条**：`createBotTeam`/`updateBotTeam` 的 admin 允许 Main Bot（即使它不是该
+>   AgentTeam 的成员）、`routing.ts` 的 `cross_team` 闸对 Main Bot 放行（普通 Bot 仍只能 @ 本群）。
+>   成员资格、群记忆写入、审批、记忆作用域都**不**因它是 Main Bot 而放宽；
+> - `deleteBot({ botId, confirmDelete? })`：Main Bot 必须 `confirmDelete === true`
+>   （否则 `confirmation_required` 且不删）；只删 `codem-bots` 身份行（**个人会话与 agent-teams
+>   成员都保留**）；仍被某个 `BotTeam` 当 admin/成员 ⇒ `in_use` 且列出全部群（先改群）；
+> - 面板：每行 Main 徽标 + 「设为主 Bot」+ 删除二次确认（文案写明「不可恢复；不会删会话/团队」）。
+>
+> 判据：`bots-main-bot.test.ts`（MAIN-1..6）与 `bots-main-bot-panel.test.tsx`（MAIN-UI-1..4）；
+> 变异自证 `tools/mutate/specs/bot-main-243.json` 6 条（不清旧 Main / 不校验确认 / 删除顺手删会话 /
+> UI 一点就删 / 跨群闸不放行 / 建群 admin 不放行）各自对红。
+> 4.7 P1 第 6 条「每轮预算/上限」也已是**硬闸**（`botTeamTurnBudget`：超预算在任何模型调用之前拒绝；
+> 判据 `bots-group-budget-admin.test.ts` BUD-*）；P1 第 9 条「admin 改群/加人、普通 Bot 只能 @ 本群」
+> 由 `updateBotTeam` + `cross_team` 闸落地（ADM-*/XTEAM-*）。
+> 至此 4.7 的 P1/P2 功能项全部落地；**唯一未做的是 P1-4 的完整流式群聊 UI**（用户明确暂缓，属未来预期）。
+
+> **2026-11-08 多设备 Host 同步（P2 最后一项，已完成）**
+>
+> **它是什么**：一台开了「桌面远程网关」的电脑当 **Host**，另一台装了 Codem 的电脑在
+> 「设置 → 设备同步」里配对后当 **客户端**，按 `seq` 增量同步**会话事件**与**记忆**。
+>
+> **接线（不是"写好了没接"）**：
+> - Host：网关（`core/remote/gateway-engine.ts`）新增 `sync.pull` / `sync.push` / `sync.memory` /
+>   `sync.snapshot` 四条 JSON-RPC（Rust `RPC_ALLOWED_METHODS` 同步放行，并把 **cookie 鉴权得到的
+>   设备 id** 塞进转发 query）；数据面在 `core/remote/gateway-sync.ts`（账本/幂等/有界/游标/ACL/快照）
+>   与 `gateway-sync-host.ts`（事件日志/会话/消息/记忆）；
+> - 客户端：`core/storage/sync-engine.ts` 的 `backend:"gateway"`（复用 `/rpc` + 配对 cookie；
+>   REST/Supabase 旧后端保留）；游标 `lastPushedSeq`/`lastPulledSeq` 持久化，网络错误**有界重试**（3 次退避）；
+> - 界面：设置 →「设备同步」（开关 **默认关** / Host 地址 / 6 位配对码 / 立即同步 / 游标与最后错误 /
+>   自动间隔 / 记忆开关 / **项目范围** / 快照与重置状态）；
+> - 触发：`App` 启动与配置变更时 `applySyncRuntime()` 对齐定时器（关着就**不存在**定时器，零网络请求）。
+>
+> **账本不丢未拉取事件（2026-11-08 修）**：修剪只删「所有已知设备都拉过」的前缀
+> （`hostSeq ≤ min(deviceCursors)`），**不再**因为「到 1200 条」丢最旧的；没有设备游标时按
+> **入账时间**保留 7 天 / 最多 5 万条。上限（5 万条 / 8 MB）只在最后手段下按容量丢最旧，
+> 并把 `droppedUnpulled` 与 `trimmedThrough` 一起抬高 —— 受影响的设备会收到
+> `resetRequired: true` + `oldestSeq`，客户端走快照重建并重置游标，**没有静默缺事件**。
+>
+> **项目级 ACL（2026-11-08 修）**：`sync.pull` / `sync.push` / `sync.snapshot` 都带
+> `projectIds`（空 = 全部项目，设置里可编辑；未配对不可编辑）。宿主按
+> `HostSyncPorts.projectIdOfSession` 过滤：范围外的会话不返回/拒收，**没有项目映射的会话
+> 在 ACL 非空时也拒绝**（fail-closed），结果里的 `filteredSessions` 如实计数。
+> 这是设备**自述的范围**（防配置/漏过滤导致跨项目串数据），不是对抗性身份边界 ——
+> 身份仍是配对 cookie（Rust 鉴权）。
+>
+> **冷启动会话快照（2026-11-08 新增）**：`sync.snapshot {deviceId, sessionId, sinceTimestamp?}`
+> 返回该会话**完整时间线消息**（id/role/content/timestamp/toolCalls/metadata，含**工具结果**，
+> 分页 ≤200 条/≤2MB，`hasMore`/`nextBefore` 如实），客户端用
+> `MessageStorage.createMessage` 按 id 幂等写入本机。用途：新设备首次同步、`resetRequired`
+> 之后重建、事件日志不足以还原时。快照**不传附件正文**（见边界）。
+>
+> **记忆怎么合**：客户端把整份 payload 交给 Host，Host 用 `merge.ts` 的判定表（`rev`/墓碑）
+> 合并后落库并回传合并结果；**同 id 同 rev 异内容 ⇒ 双方都留**（另一方成为 `conflictOf` 副本）
+> 并写 `memory-conflicts` 审计；客户端把 Host 报来的冲突去重后也记进本机审计（跨设备可见）。
+>
+> **边界（写清楚，别当成"全量搬迁"）**：
+> - 同步单位是**事件**（消息/工具/决策）、**会话快照**与**记忆**；原始 JSONL 仍**不**逐字节同步，
+>   但快照能还原完整会话内容（正文/工具结果/元数据）—— 残留差异只有**字节级导出差异**与
+>   **附件正文**（快照只带附件元数据）；
+> - 历史按会话增量补（客户端每会话一个推送水位；Host 每轮补扫 ≤12 个会话、每会话 ≤200 条），
+>   大库要多轮才追平 —— 进度看设置里的游标数字；快照按会话分页（大量会话由客户端分轮重建，
+>   设置区显示 `snapshotRemaining`）；
+> - 宿主账本仍有界（5 万条 / 8 MB），但**按容量丢弃是最后手段**且必须可观测
+>   （`dropped` / `droppedUnpulled` + 受影响设备 `resetRequired`）—— 那不是"窗口边界"，
+>   而是"落后设备重建一次"的信号；
+> - 撤销配对在本机；Host 侧撤销仍走「连接手机 → 撤销设备」。
+> - **出站通道是 Rust，不是渲染层 fetch**（实现时才发现的硬约束）：网关 `/rpc` 的
+>   `origin_allowed` 只允许**同源页面**，而客户端是另一台桌面（`tauri://localhost`），
+>   POST JSON 还会先撞 CORS 预检 ⇒ 渲染层这条路在真机上是 405/403。所以客户端经
+>   `gateway_client_rpc`（Rust，`src-tauri/src/phone/gateway_client.rs`）发请求：
+>   **不带 Origin**（与 curl 同类）、凭据仍是网关的设备 cookie（配对时从 `Set-Cookie` 读回，
+>   封存后存 `codem-sync-device-token`，不进 `sync-config`）。**网关侧一条安全规则都没放宽**。
+>   判据/浏览器里没有 Tauri ⇒ 走 fetch 分支（`device-sync-gateway.test.ts` 的两条通道各有用例）。
+>
+> **判据**：`device-sync-gateway.test.ts` 14 条（两设备往返 / 游标 / 幂等 / 冒充拒绝 / 默认关 / 定时器）、
+> `device-sync-ledger.test.ts` 7 条（慢设备不被拉动修剪 / resetRequired / 容量与时间边界）、
+> `device-sync-acl.test.ts` 5 条（推/拉/快照的 allowlist / fail-closed / 客户端配置）、
+> `device-sync-snapshot.test.ts` 5 条（分页完整 / 工具结果 / 幂等 / reset 后重置游标）、
+> `device-sync-memory.test.ts` 3 条（并集 / 冲突副本 + 审计 / 坏 payload 拒绝）、
+> `device-sync-ui.test.tsx` 6 条（默认关 / 配对 / 开启才联网 / 失败可见 / 项目范围 / 快照状态）；
+> 变异自证：pull 忽略 `sinceSeq` ⇒ `SYNC-8` 红；修剪退回「1200 条直接丢」⇒ `LEDGER-1` 红；
+> 忽略 `projectIds` ⇒ `ACL-1`/`ACL-2`/`ACL-3` 红；快照不标 `hasMore` ⇒ `SNAP-1` 红；
+> 记忆改成直接覆盖 ⇒ `MEM-SYNC-1` 红；默认改成开启 ⇒ `SYNC-9`/`DSU-1` 红；去掉 deviceId 冒充校验 ⇒ `SYNC-6` 红。
+
+> **2026-11-07 规模化验收（P0 / §7）**：
+> `src/test/context-os-scale-acceptance.test.ts` 用真实 `AgenticLoop` / `LLMEngine.process` + 内存存储
+> 覆盖 **ICM-1..6 / MEM-T1 / MEM-T2 / HIST-T1**（**200 个真实用户回合、3 次 switch**、compact vs switch、
+> 失败回退、切换中消息恰好一次、旧段不变、换段后 conversation 记忆与自动提取仍可见）。
+> `CACHE-1` 由 `memory-history-acceptance-gaps.test.ts` 补（真实换段前后稳定前缀逐字节不变）。
+> **已补齐**：`BOT-4`（2026-11-07 落地：admin 回 `PASS` / 空内容 ⇒
+> `bot_group_pass` 审计 + 群聊面板可见状态 + 0 成员调用，判据 `bots-pass-round.test.ts` PASS-1..6
+> 与 `group-chat-panel.test.tsx` GC-8）。
+> ICM-2 的「过阈值」按考虑线（0.7–0.9）判；≥hard 的未完成换段救援由既有
+> `AUTOCOMPACT-SWITCH*` / `AUTOCOMPACT-CEILING-*` 判据守，不改既有判据。
+> **2026-11-07 修正**：完成态换段改为**水位达标才切**（低压力完成继续当前段）。旧实现
+> 「完成即边界」让超过 keepCount 后每回合都切一段 ⇒ ICM-1 当时的"152 条种子 + 3 个回合"
+> 是伪 200 轮（靠的正是那条被修掉的规则）。现在 ICM-1 是真正的 200 回合、压力跨阈值 3 次；
+> ICM-3/4/6/MEM-T1 用 `enableCompaction:false` 显式隔离完成出口（中途压缩会先吃掉阈值穿越）。
+
+> **2026-11-07 状态（thread history 的工具结果与 spill，独立复核缺口）**：检索与回读面补到
+> **真实存储形态** —— `thread_history_search` 的检索范围 = 正文 + `toolCalls[].result` +
+> 工具请求侧（名字/参数）+ 机器注入可读正文，命中时标出 `content` / `tool_result` / `tool_args`
+> 与工具名，片段从**命中处**截取；`thread_history_read` 渲染工具调用的名字/参数摘要/结果正文，
+> 结果走 spill 时用 `readSpillText` 读回**全文**，缺失或伪造 locator **如实报错**（不读越界文件、
+> 也不假装读到了）；新增 `segment` 参数（按 epoch 的 `segmentSeq` 读整段，仍只返回请求范围）；
+> `thread_segment_list` 显示每段工具结果条数。
+> **覆盖**：`HIST-1b` / `HIST-1b-args` / `HIST-1b-machine` / `HIST-2b` / `HIST-4` / `HIST-SEG` /
+> `HIST-SEG-BOUND` / `HIST-COUNT` 见 `src/test/thread-history-tool-results.test.ts`
+> （旧 HIST-1 把错误种进 `content`，未覆盖真实形态；`HIST-T1` 仍由规模验收守）。
+> **变异自证**：删工具结果检索 ⇒ `HIST-1b` 红；去掉 spill 根目录校验 ⇒ `HIST-2b` 红；
+> 忽略 before/after ⇒ `HIST-4` 红；忽略 segment 过滤 ⇒ `HIST-SEG` 红；
+> 工具结果计数恒 0 ⇒ `HIST-COUNT` 红。决策/记忆/本计划正文未改。
+
 ---
 
 ## 7. 验收判据
 
 | ID | 场景 | 通过 | 变异 |
 |---|---|---|---|
-| ICM-1 | 200 轮、3 段 | 当前请求只含当前段；旧事实可 `thread_history_search` 找回 | 只读 `listMessages` ⇒ 红 |
+| ICM-1 | **200 个真实用户回合**、压力跨阈值 3 次 ⇒ 3 次 switch（段 2/3/4） | 当前请求只含当前段；每段旧事实可 `thread_history_search`/`read` 找回 | 改回「每回合都切」⇒ 段数 ≫3 红；只读 `listMessages` ⇒ 红 |
 | ICM-2 | 未完成任务过阈值 | 选 compact，不 switch | 去掉任务状态 ⇒ 红 |
-| ICM-3 | 完成任务过阈值 | 选 switch，handoff 成功 | 强制 compact ⇒ 红 |
+| ICM-3 | 完成任务过阈值（水位达标） | 选 switch，handoff 成功 | 强制 compact ⇒ 红 |
 | ICM-4 | steward 超时/坏 JSON | 回退不丢输入 | 抛错/静默 switch ⇒ 红 |
 | ICM-5 | 切换中用户发消息 | 消息转到新段一次，不重复 | 不排队/双写 ⇒ 红 |
 | ICM-6 | 旧段 | 完整、可读、不可编辑、可导出 | 删除旧段 ⇒ 红 |
@@ -837,6 +1022,12 @@ if LLM fails/no answer -> deterministic fallback (compact if unfinished, switch 
 | BOT-4 | admin PASS | 提示空轮，不静默 | 无提示 ⇒ 红 |
 | BOT-5 | peer work | 结果回上游一次，不重复 | 无树/重复 ⇒ 红 |
 | BOT-6 | 下游卡住 | deadline/可见等待，不无限挂 | 无超时 ⇒ 红 |
+| MAIN-1 | 设 Main Bot | 只有用户能设、全表唯一、再设同一个幂等成功（不重复审计） | 不清旧 Main / 重复写审计 ⇒ 红 |
+| MAIN-2 | Bot 身份调 `setMainBot` | `permission_denied`，主 Bot 状态一字不动 | 去掉身份闸 ⇒ 红 |
+| MAIN-3 | Main Bot 高权限 | 可当任意群 admin（非该 Team 成员也可）、可跨群 @；普通 Bot 仍 `cross_team` | 去掉 isMain 放行 ⇒ 红 |
+| MAIN-4 | 删 Main Bot | 未 `confirmDelete:true` ⇒ `confirmation_required` 且仍在；确认后才删 | 不校验确认 ⇒ 红 |
+| MAIN-5 | 删在用的 Bot | `in_use` 并列出全部群（先改群）；不顺手摘除 | 静默删群引用 ⇒ 红 |
+| MAIN-6 | 删除范围 | 只删 `codem-bots` 身份行；个人会话与 agent-teams 成员保留 | 顺手删会话/成员 ⇒ 红 |
 | COST-1 | 群聊普通消息 | 只 1 次 admin 调用 | 多成员调用 ⇒ 红 |
 | TRUST-1 | 自动记忆 | manual/pending 不自动删改 | auto delete ⇒ 红 |
 | CACHE-1 | stable prefix | session/epoch 变化不破坏 stable 部分 | 重排 ⇒ 红 |

@@ -15,6 +15,27 @@ import {
   appendMailbox, unreadMailbox, claimMailbox, acknowledgeMailbox, releaseMailbox,
   snapshot,
 } from "../core/agent-teams/engine";
+import { runTaskVerification } from "../core/agent-teams/verifier";
+
+/** C10：四类证据（完成条件）—— 旧用例要完成的任务必须带齐 */
+const FULL_EVIDENCE = [
+  { kind: "code" as const, ref: "src/feature.ts" },
+  { kind: "doc" as const, ref: "docs/feature.md" },
+  { kind: "test" as const, ref: "npx vitest run src/test/feature.test.ts", status: "pass" as const },
+  { kind: "reference" as const, ref: "issue#42" },
+];
+
+/**
+ * C10：走完整完成链路（in_progress → 独立 Verifier → completed）。
+ * 旧用例只关心"完成后依赖满足"，但 C10 之后 completed 必须过完成门禁，
+ * 所以统一用这个 helper，避免每个用例重复抄四类证据 + Verifier。
+ */
+function completeTask(team: ReturnType<typeof makeTeam>, taskId: string, by: string, attemptId: string, output?: string) {
+  updateTask(team, taskId, { status: "in_progress", attemptId, by, evidence: FULL_EVIDENCE });
+  const task = team.tasks.find((item) => item.id === taskId)!;
+  task.verification = runTaskVerification(task, { verifier: "独立验收员" });
+  return updateTask(team, taskId, { status: "completed", attemptId, by, output, evidence: FULL_EVIDENCE });
+}
 
 function makeTeam() {
   const team = createTeam({ name: "审计组", captainSessionId: "cap-session" });
@@ -64,10 +85,9 @@ describe("agent-teams 引擎 — 依赖与领取", () => {
     const team = makeTeam();
     createTask(team, { subject: "调研 A" });
     createTask(team, { subject: "实现 B", dependencies: ["t1"] });
-    // 研究员完成 t1（claimed → in_progress → completed）
+    // 研究员完成 t1（claimed → in_progress → completed，C10 完成门禁）
     const { attemptId } = claimTask(team, "t1", "研究员");
-    updateTask(team, "t1", { status: "in_progress", attemptId, by: "研究员" });
-    updateTask(team, "t1", { status: "completed", attemptId, by: "研究员" });
+    completeTask(team, "t1", "研究员", attemptId);
     expect(depsSatisfied(team, team.tasks[1])).toBe(true);
     const r = claimTask(team, "t2", "工程师");
     expect(r.attempt).toBe(1);
@@ -108,8 +128,7 @@ describe("agent-teams 引擎 — attempt 防覆盖", () => {
     const team = makeTeam();
     createTask(team, { subject: "A", assignee: "研究员" });
     const { attemptId } = claimTask(team, "t1", "研究员");
-    updateTask(team, "t1", { status: "in_progress", attemptId, by: "研究员" });
-    updateTask(team, "t1", { status: "completed", attemptId, by: "研究员", output: "完成摘要" });
+    completeTask(team, "t1", "研究员", attemptId, "完成摘要");
     expect(team.tasks[0].status).toBe("completed");
     expect(team.tasks[0].output).toBe("完成摘要");
     expect(team.tasks[0].attemptId).toBeUndefined(); // 终态清令牌

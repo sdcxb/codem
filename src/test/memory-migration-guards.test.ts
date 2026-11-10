@@ -929,7 +929,8 @@ describe("I1 / I5 / I6 / S1 / S3 / S4：写路径与注入预算", () => {
     const svc = new MemoryService({ maxEntries: 400 });
     /*
      * 饱和注入：每个（作用域 × 来源）各 25 条 ⇒ 每块上限 20 条、共 6 块 = 120 行，
-     * 每行正文被 `formatLine` 截到 200 字符 ⇒ 约 27,000 字符（审计实测 29,008），远超总预算。
+     * 每行正文被 `formatLine` 截到摘要上限（120 字符）+ 行内的 id/key ⇒ 约 20,000 字符，
+     * 远超总预算。
      */
     const filler = "A".repeat(220);
     for (let i = 0; i < 25; i++) {

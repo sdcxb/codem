@@ -19,6 +19,7 @@ import { getPersistFailures, resetPersistFailures } from "../core/storage/persis
 import { createFakeStoragePort } from "./fake-storage-port";
 import { saveMemory, setSetting } from "../core/storage/settings";
 import {
+  MEMORY_INJECT_LINE_MAX,
   MEMORY_PRE_MIGRATION_KEY,
   MEMORY_WRITE_APPROVAL_KEY,
   MemoryService,
@@ -231,11 +232,12 @@ describe("MA（第三批）：记忆侧", () => {
     ).toContain("待批准上限 2 条挡下 0 条");
   });
 
-  it("MA-17：注入截断披露按**展开后**的文本判定（content ≤ 200 但展开后 > 200 也要说）", () => {
-    const short = { content: "短".repeat(190) };
+  it("MA-17：注入截断披露按**展开后**的文本判定（原文 ≤ 摘要上限但展开后超了也要说）", () => {
+    // 夹具跟着 `MEMORY_INJECT_LINE_MAX` 走（不写死旧数字：行宽/摘要上限变一次就要重标一次）
+    const short = { content: "短".repeat(MEMORY_INJECT_LINE_MAX - 10) };
     expect(injectionTruncationNote(short), "原文没超 ⇒ 不提示").toBeNull();
     expect(
-      injectionTruncationNote(short, "短".repeat(260)),
+      injectionTruncationNote(short, "短".repeat(MEMORY_INJECT_LINE_MAX + 40)),
       "展开后超了 ⇒ 必须提示（原来只看原文 ⇒ 漏报：界面写「已生效」，可那一行其实被截过）",
     ).not.toBeNull();
   });

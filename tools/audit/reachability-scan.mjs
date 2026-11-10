@@ -18,8 +18,14 @@
  * ## 自检（不信就自己证明）
  *
  * 内置两条**已知答案**的对照：`src/components/MessageBubble.tsx` 必须可达、
- * `src/core/storage/sync-engine.ts` 必须不可达。对照不过 ⇒ `trustworthy: false`，
+ * `src/components/MessageActions.tsx` 必须不可达（旧的消息操作栏，已被共享气泡取代，
+ * 全仓零生产调用方）。对照不过 ⇒ `trustworthy: false`，
  * 调用方（用例 / `--check`）必须把它当失败处理，**不许**拿结论去下判断。
+ *
+ * ⚠️ 第 258 波把"不可达对照"从 `sync-engine` 换成了 `MessageActions`：多设备同步接上之后
+ * `sync-engine` **已经是可达的**（设置 → 设备同步 + App 的运行时对齐都会 import 它），
+ * 再拿它当"必须不可达"的对照就等于要求把功能再拆掉。任何**确实没有生产调用方**的
+ * 文件都可以当这个对照，关键是它与"可达对照"分处两侧、且结论稳定。
  *
  * ## 白名单
  *
@@ -190,11 +196,12 @@ export function scanReachability(root = process.cwd(), entries = ["src/main.tsx"
 
   const checks = {
     messageBubbleReachable: reached.has("src/components/MessageBubble.tsx"),
-    syncEngineUnreachable: !reached.has("src/core/storage/sync-engine.ts"),
+    // 不可达对照：MessageActions 已被共享气泡取代，零生产调用方（见文件头第 258 波的说明）
+    messageActionsUnreachable: !reached.has("src/components/MessageActions.tsx"),
     entryMissing: entries.filter((e) => !prodSet.has(e)),
   };
   const trustworthy =
-    checks.messageBubbleReachable && checks.syncEngineUnreachable && checks.entryMissing.length === 0;
+    checks.messageBubbleReachable && checks.messageActionsUnreachable && checks.entryMissing.length === 0;
 
   return {
     trustworthy,
@@ -235,7 +242,7 @@ if (isCli) {
       `（仅测试可达/有动态命中 ${result.counts.onlyTests} + 孤儿 ${result.counts.orphans}）`,
   );
   console.log(
-    `自检：MessageBubble 可达=${result.checks.messageBubbleReachable}｜sync-engine 不可达=${result.checks.syncEngineUnreachable}｜入口缺失=${result.checks.entryMissing.length}`,
+    `自检：MessageBubble 可达=${result.checks.messageBubbleReachable}｜MessageActions 不可达=${result.checks.messageActionsUnreachable}｜入口缺失=${result.checks.entryMissing.length}`,
   );
   if (!result.trustworthy) console.log("🔴 自检未通过：本次分析**不可信**");
   if (verdict.unexpected.length) {

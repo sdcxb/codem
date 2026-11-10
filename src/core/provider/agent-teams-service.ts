@@ -44,11 +44,14 @@ import {
   createTeam, addMember as engineAddMember, removeMember as engineRemoveMember,
   createTask, claimTask, updateTask, beginReassign, finishReassign, cancelReassign,
   appendMailbox, claimMailbox, acknowledgeMailbox, releaseMailbox,
-  unreadMailbox, snapshot, nextReadyTask, rollbackClaim,
+  unreadMailbox, snapshot, nextReadyTask, rollbackClaim, rollbackTask, settlePeerTask,
   genId,
 } from "../agent-teams/engine";
-import type { AgentTeam, TeamSnapshot } from "../agent-teams/types";
+import type { AgentTeam, TeamSnapshot, TeamTask, DocSyncCheck, DocSyncResult, TaskEvidence, TaskEvidenceInput, TaskEvidenceKind, TaskVerification, MailboxMessage } from "../agent-teams/types";
 import { CAPTAIN, TASK_TERMINAL } from "../agent-teams/types";
+import { runTaskVerification } from "../agent-teams/verifier";
+import { buildMemberBrief, buildTaskSlice } from "../agent-teams/task-context";
+import { checkTaskDocumentSync } from "../agent-teams/doc-sync";
 import { getSubagentRuntime } from "../subagent/index";
 import { reportPersistFailure } from "../storage/persist-failure";
 
@@ -63,9 +66,61 @@ interface SendResult {
 export class AgentTeamsServiceClass {
   private teams = new Map<string, AgentTeam>();
   private listeners = new Set<AgentTeamsChangeListener>();
+  /**
+   * C10：文档版本同步谓词（显式注入点）。
+   *
+   * ## 默认行为（2026-11-06 起接真实 C06）
+   *
+   * 没有显式注入时，服务默认用 `checkTaskDocumentSync`（agent-teams/doc-sync.ts）
+   * 调 C06 的 `documentSyncCheck`：任务工件/证据引用文档时，用**真实文档账本**
+   * 判断版本是否已被读后发生变化；没有引用 / 没有账本 / 账本里没有版本事实时
+   * `checked:false`（不假装检查过），也不阻塞。
+   *
+   * 显式注入只服务测试与将来的替代检查器，优先级高于默认实现。
+   */
+  private docSyncCheck?: DocSyncCheck;
 
   constructor() {
     this.load();
+  }
+
+  /** 注入/移除文档版本同步检查（测试或替代 C06 检查器）；传 undefined 恢复默认真实检查。 */
+  setDocSyncCheck(check?: DocSyncCheck): void {
+    this.docSyncCheck = check;
+  }
+
+  getDocSyncCheck(): DocSyncCheck | undefined {
+    return this.docSyncCheck;
+  }
+
+  /**
+   * 取「完成/验收这一刻」的同步谓词。
+   *
+   * C06 的 `documentSyncCheck` 是异步的，而引擎的完成门禁是同步纯函数：
+   * 这里先异步取回真实事实，再把结果包成同步闭包交给引擎（不把 IO 塞进状态机）。
+   * 显式注入的谓词原样透传（引擎的 `resolveDocSync` 已经对异常做 fail-closed）。
+   */
+  private async docSyncPredicateFor(
+    team: AgentTeam,
+    task: TeamTask,
+    evidence: TaskEvidence[],
+    by: string | undefined,
+  ): Promise<DocSyncCheck> {
+    if (this.docSyncCheck) {
+      const injected = this.docSyncCheck;
+      return (input) => injected(input);
+    }
+    try {
+      const result: DocSyncResult = await checkTaskDocumentSync({ team, task, evidence, by });
+      return () => result;
+    } catch (e) {
+      // 检查器本身坏掉 = 无法证明文档已同步 ⇒ fail-closed（与 completion.ts 的谓词异常同一口径）
+      return () => ({
+        synced: false,
+        checked: true,
+        reason: `C06 文档同步检查执行失败：${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
   }
 
   // ========== 持久化 ==========
@@ -119,9 +174,7 @@ export class AgentTeamsServiceClass {
           continue;
         }
         if (t.attemptId && (t.status === "claimed" || t.status === "in_progress")) {
-          t.status = "pending";
-          t.attemptId = undefined;
-          t.updatedAt = now;
+          rollbackClaim(team, t.id, t.attemptId, t.assignee);
           changed = true;
           notes.push(`任务 ${t.id}：领取令牌已随重启失效，回到共享池重新调度`);
         }
@@ -299,13 +352,14 @@ export class AgentTeamsServiceClass {
     return { removed };
   }
 
+  /**
+   * 成员启动切片（C10）：只给团队任务图 + 自己的角色，不复制父会话聊天。
+   *
+   * 真正的"任务级切片"在 `kick()` 派活时由 `buildTaskSlice` 生成；这里还没有任务，
+   * 所以只给成员看板。两处共用 task-context.ts，避免两套 prompt 各自漂移。
+   */
   private memberWelcomePrompt(team: AgentTeam, input: { name: string; role?: string }): string {
-    const zh = true; // 成员 prompt 跟随当前语言 —— 用中性双语更稳
-    return [
-      `You are a member "${input.name}" of the team "${team.name}"${input.role ? `, role: ${input.role}` : ""}.`,
-      "You collaborate via the agent_teams_* tools: claim tasks with agent_teams_claim_task (carry the returned attempt_id), update with agent_teams_update_task, report to the captain or teammates with agent_teams_send_message, and check the board with agent_teams_status. Never fabricate task states — only update tasks you actually claimed.",
-      "When you finish a task, call agent_teams_update_task with status=completed and an output summary.",
-    ].join("\n\n");
+    return buildMemberBrief({ team, member: { name: input.name, role: input.role } }).prompt;
   }
 
   private cwdOf(_sessionId: string): string {
@@ -320,7 +374,18 @@ export class AgentTeamsServiceClass {
 
   // ========== 任务 ==========
 
-  createTask(teamId: string, input: { subject: string; description?: string; dependencies?: string[]; assignee?: string }) {
+  createTask(teamId: string, input: {
+    subject: string; description?: string; dependencies?: string[]; assignee?: string;
+    acceptance?: string; requiredEvidence?: TaskEvidenceKind[]; requireVerification?: boolean;
+    /** Bot peer（25:656）：Task 即 work；给了 peer 的任务由 message_bot 的 runner 独占执行 */
+    peer?: {
+      requestId: string;
+      parentTaskId?: string;
+      sourceBotId: string;
+      targetBotId: string;
+      deadlineAt?: number;
+    };
+  }) {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
     const { task } = createTask(team, input);
@@ -339,17 +404,84 @@ export class AgentTeamsServiceClass {
     return { teamId, taskId, attemptId: r.attemptId, attempt: r.attempt };
   }
 
-  update(teamId: string, taskId: string, input: { status: any; output?: string; attemptId?: string; by: string }) {
+  /**
+   * 更新任务（C10）。
+   *
+   * 为什么是 async：完成判定要用**真实 C06 文档版本事实**（异步读文档索引）。
+   * 异步只发生在「提交 completed」这一条路径上；其余状态更新立即返回。
+   * 引擎的 `updateTask` 仍是同步纯函数 —— 这里把取回的异步事实包成同步谓词再交给它。
+   */
+  async update(teamId: string, taskId: string, input: {
+    status: any; output?: string; attemptId?: string; by: string; evidence?: TaskEvidenceInput[];
+  }) {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
-    const { task } = updateTask(team, taskId, input);
+    let docSyncCheck: DocSyncCheck | undefined;
+    if (input.status === "completed") {
+      const current = team.tasks.find((item) => item.id === taskId);
+      if (current) {
+        // 本次 update 随附的证据也要算进「引用了哪些文档」；引擎会在判定前登记它们。
+        const evidence = [
+          ...(Array.isArray(current.evidence) ? current.evidence : []),
+          ...(Array.isArray(input.evidence) ? (input.evidence as TaskEvidence[]) : []),
+        ];
+        docSyncCheck = await this.docSyncPredicateFor(team, current, evidence, input.by);
+      }
+    }
+    const { task, blocked } = updateTask(team, taskId, input, { docSyncCheck });
     // 任务进入终态 → 释放该成员（否则成员会永久停在 working，调度器再也不派活，
     // 依赖成员状态的监控视图也会一直显示「工作中」）
-    this.releaseAssigneeIfIdle(team, task.assignee);
+    if (TASK_TERMINAL.has(task.status)) this.releaseAssigneeIfIdle(team, task.assignee);
+    this.persist();
+    this.notify();
+    if (TASK_TERMINAL.has(task.status)) this.kick(teamId);
+    return { teamId, taskId, task, blocked };
+  }
+
+  /**
+   * Verifier 独立检查（C10）。
+   *
+   * 检查上下文由任务图/工件/证据构造（见 task-context.ts 与 verifier.ts），
+   * **不包含实现者的 output/推理**；Verifier 名字等于实现者时判定 fail。
+   *
+   * 与 `update` 一样是 async：DOC-SYNC 这条检查项走真实 C06 账本（异步取版本事实）。
+   */
+  async verify(teamId: string, taskId: string, verifier: string): Promise<{ verification: TaskVerification; task: TeamTask }> {
+    const team = this.teams.get(teamId);
+    if (!team) throw new Error(`team "${teamId}" not found`);
+    const task = team.tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error(`task "${taskId}" not found`);
+    const docSyncCheck = await this.docSyncPredicateFor(
+      team,
+      task,
+      Array.isArray(task.evidence) ? task.evidence : [],
+      task.claim?.by,
+    );
+    const verification = runTaskVerification(task, {
+      verifier,
+      docSyncCheck,
+    });
+    task.verification = verification;
+    task.updatedAt = Date.now();
+    this.persist();
+    this.notify();
+    return { verification, task };
+  }
+
+  /**
+   * 回滚任务（C10）：工件/证据恢复到领取时的上一版，任务回到共享池。
+   * 回滚后重新走 claim → Verifier → completed 全流程。
+   */
+  rollback(teamId: string, taskId: string, input: { by: string; reason: string; attemptId?: string }) {
+    const team = this.teams.get(teamId);
+    if (!team) throw new Error(`team "${teamId}" not found`);
+    const previousAssignee = team.tasks.find((item) => item.id === taskId)?.assignee;
+    const { task, rollback } = rollbackTask(team, taskId, input);
+    this.releaseAssigneeIfIdle(team, previousAssignee);
     this.persist();
     this.notify();
     this.kick(teamId);
-    return { teamId, taskId, task };
+    return { task, rollback };
   }
 
   /**
@@ -462,6 +594,103 @@ export class AgentTeamsServiceClass {
     return "mailbox";
   }
 
+  /**
+   * 追加一条 **peer / settlement** 消息（25:656），**不尝试直投**。
+   *
+   * ## 为什么不能用 `sendMessage`
+   *
+   * `sendMessage` 会走 `deliverMailbox`：成员 live 时用 `rt.followup` 唤醒它跑一轮。
+   * 而 peer 派活的执行者是 `message_bot` 自己的 runner（它跑的也是同一个成员会话）——
+   * 两边都唤醒就是同一件活跑两遍。所以这里只把消息**落进 AgentTeam.mailbox**
+   * （未读/已读语义仍由 `unreadMailbox`/`acknowledgeMailbox` 一边定义），投递由 runner 承担。
+   *
+   * ## 未读合并
+   *
+   * `mergeKey` 相同且**尚未 ack**（`deliveredAt === undefined`）时合并到同一条：
+   * 同一父任务下多个子活交回只产生**一条**未读，`mergeCount` 记「合并了几条」。
+   */
+  appendPeerMailbox(teamId: string, input: {
+    to: string;
+    from: string;
+    content: string;
+    kind: "peer" | "settlement";
+    taskId: string;
+    mergeKey?: string;
+  }): { message: MailboxMessage; merged: boolean } {
+    const team = this.teams.get(teamId);
+    if (!team) throw new Error(`team "${teamId}" not found`);
+    const now = Date.now();
+    if (input.mergeKey) {
+      const pending = team.mailbox.find(
+        (item) =>
+          item.kind === "settlement" &&
+          item.mergeKey === input.mergeKey &&
+          item.to === input.to &&
+          item.deliveredAt === undefined,
+      );
+      if (pending) {
+        pending.content = `${pending.content}\n---\n${input.content}`;
+        pending.mergeCount = (pending.mergeCount ?? 1) + 1;
+        team.updatedAt = now;
+        this.persist();
+        this.notify();
+        return { message: pending, merged: true };
+      }
+    }
+    const message: MailboxMessage = {
+      id: genId("mail"),
+      to: input.to,
+      from: input.from,
+      content: input.content,
+      createdAt: now,
+      kind: input.kind,
+      taskId: input.taskId,
+      ...(input.mergeKey ? { mergeKey: input.mergeKey, mergeCount: 1 } : {}),
+    };
+    team.mailbox.push(message);
+    team.updatedAt = now;
+    this.persist();
+    this.notify();
+    return { message, merged: false };
+  }
+
+  /**
+   * 已读 ack（沿用 agent-teams 语义：`deliveredAt` 有值 = 已读）。
+   * 返回**本次真正由未读变已读**的条数（重复 ack 为 0，不制造写放大）。
+   */
+  ackMailbox(teamId: string, ids: readonly string[]): number {
+    const team = this.teams.get(teamId);
+    if (!team) throw new Error(`team "${teamId}" not found`);
+    const pending = team.mailbox.filter((item) => ids.includes(item.id) && item.deliveredAt === undefined);
+    if (pending.length === 0) return 0;
+    acknowledgeMailbox(team, pending.map((item) => item.id));
+    this.persist();
+    this.notify();
+    return pending.length;
+  }
+
+  /**
+   * peer 任务结算：**结果写回 TeamTask.output/status**（25:656/25:659），
+   * 不写第二套 work 存储。`settled === false` = 之前已经结算过（超时只结算一次）。
+   */
+  settlePeerTask(teamId: string, taskId: string, input: {
+    status: "completed" | "failed";
+    output: string;
+    by: string;
+    attemptId?: string;
+  }): { task: TeamTask; settled: boolean } {
+    const team = this.teams.get(teamId);
+    if (!team) throw new Error(`team "${teamId}" not found`);
+    const result = settlePeerTask(team, taskId, input);
+    if (result.settled) {
+      this.releaseAssigneeIfIdle(team, result.task.assignee);
+      this.persist();
+      this.notify();
+      this.kick(teamId);
+    }
+    return { task: result.task, settled: result.settled };
+  }
+
   // ========== 调度 ==========
 
   /**
@@ -507,10 +736,19 @@ export class AgentTeamsServiceClass {
       try {
         const r = claimTask(team, task.id, member.name);
         member.status = "working";
+        /**
+         * C10：派活只给**任务切片**（任务 + 依赖 + 共享工件 + 证据缺口 + 纪律），
+         * 不复制队长会话的聊天。`buildTaskSlice` 的结构保证见 task-context.ts。
+         */
+        const slice = buildTaskSlice({
+          team,
+          task,
+          memberName: member.name,
+          role: member.role,
+          docSyncCheck: this.docSyncCheck,
+        });
         // 异步唤醒（不阻塞工具返回）
-        const assignment = `[任务分配] ${task.id}: ${task.subject}${task.description ? "\n" + task.description : ""}\n` +
-          `用 agent_teams_claim_task 领取（会返回同一 attempt_id ${r.attemptId}），完成后 agent_teams_update_task(status=completed, attempt_id=…)。`;
-        rt.followup(team.captainSessionId, member.id, assignment, { signal: new AbortController().signal }).catch((e) => {
+        rt.followup(team.captainSessionId, member.id, slice.prompt, { signal: new AbortController().signal }).catch((e) => {
           // 第 83 波：投递失败必须**可见**（原来是空 catch：任务被回滚、成员回到 idle，
           // 但没有任何日志/状态说明，队长只能看到任务一直 pending 却不知道原因）
           const reason = e?.message || String(e);

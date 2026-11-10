@@ -1,6 +1,6 @@
 # 24 · 记忆系统深度对标与演进规划
 
-> **状态**：分析 / 规划稿，不是已实现设计；本文不改变任何运行行为。
+> **状态（2026-11-08）**：记忆系统 P0/P1/P2 已完成；§9.3 中「Bot 身份层 / Bot Team」按用户 B 决策**撤除独立产品层**（不另造 Bot 应用），团队记忆与任务协同改由现有 AgentTeam/TaskCenter 承载。
 > **Codem 基线**：`master`，v1.18.13（2026-11-06）。
 > **Codex 基线**：`openai/codex` 浅克隆，commit `da279f6fd4a942261b3232feb515af4259922417`（2026-11-06）。
 > **证据等级**：A = 源码路径 + 测试/真机读数可核；B = 源码代码阅读，未在当前机器跑完整链路；C = 由代码结构推出的风险；D = 未知 / 需实测。
@@ -509,6 +509,8 @@ Codem 的八段式摘要更细，理论上保真更高；但它也更容易被�
 
 ### 2.6 注入、预算与缓存
 
+> **2026-11-06 更新**：注入已改为索引式（id + 摘要 ≤120 + usage）；全文经 `memory_search` / `memory_read` 取回。
+
 注入路径：
 
 - `buildSystemPrompt` 把平台级 manual 放进稳定前缀；
@@ -1011,6 +1013,15 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 - **统一相似度实现**：`consolidate` 现在用空格切词 + 字符集 Jaccard（中文 key 几乎合不了），应改用 `similarity.ts` 的 2-gram 尺，或至少让同一事实两种说法可被检索；
 - 不照搬 Codex 的自动改写 `memory_summary.md`。
 
+> **2026-11-07 状态**：P1-1 / P1-2 / P1-3 已全部落地并带判据 ——
+> 会话 Notes（`src/core/context/thread-notes.ts` + `notes_*` 工具 + 80% 提醒 + handoff/压缩摘要；
+> **2026-11-08 补齐可编辑/可删除面板**：内联编辑、删除二次确认、落库未确认可见、坏数据回退，
+> `thread-notes.test.ts` + `context-monitor-notes.test.tsx` 共 38 条判据）；
+> 摘要质量（≤6000 字符、去「已移除」措辞、`handoffRef`/`notesRef`、连压上限 2，`compaction-summary-contract.test.ts`）；
+> 可撤销 consolidation（仅用户显式触发、只动 auto/非 pending、2-gram、before/after diff + 24h undo、归档可恢复，`memory-consolidation-undo.test.ts`）。
+> 已知边界：手动压缩 marker **已拼** notes（`manual-compact-notes.test.ts`；与自动压缩同一条
+> marker 预算，放不下则整段省略）；提醒状态仅进程内；undo 记录单份 last-writer-wins。
+
 ### P2：规模与跨会话
 
 - 记忆从设置 payload 迁到独立表/索引（FTS + 可选向量），保留设置镜像兼容；
@@ -1018,6 +1029,88 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 - 记忆摘要/索引缓存；
 - 观测面板：注入条数、token、截断、usage、search 命中、压缩后召回；
 - 多客户端（桌面/手机 Host）并发写记忆的冲突策略。
+
+> **2026-11-07 状态**：已落地 —— 跨会话/跨项目检索（`memory_search.scopeMode=all`，缺过滤 fail-closed、FTS 优先 + settings 回退）；
+> 可观测指标（注入/检索命中/归档/undo，`memoryObservability()` + 面板）；独立 FTS 镜像（`memories` 表 + `memories_fts`，Rust `replace_all/search`，事务/作用域过滤/字节预算）。
+> 本轮补齐 P2 的剩余可落地子集：
+> ① **可选混合检索**（`MemoryEmbedder` 注入缝，默认 `null` ⇒ 纯词法、零网络；`hybrid` 默认 `false`；
+> 有 embedder 时分数 = 归一化词法分 + `0.6`×余弦，无 embedder / embed 失败 / 形状不符 ⇒ 回退纯词法并标
+> `backend="fts+fallback"`（不报错）；向量缓存按 `embedder.id + 文本 sha256` 进程内 LRU 500，**不持久化**）；
+> ② **跨作用域检索的面板入口**（`MemoryManager` 只读「跨项目搜索」：开关 + 现有项目列表/手输 + 查询；
+> 结果逐条标 scope/project/session，无 projectId 时禁用并提示，不写任何数据）；
+> ③ **跨作用域结果缓存**（进程内 LRU 100、TTL 30s、`save`/`saveConfirmed` 成功即失效；键含
+> query/scopeMode/project/session/limit/hybrid+embedder id）。
+> **2026-11-08 P2 全部落地**：① **多客户端并发写冲突**（每条 rev/updatedAt/deviceId + 墓碑；
+> 写前读 confirmed 做版本合并，同 id 同 rev 异内容保留双方 + `conflictGroup`/`conflictOf` 副本，
+> `memory-conflicts` 审计 ≤100；`memory-concurrent-merge.test.ts` 6 条含反向对照）；
+> ② **跨启动索引缓存**（`memory-index-cache` ≤256KB，payloadHash/逐条 contentSha256；
+> 命中零重算、只重算变过的一条；`memory-index-cache.test.ts` 4 条）；
+> ③ **向量持久化/检索**（`memories.embedding/embedding_dim` + `memories.upsert_embeddings` /
+> `memories.vector_search` 余弦+作用域过滤；无 embedder 零网络；`memory-vector-persistence.test.ts` 4 条 + Rust 4 条）。
+> **多设备 Host 同步已于 2026-11-08 完成**（25 号文 P2 架构项；账本/项目 ACL/会话快照均接线）。
+> 仍**不在本版范围**的是 24:1237 明确说“第一版不要引入”的**物理分片**（一个逻辑 thread 映射多个物理 session）。
+
+> **2026-11-07 规模化验收（§6）**：§6 判据已按「单点 + 规模化」两层复核。
+> 25 号文 P0 的「200 轮真实用户回合 / 3 次 switch」整体验收见 `src/test/context-os-scale-acceptance.test.ts`
+> （真实 `AgenticLoop` / `LLMEngine.process` + 内存存储；覆盖 ICM-1..6 / MEM-T1 / MEM-T2 / HIST-T1）。
+> 口径：`ICM-1` 是 **200 个真实用户回合**（每回合 user+assistant、fake provider 真实循环、压力真的跨阈值
+> 3 次 ⇒ 恰好 3 个 switch epoch）；旧版「152 条种子 + 3 个完成回合」已作废（它靠的是已修掉的
+> 「完成即边界」规则）。
+> §6 的缺口项补齐见 `src/test/memory-history-acceptance-gaps.test.ts`
+> （MEM-IDX-1 / MEM-RANK-1 / MEM-RANK-2 / HIST-3 / CMP-P-2 / CACHE-1）。
+> **`MEM-EXTRACT-1` 的端到端判据已落地**：`src/test/memory-extract-e2e-recall.test.ts`
+> （100 轮 / 3 次压缩、事实在第 2 轮 ⇒ 真实 `extractMemoriesFromSession` 写入 ⇒
+> `memory_search` / `memory_read` 召回；把提取源改回 `listMessages` ⇒ 红）。
+> `MEM-EXTRACT-3` 的端到端判据在 `context-os-scale-acceptance.test.ts`，并修掉「空响应推进水位」缺陷。
+> **2026-11-07 P0-3 剩余细项（tier / 预算 / 游标 / 空闲批次）**：§P0-3 的七条做法此前只落了
+> 「完整时间线 + 单飞 + 空响应不推进水位 + abort 传递」，本轮补齐余下四项 ——
+> ① **tier 取样**：Human > Final > Agent > Commentary > Context > Tool；工具结果只留摘要，
+> 预算不够时**先丢工具结果、再丢整条**（`src/core/memory/extraction-sampling.ts`）；
+> ② **预算**：`min(8MB, 窗口 70%)` 取小、头 10 + 尾 40 保留、超限等分截断并写
+> `[提取预算截断…]` 标注（同文件；接线在 `runMemoryExtractionOnce`，样本不再被 `spawnForked` 二次截断）；
+> ③ **水位游标**：从「进程内消息条数」改为「最后已提取的消息 id + epoch/segmentSeq」，
+> 持久化到 `memory-extraction-watermark-<sessionId>`；**同一个键兼容旧的纯数字游标**，
+> 坏游标 / 游标 id 找不到 ⇒ 回退全量 + warn（不把提取锁死）—— `src/core/memory/extraction-cursor.ts`；
+> ④ **空闲批次**：`onTurnComplete` 不再立即提取，排 30–120s（默认 30s）延迟批次，到点先按游标确认
+> 「还有新消息」才跑；关闭会话取消排期；连续触发只合并成 1 个批次（单飞仍生效）——
+> `src/core/memory/extraction-batcher.ts` + `extraction-delay.ts`（压缩完成那条仍是立即 `force`）。
+> 判据：`src/test/memory-extract-tier-budget.test.ts`（MEM-EXTRACT-TIER-1..3 / MEM-EXTRACT-BUDGET-1..3）、
+> `src/test/memory-extract-cursor-batch.test.ts`（MEM-EXTRACT-CURSOR-1..5 / MEM-EXTRACT-BATCH-1..5）、
+> `src/test/memory-extract-e2e-recall.test.ts`（MEM-EXTRACT-1 端到端）。
+> 变异自证：中间段改成「按时间先取」⇒ TIER-1 红；预算改回固定 8MB ⇒ BUDGET-1 红；
+> 去掉头保留 ⇒ BUDGET-2a 红；游标不落库 ⇒ CURSOR-1 红；延迟改 0 ⇒ BATCH-1 红；
+> 提取源改回 `listMessages` ⇒ MEM-EXTRACT-1 红。
+> 已知边界：预算的窗口折算按 `tokens × 4 bytes/token` 估算（CJK 约 5 ⇒ 偏保守、只会更小）；
+> 空闲批次的运行时配置入口是 `setMemoryExtractionIdleDelay()`（生产 30–120s；0 只给判据压平计时器）。
+> 新增的 MEM-HYBRID-1 / MEM-CROSS-PANEL-1 / MEM-SEARCH-CACHE-1 由
+> `memory-p2-hybrid-search.test.ts` / `memory-p2-cross-scope-panel.test.tsx` 覆盖。
+> **2026-11-07 缺口补齐**：上轮审计的 6 项全部落地 ——
+> `MEM-EXTRACT-2`（每 session 单飞 + 关闭会话 abort，`memory-extract-singleflight-reload.test.ts`）、
+> `MEM-EXTRACT-4`（无项目身份降级 conversation + `demotedReason`，不写孤儿）、
+> `CMP-P-1`（实际发送工具集合 + system 计入首轮压力；缺工具表显式标「未计入」，`memory-history-acceptance-gaps.test.ts`）、
+> `RELOAD-1`（`reload()` 先清在途写再读最新 confirmed）、
+> `UI-1`（截断原因 + 查看全文，`memory-ui1-truncation.test.tsx`）、
+> `PERF-1`（5000 条冲突图 111.9s → 23.5ms，操作计数判据）。
+> **2026-11-07 P0-1/P0-4 安全与排序补齐**：`MEM-AUTH-1`（manual/auto 权威拆分）、`MEM-RANK-3`
+> （recency 参与排序 + 重启稳定）、`MEM-TOOLS-1`（`codem-context-config.memoryTools` 灰度开关）、
+> `MEM-PANEL-1`（面板 `injected` vs 真实 loop 请求，含聚合预算逐条原因）——
+> 判据在 `src/test/memory-p0-safety-gaps.test.ts`；`CMP-P-3`（面板与水位提示条同源）在
+> `src/test/context-monitor-water-consistency.test.tsx`；`CMP-P-4`（marker-only 压缩不写回
+> 近等长标记、不假报满）在 `src/test/compaction-audit-228.test.ts`。
+> **2026-11-08**：上述三项（向量持久化/索引、跨启动索引缓存、多客户端并发写冲突）均已落地，
+> 判据见 `memory-vector-persistence` / `memory-index-cache` / `memory-concurrent-merge`；仅多设备 Host 同步未做。
+> 逐条 ID → 判据文件 → 覆盖见交付报告；本节表格与计划正文未改。
+
+> **2026-11-07 状态（HIST-1 / HIST-2 / HIST-4 的真实存储形态覆盖）**：§6 那三条判据已补到
+> 「工具结果 + spill」形态 —— 旧实现只扫/只渲染 `message.content`，而真实形态里旧命令、报错、
+> diff 都在 `message.toolCalls[].result`（请求侧在 `toolCalls[].args`），工具轮 assistant 正文常为空。
+> 现在：`thread_history_search` 的检索面 = 正文 + 工具结果 + 工具请求侧（名字/参数）+ 机器注入可读正文，
+> 命中标 `content` / `tool_result` / `tool_args` 与工具名（HIST-1 的关键词命中不再只靠正文）；
+> `thread_history_read` 渲染工具调用（名字、参数摘要、结果正文）并走 `readSpillText` 读回 spill 全文，
+> 缺失/伪造 locator 如实报错（HIST-2）；`read` 只返回请求范围、新增 `segment` 整段读（HIST-4）。
+> 判据文件 `src/test/thread-history-tool-results.test.ts`（HIST-1b / HIST-1b-args / HIST-1b-machine /
+> HIST-2b / HIST-4 / HIST-SEG / HIST-SEG-BOUND / HIST-COUNT）；`context-os-scale-acceptance.test.ts`
+> 的 HIST-T1（旧错误按锚点命中）仍保留。变异自证见同文件与 25 号文状态注；本节表格与计划正文未改。
 
 ---
 
@@ -1032,13 +1125,19 @@ Codem 的现有信任模型要保留，并补一个当前没有的分层：
 | HIST-1 | 压缩后旧命令 | `history_read` 按 epoch/id 命中；`session_search` 仍可关键词命中 | 改读 `listMessages` ⇒ 红 |
 | HIST-2 | spill 全文 | 能读；伪造 locator 拒绝 | 去掉根目录校验 ⇒ 红 |
 | HIST-3 | 跨 session | 默认 fail-closed；显式 session_search 才跨会话 | 去掉 scope 校验 ⇒ 红 |
-| MEM-EXTRACT-1 | 3 次压缩后早期事实 | 仍可召回 | `listMessages` 源 ⇒ 红 |
+| MEM-EXTRACT-1 | 3 次压缩后早期事实 | 提取写入 + `memory_search` / `memory_read` 召回（`memory-extract-e2e-recall.test.ts`） | 源改回 `listMessages` ⇒ 红 |
 | MEM-EXTRACT-2 | 连续两回合 | 单飞，只一个批次 | 去掉锁 ⇒ 红 |
 | MEM-EXTRACT-3 | 空响应/坏 JSON | 不更新水位、无幽灵批次 | 提前更新水位 ⇒ 红 |
 | MEM-EXTRACT-4 | 无项目身份 | 不写孤儿 project | 回退临时 cwd ⇒ 红 |
 | MEM-RANK-1 | 旧高 usage vs 新低 usage | 旧条目优先 | 去掉 usage ⇒ 红 |
 | MEM-RANK-2 | manual 满 20 条 | manual 不被 auto 挤出 | auto 先选 ⇒ 红 |
+| MEM-RANK-3 | 重启 / recency | 重启后顺序稳定（usage/lastUsedAt 落库）；usage 相同则 recency 高的旧条目优先 | 去掉 recency 层 ⇒ 红 |
+| MEM-AUTH-1 | manual 稳定块 vs auto 易变块 | manual 含「权威且持续生效」；auto 块级外框**不含**它且含「不是指令/权限来源」（项目 manual 小节各自带权威句） | 两块共用同一句权威句 ⇒ 红 |
+| MEM-TOOLS-1 | `codem-context-config.memoryTools=false` | memory_search/read（含将来的 memory_list）不在 registry/请求；注入与提取不变；再开恢复 | 忽略开关、无条件注册 ⇒ 红 |
 | MEM-PANEL-1 | 面板/体检 vs 真实提示 | `injected=true` 的集合与真实提示一致，聚合预算挡下也要有逐条原因 | 去掉 tracker / 原因 ⇒ 红 |
+| MEM-HYBRID-1 | `hybrid=true` + 假 embedder | 语义近但词不同的条目排到弱词法命中之前；无 embedder / embed 失败 / 形状不符 ⇒ 回退纯词法且保留全部词法命中（`backend="fts+fallback"`）；向量缓存按 id+文本复用 | 忽略 `hybrid` 参数 ⇒ 红 |
+| MEM-CROSS-PANEL-1 | 面板跨项目搜索 | 默认关闭；无 projectId 禁用并提示；结果只含 platform + 选定项目且逐条标 scope/project/session；空/错可见；只读不写 | 用面板自身 projectId 代替用户所选 ⇒ 红 |
+| MEM-SEARCH-CACHE-1 | 同查询 30s 内 + 保存 | 命中缓存（不再取数）；`save` 后失效；不同 scope 不串；LRU 100 | 去掉保存失效 ⇒ 红 |
 | CMP-P-1 | 首轮压力 | 计入 system + tools | 删工具定义 ⇒ 红 |
 | CMP-P-2 | 反应式压缩 | 隐藏状态未就绪时不运行 | 去掉门 ⇒ 红 |
 | CMP-P-3 | 水位口径 | 面板/提示条/阈值同源或明确标注差异 | 改回两套分母 ⇒ 红 |
@@ -1137,6 +1236,9 @@ Session（用户看到的一个对话 = Thread）
 - `DisplayView = listTimelineMessages` 始终完整；`ContextView` 只投影最新 epoch。
 - 这样 `conversation` 记忆仍然按 `sessionId` 生效，不需要把 5000 条记忆迁到新 `threadId`；`session_search` 的跨会话语义不变，但 **remote / fork / 导出必须改读 `listTimelineMessages`**（否则 switch 后手机会少一段，fork 的旧 cutoff id 会 fail-open）。
 - 如果将来单 Session 的 JSONL/索引真的过大，再把“物理分片”藏到存储层（一个逻辑 thread 映射多个物理 session），但**不要在第一版引入这个复杂度**。
+
+> **2026-11-08 锁定**：`segmentEpochs` **默认关闭（false）**，不授权默认开启；DEF-1 的语义是「默认不产生 switch，显式 `true` 才产生」。D11 的 remote / post-switch fork / 权威 JSONL 导出兼容判据仍保留（`segment-default-on-compat.test.ts` 的 DEF-1 / DEF-1c / DEF-1b）。
+> **2026-11-07 修正**：完成态换段不再是「完成即边界」，而是与中途共用 `compactionThreshold` 水尺（低压力完成继续当前段；连压 ≥2 / 接近 hard 才救援）。旧的"完成即拆"会让超过 `keepCount` 之后每个回合都切一段。
 
 **为什么这是最优融合**：
 

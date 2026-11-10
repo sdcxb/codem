@@ -122,10 +122,10 @@ node tools/marketing/verify-context-os-claims.mjs --print-hash
 
 以 `context-os.claims.json` 为准。当前：
 
-- **P0**：C01 连续 Thread、C02 原文保留、C03 最小工作集、C04 Manifest、C09 记忆不自动删改、C12 来源/审批/回滚、C13 用户不做上下文管理。
+- **P0**：C01 连续 Thread、C02 原文保留、C03 最小工作集、C04 Manifest、C09 记忆不自动删改、C12 来源/审批/回滚、C13 用户不做上下文管理（**默认关闭时只承诺「开启后 0 次」**）。
 - **P1**：C05 文档结构、C06 文档账本、C07 长文档流水线、C08 Memory Graph、C10 Artifact Agents、C11 本地优先。
 
-初始状态是 `partial` / `target`，所以 P0 gate 现在**应当失败**。这不是 bug，是“还没证明”。
+初始状态曾是 `partial` / `target`，P0 gate 当时**应当失败**（不是 bug，是「还没证明」）。2026-11-06 收口后 P0 七条全部 shipped/verified，P0 gate 通过；P1 未达标项仍如实保留 partial/target。
 
 ---
 

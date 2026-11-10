@@ -8,6 +8,11 @@ import { reportPersistFailure } from "../storage/persist-failure";
  * —— 两份估算器并存正是这一波要修的缺陷（中文压力被低报约 2.4×）。
  */
 import { estimateTokens as estimateTokensCjkAware } from "../llm/token-tracker";
+/**
+ * 提示缓存开关的默认值（唯一口径在 `llm/prompt-cache.ts`）：
+ * `DEFAULT_CONFIG.promptCache` 与读取点共用同一个常量，不在两处各写一遍 `true`。
+ */
+import { DEFAULT_PROMPT_CACHE } from "../llm/prompt-cache";
 
 // ========== 压力等级（**唯一一份阈值**）==========
 
@@ -91,6 +96,74 @@ export interface CompactionConfig {
   maxMessagesAfterCompaction: number;
   /** Whether to preserve recent tool outputs */
   preserveRecentToolOutputs: boolean;
+  /**
+   * 段式上下文开关（D1 / E3 / D11）：`kind=switch` 的 epoch 是否允许在真实回合产生。
+   *
+   * **默认关闭**（`false`）：DEF-1 的语义是「默认不产生 switch，显式 true 才产生」。
+   * remote `session.get`、post-switch `fork`、权威 JSONL 导出/回放、以及「不写 settings
+   * 的默认配置跑一轮就能产生 switch」（`src/test/segment-default-on-compat.test.ts`）。
+   * 2026-11-08 决定锁定：不授权默认 true，回退 false；用户显式打开才切段。
+   *
+   * **仍保留显式关闭能力**：`{ segmentEpochs: false }` 走回旧路径（不切段、不画分隔/
+   * 段号 chip），供灰度回滚与对照实验使用。
+   *
+   * 这个字段只控制「产不产生 switch」，不控制「读不读得到」—— 读侧的 DisplayView
+   * guard 是数据驱动的，一旦库里真的有 switch epoch 就必须生效（否则历史会静默丢段）。
+   */
+  segmentEpochs?: boolean;
+  /**
+   * C06 文档同步硬闸的**每会话拦截额度**（`completion-guards.ts` 的唯一读取点）。
+   *
+   * - 缺省 / 非法 ⇒ `3`（读取点回退默认值并 `warnOnce`，不静默改口径）；
+   * - `0` ⇒ **不限**（外层「同一（文档 + 版本）只拦一次」仍然生效，所以不会死循环）；
+   * - 合法范围 `1..10`（整数）。
+   *
+   * 为什么放在这个配置里：设置面板与引擎本来就只认 `codem-context-config` 这一个源；
+   * 额度属于同一个「上下文 / 收尾」范畴。在 `completion-guards` 里直读 settings 会造出
+   * 第二个配置口径（本仓历史上不止一次因此出现「面板改了、引擎不认」）。
+   */
+  documentSyncMaxBlocks?: number;
+  /**
+   * Anthropic 提示缓存断点（`cache_control`）开关，**默认开**。
+   *
+   * - 缺键（旧用户的配置里没有这一项）⇒ 合并默认值后是 `true`；
+   * - 显式 `false` ⇒ Anthropic Messages 请求里**一个 `cache_control` 都不发**
+   *   （灰度回滚 / 对照实验用）；
+   * - 只影响 Anthropic 协议；OpenAI / Gemini 的 wire 形状本来就没有这个字段。
+   *
+   * 唯一消费方是 `llm/prompt-cache.ts::isPromptCacheEnabled`（它直接读
+   * `codem-context-config`，与压缩参数同一个设置键）；默认值引用
+   * `DEFAULT_PROMPT_CACHE`，不在两处各写一遍 `true`。
+   */
+  promptCache?: boolean;
+  /**
+   * **记忆只读工具开关**（24 §P0-1 灰度项：`memory_search` / `memory_read`，以及将来若新增的
+   * `memory_list`）。**默认 true**（旧配置缺键 = 开，行为与改前一致）。
+   *
+   * - 显式 `false` ⇒ `createDefaultToolRegistry` **不注册**这些工具（请求的 tools 里也没有），
+   *   模型退回「只用静态注入的索引行」；
+   * - **只控工具**：记忆注入、回合结束提取、审批/面板/检索服务一律不变
+   *   （24 §6 要求「关闭后不改变数据」）—— 所以它与 `memory-enabled-<sessionId>`（那个只控提取）
+   *   是**两个不同开关**，不许互相顶替；
+   * - 判据 `MEM-TOOLS-1`：关 ⇒ registry/请求里没有；再开（新引擎）⇒ 恢复；
+   *   忽略这个开关（无条件注册）⇒ 红。
+   */
+  memoryTools?: boolean;
+  /**
+   * **自动记忆整合**开关（25 §P2；**默认 false**）。
+   *
+   * - 缺键 / 显式 false ⇒ 不排任何空闲整合批次（默认路径连计时器都不建）；
+   * - 显式 true ⇒ 回合结束后排一个 30–120 秒的空闲批次，到点（且仍开着）才真的跑
+   *   `MemoryService.consolidate({ removeStale: false })`；
+   * - 只处理 `source=auto`、非 pending、未归档的条目（保护口径在 `MemoryService` 里，
+   *   与手动整合**同一个实现**）；manual / pending 一条不动；
+   * - 每次真的产生变更都会生成/覆盖**单份** undo 记录（复用 `codem-memory-consolidation-undo`），
+   *   `undoConsolidate` 可逐条恢复；无变更/失败都不发用户可见提示。
+   *
+   * 为什么默认关：整合会归档重复条目（可撤销，但仍是自动改写用户可见的记忆视图）。
+   * 25 §P2 的口径是「先给能力、默认不替用户做决定」，用户显式打开才承担这个动作。
+   */
+  autoConsolidate?: boolean;
 }
 
 const DEFAULT_CONFIG: CompactionConfig = {
@@ -100,6 +173,22 @@ const DEFAULT_CONFIG: CompactionConfig = {
   compactionThreshold: 0.7,
   maxMessagesAfterCompaction: 20,
   preserveRecentToolOutputs: true,
+  /*
+   * D11：**默认关**（2026-11-08 决定；显式 true 才切段；四条兼容判据见 segment-default-on-compat.test.ts）。
+   * 旧配置里没有这个键 ⇒ 合并默认值后是 true；要回旧路径必须显式写 false。
+   */
+  segmentEpochs: false,
+  /* C06 硬闸的默认拦截额度（3）：旧配置里没有这个键 ⇒ 沿用历史行为，不是「关闭」。 */
+  documentSyncMaxBlocks: 3,
+  /*
+   * 提示缓存断点：**默认开**（唯一口径在 `llm/prompt-cache.ts`；旧配置缺键也是开）。
+   * 显式 false 时 Anthropic 请求里不发任何 `cache_control`。
+   */
+  promptCache: DEFAULT_PROMPT_CACHE,
+  /* 记忆只读工具：**默认开**（旧配置缺键也是开；显式 false 才不注册，见 CompactionConfig） */
+  memoryTools: true,
+  /* 25 §P2 自动记忆整合：**默认关**（用户显式打开才排空闲批次；见 CompactionConfig） */
+  autoConsolidate: false,
 };
 
 // ========== Context Manager ==========
@@ -235,7 +324,14 @@ export class ContextManager {
       role: "user",
       parts: [{
         type: "text",
-        content: `[上下文已压缩：移除了 ${messagesToRemove.length} 条旧消息，节省约 ${savedTokens} tokens。以下是最近 ${keepCount} 条消息，请基于此继续工作。]`,
+        /*
+         * P1-2（COMPACT-2）：这条路径的 marker 也**不许**写「移除了 N 条旧消息」。
+         *
+         * 本方法只返回「marker + 保留集」这一个**模型视图**，并不删除存储里的消息；
+         * 旧文案会让模型以为原文已不存在（于是不去 thread_history_* 回读，也会重复劳动）。
+         * 这里如实写「折叠进摘要（不是删除）」并给出取回入口。
+         */
+        content: `[上下文已压缩：较早的 ${messagesToRemove.length} 条消息已折叠进本段摘要（不是删除），约 ${savedTokens} tokens 不再逐条发送。以下是最近 ${keepCount} 条消息，请基于此继续工作；原文仍在时间线里，可用 thread_history_search / thread_history_read 取回。]`,
       }],
       timestamp: Date.now(),
     };

@@ -32,6 +32,7 @@ import * as path from "path";
 import { getLLMEngine, createLLMEngine } from "../core/llm/index";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import { getAgentRegistry } from "../core/agent/agent";
+import { MAX_CONSECUTIVE_COMPACTIONS } from "../core/llm/compaction-budget";
 
 // ========== 辅助函数 ==========
 
@@ -711,9 +712,10 @@ describe("D. 循环死锁防护", () => {
       expect(iteration).toBeGreaterThanOrEqual(maxIterations);
     });
 
-    it("连续压缩 3 次 → 强制停止（防压缩死循环）", () => {
-      const maxConsecutiveCompactions = 3;
-      let consecutiveCompactions = 3;
+    it("连续压缩达到上限（24 §P1-2：最多 2 次）→ 强制停止（防压缩死循环）", () => {
+      const maxConsecutiveCompactions = MAX_CONSECUTIVE_COMPACTIONS;
+      let consecutiveCompactions = MAX_CONSECUTIVE_COMPACTIONS;
+      expect(maxConsecutiveCompactions, "上限必须是 2（与换段决策的 streak 阈值同口径）").toBe(2);
       expect(consecutiveCompactions).toBeGreaterThanOrEqual(maxConsecutiveCompactions);
     });
   });

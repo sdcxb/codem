@@ -1,0 +1,75 @@
+真机复验：显式 provider 优先（Codem 1.18.13，2026-11-06 16:55 构建，含 resolveModelSelection 修复）
+====================================================================================================
+
+环境
+----
+安装包: src-tauri/target/release/bundle/nsis/Codem_1.18.13_x64-setup.exe
+  sha256 = AB46C3A6B506C14D59C516AFB226296145B9B8016776825CE45DF72E96FF868A
+  built  = 2026-11-06 16:55:18 (+08:00)，静默安装 /S
+安装后: %LOCALAPPDATA%\Codem\codem.exe，ProductVersion = 1.18.13（16:54:04 构建产物）
+启动: WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+设置（codem-settings，安装前已在库、安装后未改）:
+  mode     = "api"
+  provider = "aicodewith"
+  model    = "claude-haiku-4-5-20251001"
+  aicodewith: baseUrl=https://api.aicodewith.ai/v1，apiKeySealed 存在（dsh1:…，未打印明文）
+
+缺陷形态（修复前，同一台机器、同一组设置）
+------------------------------------------
+会话「对话 62」（1793950049252-04vh4oo3m，prompt「只回复 OK」）留下的库记录：
+  system   ⚠️ 任务执行出错，已停止：Failed to fetch        (id=loop-outcome-1793950491628, status=error)
+  assistant ⚠️ **LLM 调用失败**（iteration 1）：Failed to fetch
+CDP console（另一次取证 ev_96c2…，见任务背景）:
+  Access to fetch at 'https://api.anthropic.com/v1/chat/completions' from origin
+  'http://tauri.localhost' has been blocked by CORS policy
+  [LLMEngine.getAgenticLoop] … provider.id=claude, provider.baseUrl=https://api.anthropic.com/v1
+
+复验操作
+--------
+CDP（capture_browser_scenario，connect 到 127.0.0.1:9222）：
+  点侧栏「新对话」→ textarea.message-input 填入「只回复 OK」→ 点击 button.send-btn
+  → 等待 → 会话「对话 65」（1793955363177-4yuxjivf0）真实回合完成。
+
+渲染侧 console（CDP 抓取，174 条事件，节选；完整结果见 capture 证据 ev_83ecf8…）
+--------------------------------------------------------------------------------
+[log] [runAgenticLoop] provider=aicodewith, model=claude-haiku-4-5-20251001, mode=api
+[log] [runAgenticLoop] provider=aicodewith, isConfigured=true
+[log] [LLMEngine.resolveSlot] slot=chat → fallback: provider=aicodewith, model=claude-haiku-4-5-20251001（现读设置）设置里的 provider=aicodewith
+[log] [LLMEngine.getAgenticLoop] … provider.id=aicodewith, provider.baseUrl=https://api.aicodewith.ai/v1
+[log] [agent-loop] Iteration 1: calling LLM (attempt 1/10), messages: 3, tools: 64
+
+关键读数：
+- provider.id = aicodewith、baseUrl = https://api.aicodewith.ai/v1（不再是 claude / api.anthropic.com）；
+- console 中 CORS 行 = 0、api.anthropic.com 提及 = 0；
+- 网络事件里 HTTPS 请求只有 1 条：POST https://api.aicodewith.ai/v1/messages（0 条发往 api.anthropic.com）。
+- 注：capture 窗口在模型回包前结束（wait 条件用了 send 按钮，实机该按钮流式期间并不置灰），
+  所以「Iteration 1 completed」这行不在本次 console 窗口内 —— 完成态由下面的库记录证明，未伪造。
+
+查库（App 运行时只读查询 %APPDATA%\com.codem.app\codem-db-rust.bin）
+--------------------------------------------------------------------
+session: 1793955363177-4yuxjivf0（标题「对话 65」，创建 2026-11-06 16:56:03.178）
+messages:
+  user-1793955363347     user      「只回复 OK」  status=done  16:56:03.347
+  assistant-1793955363384 assistant 「OK」        status=done  16:56:10.982
+    metadata = {"turnEndTime":1793955371040,"turnOutcome":"completed","usage":{…}}
+loop-outcome（id like 'loop-outcome%'）: 0 条 —— 没有「任务执行出错，已停止」
+session_events（该会话全部 6 条）:
+  user_message / loop_stopped(turn_heartbeat) / trajectory_step(user_input)
+  assistant_text {content:"OK", messageId:"assistant-1793955363384"}
+  trajectory_step llm_call {provider:"aicodewith", model:"claude-haiku-4-5-20251001", iteration:1, toolCallCount:0}
+  trajectory_step assistant_output {content:"OK", iteration:1}
+  （本构建里 executor 的 turn_end 事件不落库 —— 修复前同样为 0 条，属既有观测面行为，与本次改动无关；
+    回合终态以 messages.metadata.turnOutcome="completed" 为准。）
+
+截图：docs/marketing/evidence/provider-routing-real.png
+  sha256 = DE8378122A5787C3A21A8350CDB31C7734D486EDA63C598BD0DFDFE44B38F4C2（330304 bytes）
+  画面：会话「对话 65」、模型「Claude Haiku 4.5 (AI Code With)」、助手回复「OK」、
+        「1 轮 · 1 步 · 31.8K 入 / 4 出」、绿色「✓ 任务完成」、无任何错误条。
+
+清理（两个复验会话；App 关闭后执行，先子表后 sessions）
+------------------------------------------------------
+每个会话删除前：messages=27、context_epochs=1、session_events=18、telemetry_events=3、session_fts=13、sessions=1
+每个会话删除后：以上 6 项全部 = 0
+全库计数：sessions 839→837、messages 24514→24460、context_epochs 6→4、session_events 30935→30899
+session_fts FTS5 integrity-check：通过（空结果）
+清理后 App 已正常启动（进程 Responding=True），设置仍为 provider=aicodewith / model=claude-haiku-4-5-20251001

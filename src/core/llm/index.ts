@@ -32,6 +32,8 @@ import {
   type MemoryScopeContext,
   type MemorySource,
   type ApprovalScopeSetting,
+  type MemoryConsolidationResult,
+  type MemoryConsolidationUndoView,
 } from "../memory/memory";
 /* ★ 第 229 波：待批准**积压**的闸门与超限处置（速率上限治不了存量 —— 见该文件头） */
 import { MEMORY_PENDING_BACKLOG_LIMIT, decidePendingBacklog } from "../memory/pending-backlog";
@@ -48,11 +50,37 @@ import type { SubagentTask, SubagentResult } from "../subagent/subagent";
 import { setGlobalSubagentRuntime } from "../subagent/index";
 import { SubagentRuntime } from "../subagent/runtime";
 import { InProcessSpawnProvider } from "../subagent/spawn-in-process-provider";
+/* Bot/子智能体回合的工具调用/结果落库（与 UI 执行器同源，见其文件头） */
+import { createSubagentToolCallRecorder } from "../subagent/tool-call-recorder";
 import { SessionRecoveryService, getSessionRecoveryService } from "../recovery/recovery";
+import { resolveTeamIdForSession } from "../memory/team-memory";
 import { AgenticLoop, type LoopEvent } from "./agentic-loop";
 import { describeTurnOutcome } from "./turn-outcome";
 import { CostTracker, getCostTracker } from "./cost-tracker";
 import * as MessageStorage from "../storage/message";
+import { extractionMessages } from "../storage/memory-extraction-source";
+/* ★ P0-3 剩余细项：tier 取样 + 8MB/70% 预算（纯函数，见文件头） */
+import {
+  EXTRACTION_HEAD_KEEP,
+  EXTRACTION_TAIL_KEEP,
+  extractionBudgetBytes,
+  sampleExtractionMessages,
+} from "../memory/extraction-sampling";
+/* ★ P0-3 剩余细项：水位游标（最后已提取的消息 id + epoch/segmentSeq，持久化且兼容旧数字） */
+import {
+  cursorFromExtraction,
+  messagesSinceCursor,
+  readMemoryExtractionCursor,
+  writeMemoryExtractionCursor,
+} from "../memory/extraction-cursor";
+/* ★ P0-3 剩余细项：空闲批次（回合结束不立即提取；30–120s，可注入时钟） */
+import { MemoryExtractionBatcher, normalizeExtractionIdleDelay } from "../memory/extraction-batcher";
+import { EXTRACTION_IDLE_DELAY_MIN_MS } from "../memory/extraction-delay";
+/* 25 §P2：自动记忆整合的空闲批次（独立计时器/单飞；默认关，见 `context.ts.autoConsolidate`）。
+ * 在这里只做两根接线：回合结束**排期**、会话关闭**取消**；开关判定在服务内部现读，
+ * 避免「两处各判一次」的口径分叉。 */
+import { scheduleAutoConsolidation, cancelAutoConsolidation } from "../memory/auto-consolidation";
+import { getTokenTracker } from "./token-tracker";
 /* O-46 + 第 191 波：记忆归属项目身份的唯一来源是「session → project 登记表」——
  * 反查走**唯一实现** `sessionProjectPath`（`core/storage/session-project.ts`），
  * 本文件不再自己拼 `getSession().project_id → getProject().path`
@@ -71,6 +99,23 @@ import { redactSecrets } from "../utils/redact";
 import { formatBytes } from "../utils/bytes";
 import { mergeCustomModels } from "./custom-models";
 import { mergeModelsWithCatalog, BUILTIN_MODEL_CATALOG } from "./model-catalog";
+
+/**
+ * P1-4：**带审批的 Bot 回合**的默认工具超时预算（30 分钟）。
+ *
+ * ## 为什么必须放大（不放大就是真缺陷）
+ *
+ * 执行器默认只有 60 秒（`streaming-executor.ts` 的 `DEFAULT_CONFIG.toolTimeout`）。
+ * 审批是一个**人要在场**的动作，而权限检查发生在工具执行器的 `pipeline.execute` 里、
+ * 被 `Promise.race(pipeline, timeout)` 一并计时 —— 用户 60 秒后才点批准时：
+ * 1. 执行器早已按超时判失败并把结果交回循环；
+ * 2. 那个「被放弃的管线」仍在 `await` 审批 Promise；批准一到，它**照样继续执行工具**
+ *    ⇒ 「模型看到 timeout，工具却真的跑了」。两件相反的事实同时成立。
+ *
+ * 所以带审批的回合必须给一个覆盖审批窗口（默认 10 分钟）的预算。
+ * 只影响显式传 `permissionRequestEvents: true` 的调用方（生产 = Bot runner）。
+ */
+const BOT_APPROVAL_TOOL_TIMEOUT_MS = 30 * 60 * 1000;
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -297,7 +342,7 @@ const MEMORY_MAX_WRITES_PER_EXTRACTION = 4;
  * 因为漏判的代价只是"多问用户一次"，而误判的代价是"外部文本绕过审批"。
  */
 /**
- * 提取提示词最多带**最近多少条**消息（与 spawnForked 那处 maxMessages: 50 一致）。
+ * 提取提示词最多带**最近多少条**消息（与 `sample.messages` 的尾部保留同一量级）。
  * explicit 的结构证据只在同一个窗口里找 —— 模型看不到的话，它也无从"知道用户说过"。
  */
 const MEMORY_EXTRACTION_WINDOW = 50;
@@ -340,6 +385,34 @@ export function stripAttachmentText(content: string): string {
  * 见 `extractMemoriesFromSession` 里那段注释：`onTurnComplete` 每轮都调，不限频就等于"每轮都写记忆"。
  */
 const MEMORY_EXTRACTION_MIN_NEW_MESSAGES = 4;
+
+/**
+ * ★ 24 §P0-3：提取源里**不是用户事实**的三类消息，一律不进模型请求。
+ *
+ * - `role === "system"`：系统提示/内部说明；
+ * - `metadata.contextEpoch` 存在：压缩/换段的 marker（摘要是**派生文本**，不是对话事实）；
+ * - 机器注入（`isMachineInjectedMessage`：交接 / 提醒 / 委派 / 子代理汇报）：
+ *   它们长得像 user 消息，但**不是用户打的字**（判据 `SYSINJ-4` 同一把尺）。
+ *
+ * 形状不认识的消息**不因这条过滤被丢掉**（宁可多给模型一条，也不静默少给）。
+ */
+function filterExtractionSource(messages: readonly unknown[]): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const raw of messages) {
+    if (!raw || typeof raw !== "object") continue;
+    const m = raw as Record<string, unknown>;
+    if (m.role === "system") continue;
+    const metadata = m.metadata as Record<string, unknown> | null | undefined;
+    if (metadata && typeof metadata === "object" && metadata.contextEpoch) continue;
+    try {
+      if (isMachineInjectedMessage(m as never)) continue;
+    } catch {
+      /* 形状不认识的消息不因这条过滤被丢掉 */
+    }
+    out.push(m);
+  }
+  return out;
+}
 
 function reportMemoryProjectIdDegrade(sessionId: string | undefined, identity: string): void {
   const key = `${sessionId ?? "(无会话)"}|${identity}`;
@@ -416,8 +489,16 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     this.config = config || {};
     // R4: 如果 ctx 可用，传递给 createDefaultProviders 和 createDefaultToolRegistry
     if (ctx) this.ctx = ctx;
+    /*
+     * MEM-TOOLS-1：记忆只读工具开关来自 `codem-context-config.memoryTools`（唯一配置源）。
+     * 必须在建工具表**之前**读（构造顺序：配置 → registry → 其余依赖）。
+     * 读不到配置时 `getConfig()` 返回默认值（memoryTools=true）⇒ 与改前逐字一致。
+     */
+    this.context = getContextManager();
+    this.tools = createDefaultToolRegistry(ctx || undefined, {
+      memoryTools: this.context.getConfig().memoryTools !== false,
+    });
     this.providers = createDefaultProviders(ctx || undefined);
-    this.tools = createDefaultToolRegistry(ctx || undefined);
     // P0-7.2-fix: ctx 可用时优先 ctx.get(name)（Cordis 标准模式），
     // 服务不存在时回退到模块级单例（容错）。
     // 使用 ctx.get(name) 而非 ctx.xxx mixin accessor，因为 LLMEngine 不是 Cordis 插件，
@@ -431,7 +512,6 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     };
     this.agents = _getOrFallback('agentRegistry', getAgentRegistry) as any;
     this.permissions = _getOrFallback('permission', getPermissionManager) as any;
-    this.context = getContextManager();
     this.memory = _getOrFallback('memory', getMemoryService) as any;
     this.retry = _getOrFallback('retry', getRetryExecutor) as any;
     this.mcp = _getOrFallback('mcp', getMCPRegistry) as any;
@@ -442,6 +522,21 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     this.toolRenderer = _getOrFallback('toolRender', getToolRenderRegistry) as any;
     this.settings = _getOrFallback('settings', () => getSettingsManager(projectPath) ?? new SettingsManager(projectPath || ".")) as any;
     this.profileManager = _getOrFallback('modelProfile', getModelProfileManager) as any;
+
+    /**
+     * ★ 24 §P0-3：空闲批次调度器（回合结束不再立即提取）。
+     *
+     * `run` 里**重读**会话的项目身份：批次可能在 30–120 秒后才真正跑，
+     * 而这段时间里会话可能又跑了几轮（`setSessionMemoryProject` 以最后一次为准）——
+     * 写入侧必须用"提取这一刻"的身份，与 `process()` 的登记同源。
+     */
+    this.memoryExtractionBatcher = new MemoryExtractionBatcher({
+      delayMs: () => this.memoryExtractionIdleDelayMs,
+      hasNewMessages: (sid) => this.hasNewExtractionMessages(sid),
+      run: (sid) => {
+        this.extractMemoriesFromSession(sid, this.sessionMemoryProjectId.get(sid)).catch(() => {});
+      },
+    });
 
     // Set up sub-agent spawner and register spawn tool
     this.setupSubagentSpawner();
@@ -590,6 +685,12 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       reportActionFailure("delegationTools.agentTeams", e, "agent-teams 工具未注册，模型无法建队/派活");
     });
 
+    // Register bots tools (P1-1 Bot 身份 + P1-2 群聊路由)
+    /*
+     * 注册失败只进日志（不走 reportActionFailure）：按第 50 波口径，
+     * 「用户没有可介入动作」的发现不该进上报通道 —— 模型少一个低频工具，
+     * 用户侧不会因此丢失任何已保存的数据。
+     */
     // Register computer-use tools (对标 EAC computer-user，读屏+键鼠)
     import("../computer-use/computer-use").then(({ registerComputerUseTools }) => {
       registerComputerUseTools((t) => this.tools.register(t));
@@ -668,14 +769,35 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
      * 真机现场：设置里把模型改成免费模型之后，这里仍然打 `provider=deepseek, model=deepseek-flash`
      * （副本是启动时抄下来的）⇒ 用户的「选了 free 模型」根本没生效，请求又按老 provider 发出去，
      * 于是报 openai not configured。设置是唯一真相：每次兜底都现读，并按模型归属定供应商。
+     *
+     * 第 237 波（用户实报，真机 CORS）：设置的 `provider` 也必须一起现读并传进决策 ——
+     * 只传 `model` 时，`claude-haiku-…` 会被模型名启发式判给内置 `claude`
+     * （baseUrl=api.anthropic.com ⇒ 渲染进程直连被 CORS 拦），用户显式选的 `aicodewith` 被顶掉。
      */
-    const live = (() => {
+    /* 现读的设置（读失败 ⇒ null，后面按兜底走，不因设置面异常打断对话） */
+    const s = (() => {
       try {
-        const s = getSettingJSON<{ model?: string }>("codem-settings", {});
+        return getSettingJSON<{ model?: string; provider?: string }>("codem-settings", {});
+      } catch {
+        return null;
+      }
+    })();
+    /**
+     * providerId → 该 provider 的**默认模型**（静态目录 + 动态目录的第一条）。
+     *
+     * 为什么需要它：模型为空、但用户显式选了 provider 时，旧行为把**兜底供应商的模型**
+     * 塞进去（`gpt-4o` 发去用户选的端点 = 模型与前缀都不对）。现在必须用该 provider
+     * 自己的默认模型；拿不到就 fail-closed（`unavailable`），由下面抛错。
+     *
+     * 目录读取与「按 Bot 路由」共用 `providerDefaultModels()`（同一份口径）。
+     */
+    const providerDefaults = this.providerDefaultModels();
+    const live: import("../free-model-plugin/model-index").ModelSelection = (() => {
+      try {
         return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) => p.id), {
           providerId: this.config.defaultProvider || "openai",
           modelId: this.config.defaultModel || "gpt-4o",
-        });
+        }, s?.provider, providerDefaults);
       } catch {
         return {
           providerId: this.config.defaultProvider || "openai",
@@ -683,18 +805,138 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
         };
       }
     })();
+    /**
+     * 显式 provider 不可用（未注册 / 没有默认模型）⇒ **报错**，不继续发请求。
+     *
+     * 这是用户可见行为变更（安全取舍）：旧实现 warn 后按模型名回退，真机把用户选的
+     * `aicodewith` 顶成内置 `claude`，请求发往 `api.anthropic.com` 被 CORS 拦掉。
+     * 错误文案由 `resolveModelSelection` 给出（带上用户选的那个 id，便于在设置里重选）。
+     */
+    if (live.unavailable) {
+      throw new Error(live.error ?? `provider ${live.providerId} 未注册，请在设置里重选`);
+    }
     console.log(
-      `[LLMEngine.resolveSlot] slot=${slot} → fallback: provider=${live.providerId}, model=${live.modelId}（现读设置）`,
+      `[LLMEngine.resolveSlot] slot=${slot} → fallback: provider=${live.providerId}, model=${live.modelId}（现读设置）设置里的 provider=${s?.provider ?? "auto"}`,
     );
     return live;
   }
 
+  /**
+   * providerId → 该 provider 的**默认模型**（静态目录 + 动态目录的第一条）。
+   *
+   * 抽成方法是为了让「按 Bot 路由」与「设置兜底路由」共用同一份目录口径：
+   * 两边各写一遍，将来加一种目录（例如动态模型）必然漏一处。
+   */
+  private providerDefaultModels(): Record<string, string> {
+    const defaults: Record<string, string> = {};
+    try {
+      for (const p of this.providers.getAll() as any[]) {
+        const dynamic = Array.isArray(p?.dynamicModels) ? p.dynamicModels : [];
+        const statics = Array.isArray(p?.config?.models) ? p.config.models : [];
+        const first = [...dynamic, ...statics].find(
+          (m: any) => m && typeof m.id === "string" && m.id.length > 0,
+        );
+        if (first) defaults[String(p.id)] = String(first.id);
+      }
+    } catch (e) {
+      console.warn("[LLMEngine.providerDefaultModels] 读取 provider 默认模型失败:", e);
+    }
+    return defaults;
+  }
+
+  /**
+   * P1-4 收尾：把「按 Bot 的 provider/model」解析成**这次真的可用的** provider + model。
+   *
+   * 返回 `null` = Bot 没指定任何路由 ⇒ 调用方沿用引擎当前路由（与改前逐字一致）。
+   *
+   * 三种显式形态：
+   * 1. `providerId + modelId`：provider 必须**已注册且已配置**，模型原样使用；
+   * 2. `providerId`（无模型）：取该 provider 的默认模型（没有 ⇒ 可见失败）；
+   * 3. 只有 `modelId`：复用 `resolveModelSelection` 的「模型属于哪家」口径，
+   *    解析出的 provider 同样要已注册且已配置。
+   *
+   * **未注册 / 未配置 / 没有可用模型一律抛错**，绝不静默回退到当前模型：
+   * 静默回退会让 Bot 顶着别的模型跑，用户却以为「按 Bot 路由」生效了 ——
+   * 那正是这一片要消灭的假成功。
+   */
+  resolveExplicitRoute(route: { providerId?: string; modelId?: string }): { providerId: string; modelId: string } | null {
+    const providerId = typeof route.providerId === "string" ? route.providerId.trim() : "";
+    const modelId = typeof route.modelId === "string" ? route.modelId.trim() : "";
+    if (providerId === "" && modelId === "") return null;
+
+    const providerIds = this.providers.getAll().map((p: { id: string }) => p.id);
+
+    if (providerId === "") {
+      const providerDefaults = this.providerDefaultModels();
+      const fallback = {
+        providerId: this.config.defaultProvider || providerIds[0] || "openai",
+        modelId: this.config.defaultModel || "",
+      };
+      const selection = resolveModelSelection(modelId, providerIds, fallback, undefined, providerDefaults);
+      if (selection.unavailable) {
+        throw new Error(
+          selection.error ?? `Bot 指定的模型「${modelId}」无法路由到已注册的 provider（不会回退到当前模型）`,
+        );
+      }
+      const resolvedProvider = this.providers.get(selection.providerId);
+      if (!resolvedProvider) {
+        throw new Error(
+          `Bot 指定的模型「${modelId}」解析到未注册的 provider「${selection.providerId}」（不会回退到当前模型）`,
+        );
+      }
+      if (!resolvedProvider.isConfigured()) {
+        throw new Error(
+          `Bot 指定的模型「${modelId}」所属 provider「${selection.providerId}」尚未配置可用凭据（不会回退到当前模型）`,
+        );
+      }
+      return { providerId: selection.providerId, modelId: selection.modelId };
+    }
+
+    const provider = this.providers.get(providerId);
+    if (!provider) {
+      throw new Error(
+        `Bot 指定的 provider「${providerId}」未注册（不会回退到当前模型；请在设置 → 模型里检查该供应商）`,
+      );
+    }
+    if (!provider.isConfigured()) {
+      throw new Error(`Bot 指定的 provider「${providerId}」尚未配置可用凭据（不会回退到当前模型）`);
+    }
+    const model = modelId !== "" ? modelId : (this.providerDefaultModels()[providerId] ?? "");
+    if (model === "") {
+      throw new Error(
+        `Bot 指定的 provider「${providerId}」没有可用模型（请给 Bot 指定 modelId，或先刷新该供应商的模型列表）`,
+      );
+    }
+    return { providerId, modelId: model };
+  }
+
   /** Get or create an agentic loop (per-session for parallel execution) */
-  getAgenticLoop(agentId?: string, sessionId?: string, toolRegistryOverride?: ToolRegistry): AgenticLoop {
+  getAgenticLoop(
+    agentId?: string,
+    sessionId?: string,
+    toolRegistryOverride?: ToolRegistry,
+    routeOverride?: { providerId?: string; modelId?: string },
+    /**
+     * 执行器配置覆写（P1-4：带审批的 Bot 回合需要一个覆盖审批窗口的工具超时预算）。
+     *
+     * 为什么必须在这里传而不是 `updateConfig`：执行器在**构造时**就吃掉了
+     * `toolExecutor`，之后 `updateConfig` 只合并 `this.config`，不会重建执行器
+     * （见 `AgenticLoop` 构造函数的说明）。
+     */
+    toolExecutorOverride?: Partial<import("./streaming-executor").ToolExecutorConfig>,
+  ): AgenticLoop {
     // F5: Check if Cordis agentLoop provider is active — if so, delegate to it
     // 但要防止无限递归：agentLoopProvider.getLoop() 会回调本方法，
     // 用 _inGetAgenticLoop 标志打破循环。
-    if (this.ctx && !(this as any)._inGetAgenticLoop) {
+    /**
+     * ⚠️ P1-4：**带显式路由（Bot 的 provider/model）时不委托** Cordis agentLoop。
+     *
+     * `agentLoopProvider.getLoop(agentId, sessionId)` 不接收 routeOverride，它只会
+     * 回调 `engine.getAgenticLoop(agentId, sessionId)`（无路由）⇒ 委托等于把 Bot 的
+     * provider/model 静默丢掉，又回到「按当前路由跑」。所以显式路由必须在本地建 loop
+     * （这也是先于委托解析路由的原因：未注册要当场失败）。
+     */
+    if (this.ctx && !(this as any)._inGetAgenticLoop && routeOverride === undefined) {
       const agentLoopSvc = this.ctx.get('agentLoop')
       if (agentLoopSvc?._active) {
         (this as any)._inGetAgenticLoop = true
@@ -708,11 +950,23 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       }
     }
 
+    /**
+     * 显式路由（Bot 的 provider/model）**先解析**：未注册/未配置要在这里就报错，
+     * 不能等 loop 建好之后拿默认模型静默跑一轮。
+     */
+    const explicitRoute = routeOverride !== undefined ? this.resolveExplicitRoute(routeOverride) : null;
+    /**
+     * 带显式路由的 loop **不进 loopPool**：
+     * 池是按 `sessionId` 复用的，而同一个会话下一次可能用另一条路由（Bot 改了 provider）
+     * ⇒ 复用会把旧 provider 的 loop 借给新路由。与 scoped tools 同一处置。
+     */
+    const scopedLoop = toolRegistryOverride !== undefined || routeOverride !== undefined;
+
     // Per-session loop pooling: each session gets its own AgenticLoop instance
     // so parallel process() calls don't overwrite each other's loop.
     // DSH-style: 当传入 toolRegistryOverride（子智能体 scoped tools）时，
     // 跳过 loopPool 复用 — 确保 scoped tools 正确注入。
-    if (sessionId && !toolRegistryOverride) {
+    if (sessionId && !scopedLoop) {
       const existing = this.loopPool.get(sessionId);
       if (existing) return existing;
     }
@@ -722,15 +976,21 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
 
     // M1: Resolve model via Profile using agent's modelSlot (default: "chat")
     const slot = agent?.modelSlot || "chat";
-    const resolved = this.resolveSlot(slot);
+    const resolved: {
+      providerId: string;
+      modelId: string;
+      reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+      temperature?: number;
+      maxTokens?: number;
+    } = explicitRoute ? { ...explicitRoute } : this.resolveSlot(slot);
 
     const provider = this.providers.get(resolved.providerId);
     if (!provider) throw new Error(`No provider configured: ${resolved.providerId}`);
 
-    // Determine effective model: agent override > profile resolved > engine default
-    const model = agent?.model || resolved.modelId;
+    // Determine effective model: explicit Bot route > agent override > profile resolved > engine default
+    const model = explicitRoute ? resolved.modelId : agent?.model || resolved.modelId;
 
-    console.log(`[LLMEngine.getAgenticLoop] agentId=${agentId}, sessionId=${sessionId}, slot=${slot}, resolved: provider=${resolved.providerId}, model=${resolved.modelId}, effective model=${model}, engine default: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}, provider.id=${(provider as any).id}, provider.baseUrl=${(provider as any).config?.baseUrl}`);
+    console.log(`[LLMEngine.getAgenticLoop] agentId=${agentId}, sessionId=${sessionId}, slot=${slot}, resolved: provider=${resolved.providerId}, model=${resolved.modelId}, effective model=${model}, explicitRoute=${explicitRoute ? `${explicitRoute.providerId}/${explicitRoute.modelId}` : "none"}, engine default: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}, provider.id=${(provider as any).id}, provider.baseUrl=${(provider as any).config?.baseUrl}`);
 
     // Sync context window from provider static/cached models so the
     // constructor doesn't fall back to 128k until run() resolves it.
@@ -814,6 +1074,8 @@ function readContextCompactionThreshold(): number {
         },
         // E8: Pass cost tracker for cost-aware degradation
         costTracker: this.costTracker,
+        /* P1-4：调用方要求的执行器覆写（只有带审批的 Bot 回合会传） */
+        ...(toolExecutorOverride === undefined ? {} : { toolExecutor: toolExecutorOverride }),
       },
     );
 
@@ -821,8 +1083,8 @@ function readContextCompactionThreshold(): number {
     if (this.ctx) loop.setContext(this.ctx);
 
     // Pool the loop per-session for parallel execution
-    // DSH-style: 当使用 scoped tools 时不存入 loopPool — 避免污染主智能体
-    if (sessionId && !toolRegistryOverride) {
+    // DSH-style: 当使用 scoped tools / 显式路由时不存入 loopPool — 避免污染主智能体或串路由
+    if (sessionId && !scopedLoop) {
       this.loopPool.set(sessionId, loop);
     }
     /**
@@ -833,11 +1095,11 @@ function readContextCompactionThreshold(): number {
      * **没有任何句柄**可以中断它（空闲看门狗只能干等）。这里只存引用、不复用，
      * 语义与"跳过池复用"不冲突。
      */
-    if (sessionId && toolRegistryOverride) {
+    if (sessionId && scopedLoop) {
       this.scopedLoopPool.set(sessionId, loop);
     }
     // Also keep as fallback for non-session callers (not for scoped subagent loops)
-    if (!toolRegistryOverride) {
+    if (!scopedLoop) {
       this.agenticLoop = loop;
     }
     return loop;
@@ -915,6 +1177,8 @@ function readContextCompactionThreshold(): number {
        * 超出由 `composeMemoryBlock` 在块末**如实披露**，不静默丢）。
        */
       const budget = createMemoryInjectBudgetTracker();
+      /* B 收口：团队记忆按会话所属 AgentTeam 自动注入，不需要 Bot 身份。 */
+      const teamId = resolveTeamIdForSession(_sessionId);
       // 稳定侧 = 平台级 + 手动（isStableMemoryEntry）；易变侧 = 其余全部（含平台级自动 / 旧数据）
       memoryPrompt = composeMemoryBlock(
         this.memory,
@@ -931,6 +1195,8 @@ function readContextCompactionThreshold(): number {
         projectId,
         _sessionId,
         budget,
+        /* MEM-AUTH-1：易变块是 mixed（auto/未知只是线索，manual 小节各自带权威句） */
+        "mixed",
       );
     } catch (e) {
       console.error("[buildSystemPrompt] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
@@ -994,6 +1260,8 @@ function readContextCompactionThreshold(): number {
       const memoryProjectId = this.memoryProjectIdFor(sessionId, cwd);
       // 与同步路径同一形态：稳定侧 = 平台级手动；易变侧 = 其余全部；两块共享聚合预算槽
       const budget = createMemoryInjectBudgetTracker();
+      /* B 收口：团队记忆按会话所属 AgentTeam 自动注入，不需要 Bot 身份。 */
+      const teamId = resolveTeamIdForSession(sessionId);
       memoryPrompt = composeMemoryBlock(
         this.memory,
         MEMORY_STABLE_BLOCK_SELECTION,
@@ -1009,6 +1277,8 @@ function readContextCompactionThreshold(): number {
         memoryProjectId,
         sessionId,
         budget,
+        /* MEM-AUTH-1：与同步路径同形（mixed 框架） */
+        "mixed",
       );
     } catch (e) {
       console.error("[buildSystemPromptAsync] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
@@ -1377,12 +1647,38 @@ Report earlier as well whenever a partial finding changes what that agent should
   private readonly sessionMemoryProjectId = new Map<string, string>();
 
   /**
-   * 上一次跑自动提取时该会话的消息条数（第 197 波限频用的"水位"）。
+   * ★ 24 §P0-3（游标改造）：提取水位不再是"进程内的消息条数"。
    *
-   * 只记在进程内（重启即失效）——理由写在 `extractMemoriesFromSession` 的限频注释里：
-   * 持久化限频会让"用户重开应用后新事实永远提不出来"。
+   * 旧实现是 `Map<sessionId, number>`（可见消息条数）：
+   * - 重启即失效 ⇒ 每次启动第一次提取都会把整段对话重新提取一遍；
+   * - 源从模型视图换成完整时间线后，同一个条数对应**不同的消息集合** ⇒ 水位差变负 ⇒
+   *   提取被限频门永久挡住（用户侧："这个会话再也不沉淀记忆了"）。
+   *
+   * 现在水位是 `MemoryExtractionCursor`（最后一条已提取的消息 id + epoch/segmentSeq），
+   * **持久化**到 settings 键 `memory-extraction-watermark-<sessionId>`
+   * （见 `core/memory/extraction-cursor.ts`；同一个键兼容旧的纯数字）。
    */
-  private readonly memoryExtractionWatermark = new Map<string, number>();
+  private readonly memoryExtractionBatcher: MemoryExtractionBatcher;
+
+  /**
+   * 空闲批次延迟（毫秒）。默认 30s（24 §P0-3 的 30–120s 档位下沿）。
+   *
+   * 运行时的可配置入口是 `setMemoryExtractionIdleDelay()`；生产路径不接受 < 30s 的值
+   * （那等于回到"每回合立即跑"），**只有判据**用 0 把计时器压平（见该方法注释）。
+   */
+  private memoryExtractionIdleDelayMs: number = EXTRACTION_IDLE_DELAY_MIN_MS;
+
+  /**
+   * ★ MEM-EXTRACT-2（24 §P0-3）：**每会话单飞**的在途提取表。
+   *
+   * 键是 sessionId；值里带 abort controller（关闭会话时中止）与 dirty 标记
+   * （在途期间又来了一次触发 —— 只留痕，不在本轮追发第二次 provider 调用）。
+   * 条目只由在途任务自己的 `finally` 删除（abort 与收尾之间不留"可再起一次"的窗口）。
+   */
+  private readonly memoryExtractionInFlight = new Map<
+    string,
+    { promise: Promise<void>; abort: AbortController; dirty: boolean; startedAt: number }
+  >();
 
   /** 登记某会话的记忆归属项目身份（`process()` 调；同一会话重复调用以最后一次为准） */
   setSessionMemoryProject(sessionId: string, projectId?: string): void {
@@ -1579,7 +1875,18 @@ Report earlier as well whenever a partial finding changes what that agent should
       },
       onTurnComplete: () => {
         if (memoryEnabled) {
-          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});
+          /**
+           * ★ 24 §P0-3（空闲批次）：回合结束**不立即提取**，只排一个延迟批次
+           * （默认 30s；计时窗口内再来的回合只合并，不重置计时器）。
+           * 到点后先按游标确认"确实还有新消息"才真的跑（见 `MemoryExtractionBatcher.fire`）。
+           */
+          this.memoryExtractionBatcher.schedule(sessionId, memoryProjectId);
+          /**
+           * 25 §P2：自动整合也走**独立的**空闲批次（30s；默认关 ⇒ 这里立即返回 false，
+           * 连计时器都不建）。它只处理 `source=auto` 的重复条目，manual / pending 不动，
+           * 有变更会写单份 undo 记录（可撤销）—— 实现与手动整合共用 `MemoryService.consolidate`。
+           */
+          scheduleAutoConsolidation(sessionId);
         }
       },
     });
@@ -1678,8 +1985,19 @@ Report earlier as well whenever a partial finding changes what that agent should
     systemPrompt: string;
     startTime: number;
     successLogPrefix: string;
+    /**
+     * 事件**转发给调用方之前**的落库钩子（可选；不传 = 与改前逐字一致）。
+     *
+     * Bot/子智能体路径（`processSubagent`）用它把工具调用/结果写进消息表：
+     * `AgenticLoop` 每轮都从消息表重建上下文，而消费方（Bot runner）只关心正文与用量，
+     * 没人落库 ⇒ 下一轮模型看不到工具结果、重发同一个调用。钩子必须跑在 `yield` **之前**，
+     * 这样「事件已经交给消费方」与「结果已经能被下一轮 buildMessages 读到」不会出现时间差。
+     *
+     * 钩子抛错只上报、**不打断回合**：落库失败不该让任务本身失败，但必须可见（不静默）。
+     */
+    onEvent?: (event: LoopEvent) => void | Promise<void>;
   }): AsyncGenerator<LoopEvent, void, unknown> {
-    const { loop, sessionId, message, cwd, systemPrompt, startTime } = params;
+    const { loop, sessionId, message, cwd, systemPrompt, startTime, onEvent } = params;
 
     /**
      * 迭代器手动驱动的理由见方法头：`for await` 拿不到 `LoopResult`。
@@ -1700,6 +2018,17 @@ Report earlier as well whenever a partial finding changes what that agent should
         const event = step.value;
         if (event.type === "tool_complete") {
           toolCallCount++;
+        }
+        if (onEvent) {
+          try {
+            await onEvent(event);
+          } catch (hookErr) {
+            reportPersistFailure(
+              "loop.onEvent",
+              hookErr,
+              `${params.successLogPrefix}：事件 ${event.type} 的落库钩子失败（这一条可能进不了模型上下文）`,
+            );
+          }
         }
         yield event;
       }
@@ -1855,6 +2184,28 @@ Report earlier as well whenever a partial finding changes what that agent should
     cwd: string,
     agentId: string,
     profileId?: string,
+    /**
+     * P1-4 收尾：按 Bot 的 provider/model 显式路由（省略 = 沿用引擎当前路由）。
+     *
+     * 解析在 `getAgenticLoop` 里、建 loop 之前完成：未注册/未配置/没有模型都会
+     * **抛错**，由 `createEngineBotRunner` 转成 `{ ok:false, error }` 给群聊面板 ——
+     * 不静默回退到当前模型。scoped loop 不进 loopPool，所以两个 Bot 并发用
+     * 不同 provider 时互不串（各自的 session + 各自的 loop）。
+     */
+    routeOverride?: { providerId?: string; modelId?: string },
+    /**
+     * 24 §9.4 / 25 §6：**独立的上下文块**（群记忆 / Bot 私有记忆）。
+     *
+     * 为什么是独立参数而不是拼进 `message`：`message` 会被原样落库成 user 消息、
+     * 也是审批重放的正文 —— 把记忆拼进去等于伪造用户说过的话。这里只在**本轮
+     * 系统提示尾部**追加，`content` 一字不改；块内自带标题，模型能区分来源。
+     *
+     * 省略 / 空数组 ⇒ 与改前逐字一致（普通子智能体不受影响）。
+     *
+     * `permissionRequestEvents`（P1-4）：把工具审批变成 `permission_request` 事件，
+     * 供生产 Bot runner 的 approval broker 消费（省略 = 旧行为，fail-closed）。
+     */
+    options?: { contextBlocks?: readonly string[]; permissionRequestEvents?: boolean },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     // DSH-style: 创建隔离的工具作用域 — 对标 ctx.isolate('tools')
     // 子智能体的 report 工具注册在 scope 中，不泄漏到主智能体
@@ -1873,16 +2224,42 @@ Report earlier as well whenever a partial finding changes what that agent should
     // 直接使用 getAgenticLoop — 防止通过 ctx.get('agentLoop') 导致无限递归
     // 传入 scopedTools 使子智能体 loop 使用隔离的工具作用域
     let loop: AgenticLoop
-    loop = this.getAgenticLoop(agentId, sessionId, scopedTools)
+    /**
+     * P1-4：审批事件模式下给执行器一个覆盖审批窗口的工具超时（见
+     * `BOT_APPROVAL_TOOL_TIMEOUT_MS` 的完整理由）。普通子智能体不传 ⇒ 60s 默认值不变。
+     */
+    const approvalEvents = options?.permissionRequestEvents === true;
+    loop = this.getAgenticLoop(
+      agentId,
+      sessionId,
+      scopedTools,
+      routeOverride,
+      approvalEvents ? { toolTimeout: BOT_APPROVAL_TOOL_TIMEOUT_MS } : undefined,
+    )
     // Sub-agents should have fewer iterations to prevent loops
-    loop.updateConfig({ maxIterations: 15 });
-    const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd, profileId);
+    loop.updateConfig({ maxIterations: 15, permissionRequestEvents: approvalEvents });
+    const baseSystemPrompt = this.buildSubagentSystemPrompt(agentId, cwd, profileId);
+    /**
+     * 24 §9.4：注入方（Bot 群回合）给的独立上下文块只追加在**系统提示尾部**。
+     * 过滤空块：空块会被模型当成「这里本来有内容但没给」。
+     */
+    const contextBlocks = (options?.contextBlocks ?? []).filter(
+      (block): block is string => typeof block === "string" && block.trim() !== "",
+    );
+    const systemPrompt =
+      contextBlocks.length > 0 ? [baseSystemPrompt, ...contextBlocks].join("\n\n") : baseSystemPrompt;
 
     // Filter out <system-reminder> tags from the message
     const cleanMessage = message.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 
-    // Save user message to database so buildMessages can read it
-    const userMsgId = `user-${Date.now()}`;
+    /**
+     * Save user message to database so `buildMessages` can read it.
+     *
+     * id 必须**本轮唯一**：`user-${Date.now()}` 在两个 Bot 回合**同一毫秒**开始时会撞 id
+     * （消息索引按 id 全局唯一）⇒ 后写的那条把前一条盖掉，表现为「同一 user 消息只落库一次」
+     * 变成「另一条 user 消息不见了」。加随机后缀与 executor 的普通消息 id 同形。
+     */
+    const userMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     MessageStorage.createMessage({
       id: userMsgId,
       role: "user",
@@ -1899,22 +2276,67 @@ Report earlier as well whenever a partial finding changes what that agent should
       });
     } catch (e) { console.warn('[index.ts]', e) }
 
-    const startTime = Date.now();
-    // 与 process() 同一条记账路径（累计 usage + 失败也留痕），见其方法头说明
-    yield* this.runLoopAndRecordUsage({
-      loop,
-      sessionId,
-      message: cleanMessage,
-      cwd,
-      systemPrompt,
-      startTime,
-      successLogPrefix: "processSubagent",
-    });
+    /**
+     * 冷启动/新建 Bot 会话的竞态：`createMessage` 已经把 user 消息写进权威日志/索引，
+     * 但 `buildMessages` 读的是**镜像**；新会话第一次 `ensureLoaded` 可能还没完成。
+     * 真机证据（2026-11-08）：新建 Bot 会话的第一条消息偶发读不到 ⇒ 第一轮模型请求
+     * 只有系统提示、没有用户任务（表现为「Bot 不回答/回答上个任务」）。
+     *
+     * 与 `process()`/宿主快照同一条修法：**先等镜像就绪再进循环**，等不到也不阻断，
+     * 由循环的常规读取如实暴露（这里只等 user 消息这一条会话，预算与其它等待点同源）。
+     */
+    await MessageStorage.waitForMessageMirrors([sessionId]);
 
-    // DSH-style: scoped ToolRegistry 随 loop 生命周期自然释放
-    // 不需要手动移除 report 工具 — scope 是独立的，不影响主智能体
-    // 第 84 波：scoped loop 只用于 abort 的引用也要释放，否则子智能体越跑越多会一直挂着旧 loop
-    this.scopedLoopPool.delete(sessionId);
+    const startTime = Date.now();
+    /**
+     * ★ Bot/子智能体的**工具调用/结果落库**（与 UI 执行器同源，实现只有一份：
+     * `subagent/tool-call-recorder.ts` → `session/tool-call-persistence.ts`）。
+     *
+     * ## 修的缺陷
+     *
+     * 这条路径以前只把 `AgenticLoop.run()` 的事件转发给消费方，**没有任何写入者**：
+     * 工具调用与结果不进消息表 ⇒ 下一轮 `buildMessages` 只从消息表重建上下文 ⇒
+     * 模型看到的是「我还没调用过任何工具」⇒ 重发同一个调用，直到空转/迭代上限。
+     *
+     * ## 两个接线点
+     *
+     * - `resolveAssistantMessageId`：引擎在工具执行前问「这一轮的助手行是哪一条」，
+     *   拿它写 `tool_call` / `tool_result` 事件的 `messageId`（用引擎自造的 `msg-…`
+     *   会让事件引用一条不存在的消息，维护自检会报缺口）；
+     * - `onEvent`：在事件转发给消费方**之前**落库（`tool_start` → `addToolCall`，
+     *   `tool_complete` / `tool_error` → `updateToolCall`），保证下一轮请求定稿时
+     *   结果已经在库里。
+     */
+    const toolCallRecorder = createSubagentToolCallRecorder({ sessionId });
+    loop.updateConfig({
+      resolveAssistantMessageId: () => toolCallRecorder.currentAssistantMessageId(),
+    });
+    try {
+      // 与 process() 同一条记账路径（累计 usage + 失败也留痕），见其方法头说明
+      yield* this.runLoopAndRecordUsage({
+        loop,
+        sessionId,
+        message: cleanMessage,
+        cwd,
+        systemPrompt,
+        startTime,
+        successLogPrefix: "processSubagent",
+        onEvent: (event) => toolCallRecorder.handle(event),
+      });
+    } finally {
+      /**
+       * 收尾定稿：最后一条助手行要落成 `done`（否则界面上永远是流式中）。
+       *
+       * 放在 `finally` 里：消费方提前关闭生成器（例如审批被拒后 `closeStream()`）
+       * 时 `yield*` 之后的代码不会执行，但 `finally` **一定**会 —— 两种收场都不能留下
+       * 一条永远 streaming 的行。
+       */
+      toolCallRecorder.finalize();
+      // DSH-style: scoped ToolRegistry 随 loop 生命周期自然释放
+      // 不需要手动移除 report 工具 — scope 是独立的，不影响主智能体
+      // 第 84 波：scoped loop 只用于 abort 的引用也要释放，否则子智能体越跑越多会一直挂着旧 loop
+      this.scopedLoopPool.delete(sessionId);
+    }
   }
 
   /** Abort current processing — DSH-style: also drain all background subagents */
@@ -1980,6 +2402,25 @@ Report earlier as well whenever a partial finding changes what that agent should
     const loop = this.loopPool.get(sessionId) as any;
     if (!loop) return null;
     return loop?.config?.collaborationMode ?? null;
+  }
+
+  /**
+   * ★ CMP-P-1：某个会话**最近一次压力估算的构成**（工具表/系统提示词有没有真的算进去）。
+   *
+   * 为什么要从引擎转出去：`ContextMonitor` 只能看到水位的**另一套**估算（`water-level.ts`），
+   * 而"循环这一拍算没算工具"只有持有 `AgenticLoop` 的人知道。拿不到工具表时循环会标
+   * `toolsIncluded=false`，面板据此如实显示「未计入工具定义」—— 不许静默。
+   *
+   * 没有活动 loop / 本回合还没算过压力 ⇒ `null`（面板按"未知"处理，不编造 true）。
+   */
+  getPressureBasis(sessionId?: string): import("./agentic-loop").PressureBasis | null {
+    if (!sessionId) return null;
+    const loop = this.loopPool.get(sessionId) ?? this.scopedLoopPool.get(sessionId);
+    try {
+      return loop?.getPressureBasis?.() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -2343,18 +2784,43 @@ return loop.hasPendingGuidance();
   }
 
   /**
-   * F3.1: Consolidate memories across sessions.
-   * Deduplicates, removes stale entries, and enforces capacity limits.
+   * F3.1: Consolidate memories across sessions（用户显式触发；24 §P1-3：只归档、可撤销）。
    *
    * 容量语义（作用域/信任边界重构）：**默认不做容量裁剪**（静默驱逐 = 用户看不到的丢失）。
-   * 传 `maxEntriesPerScope` 时才裁，且只裁 `auto` 条目、手动条目超额时如实上报 `capacityBlocked`。
+   * 传 `maxEntriesPerScope` 时只归档 `auto` 条目，手动/pending 超额时如实上报 `capacityBlocked`。
+   * 被合并/过期/超额的条目一律**归档**（不删除），并由 `undoConsolidateMemories` 逐条撤销。
    */
   consolidateMemories(options?: {
     maxAgeDays?: number;
     maxEntriesPerScope?: number;
     similarityThreshold?: number;
-  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number; capacityBlocked: number } {
+    /** 归属会话（写进撤销记录/回执）；界面与 `/memory consolidate` 都会传 */
+    sessionId?: string;
+  }): MemoryConsolidationResult {
     return this.memory.consolidate(options);
+  }
+
+  /** 当前可撤销的整合记录（面板据此决定是否点亮「撤销整合」） */
+  getMemoryConsolidationUndo(): MemoryConsolidationUndoView | null {
+    return this.memory.getConsolidationUndo();
+  }
+
+  /** 撤销最近一次整合（逐条恢复到整合前快照；单次有效、过期拒绝） */
+  undoMemoriesConsolidation(token?: string): {
+    ok: boolean;
+    reason?: "none" | "expired" | "token";
+    token?: string;
+    restored: number;
+    recreated: number;
+    truncated: number;
+    message: string;
+  } {
+    return this.memory.undoConsolidate(token);
+  }
+
+  /** 恢复一条已归档条目（24 §P1-3：归档可恢复） */
+  restoreArchivedMemory(id: string): { ok: boolean; message: string } {
+    return this.memory.restoreArchived(id);
   }
 
   /** 写入审批设置（按作用域；`/memory approval` 与设置面板共用） */
@@ -2443,8 +2909,35 @@ return loop.hasPendingGuidance();
    * - 容量满时**如实拒绝并计数**（不静默驱逐已有条目）
    * - Skip if provider is not configured or session is too short
    *
-   * @param projectId 归属项目（由调用方的工作目录推出）；缺省 ⇒ 条目没有归属，**任何项目都不注入**
-   *                  （宁可不注入，也不猜一个项目塞进去）
+   * ## MEM-EXTRACT-2：**每个会话单飞**（24 §P0-3）
+   *
+   * 被守的缺陷：`onTurnComplete`（每轮）与 `onCompactionComplete`（压缩完）是两条**独立**钩子，
+   * 它们只隔几毫秒就可能同时触发；两条都 await 一次 provider 调用 ⇒ 同一段对话被提取两遍
+   * （两倍成本、两批重复写入、两次水位推进）。旧的"消息数限频"只防**串行**的重复触发，
+   * 防不了**并发**（两条调用都在水位更新之前读到同一个 `lastCount`）。
+   *
+   * 现在的契约：
+   * - 同一会话最多一个**在途**提取（`memoryExtractionInFlight`）；在途期间的新触发只把
+   *   `dirty` 置真并**等同一个 Promise**，绝不并发第二次 provider 调用（判据 `MEM-EXTRACT-2`）；
+   * - `dirty` **不在本轮追加第二次调用**（那会让"连续两回合"退化成 2 次调用，违背单飞的本意）：
+   *   新消息由下一次触发的限频水位覆盖 —— 水位在成功解析后才推进，所以下一次触发看到的是
+   *   真实的增量，不会漏。
+   * - 关闭/删除会话走 `cancelMemoryExtraction()`：abort 在途请求（`forkedAbort` 已接进
+   *   `provider.complete` 的 `abortSignal`），并撤掉还没到点的空闲批次；已写入的批次由 `finally` 收尾。
+   *
+   * ## 24 §P0-3 的剩余细项（本轮补齐）
+   *
+   * - **空闲批次**：`onTurnComplete` 不再直接调用本方法，而是由 `MemoryExtractionBatcher`
+   *   排一个 30–120 秒的延迟批次（到点先按游标确认"还有新消息"才跑）；压缩完成那条
+   *   仍然立即强制跑（原文刚被摘要取代，那是最该沉淀的时刻，见 `onCompactionComplete`）。
+   * - **水位游标**：增量判定 = 持久化游标（最后已提取的消息 id + epoch/segmentSeq）之后的
+   *   消息，不再是"消息条数差"（见 `core/memory/extraction-cursor.ts`）。
+   * - **tier 取样 + 预算**：请求体按 `Human > Final > Agent > Commentary > Context > Tool`
+   *   取样、工具结果只留摘要、`min(8MB, 窗口 70%)` 有界并标注截断
+   *   （见 `core/memory/extraction-sampling.ts`）。
+   *
+   * @param projectId 归属项目（由调用方的工作目录推出）；缺省 ⇒ **不写孤儿 project 条目**，
+   *                  该批候选降级为 `conversation`（见 `runMemoryExtractionOnce` 里的说明）
    */
   async extractMemoriesFromSession(
     sessionId: string,
@@ -2462,33 +2955,268 @@ return loop.hasPendingGuidance();
      */
     opts?: { force?: boolean },
   ): Promise<void> {
+    if (!sessionId) return;
+    const running = this.memoryExtractionInFlight.get(sessionId);
+    if (running) {
+      running.dirty = true;
+      console.log(
+        `[extractMemories] 并发触发已合并（session=${sessionId}）：本轮只跑一次，后到者标 dirty（不再追发第二次 provider 调用）`,
+      );
+      await running.promise;
+      return;
+    }
+    const abort = new AbortController();
+    const task: { promise: Promise<void>; abort: AbortController; dirty: boolean; startedAt: number } = {
+      promise: Promise.resolve(),
+      abort,
+      dirty: false,
+      startedAt: Date.now(),
+    };
+    this.memoryExtractionInFlight.set(sessionId, task);
+    const promise = (async () => {
+      try {
+        await this.runMemoryExtractionOnce(sessionId, projectId, opts, abort);
+      } finally {
+        if (task.dirty) {
+          console.log(
+            `[extractMemories] 在途期间有并发触发（dirty）—— 本轮不追发第二次调用；` +
+              `新消息由下一次触发的限频水位覆盖：session=${sessionId}`,
+          );
+        }
+        if (this.memoryExtractionInFlight.get(sessionId) === task) {
+          this.memoryExtractionInFlight.delete(sessionId);
+        }
+      }
+    })();
+    task.promise = promise;
+    return promise;
+  }
+
+  /**
+   * ★ MEM-EXTRACT-2：中止某会话在途的记忆提取（关闭/删除会话时调）。
+   *
+   * 为什么必须有它：`forkedAbort` 原来**只创建、从不 abort**（24 §P0-3 点名的"没接上"）——
+   * 用户删掉会话后，提取请求仍会打给 provider 并写回一个已删会话的批次。
+   *
+   * 返回是否真的中止了一个在途任务（`false` = 此刻没有在途提取，调用方不必当失败）。
+   * 刻意**不删 Map 条目**：真正删由在途任务自己的 `finally` 做 —— 否则 abort 与收尾之间
+   * 的窗口里新触发会再起一次，和还没退出的那次并发。
+   */
+  cancelMemoryExtraction(sessionId: string): boolean {
+    if (!sessionId) return false;
+    /* ★ 24 §P0-3：关闭会话既要中止**在途**提取，也要取消**排队中**的空闲批次 */
+    const cancelledBatch = this.memoryExtractionBatcher.cancel(sessionId);
+    /* 25 §P2：自动整合的排期同样属于"这个会话的后台工作"，一起撤掉 */
+    const cancelledAutoConsolidation = cancelAutoConsolidation(sessionId);
+    const task = this.memoryExtractionInFlight.get(sessionId);
+    if (!task) {
+      if (cancelledBatch || cancelledAutoConsolidation) {
+        console.log(`[extractMemories] 会话关闭/取消 ⇒ 撤掉排队的空闲批次：session=${sessionId}`);
+      }
+      return cancelledBatch || cancelledAutoConsolidation;
+    }
+    task.dirty = false;
+    try {
+      task.abort.abort();
+    } catch {
+      /* 已 abort 不重复 */
+    }
+    console.log(`[extractMemories] 会话关闭/取消 ⇒ 中止在途提取：session=${sessionId}`);
+    return true;
+  }
+
+  /** ★ MEM-EXTRACT-2：此刻是否有在途提取（诊断/判据用；不触发任何副作用）。 */
+  isMemoryExtractionInFlight(sessionId: string): boolean {
+    return this.memoryExtractionInFlight.has(sessionId);
+  }
+
+  /** ★ 24 §P0-3：此刻是否有排队的空闲批次（诊断/判据用；不触发任何副作用）。 */
+  isMemoryExtractionScheduled(sessionId: string): boolean {
+    return this.memoryExtractionBatcher.isScheduled(sessionId);
+  }
+
+  /**
+   * 设置空闲批次延迟（毫秒）。
+   *
+   * 生产档位是 30–120 秒（`EXTRACTION_IDLE_DELAY_MIN/MAX_MS`）；**0 只给判据用**
+   * （把计时器压平，让既有集成判据不必等 30 秒）。传 0 之外的值一律按档位钳制 ——
+   * 于是运行时改设置不可能把"空闲批次"退化成"每回合立即跑"。
+   */
+  setMemoryExtractionIdleDelay(ms: number): void {
+    const n = Number(ms);
+    if (Number.isFinite(n) && n <= 0) {
+      this.memoryExtractionIdleDelayMs = 0;
+      return;
+    }
+    this.memoryExtractionIdleDelayMs = normalizeExtractionIdleDelay(n);
+  }
+
+  /** 当前空闲批次延迟（诊断/判据用） */
+  getMemoryExtractionIdleDelay(): number {
+    return this.memoryExtractionIdleDelayMs;
+  }
+
+  /**
+   * ★ 24 §P0-3：到点判定"会话是否还有新消息"（游标之后是否还有消息）。
+   *
+   * 为什么在**触发前**再查一次：回合结束到计时到点之间用户可能撤销了整轮、删了消息、
+   * 或者已经别处提取过 —— 没有新消息就不该空跑一次模型调用。
+   */
+  private hasNewExtractionMessages(sessionId: string): boolean {
+    if (!sessionId || !this.isMemoryEnabled(sessionId)) return false;
+    try {
+      const messages = extractionMessages(sessionId) as unknown as Array<Record<string, unknown>>;
+      if (messages.length < 10) return false;
+      const source = filterExtractionSource(messages);
+      if (source.length === 0) return false;
+      const read = readMemoryExtractionCursor(sessionId);
+      const slice = messagesSinceCursor(source, read, sessionId);
+      return slice.messages.length > 0;
+    } catch (e) {
+      /* 读路径异常 ⇒ 本批不跑（下回合会再排），但必须留痕，不静默 */
+      console.warn(`[extractMemories] 空闲批次的新消息检查失败（本批跳过）：session=${sessionId}`, e);
+      return false;
+    }
+  }
+
+  /**
+   * 提取输入预算用的**窗口 token 数**。
+   *
+   * 优先取 memory slot 模型的真实 `contextWindow`（那是这次请求真正会用的模型）；
+   * 拿不到就退回全局 `TokenTracker` 的口径（压缩/水位一直用它），
+   * 再拿不到就返回 `undefined` —— `extractionBudgetBytes` 会退回 8MB 绝对上限。
+   */
+  private memoryExtractionWindowTokens(): number | undefined {
+    try {
+      const resolved = this.resolveSlot("memory");
+      const provider = this.providers.get(resolved.providerId) as unknown as {
+        dynamicModels?: Array<{ id?: string; contextWindow?: number }>;
+        config?: { models?: Array<{ id?: string; contextWindow?: number }> };
+      };
+      const models = [...(provider?.dynamicModels ?? []), ...(provider?.config?.models ?? [])];
+      const hit = models.find((m) => m && m.id === resolved.modelId);
+      const window = Number(hit?.contextWindow);
+      if (Number.isFinite(window) && window > 0) return window;
+    } catch {
+      /* 目录读不到 ⇒ 用下面的兜底，不影响提取 */
+    }
+    try {
+      const window = getTokenTracker().getContextWindow();
+      return Number.isFinite(window) && window > 0 ? window : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * 提取的**单次执行体**（单飞包装见 `extractMemoriesFromSession`）。
+   *
+   * @param forkedAbort 由单飞包装创建的 controller —— 关闭会话时由 `cancelMemoryExtraction()` abort，
+   *                    信号一路传进 `provider.complete({ abortSignal })`。
+   */
+  private async runMemoryExtractionOnce(
+    sessionId: string,
+    projectId: string | undefined,
+    opts: { force?: boolean } | undefined,
+    forkedAbort: AbortController,
+  ): Promise<void> {
+    if (forkedAbort.signal.aborted) return;
     // F3.2: Check if memory extraction is enabled for this session
     if (!this.isMemoryEnabled(sessionId)) return;
 
-    const messages = MessageStorage.listMessages(sessionId);
+    /**
+     * ★ P0-1（24 §0.2②）：提取源不能只有**模型可见集合**。
+     *
+     * 被守的缺陷：`listMessages` 是投影视图（压缩后旧消息不在其中）⇒「刚被摘要取代的
+     * 那段原文」正好是**最该沉淀成记忆**的材料，却永远进不了提取器。
+     * `pickExtractionMessages` 取"模型视图 / 完整时间线"里更完整的那个：
+     * 没有压缩时两者逐条相同（零行为差异），有压缩时拿到压缩前原文。
+     *
+     * ⚠️ 两个列表必须**在这里**取（经 `MessageStorage.xxx` 的属性访问）——
+     * 既有用例用 spy 替换 `listMessages` 喂夹具，挪进 helper 内部会让它们全部失效。
+     */
+    const messages = extractionMessages(sessionId) as ReturnType<typeof MessageStorage.listMessages>;
     if (messages.length < 10) return; // Too short to extract meaningful memories
 
     /**
-     * **限频：同一个会话里至少要再多 N 条消息才值得再跑一次提取**（第 197 波）。
+     * ★ MEM-EXTRACT-1 / MEM-T2（24 §P0-3）：**提取请求本身**必须拿到完整时间线。
      *
-     * ## 被守的缺陷（用户报的）
+     * `extractionMessages()` 只是把「模型视图 / 完整时间线」里更完整的那一份选出来；
+     * 旧实现把它用在**门槛与水位**上，随后 `spawnForked` 又自己读 `listMessages`
+     * ⇒ 被选出来的压缩前原文 / 换段前旧事实**根本没进模型请求**（24 §P0-3 点名的
+     * 「主函数换了源、forked agent 仍然读旧视图」）。这里把选好的消息显式传给 forked agent。
      *
-     * 「现在 codem 每轮对话自动写入几十条记忆」—— `loop.updateConfig({ onTurnComplete })`
-     * 是**每一轮**都调的（压缩完成时也调），而每调一次就发一次 LLM、把模型返回的**每一条**都写入。
-     * 于是一次长对话的每一轮都在写记忆 ⇒ 库里的量按"轮数 × 每轮条数"涨。
-     *
-     * ## 为什么是"消息数"而不是"轮数"
-     *
-     * `listMessages` 的长度是**可复算的事实**（同一份会话日志算两次结果一样），而且它天然
-     * 覆盖"压缩完成"那条路径（压缩会把多条消息并成一条 ⇒ 长度变化 ⇒ 门自然重开）。
-     * 阈值取 4：一次正常的"用户问 + 助手做几步 + 回执"大约就是这个量级，
-     * 而"每轮都跑"变成"每个来回跑一次"，写入量按数量级下降；提取本身仍有 ≥10 条消息的总门槛。
-     *
-     * ⚠️ 这份记账是**进程内**的：重启后第一次提取照常进行（不做跨进程的持久化限频 ——
-     * 那会让"用户重开应用后新事实永远提不出来"）。
+     * 同时按 24 §P0-3 排除：系统消息、`contextEpoch` marker、机器注入消息（交接/提醒）。
+     * 它们不是用户事实，混进去只会让模型把 handoff / 模板当成对话内容。
      */
-    const lastCount = this.memoryExtractionWatermark.get(sessionId);
-    if (!opts?.force && lastCount !== undefined && messages.length - lastCount < MEMORY_EXTRACTION_MIN_NEW_MESSAGES) return;
+    const extractionSource = filterExtractionSource(messages);
+
+    /**
+     * ★ 24 §P0-3（水位游标）：**新消息 = 游标 id 之后的那些**，不是"条数差"。
+     *
+     * 旧实现是 `messages.length - lastCount < 4`（进程内条数水位），换源/压缩后条数会变小
+     * ⇒ 差值为负 ⇒ 这个会话再也不提取（第 228 波只补了 force 这条腿，根因仍在）。
+     * 现在先按持久化游标（最后已提取的消息 id + epoch/segmentSeq）切出增量：
+     * - 没有游标 / 游标坏了 ⇒ 全量（坏游标还会 warn 一次，见 `extraction-cursor.ts`）；
+     * - 游标 id 找不到（被裁剪/删除）⇒ 全量 + warn（不把提取锁死）；
+     * - 旧数字游标 ⇒ 按旧口径 `slice(count)`（兼容，下一次成功提取会升级成 id 游标）。
+     */
+    const cursorRead = readMemoryExtractionCursor(sessionId);
+    const sinceCursor = messagesSinceCursor(extractionSource, cursorRead, sessionId);
+    const newMessages = sinceCursor.messages;
+
+    /**
+     * **限频：同一个会话里至少要再多 N 条**新消息**才值得再跑一次提取**（第 197 波）。
+     *
+     * 被守的缺陷（用户报的）：「现在 codem 每轮对话自动写入几十条记忆」——
+     * `onTurnComplete`（每轮）与 `onCompactionComplete`（压缩完）都会触发，
+     * 每触发一次就发一次 LLM、把模型返回的**每一条**都写入。
+     * 阈值取 4：一次正常的"用户问 + 助手做几步 + 回执"大约就是这个量级，
+     * 而"每轮都跑"变成"每个来回跑一次"；提取本身仍有 ≥10 条消息的总门槛。
+     *
+     * 计数口径改成「游标之后新增的条数」后，压缩把可见消息并掉**不会**再让门永远关着
+     * （时间线里旧消息仍在，游标 id 也仍在；新消息才是增量）。
+     */
+    if (!opts?.force && newMessages.length < MEMORY_EXTRACTION_MIN_NEW_MESSAGES) return;
+
+    /**
+     * ★ 24 §P0-3（tier 取样 + 预算）：把"要发给模型的那批消息"在这里定下来。
+     *
+     * - tier 优先级 Human > Final > Agent > Commentary > Context > Tool（工具结果只留摘要）；
+     * - 预算 `min(8MB, 窗口 70%)`，头 10 + 尾 40 保留，中间按 tier 选；
+     * - 超限有界并**标注**（截断标记写进正文，模型/日志都能看见）。
+     *
+     * 输入是**增量**（游标之后的新消息）：这样"重启后只提取新增"与"tier 取样"两件事
+     * 不互相打架 —— 已经提过的旧消息不重复进请求，取样只在增量里做价值排序。
+     * 头尾保留在增量上依然成立（第一次提取时增量 = 全量）；游标失配回退全量时同理。
+     */
+    const budgetBytes = extractionBudgetBytes(this.memoryExtractionWindowTokens());
+    /**
+     * `force`（压缩完成）走**全量**：压缩刚把原文换成摘要，而游标停在最后一条消息上
+     * ⇒ 增量是空的；只取增量等于"压缩后什么都没提取"。全量 + 写入侧查重是既有口径。
+     */
+    const sampleInput = opts?.force ? extractionSource : newMessages;
+    const sample = sampleExtractionMessages(sampleInput, {
+      budgetBytes,
+      headKeep: EXTRACTION_HEAD_KEEP,
+      tailKeep: EXTRACTION_TAIL_KEEP,
+    });
+    if (sample.messages.length === 0) return;
+    if (sample.stats.truncated || sample.stats.budgetExhausted) {
+      console.log(
+        `[extractMemories] 提取输入超限 ⇒ 已按 tier 取样并标注：session=${sessionId} ` +
+          `预算=${formatBytes(sample.stats.budgetBytes)}、输入=${formatBytes(sample.stats.inputBytes)}、` +
+          `实际=${formatBytes(sample.stats.selectedBytes)}、选中 ${sample.stats.selectedCount}/${sample.stats.inputCount} 条、` +
+          `截断 ${sample.stats.truncatedMessages} 条、工具摘要 ${sample.stats.toolResultsSummarized} 条、` +
+          `丢弃（human/final/agent/commentary/context/tool）=` +
+          `${Object.entries(sample.stats.droppedByTier).map(([t, n]) => `${t}:${n}`).join("/")}`,
+      );
+    } else if (sample.stats.toolResultsSummarized > 0) {
+      console.log(
+        `[extractMemories] 工具结果只取摘要：session=${sessionId} ` +
+          `摘要 ${sample.stats.toolResultsSummarized} 条、输入=${formatBytes(sample.stats.selectedBytes)}`,
+      );
+    }
 
     /**
      * ★ 第 228 波审计修复（**高**）：`explicit: true` 必须有**结构性证据**才能免审批。
@@ -2512,8 +3240,11 @@ return loop.hasPendingGuidance();
      *   「别再用 role === user 判这是不是用户自己打的字」）—— 这里必须用同一把尺。
      * ② **只看模型本次真的看得到的窗口**（MEMORY_EXTRACTION_WINDOW 与提示词里带的条数一致）：
      *   此前扫的是**全量会话** ⇒ 用户很久以前说过一次「记住」，此后每次提取都会继续放行。
+     *
+     * 现在扫的是**实际发出去的那批**（`sample.messages`，即 tier 取样/预算之后的结果）：
+     * 模型看不到的消息，它也无从"知道用户说过"。
      */
-    const recentMessages = messages.slice(-MEMORY_EXTRACTION_WINDOW);
+    const recentMessages = sample.messages.slice(-MEMORY_EXTRACTION_WINDOW);
     const userAskedToRemember = recentMessages.some(
       (m: { id?: unknown; role?: string; content?: unknown }) =>
         m?.role === "user" &&
@@ -2555,9 +3286,8 @@ return loop.hasPendingGuidance();
     // P1-9: Use forked agent instead of independent API call.
     // This reuses the parent conversation's messages → provider's prompt cache
     // can hit on the shared prefix → lower input token cost.
-    // Independent AbortController so forked agent can be cancelled if the
-    // user closes the session or starts a new conversation.
-    const forkedAbort = new AbortController();
+    // 独立 AbortController（由单飞包装创建）：关闭会话时 `cancelMemoryExtraction()` 会 abort 它，
+    // 信号经 `spawnForked` 传进 `provider.complete({ abortSignal })` —— 不是只创建不用的摆设。
 
     const memoryExtractionPrompt = `请从以上对话中提取**值得长期记住**的事实。
 
@@ -2626,13 +3356,27 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         {
           temperature: 0.3,
           abortSignal: forkedAbort.signal,
-          maxMessages: 50,
+          /**
+           * 预算 / tier 取样已经完成 ⇒ **不再让 spawnForked 二次截断**：
+           * 旧实现这里写死 `maxMessages: 50`，会把样本里的头 10 条以外、尾部 40 条之外
+           * 的中间选区再次丢掉（取样白做）。样本本身就是有界的（`selectedBytes ≤ budget`）。
+           */
+          sourceMessages: sample.messages,
         },
       );
 
       if (!responseText || responseText.trim().length === 0) {
+        /**
+         * ★ MEM-EXTRACT-3（24 §P0-3）：**空响应不更新水位**。
+         *
+         * 被守的形态：这里原来先**推进水位**再返回（旧实现是进程内的条数水位，
+         * 现在是持久化游标）——一次模型空响应就把水位推到最后一条消息 ⇒ 接下来要再涨
+         * `MEMORY_EXTRACTION_MIN_NEW_MESSAGES` 条才会重试，用户看到的是「记忆系统不工作了」。
+         * 空响应和坏 JSON 是同一类失败：**没有产生任何可提取结果**，不该被记成一次成功批次。
+         *
+         * 变红方式：把写游标那一行挪到空响应判断**之前** ⇒ `MEM-EXTRACT-3` 的第二次提取永远不会发生。
+         */
         this.memory.finalizeBatch(batchId, 0);
-        this.memoryExtractionWatermark.set(sessionId, messages.length);
         console.log("[extractMemories] Forked agent returned empty response");
         return;
       }
@@ -2648,8 +3392,17 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
        * 走完一次 LLM 提取就更新水位（限频的那一半）：**在解析成功之后**才更新，
        * 解析失败（模型没按格式回）**不更新** —— 否则一次坏响应会把接下来几轮都锁掉，
        * 用户看到的是"记忆系统不工作了"。
+       *
+       * ★ 24 §P0-3：水位现在是**持久化游标**（最后一条已提取的消息 id + epoch/segmentSeq），
+       * 不再是进程内的消息条数。写入失败只告警（下次会重复提取一次，写入侧查重挡住重复）。
        */
-      this.memoryExtractionWatermark.set(sessionId, messages.length);
+      const nextCursor = cursorFromExtraction(
+        sample.messages,
+        messages as unknown as Array<Record<string, unknown>>,
+        messages.length,
+        Date.now(),
+      );
+      if (nextCursor) writeMemoryExtractionCursor(sessionId, nextCursor);
 
       // Save extracted memories
       let written = 0;
@@ -2693,6 +3446,11 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
        */
       let demotedByBacklog = 0;
       let refusedByBacklog = 0;
+      /**
+       * ★ MEM-EXTRACT-4：因**没有项目身份**而降级为对话级的条数（与积压降级分开计数 ——
+       * 两者原因不同、用户该采取的动作也不同：前者是"这里没有项目可归属"，后者是"待批准积压满了"）。
+       */
+      let demotedByNoProject = 0;
       /**
        * ★ 第 229 波：**循环开始时**库内的待批准总量（全局）。循环里每次加"本轮已经写成的待批准条数"
        * ⇒ 同一次提取连写多条时，第一条把积压推上去之后，后面的候选立刻能看到新读数。
@@ -2755,6 +3513,43 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           itemScope === "conversation" ? { sessionId } : { projectId };
         /** 这一条是不是被积压闸门降到对话级的（留痕用，见下面的日志） */
         let demotedForBacklog = false;
+        /**
+         * ★ MEM-EXTRACT-4（24 §6）：**没有项目身份时绝不写孤儿 project 条目**。
+         *
+         * ## 被守的缺陷
+         *
+         * `projectId === undefined` 时旧实现照样写 `scope: "project"` + `projectId: undefined` ——
+         * 那是一条**可见但永不注入**的孤儿（`visibleIn()` 要求 projectId 相等），
+         * 用户能在面板里看到它、却永远不会在任何项目的上下文里生效。
+         * 更糟的是它占着 project 桶的容量与待批准名额，用户按面板去批准它，批准也不生效。
+         *
+         * ## 为什么选「降级为对话级」而不是「跳过」
+         *
+         * 二选一的取舍（任务给了两条路）：**降级**不丢内容 —— 这条事实仍进库、仍在本会话上下文里
+         * 生效、面板里仍可见可改可删，只是把生效范围从"这个项目以后每个对话"收窄到"当前对话"。
+         * 跳过则会让一次提取静默少写一条（用户看不到、模型也没记住）。方向与
+         * `pending-backlog.ts` 的降级**完全一致**（都是"宁可不跨会话，也不丢内容"），
+         * 且 `memoryScopeFromExtraction` 的兜底方向本来就是 conversation。
+         *
+         * ## 为什么绝不拿 cwd 顶上
+         *
+         * 提取函数**没有** cwd 这个入参，也**不该**有：`cwd` 在 worktree 会话上是 worktree 目录，
+         * 拿它当 project 会造出一个与项目根分叉的桶（worktree 一删归属永久失效）。
+         * 身份解析是 `process()` 的职责（`resolveMemoryProjectId` 的显式优先级）；
+         * 走到这里还没有 projectId 就是"真的没有身份"，此时猜一个比不写更糟。
+         */
+        let demotedForNoProject = false;
+        if (itemScope === "project" && !projectId) {
+          demotedForNoProject = true;
+          demotedByNoProject += 1;
+          itemScope = "conversation";
+          approvalRequired = approvalRequiredForScope(itemScope);
+          ownership = { sessionId };
+          console.log(
+            `[extractMemories] 没有项目身份（session=${sessionId}）⇒ 不写孤儿 project 条目，` +
+              `改为对话级（scope=conversation、sessionId=${sessionId}，只在本次对话生效，内容不丢）：${safeKey}`,
+          );
+        }
 
         /**
          * **用户拒绝过的同类，不再自动写入**（第 200 波，用户要求）。
@@ -2920,9 +3715,16 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
            * ★ 第 231 波 A1：被积压闸门降到对话级的，**把原作用域写在条目上**（`demotedFrom`）。
            * 理由：降级的代价是"用户少了一次否决机会"，而这件事只写日志的话用户侧没有任何信号
            * ⇒ 面板会据此显示「本会话已自动降级 N 条（查看）」（判据 `MEM-DEMOTE-1..4`）。
-           * 只有这一条路径会写它，别的写入不许带。
            */
           ...(demotedForBacklog ? { demotedFrom: intendedScope } : {}),
+          /*
+           * ★ MEM-EXTRACT-4：因**没有项目身份**降级的同样写 `demotedFrom`，但 `demotedReason`
+           * 分开记 —— 两种降级的原因和用户该做的事不同，面板与日志不能混成一句。
+           * （积压降级的 `demotedReason` 缺省 = `pending-backlog`，旧数据同一语义。）
+           */
+          ...(demotedForNoProject
+            ? { demotedFrom: intendedScope, demotedReason: "no-project-identity" as const }
+            : {}),
         });
 
         if (!result.ok) {
@@ -2968,7 +3770,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           `因上限丢弃 ${droppedByCap} 条（每次提取总上限 ${MEMORY_MAX_WRITES_PER_EXTRACTION} 条挡下 ${droppedByTotalCap} 条 /` +
           `待批准上限 ${MEMORY_MAX_PER_EXTRACTION} 条挡下 ${droppedByApprovalCap} 条）、` +
           `待批准积压上限 ${MEMORY_PENDING_BACKLOG_LIMIT} 条触发降级 ${demotedByBacklog} 条 /` +
-          `如实拒绝 ${refusedByBacklog} 条、入队前同主题合并 ${mergeOutcome.merges.length} 组` +
+          `如实拒绝 ${refusedByBacklog} 条、无项目身份降级为对话级 ${demotedByNoProject} 条、` +
+          `入队前同主题合并 ${mergeOutcome.merges.length} 组` +
           `（候选 ${memories.length} → ${candidates.length} 条）、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
       );
 
@@ -3027,10 +3830,25 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
    * 与独立 API 调用不同，forked agent 复用父对话的前缀，使 provider 的 prompt cache
    * 可以命中，从而降低 input token 成本（通常半价）。
    *
-   * @param parentSessionId - 父会话 ID（用于读取 messages）
+   * ## `sourceMessages`：提取路径必须能看见**完整时间线**（24 §P0-3 / MEM-EXTRACT-1）
+   *
+   * `extractMemoriesFromSession` 已经把「压缩前原文 / 换段前旧消息」选出来了，但
+   * forked agent 原来**又读一遍 `listMessages`**（模型投影）⇒ 选出来的旧原文根本没进请求。
+   * 这正是 24 §P0-3 点名的「主函数换了源、forked agent 仍然读旧视图」。
+   * 现在调用方可以把已选好的 `sourceMessages` 传进来；不传时行为与旧实现逐字一致。
+   *
+   * 有 `sourceMessages` 且**传了** `maxMessages` 时保留**头 + 尾**（头 10 条 /
+   * 尾 `maxMessages-10` 条）：只取尾部会让第 1 段里的事实永远进不了提取器
+   * （200 轮/3 段场景），只取头部又看不到最近进展。
+   *
+   * ★ 24 §P0-3：调用方（记忆提取）自己已经按 tier + 预算 **有界** 选好了样本，
+   * 于是它**不传** `maxMessages` ⇒ 这一层不再二次截断（否则头 10 + 尾 40 之外的
+   * 中间选区会被丢掉，取样白做）。头尾保留由 `sampleExtractionMessages` 负责。
+   *
+   * @param parentSessionId - 父会话 ID（用于读取 messages；传 `sourceMessages` 时只作身份/日志）
    * @param systemPrompt - 系统提示词（可以是父对话的，也可以是自定义的）
    * @param userMessage - 追加到对话末尾的新 user 消息
-   * @param options - 可选配置（temperature, abort signal, maxMessages）
+   * @param options - 可选配置（temperature, abort signal, maxMessages, sourceMessages）
    * @returns LLM 响应文本
    */
   async spawnForked(
@@ -3041,6 +3859,13 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       temperature?: number;
       abortSignal?: AbortSignal;
       maxMessages?: number;
+      /**
+       * 已选好的父对话消息（数据层出口，例如 `extractionMessages()`）。
+       *
+       * 只在**记忆提取**这类「读完整时间线」的路径上传；不传 ⇒ 与旧实现完全一致地读
+       * `listMessages(parentSessionId)`（模型投影）。
+       */
+      sourceMessages?: readonly unknown[];
     },
   ): Promise<string> {
     const resolved = this.resolveSlot("memory");
@@ -3049,15 +3874,36 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       throw new Error("Provider not configured for forked agent");
     }
 
-    // Read parent conversation messages
-    const parentMessages = MessageStorage.listMessages(parentSessionId);
+    // Read parent conversation messages（有 sourceMessages 时用调用方选好的那一份）
+    const parentMessages = (
+      options?.sourceMessages !== undefined
+        ? options.sourceMessages
+        : MessageStorage.listMessages(parentSessionId)
+    ) as ReturnType<typeof MessageStorage.listMessages>;
 
     // Convert to LLM messages format — deep copy to prevent msgCache pollution
     const llmMessages = MessageStorage.messagesToLLMMessages(parentMessages);
 
     // Limit number of messages to control cost
-    const maxMsgs = options?.maxMessages ?? 50;
-    let recentMessages = llmMessages.slice(-maxMsgs);
+    const maxMsgs = options?.maxMessages ?? (options?.sourceMessages !== undefined ? Number.POSITIVE_INFINITY : 50);
+    /**
+     * 完整时间线模式（`sourceMessages`）保留**头 + 尾**，理由见函数头。
+     * 普通模式（读模型投影）保持原来的「只取最后 N 条」，一行行为都不变。
+     *
+     * ★ 24 §P0-3：调用方（记忆提取）自己已经按 tier + 预算把样本**有界**选好了，
+     * 所以它**不传** `maxMessages` ⇒ 这里不再二次截断（否则头 10 + 尾 40 之外的
+     * 中间选区会被这层丢掉，取样白做）。传了 `maxMessages` 的调用方仍按头尾规则切。
+     */
+    const headKeep =
+      options?.sourceMessages !== undefined && Number.isFinite(maxMsgs)
+        ? Math.min(10, Math.max(0, maxMsgs - 40))
+        : 0;
+    let recentMessages =
+      !Number.isFinite(maxMsgs) || llmMessages.length <= maxMsgs
+        ? llmMessages
+        : headKeep > 0
+          ? [...llmMessages.slice(0, headKeep), ...llmMessages.slice(-(maxMsgs - headKeep))]
+          : llmMessages.slice(-maxMsgs);
 
     // Fix: If the slice cut an assistant+tool_calls pair, the leading tool
     // messages are now orphans (no preceding assistant with matching tool_calls).
@@ -3112,7 +3958,22 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         messages: forkedMessages,
         temperature: options?.temperature ?? 0.3,
         stream: false,
+        /*
+         * ★ MEM-EXTRACT-2（24 §P0-3）：**abort 必须真的接进请求**。
+         *
+         * 旧形态：`forkedAbort` 只创建、从不 `.abort()`，而且这里也没把 signal 传下去 ——
+         * 用户关掉会话后，提取请求仍会打给 provider（并写回一个已删会话的批次）。
+         * 现在 signal 一路传到 provider；能中止的 provider 会立刻取消请求，
+         * 不能中止的也会在 `catch` 里按 aborted 识别成"没有结果"（见下面是 `aborted` 分支）。
+         */
+        abortSignal: options?.abortSignal,
       });
+
+      /* 中止是**用户意图**：即使 provider 忽略了 signal 并正常返回，也不许把结果写回已关闭的会话 */
+      if (options?.abortSignal?.aborted) {
+        console.log("[spawnForked] Aborted");
+        return "";
+      }
 
       return response.content || "";
     } catch (err: any) {
