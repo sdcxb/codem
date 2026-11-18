@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codem — unslop draft 01</title>
+<style>
+  @font-face{font-family:"CodemSans";src:url("file:///C:/Windows/Fonts/msyh.ttc") format("truetype");font-weight:400 600;font-style:normal;}
+  :root{
+    --bg:#0e1012;
+    --sidebar:#111316;
+    --surface:#15181c;
+    --surface-2:#1a1e22;
+    --surface-3:#20252a;
+    --line:rgba(233,230,223,.09);
+    --line-strong:rgba(233,230,223,.16);
+    --text:#e9e6df;
+    --secondary:#a8aaa5;
+    --muted:#7c817b;
+    --dim:#5f655f;
+    --accent:#c6a15b;
+    --accent-soft:rgba(198,161,91,.12);
+    --accent-ink:#17130c;
+    --green:#78b892;
+    --red:#d47c74;
+    --blue:#8aa6c8;
+    --font:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono","Cascadia Code","SFMono-Regular",monospace;
+    --r-sm:6px; --r:8px; --r-md:10px; --r-lg:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#08090a;color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .app{width:1440px;height:900px;display:grid;grid-template-columns:248px minmax(0,1fr);background:var(--bg);overflow:hidden;border:1px solid #050607}
+  .sidebar{background:var(--sidebar);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .brand{height:52px;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid var(--line)}
+  .brand-mark{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:5px;color:var(--accent)}
+  .brand-name{font-size:15px;font-weight:500;letter-spacing:.01em}
+  .brand-local{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
+  .new-task{margin:14px 12px 8px;height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r);color:var(--text);font-size:13px;background:var(--surface)}
+  .new-task:hover{background:var(--surface-2)}
+  .new-task .kbd{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .nav{padding:2px 8px}
+  .nav-row{width:100%;height:32px;display:flex;align-items:center;gap:9px;padding:0 8px;color:var(--secondary);font-size:13px;border-radius:var(--r-sm);position:relative}
+  .nav-row:hover{background:var(--surface);color:var(--text)}
+  .nav-row.active{background:var(--surface-2);color:var(--text)}
+  .nav-row.active:before{content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:2px;background:var(--accent);border-radius:2px}
+  .nav-row .count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .nav-row .alert-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);margin-left:auto}
+  .nav-label{font-family:var(--mono);font-size:10px;color:var(--dim);padding:16px 16px 6px;display:flex;align-items:center;justify-content:space-between}
+  .nav-label button{color:var(--muted);font-size:15px;line-height:1}
+  .recent{padding:0 8px;overflow:hidden}
+  .session{width:100%;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:var(--r-sm);color:var(--secondary);font-size:12.5px;text-align:left}
+  .session:hover{background:var(--surface);color:var(--text)}
+  .session.active{color:var(--text);background:var(--surface-2)}
+  .session .s-icon{color:var(--dim)}
+  .session .s-time{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .project{width:100%;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:var(--r-sm);color:var(--secondary);font-size:12.5px;text-align:left}
+  .project:hover{background:var(--surface);color:var(--text)}
+  .project .p-count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:10px 12px;display:flex;align-items:center;gap:9px}
+  .avatar{width:24px;height:24px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;font-size:11px;font-family:var(--mono);color:var(--secondary)}
+  .user-name{font-size:12px;color:var(--secondary)}
+  .user-plan{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:1px}
+  .foot-settings{margin-left:auto;color:var(--muted)}
+  .workspace{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{height:52px;flex:none;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--bg)}
+  .crumb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);min-width:0}
+  .crumb .sep{color:var(--dim)}
+  .crumb .current{color:var(--secondary)}
+  .live{display:flex;align-items:center;gap:6px;margin-left:4px;font-family:var(--mono);font-size:10px;color:var(--green)}
+  .live:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(120,184,146,.08)}
+  .top-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
+  .icon-btn{width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-sm);color:var(--muted)}
+  .icon-btn:hover{background:var(--surface);color:var(--text)}
+  .icon-btn.small .icon{width:15px;height:15px}
+  .top-sep{width:1px;height:18px;background:var(--line);margin:0 6px}
+  .main{flex:1;min-height:0;overflow:hidden;position:relative;background:var(--bg)}
+  .view{height:100%;overflow:auto}
+  .view.hidden{display:none}
+  .chat-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;height:100%;min-height:0}
+  .thread{min-width:0;display:flex;flex-direction:column;min-height:0;padding:28px 36px 0}
+  .thread-head{display:flex;align-items:flex-start;gap:12px;padding-bottom:20px;border-bottom:1px solid var(--line);flex:none}
+  .thread-title{font-size:23px;line-height:1.2;font-weight:500;letter-spacing:-.01em;margin:0}
+  .thread-sub{display:flex;align-items:center;gap:8px;margin-top:7px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .thread-head .head-actions{margin-left:auto;display:flex;gap:2px}
+  .messages{flex:1;min-height:0;overflow:hidden;padding:22px 0 14px}
+  .msg{max-width:720px;margin:0 0 22px}
+  .msg-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:11px;color:var(--muted)}
+  .msg-head .who{color:var(--secondary);font-size:12px}
+  .msg-head .time{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .assistant .msg-head .who{color:var(--text)}
+  .assistant .msg-head .agent-mark{width:15px;height:15px;border:1px solid var(--line-strong);border-radius:4px;display:grid;place-items:center;color:var(--accent)}
+  .assistant p{font-size:13.5px;line-height:1.7;color:var(--text);margin:0 0 12px}
+  .assistant p.secondary{color:var(--secondary)}
+  .user-msg{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 14px;font-size:13.5px;line-height:1.6;color:var(--text)}
+  .tool{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);overflow:hidden;margin:12px 0}
+  .tool-head{height:32px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .tool-head .tool-name{color:var(--secondary)}
+  .tool-head .tool-path{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tool-head .tool-meta{margin-left:auto;color:var(--dim)}
+  .code{padding:8px 0;background:#121519;overflow:hidden}
+  .code-line{display:flex;gap:13px;font-family:var(--mono);font-size:11.5px;line-height:20px;color:var(--secondary);white-space:pre}
+  .code-line .ln{width:30px;text-align:right;color:var(--dim);flex:none;user-select:none}
+  .code-line .code-text{padding-right:12px}
+  .tok-key{color:#c7b18a}.tok-fn{color:#b9c7d8}.tok-str{color:#a8c6a9}.tok-com{color:var(--dim)}
+  .diff{margin:12px 0 10px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+  .diff-head{height:34px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--secondary)}
+  .diff-head .file{color:var(--text)}
+  .diff-head .change{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .diff-head .add{color:var(--green)}.diff-head .del{color:var(--red)}
+  .diff-body{padding:6px 0;font-family:var(--mono);font-size:11.5px;line-height:20px;overflow:hidden}
+  .dl{display:flex;gap:11px;padding:0 11px;white-space:pre;color:var(--secondary)}
+  .dl .sign{width:10px;color:var(--dim);flex:none}
+  .dl.add{background:rgba(120,184,146,.07);color:#b9d4bf}
+  .dl.add .sign{color:var(--green)}
+  .dl.del{background:rgba(212,124,116,.065);color:#d3b3af}
+  .dl.del .sign{color:var(--red)}
+  .test-row{display:flex;align-items:center;gap:9px;border-top:1px solid var(--line);padding:11px 2px 0;margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .test-row .check{color:var(--green)}
+  .test-row .test-name{color:var(--secondary)}
+  .test-row .test-time{margin-left:auto;color:var(--dim)}
+  .composer{flex:none;padding:10px 0 16px;background:var(--bg)}
+  .composer-box{border:1px solid var(--line-strong);border-radius:var(--r-lg);background:var(--surface);padding:13px 14px 9px;min-height:94px}
+  .composer-box:focus-within{border-color:rgba(198,161,91,.45);box-shadow:0 0 0 3px rgba(198,161,91,.06)}
+  .composer textarea{display:block;width:100%;min-height:34px;resize:none;border:0;outline:0;background:none;color:var(--text);font:13.5px/1.5 var(--font)}
+  .composer textarea::placeholder{color:var(--dim)}
+  .composer-bottom{display:flex;align-items:center;gap:6px;margin-top:8px}
+  .composer .tool-btn{width:28px;height:26px;display:grid;place-items:center;border-radius:var(--r-sm);color:var(--muted)}
+  .composer .tool-btn:hover{background:var(--surface-2);color:var(--text)}
+  .composer .model{display:flex;align-items:center;gap:6px;height:26px;padding:0 7px;border-radius:var(--r-sm);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .composer .model:hover{background:var(--surface-2);color:var(--secondary)}
+  .composer .spacer{margin-left:auto}
+  .composer .ctx{font-family:var(--mono);font-size:10px;color:var(--dim);padding-right:6px}
+  .send{width:30px;height:30px;display:grid;place-items:center;border-radius:var(--r);background:var(--accent);color:var(--accent-ink)}
+  .send:hover{background:#d2ad66}
+  .context-rail{border-left:1px solid var(--line);padding:24px 20px;display:flex;flex-direction:column;gap:24px;min-height:0;overflow:hidden;background:#0f1214}
+  .rail-title{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--secondary);margin-bottom:10px}
+  .rail-title .mono{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .context-num{display:flex;align-items:baseline;gap:5px;margin:2px 0 10px}
+  .context-num strong{font-family:var(--mono);font-size:30px;line-height:1;font-weight:400;letter-spacing:-.04em}
+  .context-num span{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .ruler{position:relative;height:18px;margin-bottom:7px}
+  .ruler:before{content:"";position:absolute;left:0;right:0;top:8px;height:1px;background:var(--line-strong)}
+  .ruler:after{content:"";position:absolute;left:0;top:7px;height:3px;width:68%;background:var(--accent)}
+  .ruler .ticks{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),var(--line) calc(10% - 1px) 10%);opacity:.65}
+  .ruler .marker{position:absolute;left:68%;top:1px;width:1px;height:15px;background:var(--accent)}
+  .rail-meta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .rail-section{border-top:1px solid var(--line);padding-top:16px}
+  .file-row{display:flex;align-items:center;gap:8px;height:29px;font-size:12px;color:var(--secondary)}
+  .file-row .icon{color:var(--dim);width:14px;height:14px}
+  .file-row .file-name{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .file-row .file-state{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .file-row .file-state.protected{color:var(--green)}
+  .rail-list{display:flex;flex-direction:column;gap:3px}
+  .rail-kv{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:4px 0}
+  .rail-kv strong{font-weight:400;color:var(--secondary)}
+  .next-row{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:11.5px;line-height:1.45;color:var(--secondary)}
+  .next-row .dot{width:5px;height:5px;border-radius:50%;background:var(--muted);margin-top:6px;flex:none}
+  .next-row .dot.now{background:var(--accent)}
+  .next-row .when{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--dim);white-space:nowrap}
+  .view-inner{max-width:1120px;margin:0 auto;padding:30px 36px 48px}
+  .page-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:24px}
+  .page-head h1{font-size:26px;line-height:1.2;font-weight:500;letter-spacing:-.015em;margin:0}
+  .page-head p{margin:7px 0 0;font-size:12px;color:var(--muted)}
+  .page-actions{margin-left:auto;display:flex;gap:8px}
+  .btn{height:30px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:var(--r);border:1px solid var(--line);color:var(--secondary);font-size:12px}
+  .btn:hover{background:var(--surface);color:var(--text)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary:hover{background:#d2ad66}
+  .summary-line{display:flex;align-items:center;gap:22px;padding:13px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:24px}
+  .summary-item{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--muted)}
+  .summary-item strong{font-family:var(--mono);font-size:16px;font-weight:400;color:var(--text)}
+  .summary-item .status-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);margin-right:1px}
+  .summary-item .status-dot.active{background:var(--accent)}
+  .summary-item .status-dot.good{background:var(--green)}
+  .summary-item + .summary-item{border-left:1px solid var(--line);padding-left:22px}
+  .tasks-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:34px;align-items:start}
+  .group-title{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--secondary);margin:0 0 8px}
+  .group-title .n{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .task{border-top:1px solid var(--line);padding:14px 2px;display:flex;gap:11px;align-items:flex-start}
+  .task:last-child{border-bottom:1px solid var(--line)}
+  .task-check{width:16px;height:16px;border:1px solid var(--line-strong);border-radius:4px;margin-top:1px;display:grid;place-items:center;color:transparent;flex:none}
+  .task.done .task-check{border-color:var(--green);color:var(--green)}
+  .task-main{min-width:0;flex:1}
+  .task-title{font-size:13px;line-height:1.4;color:var(--text);margin:0}
+  .task.done .task-title{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--dim)}
+  .task-meta{display:flex;align-items:center;gap:9px;margin-top:6px;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .task-meta .agent{color:var(--muted)}
+  .task-progress{width:72px;height:2px;background:var(--surface-3);margin-left:auto;margin-top:6px;flex:none}
+  .task-progress i{display:block;height:100%;background:var(--accent)}
+  .side-panel{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);padding:16px}
+  .side-panel + .side-panel{margin-top:14px}
+  .side-panel h2{font-size:11px;font-weight:400;color:var(--secondary);margin:0 0 12px;display:flex;justify-content:space-between}
+  .side-panel h2 span{font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .activity{display:flex;gap:10px;font-size:11.5px;line-height:1.45;color:var(--secondary);padding:7px 0;border-top:1px solid var(--line)}
+  .activity:first-of-type{border-top:0;padding-top:0}
+  .activity .a-time{font-family:var(--mono);font-size:9.5px;color:var(--dim);width:38px;flex:none}
+  .activity .a-user{color:var(--muted)}
+  .team-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:11.5px;color:var(--secondary)}
+  .team-row:first-of-type{border-top:0;padding-top:0}
+  .team-row .avatar{width:20px;height:20px;font-size:9px}
+  .team-row .role{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .memory-stats{display:flex;gap:28px;align-items:baseline;padding:14px 0 17px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:20px}
+  .mstat{display:flex;align-items:baseline;gap:8px;font-size:11px;color:var(--muted)}
+  .mstat strong{font-family:var(--mono);font-size:20px;font-weight:400;color:var(--text);letter-spacing:-.03em}
+  .mstat + .mstat{border-left:1px solid var(--line);padding-left:28px}
+  .memory-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .search{height:30px;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:0 10px;width:260px;color:var(--dim);font-size:12px}
+  .search .icon{width:14px;height:14px}
+  .filter-btn{height:30px;padding:0 10px;border-radius:var(--r);border:1px solid var(--line);font-size:11px;color:var(--muted)}
+  .filter-btn:hover{background:var(--surface);color:var(--secondary)}
+  .memory-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:32px;align-items:start}
+  .memory-list{border-top:1px solid var(--line)}
+  .memory-row{display:grid;grid-template-columns:80px minmax(0,1fr) 150px;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line);align-items:start}
+  .scope{font-family:var(--mono);font-size:9.5px;color:var(--muted);padding-top:2px}
+  .scope.team{color:var(--accent)}
+  .memory-content{font-size:12.5px;line-height:1.55;color:var(--secondary)}
+  .memory-content strong{font-weight:500;color:var(--text)}
+  .memory-source{font-family:var(--mono);font-size:9.5px;color:var(--dim);line-height:1.6;text-align:right}
+  .policy-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:11.5px;line-height:1.45;color:var(--secondary)}
+  .policy-row:first-of-type{border-top:0;padding-top:0}
+  .policy-row .small-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);margin-top:6px;flex:none}
+  .policy-row .small-dot.auto{background:var(--green)}
+  .policy-row .policy-scope{color:var(--muted);margin-left:auto;font-family:var(--mono);font-size:9.5px;white-space:nowrap}
+  .settings-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:34px;max-width:940px}
+  .settings-nav{display:flex;flex-direction:column;gap:2px;padding-top:2px}
+  .settings-nav button{text-align:left;height:29px;padding:0 9px;border-radius:var(--r-sm);font-size:12px;color:var(--muted)}
+  .settings-nav button:hover{background:var(--surface);color:var(--secondary)}
+  .settings-nav button.active{background:var(--surface-2);color:var(--text)}
+  .settings-section{border-top:1px solid var(--line);padding:16px 0 6px}
+  .settings-section:first-child{border-top:0;padding-top:0}
+  .settings-section h2{font-size:12px;font-weight:500;color:var(--text);margin:0 0 12px}
+  .setting-row{display:flex;align-items:center;gap:24px;min-height:34px;padding:4px 0;font-size:12px}
+  .setting-row .setting-label{width:180px;flex:none;color:var(--secondary)}
+  .setting-row .setting-value{color:var(--text);font-size:12px}
+  .setting-row .setting-note{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .segmented{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .segmented button{height:26px;padding:0 9px;font-size:11px;color:var(--muted);border-right:1px solid var(--line)}
+  .segmented button:last-child{border-right:0}
+  .segmented button.active{background:var(--surface-2);color:var(--text)}
+  .select{height:28px;min-width:160px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--secondary);font-size:11px}
+  .settings-foot{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+  .save{height:30px;padding:0 14px;border-radius:var(--r);background:var(--accent);color:var(--accent-ink);font-size:12px}
+  .muted{color:var(--muted)}
+  .mono{font-family:var(--mono)}
+  @media (max-width:1200px){.app{width:100%;grid-template-columns:220px minmax(0,1fr)}.context-rail{display:none}.chat-grid{grid-template-columns:1fr}.thread{padding:24px 28px 0}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></symbol>
+  <symbol id="i-check-square" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 12 3 3 7-7"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 3v12M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.4 11.6-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg class="icon" style="width:12px;height:12px"><use href="#i-terminal"/></svg></div>
+      <div class="brand-name">Codem</div>
+      <div class="brand-local">Local</div>
+    </div>
+    <button class="new-task" data-view="chat">
+      <svg class="icon"><use href="#i-plus"/></svg>
+      <span>新任务</span>
+      <span class="kbd">N</span>
+    </button>
+    <nav class="nav" aria-label="主要导航">
+      <button class="nav-row active" data-view="chat"><svg class="icon"><use href="#i-chat"/></svg><span>对话</span><span class="count">73</span></button>
+      <button class="nav-row" data-view="tasks"><svg class="icon"><use href="#i-check-square"/></svg><span>任务</span><span class="alert-dot"></span></button>
+      <button class="nav-row" data-view="memory"><svg class="icon"><use href="#i-database"/></svg><span>记忆</span></button>
+      <button class="nav-row" data-view="agents"><svg class="icon"><use href="#i-users"/></svg><span>团队</span><span class="count">4</span></button>
+      <button class="nav-row"><svg class="icon"><use href="#i-book"/></svg><span>知识库</span></button>
+      <button class="nav-row"><svg class="icon"><use href="#i-plug"/></svg><span>MCP</span><span class="count">3</span></button>
+    </nav>
+    <div class="nav-label"><span>最近会话</span><button aria-label="更多">+</button></div>
+    <div class="recent">
+      <button class="session active"><svg class="icon s-icon" style="width:13px;height:13px"><use href="#i-chat"/></svg><span>Refactor auth middleware</span><span class="s-time">now</span></button>
+      <button class="session"><svg class="icon s-icon" style="width:13px;height:13px"><use href="#i-chat"/></svg><span>Diff review · context OS</span><span class="s-time">2h</span></button>
+      <button class="session"><svg class="icon s-icon" style="width:13px;height:13px"><use href="#i-chat"/></svg><span>README verification</span><span class="s-time">5h</span></button>
+      <button class="session"><svg class="icon s-icon" style="width:13px;height:13px"><use href="#i-chat"/></svg><span>Memory extraction test</span><span class="s-time">1d</span></button>
+    </div>
+    <div class="nav-label"><span>工作区</span><button aria-label="添加工作区">+</button></div>
+    <div class="recent">
+      <button class="project"><svg class="icon" style="width:14px;height:14px;color:var(--dim)"><use href="#i-folder"/></svg><span>codem-site-goal</span><span class="p-count">4</span></button>
+      <button class="project"><svg class="icon" style="width:14px;height:14px;color:var(--dim)"><use href="#i-folder"/></svg><span>mimo-gui</span><span class="p-count">12</span></button>
+      <button class="project"><svg class="icon" style="width:14px;height:14px;color:var(--dim)"><use href="#i-folder"/></svg><span>codem-eval-workspace</span><span class="p-count">541</span></button>
+    </div>
+    <div class="sidebar-foot">
+      <div class="avatar">C</div>
+      <div><div class="user-name">Codem</div><div class="user-plan">local workspace</div></div>
+      <button class="icon-btn foot-settings" aria-label="设置" data-view="settings"><svg class="icon"><use href="#i-settings"/></svg></button>
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <header class="topbar">
+      <div class="crumb"><span>Workspace</span><span class="sep">/</span><span class="current">auth-middleware</span><span class="live">Live</span></div>
+      <div class="top-actions">
+        <button class="icon-btn" aria-label="搜索"><svg class="icon"><use href="#i-search"/></svg></button>
+        <button class="icon-btn" aria-label="命令面板"><svg class="icon"><use href="#i-command"/></svg></button>
+        <button class="icon-btn" aria-label="设置" data-view="settings"><svg class="icon"><use href="#i-settings"/></svg></button>
+        <span class="top-sep"></span>
+        <button class="icon-btn small" aria-label="窗口菜单"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="view" id="view-chat">
+        <div class="chat-grid">
+          <div class="thread">
+            <header class="thread-head">
+              <div>
+                <h1 class="thread-title">Refactor auth middleware</h1>
+                <div class="thread-sub"><span>session 73</span><span>·</span><span>local workspace</span><span>·</span><span>deepseek / flash</span></div>
+              </div>
+              <div class="head-actions">
+                <button class="icon-btn" aria-label="完整历史"><svg class="icon"><use href="#i-clock"/></svg></button>
+                <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+            </header>
+
+            <div class="messages">
+              <div class="msg user">
+                <div class="msg-head"><span class="who">You</span><span class="time">10:41</span></div>
+                <div class="user-msg">把 auth middleware 的 token 刷新逻辑收敛到一个函数，补上过期和并发刷新测试。不要改 API 形状。</div>
+              </div>
+
+              <div class="msg assistant">
+                <div class="msg-head"><span class="agent-mark"><svg class="icon" style="width:9px;height:9px"><use href="#i-terminal"/></svg></span><span class="who">Codem</span><span class="time">10:42</span></div>
+                <p>先读现有实现和测试，确认 refresh 的调用点。</p>
+                <div class="tool">
+                  <div class="tool-head"><svg class="icon" style="width:13px;height:13px"><use href="#i-file"/></svg><span class="tool-name">read_file</span><span class="tool-path">src/auth/middleware.ts</span><span class="tool-meta">12ms</span></div>
+                  <div class="code">
+                    <div class="code-line"><span class="ln">41</span><span class="code-text"><span class="tok-key">export async function</span> <span class="tok-fn">refreshSession</span>(req: Request) {</span></div>
+                    <div class="code-line"><span class="ln">42</span><span class="code-text">  <span class="tok-key">const</span> token = readToken(req);</span></div>
+                    <div class="code-line"><span class="ln">43</span><span class="code-text">  <span class="tok-key">if</span> (!token) <span class="tok-key">return</span> unauthorized();</span></div>
+                    <div class="code-line"><span class="ln">44</span><span class="code-text">  <span class="tok-com">// refresh duplicated in three call sites</span></span></div>
+                    <div class="code-line"><span class="ln">45</span><span class="code-text">  <span class="tok-key">return</span> rotate(token);</span></div>
+                    <div class="code-line"><span class="ln">46</span><span class="code-text">}</span></div>
+                  </div>
+                </div>
+                <p class="secondary">三处调用重复，且并发刷新没有共享 in-flight promise。把刷新收敛到 <span class="mono" style="font-size:11.5px;color:var(--secondary)">refreshSession()</span>，保留原返回类型。</p>
+                <div class="diff">
+                  <div class="diff-head"><svg class="icon" style="width:13px;height:13px"><use href="#i-git"/></svg><span class="file">src/auth/middleware.ts</span><span class="change"><span class="add">+18</span> <span class="del">−6</span></span></div>
+                  <div class="diff-body">
+                    <div class="dl"><span class="sign"></span><span>@@ -41,6 +41,11 @@</span></div>
+                    <div class="dl del"><span class="sign">−</span><span>export async function refreshSession(req: Request) {</span></div>
+                    <div class="dl add"><span class="sign">+</span><span>const inFlight = new Map&lt;string, Promise&lt;Session&gt;&gt;();</span></div>
+                    <div class="dl add"><span class="sign">+</span><span></span></div>
+                    <div class="dl add"><span class="sign">+</span><span>export async function refreshSession(req: Request) {</span></div>
+                    <div class="dl"><span class="sign"></span><span>  const token = readToken(req);</span></div>
+                    <div class="dl"><span class="sign"></span><span>  if (!token) return unauthorized();</span></div>
+                    <div class="dl add"><span class="sign">+</span><span>  return refreshOnce(token);</span></div>
+                    <div class="dl"><span class="sign"></span><span>}</span></div>
+                  </div>
+                </div>
+                <div class="test-row"><svg class="icon check" style="width:14px;height:14px"><use href="#i-check"/></svg><span class="test-name">auth middleware · 24 passed</span><span>2 skipped</span><span class="test-time">1.8s</span></div>
+                <p style="margin-top:16px;margin-bottom:0">改动集中在 <span class="mono" style="font-size:11.5px;color:var(--secondary)">middleware.ts</span> 和对应测试；API 形状未变。已验证过期 token、并发刷新和取消三种路径。</p>
+              </div>
+            </div>
+
+            <div class="composer">
+              <div class="composer-box">
+                <textarea placeholder="给 Codem 一个任务，或输入 / 查看命令" aria-label="输入消息"></textarea>
+                <div class="composer-bottom">
+                  <button class="tool-btn" aria-label="附加文件"><svg class="icon"><use href="#i-paperclip"/></svg></button>
+                  <button class="tool-btn" aria-label="工具"><svg class="icon"><use href="#i-sliders"/></svg></button>
+                  <button class="model"><span style="width:5px;height:5px;border-radius:50%;background:var(--green)"></span>deepseek / flash<svg class="icon" style="width:11px;height:11px"><use href="#i-chevron"/></svg></button>
+                  <span class="spacer"></span>
+                  <span class="ctx">ctx 68% · 25.8k in / 5 out</span>
+                  <button class="send" aria-label="发送"><svg class="icon" style="width:15px;height:15px"><use href="#i-arrow-up"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="context-rail">
+            <div>
+              <div class="rail-title"><span>Context</span><span class="mono">128k window</span></div>
+              <div class="context-num"><strong>68</strong><span>% used</span></div>
+              <div class="ruler" aria-hidden="true"><div class="ticks"></div><div class="marker"></div></div>
+              <div class="rail-meta"><span>0</span><span>64k</span><span>128k</span></div>
+            </div>
+            <div class="rail-section">
+              <div class="rail-title"><span>Working set</span><span class="mono">4 files</span></div>
+              <div class="rail-list">
+                <div class="file-row"><svg class="icon"><use href="#i-file"/></svg><span class="file-name">src/auth/middleware.ts</span><span class="file-state protected">protected</span></div>
+                <div class="file-row"><svg class="icon"><use href="#i-file"/></svg><span class="file-name">src/auth/session.ts</span><span class="file-state">edited</span></div>
+                <div class="file-row"><svg class="icon"><use href="#i-file"/></svg><span class="file-name">test/auth.refresh.test.ts</span><span class="file-state">edited</span></div>
+                <div class="file-row"><svg class="icon"><use href="#i-file"/></svg><span class="file-name">src/types/session.ts</span><span class="file-state">read</span></div>
+              </div>
+            </div>
+            <div class="rail-section">
+              <div class="rail-title"><span>Session</span><span class="mono">this turn</span></div>
+              <div class="rail-kv"><span>input</span><strong>25.8k</strong></div>
+              <div class="rail-kv"><span>output</span><strong>5</strong></div>
+              <div class="rail-kv"><span>cache</span><strong>47.8%</strong></div>
+              <div class="rail-kv"><span>cost</span><strong>$0.005</strong></div>
+            </div>
+            <div class="rail-section">
+              <div class="rail-title"><span>Next</span><span class="mono">2 items</span></div>
+              <div class="next-row"><span class="dot now"></span><span>Review diff in editor</span><span class="when">now</span></div>
+              <div class="next-row"><span class="dot"></span><span>Update auth docs</span><span class="when">later</span></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view hidden" id="view-tasks">
+        <div class="view-inner">
+          <header class="page-head">
+            <div><h1>Tasks</h1><p>当前会话的委派、阻塞和验证结果。</p></div>
+            <div class="page-actions"><button class="btn">筛选</button><button class="btn primary"><svg class="icon" style="width:13px;height:13px"><use href="#i-plus"/></svg>新任务</button></div>
+          </header>
+          <div class="summary-line">
+            <div class="summary-item"><span class="status-dot active"></span><strong>3</strong> 进行中</div>
+            <div class="summary-item"><span class="status-dot"></span><strong>1</strong> 阻塞</div>
+            <div class="summary-item"><span class="status-dot good"></span><strong>12</strong> 已完成</div>
+            <div class="summary-item"><span class="mono" style="font-size:10px">avg 2m 14s</span></div>
+          </div>
+          <div class="tasks-layout">
+            <div>
+              <div class="group-title"><span>进行中</span><span class="n">3</span></div>
+              <div class="task">
+                <span class="task-check"></span>
+                <div class="task-main">
+                  <p class="task-title">收敛 auth refresh 并补齐并发测试</p>
+                  <div class="task-meta"><span class="agent">docs-lead</span><span>session 73</span><span>12 tools</span><span class="task-progress"><i style="width:72%"></i></span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="task-check"></span>
+                <div class="task-main">
+                  <p class="task-title">检查 middleware 的取消路径</p>
+                  <div class="task-meta"><span class="agent">reviewer</span><span>session 73</span><span>4 tools</span><span class="task-progress"><i style="width:40%"></i></span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="task-check"></span>
+                <div class="task-main">
+                  <p class="task-title">更新 auth 文档中的刷新时序</p>
+                  <div class="task-meta"><span class="agent">writer</span><span>session 73</span><span>1 tool</span><span class="task-progress"><i style="width:16%"></i></span></div>
+                </div>
+              </div>
+              <div class="group-title" style="margin-top:22px"><span>已完成</span><span class="n">12</span></div>
+              <div class="task done">
+                <span class="task-check"><svg class="icon" style="width:11px;height:11px"><use href="#i-check"/></svg></span>
+                <div class="task-main"><p class="task-title">读取 middleware 和现有测试</p><div class="task-meta"><span class="agent">docs-lead</span><span>2 tools</span><span>1.2s</span></div></div>
+              </div>
+              <div class="task done">
+                <span class="task-check"><svg class="icon" style="width:11px;height:11px"><use href="#i-check"/></svg></span>
+                <div class="task-main"><p class="task-title">定位三处重复 refresh 调用</p><div class="task-meta"><span class="agent">reviewer</span><span>grep · 3 matches</span><span>0.4s</span></div></div>
+              </div>
+            </div>
+            <aside>
+              <div class="side-panel"><h2>活动 <span>live</span></h2>
+                <div class="activity"><span class="a-time">10:42</span><span><span class="a-user">Codem</span> 编辑 middleware.ts</span></div>
+                <div class="activity"><span class="a-time">10:42</span><span><span class="a-user">verify</span> 24 passed · 2 skipped</span></div>
+                <div class="activity"><span class="a-time">10:41</span><span><span class="a-user">You</span> 发起会话</span></div>
+              </div>
+              <div class="side-panel"><h2>团队 <span>4 members</span></h2>
+                <div class="team-row"><span class="avatar">D</span><span>docs-lead</span><span class="role">active</span></div>
+                <div class="team-row"><span class="avatar">R</span><span>reviewer</span><span class="role">active</span></div>
+                <div class="team-row"><span class="avatar">W</span><span>writer</span><span class="role">idle</span></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="view-memory">
+        <div class="view-inner">
+          <header class="page-head">
+            <div><h1>Memory</h1><p>会话、团队和项目事实。只有被批准的内容会进入上下文。</p></div>
+            <div class="page-actions"><button class="btn">导入</button><button class="btn primary">新增</button></div>
+          </header>
+          <div class="memory-stats">
+            <div class="mstat"><strong>24</strong>条目</div>
+            <div class="mstat"><strong>3</strong>待批准</div>
+            <div class="mstat"><strong>128 KB</strong>体积</div>
+          </div>
+          <div class="memory-toolbar"><div class="search"><svg class="icon"><use href="#i-search"/></svg><span>搜索记忆</span></div><button class="filter-btn">全部作用域</button><button class="filter-btn">已批准</button></div>
+          <div class="memory-layout">
+            <div class="memory-list">
+              <div class="memory-row"><div class="scope team">Team</div><div class="memory-content"><strong>auth middleware 的 refresh 必须共享 in-flight promise</strong><br>并发刷新时只允许一个网络请求，其余调用等待同一个 promise；取消由上层 abort signal 控制。</div><div class="memory-source">team · 2026-11-18<br>source auto</div></div>
+              <div class="memory-row"><div class="scope">Project</div><div class="memory-content"><strong>本仓库测试命令</strong><br><span class="mono" style="font-size:11px">npx vitest run</span>；修改 auth 相关代码后先跑 <span class="mono" style="font-size:11px">src/test/auth</span>。</div><div class="memory-source">project · 2026-11-17<br>approved</div></div>
+              <div class="memory-row"><div class="scope">Conversation</div><div class="memory-content"><strong>本轮不改 API 形状</strong><br>保持 refreshSession 的返回类型，只收敛实现。</div><div class="memory-source">conversation · 2026-11-18<br>direct</div></div>
+              <div class="memory-row"><div class="scope">Platform</div><div class="memory-content"><strong>回复使用中文，代码标识符保持英文</strong><br>术语沿用项目现有写法，不翻译 API 名称。</div><div class="memory-source">platform · 2026-11-16<br>approved</div></div>
+            </div>
+            <aside>
+              <div class="side-panel"><h2>写入策略 <span>review</span></h2>
+                <div class="policy-row"><span class="small-dot"></span><span>平台记忆进入待批准区</span><span class="policy-scope">review</span></div>
+                <div class="policy-row"><span class="small-dot"></span><span>项目记忆进入待批准区</span><span class="policy-scope">review</span></div>
+                <div class="policy-row"><span class="small-dot auto"></span><span>对话级事实直接生效</span><span class="policy-scope">auto</span></div>
+              </div>
+              <div class="side-panel"><h2>提取 <span>40s idle</span></h2><div class="rail-kv"><span>last batch</span><strong>2 items</strong></div><div class="rail-kv"><span>pending</span><strong>3</strong></div><div class="rail-kv"><span>injected</span><strong>0 this turn</strong></div></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="view-settings">
+        <div class="view-inner">
+          <header class="page-head"><div><h1>Settings</h1><p>外观、模型和会话行为。</p></div><div class="page-actions"><button class="btn">导出配置</button></div></header>
+          <div class="settings-layout">
+            <nav class="settings-nav"><button class="active">通用</button><button>外观</button><button>模型</button><button>工具与权限</button><button>记忆</button></nav>
+            <div>
+              <div class="settings-section"><h2>界面</h2>
+                <div class="setting-row"><span class="setting-label">主题</span><div class="segmented"><button class="active">深色</button><button>浅色</button><button>跟随系统</button></div></div>
+                <div class="setting-row"><span class="setting-label">界面字体</span><span class="setting-value">IBM Plex Sans / Noto Sans SC</span><span class="setting-note">default</span></div>
+                <div class="setting-row"><span class="setting-label">密度</span><div class="segmented"><button class="active">紧凑</button><button>舒适</button></div></div>
+              </div>
+              <div class="settings-section"><h2>模型</h2>
+                <div class="setting-row"><span class="setting-label">默认模型</span><select class="select"><option>DeepSeek / flash</option><option>DeepSeek / chat</option></select></div>
+                <div class="setting-row"><span class="setting-label">上下文窗口</span><span class="setting-value">128k</span><span class="setting-note">model default</span></div>
+              </div>
+              <div class="settings-section"><h2>会话</h2>
+                <div class="setting-row"><span class="setting-label">助手身份</span><select class="select"><option>通用助手</option><option>代码助手</option><option>文档助手</option><option>运维助手</option></select></div>
+                <div class="setting-row"><span class="setting-label">回复风格</span><select class="select"><option>直接、具体</option><option>耐心、解释更多</option></select></div>
+                <div class="setting-row"><span class="setting-label">切换会话保留草稿</span><span class="setting-note">on</span></div>
+              </div>
+              <div class="settings-foot"><button class="btn">取消</button><button class="save">保存</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </section>
+</div>
+
+<script>
+  const views = ["chat","tasks","memory","settings"];
+  function show(view){
+    for (const v of views) document.getElementById("view-" + v).classList.toggle("hidden", v !== view);
+    document.querySelectorAll(".nav-row").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+    document.querySelectorAll("[data-view='settings']").forEach(b => b.classList.toggle("active", view === "settings"));
+  }
+  document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => show(b.dataset.view)));
+  document.querySelectorAll(".settings-nav button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".settings-nav button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+  }));
+  document.querySelectorAll(".segmented button").forEach(b => b.addEventListener("click", () => {
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+  }));
+  const initial = new URLSearchParams(location.search).get("view") || location.hash.replace("#", "");
+  if (views.includes(initial)) show(initial);
+</script>
+</body>
+</html>
