@@ -226,7 +226,7 @@ function findNodeByLabel(notebookId: string, label: string): string | null {
  */
 async function callLLMForExtraction(text: string, _hasSources: boolean): Promise<LLMExtractionResult> {
   // 统一走 LLMEngine.getConfiguredProvider — 避免绕过框架
-  const { getLLMEngine } = await import('../llm/index');
+  const { getLLMEngine } = await import('../llm/engine-access');
   const engine = getLLMEngine();
   const { provider, model } = engine.getConfiguredProvider('subagent');
 

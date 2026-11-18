@@ -20,6 +20,11 @@
     "src/core/agent/index.ts",
     "src/core/context/index.ts",
     "src/core/heartbeat/index.ts",
+    /* 第 4A 波：llm 的 barrel 是模块自己的导出面（和上面 21 个同类）。
+       它以前没被列进来，是因为 12 处 `await import("../llm")` 让它成了**隐式 entry**；
+       那些动态导入已改成 `engine-access`（生产构建 TDZ 修复，见 src/test/llm-barrel-tdz.test.ts），
+       所以这里要显式声明，否则 barrel 的全部导出会被当成"没人用"（实测 46→102）。 */
+    "src/core/llm/index.ts",
     "src/core/icons/index.ts",
     "src/core/inbox/index.ts",
     "src/core/issue/index.ts",

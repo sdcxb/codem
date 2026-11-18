@@ -13,7 +13,7 @@ import type { LLMRequest } from '../llm/types';
  * 统一走 LLMEngine.getConfiguredProvider — 避免绕过框架从 DB 读取 settings
  */
 async function getLLM() {
-  const { getLLMEngine } = await import('../llm/index');
+  const { getLLMEngine } = await import('../llm/engine-access');
   const engine = getLLMEngine();
   const { provider, model } = engine.getConfiguredProvider('chat');
   return { provider, actualModel: model };

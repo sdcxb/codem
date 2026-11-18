@@ -168,7 +168,7 @@ ${allText}`;
 
   // 使用主应用已初始化的 LLMEngine 单例 — 统一走 getConfiguredProvider
   // 避免绕过框架直接从 DB 读取 settings 的架构断点
-  const { getLLMEngine } = await import('../llm/index');
+  const { getLLMEngine } = await import('../llm/engine-access');
   const engine = getLLMEngine();
   const { provider, model: actualModel } = engine.getConfiguredProvider('chat');
   console.log(`[ppt-generator] Using provider: ${provider.id}, model: ${actualModel}`);

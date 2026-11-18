@@ -537,7 +537,7 @@ function upsertManagedProvider(runtime: { port: number | null; key: string | nul
 async function registerProviderInEngine(runtime: { port: number | null; key: string | null }): Promise<{ ok: boolean; message: string }> {
   if (!runtime.port || !runtime.key) return { ok: false, message: "插件还没给出端口/密钥，暂不注册到引擎" };
   try {
-    const { getLLMEngine } = await import("../llm/index");
+    const { getLLMEngine } = await import("../llm/engine-access");
     const engine = getLLMEngine() as unknown as {
       registerCustomProvider?: (id: string, config: { name: string; apiKey: string; baseUrl?: string }) => void;
     } | null;

@@ -1,3 +1,4 @@
+import { applyUiLayer, readUiLayer, setStoredUiLayer, type UiLayer } from "../core/theme/ui-layer";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // 第 207 波：模型管理里要把内置免费模型插件的模型也列出来（它们不需要 API Key）
 import { freeModelPlugin } from "../core/free-model-plugin/service";
@@ -308,6 +309,8 @@ export function SettingsPanel({
    */
   const [contrastMode, setContrastMode] = useState<ContrastMode>(() => readCachedContrast());
   const [densityMode, setDensityMode] = useState<DensityMode>(() => readCachedDensity());
+  /* 界面版本（Batch 4A）：只切 data-ui 属性，不动任何业务逻辑。 */
+  const [uiLayer, setUiLayer] = useState<UiLayer>(() => readUiLayer());
   /**
    * 第 87 波：沙箱开关必须有自己的 state —— 原来直接读 `getSetting(...)`，
    * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
@@ -1840,6 +1843,33 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <option value="normal">{lang === "zh" ? "标准" : "Standard"}</option>
               <option value="high">{lang === "zh" ? "高对比（文字更黑、边框更实）" : "High contrast"}</option>
             </select>
+          </div>
+
+<div className="setting-group">
+            <label>{lang === "zh" ? "界面版本" : "UI version"}</label>
+            <div className="identity-options">
+              {(["v1", "v2"] as UiLayer[]).map((layer) => (
+                <button
+                  key={layer}
+                  className={`identity-option ${uiLayer === layer ? "selected" : ""}`}
+                  aria-pressed={uiLayer === layer}
+                  onClick={() => {
+                    applyUiLayer(undefined, layer);
+                    setStoredUiLayer(layer);
+                    setUiLayer(layer);
+                  }}
+                >
+                  {layer === "v1"
+                    ? lang === "zh" ? "经典" : "Classic"
+                    : lang === "zh" ? "新版（灰度）" : "New (preview)"}
+                </button>
+              ))}
+            </div>
+            <div className="setting-desc">
+              {lang === "zh"
+                ? "新版重做了配色、控件尺度与信息层级；同一个数据、同一套功能，随时可切回经典。"
+                : "The new layer reworks palette, control metrics and hierarchy. Same data and features; switch back anytime."}
+            </div>
           </div>
 
           <div className="setting-group">

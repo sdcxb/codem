@@ -530,7 +530,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Clean up the engine's per-session loop pool to free memory
     try {
       // ESM: dynamic import instead of require
-      import("./llm").then(({ getLLMEngine }) => {
+      import("./llm/engine-access").then(({ getLLMEngine }) => {
         const engine = getLLMEngine();
         engine.cleanupSessionLoop?.(sessionId);
         /*

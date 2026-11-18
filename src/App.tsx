@@ -65,7 +65,7 @@ async function getCordisContext(): Promise<Context> {
   //    它们在 loadFromEntries 时就需要 ctx.get('llmEngine') 返回有效实例。
   //    如果在 YAML 加载之后才 provide，这些插件会永远 PENDING。
   try {
-    const { getLLMEngine } = await import("./core/llm/index.ts");
+    const { getLLMEngine } = await import("./core/llm/engine-access");
     const engine = getLLMEngine(ctx);
     console.log('[Cordis] getLLMEngine succeeded, engine:', !!engine);
     ctx.provide('llmEngine', engine);

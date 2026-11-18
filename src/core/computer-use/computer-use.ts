@@ -405,7 +405,7 @@ export function createComputerSeeTool(): ToolDef {
         }
         const { getVisionProxy } = await import("../llm/vision-proxy");
         const vp = getVisionProxy();
-        const { getLLMEngine } = await import("../llm");
+        const { getLLMEngine } = await import("../llm/engine-access");
         const engine = getLLMEngine();
         const chatModel = engine.getDefaultModel();
         const chatProvider = engine.getDefaultProvider();

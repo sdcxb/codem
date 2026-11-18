@@ -117,7 +117,7 @@ async function resolveCredentials(
 
   let engineCfg: { apiKey: string; baseUrl?: string } | null = null;
   try {
-    const { getLLMEngine } = await import("../index");
+    const { getLLMEngine } = await import("../engine-access");
     engineCfg = getLLMEngine().getProviderConfig(provider);
   } catch {
     // engine 未初始化（如测试/启动早期）— 跳过
@@ -144,7 +144,7 @@ async function buildModelTarget(): Promise<ModelTarget> {
   let provider = "";
   let model = "";
   try {
-    const { getLLMEngine } = await import("../index");
+    const { getLLMEngine } = await import("../engine-access");
     const r = getLLMEngine().getConfiguredProvider("chat");
     provider = (r?.provider as any)?.id || "";
     model = (r?.model || "").trim();

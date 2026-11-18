@@ -228,7 +228,7 @@ export async function generateSummary(notebookId: string): Promise<void> {
       .join('\n\n');
 
     // 统一走 LLMEngine.getConfiguredProvider
-    const { getLLMEngine } = await import('../llm/index');
+    const { getLLMEngine } = await import('../llm/engine-access');
     const engine = getLLMEngine();
     const { provider, model } = engine.getConfiguredProvider('memory');
 
@@ -279,7 +279,7 @@ export async function generateGuidedQuestions(notebookId: string): Promise<strin
       .join('\n\n')
       .slice(0, 4000);
 
-const { getLLMEngine } = await import('../llm/index');
+const { getLLMEngine } = await import('../llm/engine-access');
 const engine = getLLMEngine();
 const { provider, model } = engine.getConfiguredProvider('subagent');
 
@@ -341,7 +341,7 @@ export async function generateSourceSummary(
   }
 
 try {
-const { getLLMEngine } = await import('../llm/index');
+const { getLLMEngine } = await import('../llm/engine-access');
 const engine = getLLMEngine();
 const resolved = engine.resolveSlot('subagent');
 const provider = engine.providers.get(resolved.providerId);
@@ -533,7 +533,7 @@ export async function generateStudioContent(
     .join('\n\n')
     .slice(0, 12000);
 
-  const { getLLMEngine } = await import('../llm/index');
+  const { getLLMEngine } = await import('../llm/engine-access');
   const engine = getLLMEngine();
   const { provider, model } = engine.getConfiguredProvider('chat');
 
@@ -617,7 +617,7 @@ export async function generateFlashcards(
       .slice(0, 8000);
   }
 
-  const { getLLMEngine } = await import('../llm/index');
+  const { getLLMEngine } = await import('../llm/engine-access');
   const engine = getLLMEngine();
   const { provider, model } = engine.getConfiguredProvider('chat');
 

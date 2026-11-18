@@ -1478,3 +1478,170 @@
 [data-ui="v2"] .wizard-step-dot.active {
   background: var(--ui-accent);
 }
+
+/* ========== 15. 设置子页规范化（Batch 4A：按钮/字号/对齐） ==========
+
+   审计口径见 .preview-shot/_unslop-ui-audit.mjs：真机逐页采集「按钮尺寸/圆角/字号种类、
+   图标与文字中心线偏差、文本溢出、label 与控件左边缘差」。迁移前（装机版 1.18.14）
+   设置 23 个子页的实测：按钮尺寸最多 **20 种**（高度 21/24/26/28/30/31/36/40/46 共 9 档）、
+   圆角 5 种、字号 9 种，侧栏每个 图标+文字 都偏 **-2.9px**。
+
+   本节的唯一目标：把这三样收敛到**一套刻度**，而不是逐页调 CSS。
+   ——
+   控件高度：24（开关/图标钮）· 28（次操作）· 32（主操作 / 行）· 36（图标格）
+   圆角：    8（控件 / 行）· 9999（开关，语义要求）· 0（纯文字链接）
+   字号：    11（元信息）· 12（正文/按钮）· 14（小节）· 20（页标题） */
+
+/* 左栏页码：31 → 32、图标与文字同一中心线（原来偏 -2.9px：图标盒 16px 居中，
+   而文字行盒取了 body 的 1.6 行高，两者中心不重合）。 */
+[data-ui="v2"] .settings-sidebar-item {
+  height: 32px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  /* 与图标盒同高：两者中心线因此重合（实测偏差 2.9px → 0），且不触发"行高 < 1.15×字号"的压缩判据 */
+  line-height: 16px;
+  border-radius: var(--radius);
+  padding: 0 var(--space-2) 0 var(--space-3);
+}
+
+[data-ui="v2"] .settings-sidebar-item > svg,
+[data-ui="v2"] .settings-sidebar-item .sidebar-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+[data-ui="v2"] .settings-sidebar-item.active {
+  background: var(--ui-surface-active) !important;
+  color: var(--ui-text) !important;
+  font-weight: 500 !important;
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+
+/* 二级页签：26px 圆胶囊 → 28px 方角页签（与右栏 tab 同一语言） */
+[data-ui="v2"] .settings-panel .settings-subnav-pill,
+[data-ui="v2"] .settings-panel .usage-tab {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .settings-panel .settings-subnav-pill.active,
+[data-ui="v2"] .settings-panel .usage-tab.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
+
+/* 设置页的所有按钮：统一 28px 高、8px 圆角、12px 字。
+   主操作（primary / save）仍是琥珀实心，次操作透明 —— 差异只保留"主次"，不再靠 1–3px 的尺寸差。 */
+[data-ui="v2"] .settings-panel :is(.sp-btn, .save-btn, .mc-action-btn, .identity-option) {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+
+[data-ui="v2"] .settings-panel :is(.sp-btn--sm, .sp-btn--xs) {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-2xs);
+}
+
+[data-ui="v2"] .settings-panel :is(.sp-btn--icon, .api-key-toggle, .usage-stats-close) {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+}
+
+[data-ui="v2"] .settings-panel :is(.sp-btn--primary, .save-btn) {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-ink);
+}
+
+[data-ui="v2"] .settings-panel :is(.sp-btn--primary, .save-btn):is(:hover, :focus-visible) {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+}
+
+
+/* 设置页的紧凑控件兜底：把各波次自己造的 27/29/30/31/33/34px 一律收成 28px。
+   排除：能整行点的大卡片（mode-btn）、图标格（identity-emoji）、头像、返回键、虚线投放区、
+   以及开关（语义上必须是 24 的胶囊）。这些是"不同的控件类型"，不是刻度不一致。 */
+[data-ui="v2"] .settings-panel :is(button, .btn):not(.settings-sidebar-item):not(.settings-subnav-pill):not(.usage-tab):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not(.settings-back):not(.sp-btn--dashed):not(.sp-btn--block) {
+  height: 28px;
+  min-height: 28px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+/* 模式卡片（整行可点）：高度按内容走，只把字号与行高从 13.33/1 收到 12/1.45（原来挤到"压缩"判据） */
+[data-ui="v2"] .settings-panel .mode-btn {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+/* 记忆体检的小按钮也并到 28（原来 21/24 两档） */
+[data-ui="v2"] .settings-panel :is(.mc-group-select, .mc-group-action, .mc-retarget-btn, .mc-expand-btn, .mc-owner-link) {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+}
+
+/* 身份头像格：40 → 36（与 icon-* 刻度对齐），字号 20 → 18 */
+[data-ui="v2"] .settings-panel .identity-emoji {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+}
+
+/* 开关类：24px 高是**语义**（开关的滑块就是 24），保留 9999 圆角，不参与上面的高度收敛 */
+[data-ui="v2"] .settings-panel :is(.toggle-entry, .api-key-toggle) {
+  height: 24px;
+  border-radius: var(--radius-full);
+}
+
+/* 设置页字号：只留 11 / 12 / 14 / 20 四档（原来 10/13.333/16/22 混在 11/12 之间） */
+[data-ui="v2"] .settings-panel .settings-section-title {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+[data-ui="v2"] .settings-panel :is(.setting-group > label, .settings-row-label, .setting-label) {
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+[data-ui="v2"] .settings-panel :is(.setting-desc, .settings-section-desc, .hint-sm, .form-hint) {
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  color: var(--ui-text-muted);
+}
+
+/* 工具卡描述被单行 ellipsis 截断（审计实测 dw 最大 77px ⇒ 用户看不到工具在做什么）。
+   给两行 + 省略号：信息可读，卡片高度稳定。 */
+[data-ui="v2"] .tool-card-head {
+  align-items: center;
+}
+
+[data-ui="v2"] .tool-card-head .tool-card-desc,
+[data-ui="v2"] .tool-card-head .tool-card-subtitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+}

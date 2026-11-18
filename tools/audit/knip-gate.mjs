@@ -22,6 +22,7 @@
  *   node tools/audit/knip-gate.mjs            # 对账（verify 里跑）
  *   node tools/audit/knip-gate.mjs --update   # 实测后重写基线（必须写明理由）
  */
+import { scanReachability } from "./reachability-scan.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -129,7 +130,12 @@ if (knipCfg.error) problems.push(`knip.json 解析失败：${JSON.stringify(knip
 const entryBarrels = (knipCfg.config?.entry ?? []).filter((e) => e.endsWith("/index.ts"));
 const allowKeys = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, "reachability-allowlist.json"), "utf8")).entries ?? {});
 const allowBarrels = allowKeys.filter((k) => k.endsWith("/index.ts"));
-const onlyEntry = entryBarrels.filter((f) => !allowBarrels.includes(f));
+/* 第 4A 波：门面可以**可达**（例如 core/llm/index.ts 被组件静态 import）。
+   可达的门面不该登记进白名单 —— 可达性门禁会把"文件已可达"判成过期条目。
+   所以这里只要求"**不可达**的门面必须在白名单里"，可达的那部分用扫描器现算，不靠猜。 */
+const scan = scanReachability();
+const unreachable = new Set(scan.unreachable ?? []);
+const onlyEntry = entryBarrels.filter((f) => !allowBarrels.includes(f) && unreachable.has(f));
 const onlyAllow = allowBarrels.filter((f) => !entryBarrels.includes(f));
 if (onlyEntry.length) problems.push(`knip entry 里的模块门面没在可达性白名单里登记（谁替它记账？）：${onlyEntry.join(", ")}`);
 if (onlyAllow.length) problems.push(`可达性白名单里的门面没登记成 knip entry（knip 会把它整个藏起来）：${onlyAllow.join(", ")}`);
@@ -137,7 +143,8 @@ if (onlyAllow.length) problems.push(`可达性白名单里的门面没登记成 
 console.log("\nknip 棘轮对账：");
 console.log(`  必须为 0：${MUST_BE_ZERO.map((k) => `${k}=${counts[k] ?? 0}`).join("  ")}`);
 console.log(`  棘轮：${RATCHET.map((k) => `${k}=${counts[k] ?? 0}/${baseline.counts[k] ?? 0}`).join("  ")}`);
-console.log(`  门面交叉对账：knip entry=${entryBarrels.length} / 可达性白名单=${allowBarrels.length}（两侧必须相等）`);
+const reachableBarrels = entryBarrels.filter((f) => unreachable && !unreachable.has(f));
+console.log(`  门面交叉对账：knip entry=${entryBarrels.length} / 可达性白名单=${allowBarrels.length} / 可达门面=${reachableBarrels.length}（可达的无需登记）`);
 
 if (problems.length) {
   console.log("\n❌ knip 发现增长 / 出现了本应为 0 的类别：");

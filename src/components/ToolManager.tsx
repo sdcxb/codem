@@ -211,12 +211,15 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                       {catInfo.label}
                     </span>
                   </div>
+                  {/* 第 4A 波（界面审计实测）：原来这里是"单行 + 手截 100 字 + 省略号"，
+                      实测 10 条描述被裁掉 18–77px（"Execute a bash command in the terminal (…"），
+                      用户看不到这个工具到底做什么。改成两行截断：信息可读，行高稳定。 */}
                   <div style={{
                     fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2,
+                    overflow: "hidden", wordBreak: "break-word", lineHeight: 1.45,
                   }}>
-                    {tool.description.substring(0, 100)}
-                    {tool.description.length > 100 ? "..." : ""}
+                    {tool.description}
                   </div>
                 </div>
                 {/* Enable/Disable toggle */}
