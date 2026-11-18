@@ -192,8 +192,8 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
       // 可见反馈：不静默吞掉第二次点击
       setActionMsg(
         lang === "zh"
-          ? "⚠ 上一个操作还在进行中，请稍候…"
-          : "⚠ Previous action still in flight, please wait…",
+          ? "上一个操作还在进行中，请稍候…"
+          : "Previous action still in flight, please wait…",
       );
       setTimeout(() => setActionMsg(""), 3000);
       return;
@@ -206,10 +206,10 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
         ? await retryWorkflowRun(owner, repo, runId)
         : await cancelWorkflowRun(owner, repo, runId);
       if (success) {
-        setActionMsg(`✅ ${(kind === "retry" ? S.cicd.retry : S.cicd.cancelRun)[lang]} OK`);
+        setActionMsg(`${(kind === "retry" ? S.cicd.retry : S.cicd.cancelRun)[lang]} OK`);
         setTimeout(() => loadRuns(), 1500);
       } else {
-        setActionMsg(`❌ ${error}`);
+        setActionMsg(`${error}`);
         reportActionFailure(
           `cicd.${kind}WorkflowRun`,
           new Error(String(error || "unknown error")),
@@ -253,7 +253,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
         });
         if (filePath) {
           await invoke("write_text_file", { path: filePath, content: generatedWorkflow.content });
-          setActionMsg(`✅ ${S.cicd.saved[lang]}`);
+          setActionMsg(`${S.cicd.saved[lang]}`);
         }
       } else {
         // Browser fallback — download as blob
@@ -264,10 +264,10 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
         a.download = generatedWorkflow.path.split("/").pop() || "ci.yml";
         a.click();
         URL.revokeObjectURL(url);
-        setActionMsg(`✅ ${S.cicd.saved[lang]}`);
+        setActionMsg(`${S.cicd.saved[lang]}`);
       }
     } catch (err: any) {
-      setActionMsg(`❌ ${S.cicd.saveError[lang]}: ${err.message || err}`);
+      setActionMsg(`${S.cicd.saveError[lang]}: ${err.message || err}`);
     }
     setTimeout(() => setActionMsg(""), 3000);
   }, [generatedWorkflow, lang]);
@@ -301,7 +301,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
         {/* Error */}
         {error && (
           <div className="cicd-error">
-            ⚠ {error}
+            {error}
           </div>
         )}
 

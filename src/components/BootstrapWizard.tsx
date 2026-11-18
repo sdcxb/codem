@@ -139,7 +139,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
               <h2>我是什么？</h2>
               <p>我是一种什么样的存在？</p>
               <div className="bootstrap-options">
-                {["AI 助手", "数字精灵", "代码伙伴", "赛博管家", "电子幽灵"].map((opt) => (
+                {["AI 助手", "文档助手", "代码伙伴", "运维助手", "研究助手"].map((opt) => (
                   <button key={opt} className={`bootstrap-option ${creature === opt ? "selected" : ""}`} onClick={() => setCreature(opt)}>
                     {opt}
                   </button>

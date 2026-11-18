@@ -1356,3 +1356,125 @@
   border-color: var(--ui-line-strong);
   color: var(--ui-danger);
 }
+
+/* ========== 14. 设置 / 引导 / Git 环境（Batch 3） ========== */
+
+/* 设置面板：14px 圆角、中性面、标题 20px。左栏是"页码"而不是"图标墙"。 */
+[data-ui="v2"] .settings-panel,
+[data-ui="v2"] .settings-overlay .modal-panel {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+}
+
+[data-ui="v2"] .settings-header,
+[data-ui="v2"] .settings-sidebar {
+  background: var(--ui-surface);
+  border-color: var(--ui-line);
+}
+
+[data-ui="v2"] .settings-title,
+[data-ui="v2"] .settings-section-title {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+[data-ui="v2"] .settings-section-title {
+  font-size: var(--fs-lg);
+}
+
+[data-ui="v2"] .settings-nav-item {
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .settings-nav-item:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .settings-nav-item.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+
+[data-ui="v2"] .settings-divider,
+[data-ui="v2"] .settings-row,
+[data-ui="v2"] .setting-row {
+  border-color: var(--ui-line);
+}
+
+[data-ui="v2"] .settings-section-desc,
+[data-ui="v2"] .setting-desc {
+  color: var(--ui-text-muted);
+}
+
+/* 身份（人设/头像）选择：按钮是"选项"，不是彩色胶囊 */
+[data-ui="v2"] .identity-option {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .identity-option:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .identity-option.selected {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .identity-emoji {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  background: none;
+}
+
+[data-ui="v2"] .identity-emoji.selected {
+  border-color: var(--ui-text);
+}
+
+/* 开关 / 下拉 / 输入：统一 8px 圆角与发丝线；焦点只改边框 */
+[data-ui="v2"] .settings-panel :is(.settings-input, .settings-select, .setting-input, input[type="text"], input[type="number"], textarea, select) {
+  border-color: var(--ui-line);
+  border-radius: var(--radius);
+  background: var(--ui-surface-raised);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .settings-panel :is(.settings-input, .settings-select, .setting-input, input[type="text"], input[type="number"], textarea, select):focus {
+  border-color: var(--ui-line-strong);
+  box-shadow: none;
+  outline: none;
+}
+
+/* 引导向导：步骤条与卡片同语言 */
+[data-ui="v2"] .bootstrap-wizard,
+[data-ui="v2"] .wizard-panel {
+  background: var(--ui-bg);
+}
+
+[data-ui="v2"] .wizard-card,
+[data-ui="v2"] .bootstrap-step {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+}
+
+[data-ui="v2"] .wizard-primary,
+[data-ui="v2"] .wizard-next {
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  border-color: var(--ui-accent);
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .wizard-step-dot.active {
+  background: var(--ui-accent);
+}

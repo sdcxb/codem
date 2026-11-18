@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-18T06:18:23.798Z",
+  "at": "2026-11-18T06:29:26.998Z",
   "$comment": "UI 文案/emoji 棘轮基线（只许降）。由 src/test/ui-no-emoji.test.ts 与 src/test/ui-copy-guard.test.ts 读取；UNSLOP_UPDATE_BASELINE=1 时重写。",
   "scope": {
     "roots": [
@@ -12,20 +12,19 @@
     ]
   },
   "emoji": {
-    "lines": 252,
-    "files": 48,
+    "lines": 233,
+    "files": 47,
     "byFile": {
       "packages/ui/src/diff-view.tsx": 1,
       "src/App.tsx": 23,
       "src/components/BootstrapWizard.tsx": 4,
-      "src/components/CicdPanel.tsx": 8,
       "src/components/ConfigEditor.tsx": 1,
       "src/components/CorrectionModeToggle.tsx": 1,
       "src/components/CorrectionModelConfig.tsx": 1,
       "src/components/FileEditor.tsx": 1,
       "src/components/FileUpload.tsx": 1,
       "src/components/GenerateModeSelector.tsx": 3,
-      "src/components/GitEnvSettings.tsx": 10,
+      "src/components/GitEnvSettings.tsx": 5,
       "src/components/GitInfoPanel.tsx": 17,
       "src/components/GoalModeBar.tsx": 6,
       "src/components/HeartbeatMonitor.tsx": 3,
@@ -49,7 +48,7 @@
       "src/components/RecoveryPanel.tsx": 6,
       "src/components/RetryConfigPanel.tsx": 4,
       "src/components/ScrollbarMarkers.tsx": 1,
-      "src/components/SettingsPanel.tsx": 41,
+      "src/components/SettingsPanel.tsx": 35,
       "src/components/SkillManager.tsx": 5,
       "src/components/SourceViewer.tsx": 1,
       "src/components/TerminalPanel.tsx": 2,

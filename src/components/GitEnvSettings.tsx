@@ -38,7 +38,7 @@ export function GitConfigSection() {
 
   return (
     <div className="setting-group">
-      <div className="settings-section-title">{zh ? "🌿 Git 偏好配置" : "🌿 Git Preferences"}</div>
+      <div className="settings-section-title">{zh ? "Git 偏好配置" : "Git Preferences"}</div>
       <div className="git-env-desc">
         {zh ? "配置 Git 操作偏好。AI 执行 Git 命令时会遵循这些规则。" : "Configure Git preferences. The AI follows these rules for Git operations."}
       </div>
@@ -110,7 +110,7 @@ export function GitConfigSection() {
         <div className="git-env-toggle-row">
           <div>
             <label className="git-env-toggle-label" htmlFor="git-auto-commit">
-              {zh ? "🔄 自动 Commit" : "🔄 Auto Commit"}
+              {zh ? "自动 Commit" : "Auto Commit"}
             </label>
             <div className="git-env-hint">
               {zh ? "Agent 每轮修改后自动 git add + commit（可通过 LLM 生成提交信息）" : "Auto git add + commit after each agent turn (LLM-generated message)"}
@@ -189,7 +189,7 @@ export function GitConfigSection() {
         onClick={handleSave}
         className="panel-btn panel-btn--primary git-env-save-btn"
       >
-        {saved ? (zh ? "✅ 已保存" : "✅ Saved") : (zh ? "保存 Git 配置" : "Save Git Config")}
+        {saved ? (zh ? "已保存" : "Saved") : (zh ? "保存 Git 配置" : "Save Git Config")}
       </button>
     </div>
   );
@@ -276,7 +276,7 @@ export function EnvironmentConfigSection() {
 
   return (
     <div className="setting-group">
-      <div className="settings-section-title">{zh ? "🏗️ 环境脚本配置" : "🏗️ Environment Scripts"}</div>
+      <div className="settings-section-title">{zh ? "环境脚本配置" : "Environment Scripts"}</div>
       <div className="git-env-desc">
         {zh
           ? "配置项目环境脚本。打开/切换项目时自动执行设置和清理脚本，还可以定义快捷操作。"
@@ -384,7 +384,7 @@ export function EnvironmentConfigSection() {
         onClick={handleSave}
         className="panel-btn panel-btn--primary git-env-save-btn"
       >
-        {saved ? (zh ? "✅ 已保存" : "✅ Saved") : (zh ? "保存环境配置" : "Save Environment Config")}
+        {saved ? (zh ? "已保存" : "Saved") : (zh ? "保存环境配置" : "Save Environment Config")}
       </button>
     </div>
   );

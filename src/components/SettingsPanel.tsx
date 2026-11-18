@@ -604,17 +604,17 @@ export function SettingsPanel({
   const describeWriteFailure = (report: SettingsWriteReport, locale: Language): string => {
     if (!report.accepted) {
       return locale === "zh"
-        ? "⚠️ 未确认保存：存储端口不可用，设置只存在于内存里（重启会丢）"
-        : "⚠️ Not confirmed: storage port unavailable, changes live in memory only";
+        ? "未确认保存：存储端口不可用，设置只存在于内存里（重启会丢）"
+        : "Not confirmed: storage port unavailable, changes live in memory only";
     }
     if (report.newAreas.length > 0) {
       return locale === "zh"
-        ? `⚠️ 未确认保存：${report.newAreas.join("、")} 落库失败（重启会回到旧值）`
-        : `⚠️ Not confirmed: failed to persist ${report.newAreas.join(", ")} (reverts on restart)`;
+        ? `未确认保存：${report.newAreas.join("、")} 落库失败（重启会回到旧值）`
+        : `Not confirmed: failed to persist ${report.newAreas.join(", ")} (reverts on restart)`;
     }
     return locale === "zh"
-      ? `⚠️ 未确认保存：仍有 ${report.pending} 条写入未落库（超时）`
-      : `⚠️ Not confirmed: ${report.pending} write(s) still pending (timed out)`;
+      ? `未确认保存：仍有 ${report.pending} 条写入未落库（超时）`
+      : `Not confirmed: ${report.pending} write(s) still pending (timed out)`;
   };
 
   const handleLogin = async () => {
@@ -2045,7 +2045,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <div className="setting-group">
             <label>{S.settings.whatAmI[lang]}</label>
             <div className="identity-options">
-              {["AI 助手", "数字精灵", "代码伙伴", "赛博管家", "电子幽灵"].map((opt) => (
+              {["AI 助手", "文档助手", "代码伙伴", "运维助手", "研究助手"].map((opt) => (
                 <button
                   key={opt}
                   className={`identity-option ${identity.creature === opt ? "selected" : ""}`}
