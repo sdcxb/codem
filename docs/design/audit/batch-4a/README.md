@@ -61,6 +61,15 @@
 6. 设置 → 外观新增「界面版本：经典 / 新版（灰度）」开关（写 `localStorage`，不改任何业务逻辑），
    让这套改动**在界面里可达**，而不是只能改 localStorage。
 
+
+## 弹窗（第二轮）
+
+`_unslop-dialog-audit.mjs` 逐个打开搜索 / 任务中心 / 记忆 / 插件管理 / 设置，采 `.modal-panel` 尺寸 + 控件刻度。
+完整 before/after 见 [`after-dialogs.md`](after-dialogs.md)。一句话：**列表型弹窗原来有 1000 与 1180 两种宽度、
+控件高度 9 档、面板圆角 10/14 两档**；规范化后统一 1180 上限、14px 圆角、控件 28/8px/12px。
+
+对应实现：`src/styles/unslop-v2.css` §16（与 §15 同一套刻度）。
+
 ## 复现
 
 ```powershell

@@ -1645,3 +1645,74 @@
   white-space: normal;
   word-break: break-word;
 }
+
+/* ========== 16. 弹窗规范化（Batch 4A 续） ==========
+
+   审计（_unslop-dialog-audit.mjs，真机逐个打开）实测：
+   搜索 660×443 · 任务中心 1180×720 · 记忆 1000×787 · 插件管理 1000×787 · 设置 1575×940，
+   面板圆角 10/14 两档，同一批弹窗里的控件高度 15/21/23/25/26/27/31/33/40 九档、字号 10/11/12/13/13.33 五档
+   —— 这就是「按钮风格不一致」和「窗口忽大忽小」在弹窗上的形态。
+
+   目标（与方向稿 §104–108 一致）：面板 14px；控件 28/32 + 8px + 12px；开关/头像 9999；
+   弹窗尺寸只保留四档（480 / 660 / 1000 / 1180），同一内容类型不再随实现波次变化。 */
+
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .settings-panel, .task-center-panel) {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--ui-text) 18%, transparent);
+}
+
+/* 尺寸只留四档：小（确认/搜索）· 中（任务/列表）· 大（设置/记忆）· 满（工作台面板） */
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .task-center-panel):not(.settings-panel) {
+  max-width: min(1180px, calc(100vw - 64px));
+  max-height: calc(100vh - 96px);
+}
+
+[data-ui="v2"] .search-dialog {
+  width: 660px;
+}
+
+[data-ui="v2"] :is(.modal-panel, .modal-editor) > :is(.modal-header, .modal-head) {
+  border-bottom: 1px solid var(--ui-line);
+  padding: var(--space-4) var(--space-5);
+}
+
+[data-ui="v2"] :is(.modal-panel, .modal-editor) > :is(.modal-footer, .modal-actions) {
+  border-top: 1px solid var(--ui-line);
+  padding: var(--space-3) var(--space-5);
+}
+
+/* 弹窗内的紧凑控件：与设置页同一套刻度（28/32 · 8px · 12px），排除整行卡片与开关 */
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .task-center-panel) :is(button, .btn):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not([class*="toggle"]):not([class*="switch"]) {
+  height: 28px;
+  min-height: 28px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog) :is(button, .btn):is([class*="primary"], [class*="save"], [class*="confirm"]):not([class*="ghost"]) {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-ink);
+}
+
+/* 弹窗内的输入/下拉：raised 面 + 发丝线，焦点只改边框 */
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .task-center-panel) :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  border-color: var(--ui-line);
+  border-radius: var(--radius);
+  background: var(--ui-surface-raised);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog) :is(input, textarea, select):focus {
+  border-color: var(--ui-line-strong);
+  box-shadow: none;
+  outline: none;
+}
+
+/* 弹窗遮罩：统一走 token，不再各自写半透明黑 */
+[data-ui="v2"] :is(.modal-overlay, .settings-overlay, .search-overlay) {
+  background: var(--ui-backdrop);
+}
