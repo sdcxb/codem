@@ -1318,7 +1318,7 @@ return true;
                 <div className={`publish-result ${publishResult.success ? "success" : "error"}`}>
                   {publishResult.success ? (
                     <>
-                      <p>✅ 发布成功！</p>
+                      <p>发布成功</p>
                       {publishResult.url && (
                         <a href={publishResult.url} target="_blank" rel="noopener noreferrer">
                           {publishResult.url}

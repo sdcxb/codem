@@ -89,12 +89,12 @@ const PET_STATE_TEXT: Record<PetState, string> = {
   idle: "空闲中",
   thinking: "思考中…",
   working: "工作中…",
-  happy: "任务完成！",
+  happy: "任务完成",
   sad: "出错了",
   sleeping: "休眠中",
   waiting: "等待中",
   review: "请审查变更",
-  waving: "任务完成！",
+  waving: "任务完成",
 };
 
 // ========== 气泡文本测量（canvas 精确测量） ==========

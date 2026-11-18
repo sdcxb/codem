@@ -316,7 +316,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
    */
   async handleResetReload(): Promise<void> {
     const confirmText =
-      "将恢复**界面设置**为默认值（主题 / 皮肤 / 语言 / 字号 / 字体 / 显示模式 / 关闭行为 / 侧栏宽度），" +
+      "将恢复界面设置为默认值（主题 / 皮肤 / 语言 / 字号 / 字体 / 显示模式 / 关闭行为 / 侧栏宽度），" +
       "并清除本地界面缓存后重新加载。\n\n" +
       "不会动：安全策略、模型与 API Key、会话与项目数据。\n\n确定继续？";
     /*
@@ -411,7 +411,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
               color: "var(--text-secondary, #a8a8a8)",
             }}
           >
-            应用界面遇到一个意外错误。你的会话数据已保存在本地数据库中，可以放心重试或重新加载。
+            应用界面遇到一个意外错误。你的会话数据已保存在本地数据库中，可以重试或重新加载。
           </p>
           <p style={{ margin: "0 0 16px", fontSize: "var(--fs-sm)", color: "var(--text-muted, #7a7a7a)" }}>
             若问题反复出现，可尝试「重置界面设置并重新加载」，或前往 设置 → 会话恢复 查看历史快照。

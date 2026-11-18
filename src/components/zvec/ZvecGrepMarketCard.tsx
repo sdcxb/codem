@@ -2,7 +2,7 @@
  * ZvecGrepMarketCard — 插件市场「第三方运行时增强」卡片。
  *
  * zvec-grep（zg）语义检索运行时：安装到用户数据目录（不进安装包），
- * 以 MCP stdio 接入；卡片承担：状态展示、在线一键安装、离线 zip 导入、
+ * 以 MCP stdio 接入；卡片承担：状态展示、在线安装、离线 zip 导入、
  * 为当前项目建立/重建索引（模型可选）、卸载。
  *
  * 与内置 grep 双轨：精确锚点仍用 grep；语义/跨文件检索由模型在对话中
@@ -175,7 +175,7 @@ export function ZvecGrepMarketCard() {
       {status && !installed && (
         <div className="market-skill-card-footer" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="save-btn" style={btnPrimary} onClick={handleInstall} disabled={busy}>
-            {zh ? "一键安装（在线）" : "Install (online)"}
+            {zh ? "安装（在线）" : "Install (online)"}
           </button>
           <button className="save-btn" style={btnGhost} onClick={handleImportZip} disabled={busy}>
             {zh ? "导入离线包 (.zip)…" : "Import offline .zip…"}

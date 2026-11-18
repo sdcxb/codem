@@ -100,10 +100,10 @@ function pendingScopeLabel(entry: MemoryEntry): string {
 /** 徽标上那句"批准之后会怎样"（用户判断的依据就在这句话里） */
 function pendingScopeTitle(entry: MemoryEntry): string {
   switch (entry.scope) {
-    case "platform": return "平台级：批准后对**所有项目、所有对话**生效";
-    case "project": return "项目级：批准后对**这个项目以后的每个对话**生效";
-    case "team": return "团队级：批准后对**该团队（同项目）的成员请求**生效（跨群共享）";
-    case "conversation": return "对话级：批准后只对**当前这个对话**生效";
+    case "platform": return "平台级：批准后对所有项目、所有对话生效";
+    case "project": return "项目级：批准后对这个项目以后的每个对话生效";
+    case "team": return "团队级：批准后对该团队（同项目）的成员请求生效（跨群共享）";
+    case "conversation": return "对话级：批准后只对当前这个对话生效";
     default: return "作用域无法识别：批准后也不会进上下文（可先归位或删除）";
   }
 }
@@ -714,7 +714,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     const service = getMemoryService();
     const landed = await service.flushPendingPersist();
     if (!landed) {
-      setNotice(`${what}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这次改动会失效）。`);
+      setNotice(`${what}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这次改动会失效）。`);
     }
   };
 
@@ -846,14 +846,14 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     setNotice(
       landed
         ? result.message
-        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
+        : `${result.message}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
     );
     setSelectedPending(new Set());
     loadEntries();
   };
 
   /**
-   * ★ 第 229 波：**一键全部批准**（用户要求「面板少动手」）。
+   * ★ 第 229 波：**全部批准**（用户要求「面板少动手」）。
    *
    * ## 与「批量同意（N）」的区别（不是重复功能，别合并）
    *
@@ -871,15 +871,15 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     const landed = await service.flushPendingPersist();
     setNotice(
       landed
-        ? `一键全部批准：${result.message}`
-        : `一键全部批准：${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
+        ? `全部批准：${result.message}`
+        : `全部批准：${result.message}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
     );
     setSelectedPending(new Set());
     loadEntries();
   };
 
   /**
-   * ★ 第 229 波：**一键全部拒绝**（删掉当前待批准区的全部条目）。
+   * ★ 第 229 波：**全部拒绝**（删掉当前待批准区的全部条目）。
    *
    * ## 为什么这个动作**必须**有二次确认，而勾选版没有
    *
@@ -904,8 +904,8 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     const landed = await service.flushPendingPersist();
     setNotice(
       landed
-        ? `一键全部拒绝：${result.message}`
-        : `一键全部拒绝：${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
+        ? `全部拒绝：${result.message}`
+        : `全部拒绝：${result.message}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
     );
     setSelectedPending(new Set());
     loadEntries();
@@ -923,7 +923,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     setNotice(
       landed
         ? result.message
-        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
+        : `${result.message}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
     );
     setSelectedPending(new Set());
     loadEntries();
@@ -948,7 +948,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     setNotice(
       landed
         ? result.message
-        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
+        : `${result.message}，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
     );
     loadEntries();
   };
@@ -962,13 +962,13 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
   const handleConsolidate = () => {
     const result = getLLMEngine().consolidateMemories({ sessionId });
     const msg =
-      `整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条；被合并的条目已**归档**，未删除）、` +
+      `整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条；被合并的条目已归档，未删除）、` +
       `按时间归档 ${result.staleArchived} 条超过 90 天的自动条目、按容量归档 ${result.capacityArchived} 条。\n` +
       `手动条目、对话级条目与待批准条目一条未动；容量归档被拒绝的桶：${result.capacityBlocked} 个。\n` +
       (result.undoToken
-        ? `本次整理**可撤销**（${result.undoToken}，24 小时内有效）：撤销会把每一条恢复到整合前的快照（id 不变）。`
+        ? `本次整理可撤销（${result.undoToken}，24 小时内有效）：撤销会把每一条恢复到整合前的快照（id 不变）。`
         : "本次没有生成撤销记录（设置写入失败或没有任何变更）。") +
-      `\n说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），整理只在你点这个按钮或调用 /memory consolidate 时发生。`;
+      `\n说明：自动提取流程不再自动跑整合（以前每回合跑一次且静默删除），整理只在你点这个按钮或调用 /memory consolidate 时发生。`;
     void alertDialog(msg);
     loadEntries();
   };
@@ -1012,7 +1012,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     setNotice(
       landed
         ? `写入审批已更新（已确认落库）：${state}。开启时自动提取只写入待批准区，未批准不进上下文。`
-        : `写入审批${state}，但**未落库**（重启后会回到原来的设置）。请检查存储是否可用后重试。`,
+        : `写入审批${state}，但未落库（重启后会回到原来的设置）。请检查存储是否可用后重试。`,
     );
   };
 
@@ -1315,7 +1315,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
         {previewTruncated ? "…" : ""}
       </div>
       {/*
-        UI-1：**截断原因必须可见**（超预算 / 单条上限），且与「查看全文」同一个判定链。
+        UI-1：截断原因必须可见（超预算 / 单条上限），且与「查看全文」同一个判定链。
         没有截断的短条目 ⇒ `reasons` 为空、`previewTruncated=false` ⇒ 下面两块都不渲染。
       */}
       {reasons.length > 0 && (
@@ -1358,7 +1358,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
             {entry.tags.slice(0, 3).join(", ")}
           </span>
         )}
-        {/* P1-3：归档条目必须有一条**真的可点**的恢复入口（承诺「归档可恢复」不能只写在文案里） */}
+        {/* P1-3：归档条目必须有一条真的可点的恢复入口（承诺「归档可恢复」不能只写在文案里） */}
         {isArchivedMemoryEntry(entry) && (
           <button
             type="button"
@@ -1472,15 +1472,15 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
           className="memory-demoted-toggle"
           aria-expanded={demotedOpen}
           onClick={() => setDemotedOpen((open) => !open)}
-          title="这些条目在待批准积压达到上限时被降级为对话级、并且**直接生效**了 —— 点开看是哪几条"
+          title="这些条目在待批准积压达到上限时被降级为对话级、并且直接生效了 —— 点开看是哪几条"
         >
           {demotedOpen ? "收起本会话自动降级的条目" : "本会话已自动降级 " + n + " 条（查看）"}
         </button>
         {demotedOpen && (
           <div className="memory-demoted-body">
             <div className="memory-demoted-hint">
-              这 {n} 条没能按原作用域写入（待批准积压达到上限，或这次提取**没有项目身份**），
-              被**降级为对话级直接生效** —— 它们已进入本会话上下文（未经你逐条批准）。
+              这 {n} 条没能按原作用域写入（待批准积压达到上限，或这次提取没有项目身份），
+              被降级为对话级直接生效 —— 它们已进入本会话上下文（未经你逐条批准）。
               要撤销就删掉它们，或把作用域改回原样。
             </div>
             {demotedBacklog.map((entry) => (
@@ -1539,7 +1539,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
                 整合
               </button>
               {/*
-                P1-3：撤销入口只在**真的有可撤销记录**时出现（不给点了没反应的按钮）。
+                P1-3：撤销入口只在真的有可撤销记录时出现（不给点了没反应的按钮）。
                 已过期仍然显示（置灰 + 说明），因为"上一次整理过期了"本身是用户需要知道的事实。
               */}
               {consolidationUndo && (
@@ -1617,7 +1617,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
           </div>
         )}
         {/*
-          O-36：**体积**这一格是"记忆镜像字节预算"的用户可见出口。
+          O-36：体积这一格是"记忆镜像字节预算"的用户可见出口。
           没有它时，体积只存在于 `stats().memoryBytes` 里 —— 全仓一个消费方都没有，
           用户只感觉"记忆越多越卡"而看不到原因（这正是 O-36 的另一半）。
         */}
@@ -1630,18 +1630,18 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       </div>
 
       {/*
-        P2-B（24 §P2「观测面板」）：可观测指标的**最小可见出口**。
+        P2-B（24 §P2「观测面板」）：可观测指标的最小可见出口。
 
         被守的形态（改前）：注入条数/字符/截断、检索命中、读取命中都只存在于服务内部，
         面板格子里只有"总计/各作用域/待批准/归档/体积"—— 用户无法回答
         「这一轮到底注入了多少记忆」「我刚才那次检索命中了吗」。
 
         三条纪律：
-        - **与上面同一次刷新、同一个 ctx**（`memoryObservability(ctx)`）：指标不许另算一遍，
+        - 与上面同一次刷新、同一个 ctx（`memoryObservability(ctx)`）：指标不许另算一遍，
           也不许跨项目取数（归档数 / usage top 都只在当前可见范围内）；
-        - 数字为 0 时**照常显示 0**（「没有注入」是事实，不是空数据），另给一行空态说明
+        - 数字为 0 时照常显示 0（「没有注入」是事实，不是空数据），另给一行空态说明
           解释「什么时候才会有数」（否则用户以为坏了）；
-        - 只展示**计数**，不展示正文（这个面板不是记忆列表的重复，点条目看正文仍在下面）。
+        - 只展示计数，不展示正文（这个面板不是记忆列表的重复，点条目看正文仍在下面）。
       */}
       {observability && (
         <>
@@ -1702,43 +1702,43 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       )}
 
       {/*
-        O-36：超预算 ⇒ 一条**可操作**的说明（不是"失败"，因为什么都没丢）。
-        数字与上面那格、与上报通道**同一个来源**（`getByteStats()`）。
+        O-36：超预算 ⇒ 一条可操作的说明（不是"失败"，因为什么都没丢）。
+        数字与上面那格、与上报通道同一个来源（`getByteStats()`）。
       */}
       {bytes && bytes.overBy > 0 && (
         <div className="memory-notice">
           记忆体积约 {formatBytes(bytes.payloadBytes)}，已超过预算 {formatBytes(bytes.budgetBytes)}（超出{" "}
           {formatBytes(bytes.overBy)}）；最大的一块是「{bytes.biggestBucket}」（{formatBytes(bytes.biggestBucketBytes)}）。
-          超预算**不会删除或截断任何条目**；要缩小可删掉不再需要的条目，或先「导出为 JSON」留档再清理。
+          超预算不会删除或截断任何条目；要缩小可删掉不再需要的条目，或先「导出为 JSON」留档再清理。
         </div>
       )}
 
       {/*
-        S4：默认审批开启 ⇒ 自动记忆先进待批准区、**不进上下文**。
+        S4：默认审批开启 ⇒ 自动记忆先进待批准区、不进上下文。
         旧实现只有「待批准」数字，没有一句解释 ⇒ 用户以为自动记忆坏了。
         这里给一条常驻说明（有 pending 时强调并给出条数）。
       */}
       <div className={`memory-pending-hint ${pending.length > 0 ? "active" : ""}`}>
         {pending.length > 0
-          ? `有 ${pending.length} 条自动记忆等待批准：它们**现在不会进上下文**，批准后才生效（手动条目不受影响）。可以逐条批准/拒绝，也可以勾选后批量处置（含全选）。`
-          : `自动提取的记忆按上面「写入审批」的开关处理：**对话级默认直接生效**（只跟本次对话有关的事实不再打扰你），项目级 / 平台级默认先进待批准区、批准后才进上下文。`}
+          ? `有 ${pending.length} 条自动记忆等待批准：它们现在不会进上下文，批准后才生效（手动条目不受影响）。可以逐条批准/拒绝，也可以勾选后批量处置（含全选）。`
+          : `自动提取的记忆按上面「写入审批」的开关处理：对话级默认直接生效（只跟本次对话有关的事实不再打扰你），项目级 / 平台级默认先进待批准区、批准后才进上下文。`}
       </div>
 
       {/*
-        第 230 波（用户拍板）：**本处为 0、全局 > 0** 时补一行。
+        第 230 波（用户拍板）：本处为 0、全局 > 0 时补一行。
 
         被守的形态：面板按当前位置过滤（本处 0 条 ⇒ 待批准区整块不渲染），而库里
         **别处**还躺着待批准条目 —— 用户看到的是"没有待批准"，同时系统已经在
         `MEMORY_PENDING_BACKLOG_LIMIT`（5 条）那道闸上把新候选降级成对话级了。
         两个读数对不上，而用户没有任何地方能看出"积压其实满了"。
 
-        刻意只做**一行文字**（用既有的 `.memory-pending-hint.active` 样式，不动 styles.css）：
+        刻意只做一行文字（用既有的 `.memory-pending-hint.active` 样式，不动 styles.css）：
         - 不弹窗、不做横幅 —— 它不是失败，只是"还有别处的事"（弹窗会打断正在做的事）；
-        - 不改任何既有语义：单条批准/拒绝、批量、全选、一键全部批准/拒绝、整合、双击展开
+        - 不改任何既有语义：单条批准/拒绝、批量、全选、全部批准/拒绝、整合、双击展开
           一个字节都没动（本处 0 条时那些控件本来就不渲染）。
 
         判据 `MEM-OTHER-PENDING-1`~`4`（真渲染 + 变异自证）钉住：
-        `本处==0 && 全局>0` ⇒ 出现且 N = **全局**数；`本处>0` ⇒ 不出现；`全局==0` ⇒ 不出现。
+        `本处==0 && 全局>0` ⇒ 出现且 N = 全局数；`本处>0` ⇒ 不出现；`全局==0` ⇒ 不出现。
       */}
       {pending.length === 0 && globalPending > 0 && (
         <div className="memory-pending-hint active" data-testid="memory-other-projects-pending">
@@ -1761,7 +1761,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
           </button>
         ))}
         <span className="memory-approval-hint">
-          未批准的自动记忆不进上下文；**对话级默认直接生效**（自动提取里"只跟本次对话有关"的那些）；
+          未批准的自动记忆不进上下文；对话级默认直接生效（自动提取里"只跟本次对话有关"的那些）；
           手动条目永不被自动流程改写。
         </span>
       </div>
@@ -1769,7 +1769,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       {notice && <div className="memory-notice">{notice}</div>}
 
       {/*
-        ★ 第 231 波（用户实报）：待批准条数 11，列表**只显示 7 条、没有滚动条**，第 8 条起被裁在底部
+        ★ 第 231 波（用户实报）：待批准条数 11，列表只显示 7 条、没有滚动条，第 8 条起被裁在底部
         —— 既看不到也批不了，剩下 4 条无从触达。
 
         根因（真机量测，VP 1200×700，隔离根造 12 条 pending）：
@@ -1779,8 +1779,8 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
         第 12 条的 `getBoundingClientRect().bottom = 895` 已经越过面板底边 629 ——
         **没有任何一个元素负责滚动**，所以"看不到"就变成"不可达"。
 
-        修法（结构）：把这块拆成**两段** ——
-        · `.memory-pending-head`：标题 / 手势提示 / 勾选+批量栏 / 本批+一键全部，**不滚**（`flex: none`）；
+        修法（结构）：把这块拆成两段 ——
+        · `.memory-pending-head`：标题 / 手势提示 / 勾选+批量栏 / 本批+一键全部，不滚（`flex: none`）；
         · `.memory-pending-list`：唯一的滚动区（`flex: 1 1 auto; min-height: 0; overflow-y: auto`），
           条目与展开块都在里面 ⇒ 展开一条也只是把它的 scrollHeight 撑大，后面的条目仍能滚到。
         高度上限交给 `.memory-pending-section` 的 `max-height: 55%` + `min-height: 0`（不写 `100vh` 之类）。
@@ -1798,14 +1798,14 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
               （判据 MEM-APPROVE-DETAIL-7 钉住它必须在界面上）。
             */}
             <div className="memory-pending-expand-hint">
-              双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。
+              双击任意一条可展开完整内容与判断依据（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目必须展开看全文再决定。
             </div>
             {/*
               第 196 波：勾选 + 批量同意/拒绝（用户要求「含全选」）。
               三个细节是刻意的：
-              ① 「全选」复选框的可访问名说清**它管的是哪一批**（不是光秃秃一个勾选框）；
-              ② 两个批量按钮在没有勾选时 **disabled**（点了也不会误伤，避免"空批量"看起来像生效了）；
-              ③ 按钮上的数字是**当前勾选数**（用户勾几条就等于知道自己要动几条）。
+              ① 「全选」复选框的可访问名说清它管的是哪一批（不是光秃秃一个勾选框）；
+              ② 两个批量按钮在没有勾选时 disabled（点了也不会误伤，避免"空批量"看起来像生效了）；
+              ③ 按钮上的数字是当前勾选数（用户勾几条就等于知道自己要动几条）。
             */}
             <div className="memory-pending-batch-bar">
               <label className="memory-pending-check memory-pending-check-all">
@@ -1838,10 +1838,10 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
               </button>
             </div>
             {/*
-              ★ 第 229 波：「本批 N 条」+ **一键全部批准 / 全部拒绝**（用户要求「面板少动手」）。
+              ★ 第 229 波：「本批 N 条」+ 全部批准 / 全部拒绝（用户要求「面板少动手」）。
 
-              为什么**独占一行**（`.memory-pending-all-bar`）而不是塞进上面的批量条：
-              上面那一条的语义是"勾选 + 批量处置"（数字 = **勾选数**），这里两个按钮的数字 =
+              为什么独占一行（`.memory-pending-all-bar`）而不是塞进上面的批量条：
+              上面那一条的语义是"勾选 + 批量处置"（数字 = 勾选数），这里两个按钮的数字 =
               **待批准总数**。两种口径挤在一行里，用户会把「批量同意（2）」与「全部批准（9）」
               读成同一件事的两个数字 —— 那正是本仓反复强调的"两个数必须各说清各是什么"。
             */}
@@ -1868,8 +1868,8 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
               </button>
               {/*
                 2026-10-18（用户实报「每轮都有很多审批，拒绝了很多还是每轮都有」）：
-                根因不是"批得太慢"，而是**项目级自动记忆默认逐条审批** —— 用户每轮都要做一次
-                同样的决定。这里给一个**一次性关掉这档审批**的入口（就是写入审批里的 project 档），
+                根因不是"批得太慢"，而是项目级自动记忆默认逐条审批 —— 用户每轮都要做一次
+                同样的决定。这里给一个一次性关掉这档审批的入口（就是写入审批里的 project 档），
                 以后项目级自动记忆直接生效、不再逐条打扰；平台级仍保留审批。
                 文案必须写明代价：关掉之后它不再问你就进上下文（可在写入审批里重新打开）。
               */}
@@ -1931,7 +1931,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
                   第 199 波（用户直报：待批准区没显示类型，没法判断该不该批准）：
                   **作用域**是批准与否的第一依据 —— 平台级处处生效、项目级对这个项目以后的每个对话生效、
                   对话级只影响当前对话。徽标文案取自唯一一份表（`MEMORY_SCOPE_BADGE_LABEL`），
-                  认不出来的旧作用域**原样显示**（不许猜成三者之一，那正是"归属未知"要防的事）。
+                  认不出来的旧作用域原样显示（不许猜成三者之一，那正是"归属未知"要防的事）。
                 */}
                 <span
                   className="memory-pending-scope"
@@ -1960,7 +1960,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       )}
 
       {/*
-        第 231 波 A1：**待批准区为空、但本会话确实有被降级的条目**时，这条信号也必须出现 ——
+        第 231 波 A1：待批准区为空、但本会话确实有被降级的条目时，这条信号也必须出现 ——
         否则"积压撞上限把候选悄悄放行"最典型的形态（待批准清空了、降级发生过）恰好没有提示。
         与上面 pending 区里那一处是同一个渲染函数，不另写一份。
       */}
@@ -1973,11 +1973,11 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
         <div className="memory-batch-section">
           <div className="memory-batch-title">自动提取批次（可整批撤销）</div>
           {/*
-            附带要求：**旧条目没有 batchId** ⇒「撤销批次」对它们结构性无意义。
+            附带要求：旧条目没有 batchId ⇒「撤销批次」对它们结构性无意义。
             这里如实说明，而不是给一个点了没反应的按钮（旧批次也不会出现在这份列表里）。
           */}
           <div className="memory-batch-note">
-            只有本版本之后自动提取写入的条目带批次号。**升级前的旧记忆没有批次信息**，
+            只有本版本之后自动提取写入的条目带批次号。升级前的旧记忆没有批次信息，
             无法用「撤销该批」回滚 —— 请到「设置 → 记忆体检」里用批量删除或归位处置。
           </div>
           {batches.slice(0, 10).map((batch) => (
@@ -2100,16 +2100,16 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       )}
 
       {/*
-        任务 B：**跨项目只读搜索**入口（24 §P2「跨作用域检索的面板入口」）。
+        任务 B：跨项目只读搜索入口（24 §P2「跨作用域检索的面板入口」）。
 
         改前：跨项目检索只在工具面存在（`memory_search` + `scopeMode=all`），用户在面板里
         没有任何入口，也无从知道"别的项目里定过的约定"其实检索得到。
 
-        刻意只做**只读**（没有任何编辑/删除/批准按钮）：
+        刻意只做只读（没有任何编辑/删除/批准按钮）：
         - 跨项目命中来自别的项目，误点删除的代价远高于"多一步去对应项目处置"；
         - 这里不写记忆、不刷 usage、不记检索指标 —— 判据 `MEM-CROSS-PANEL-*` 钉住。
 
-        结果行必须自带 **scope / project / session** 归属：`scope` 只有三个值，
+        结果行必须自带 scope / project / session 归属：`scope` 只有三个值，
         光看它分不清「项目级」到底是哪个项目（这正是跨项目命中必须能自证归属的原因）。
       */}
       {editMode === "none" && (
@@ -2202,7 +2202,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       {editMode === "none" && (
         <div className="memory-content">
           <div className="memory-list">
-            {/* R3：排序口径必须**说白**（列表按创建序 = 注入顺序；`timestamp` 只是单条字段） */}
+            {/* R3：排序口径必须说白（列表按创建序 = 注入顺序；`timestamp` 只是单条字段） */}
             <div className="memory-batch-note">{MemoryService.PANEL_ORDER_NOTE}</div>
             {displayEntries.length === 0 && (
               <div className="empty-hint">暂无记忆条目</div>

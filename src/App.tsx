@@ -5025,10 +5025,10 @@ flushReasoningBuffer(session.id);
               if (hadToolCalls) {
                 // P0-3 + P1-9: 有文件变更时用 waving 状态 + 文件数摘要
                 getPet().setPetState("waving");
-                const bubbleMsg = fileCount === 1 ? "任务完成！修改了 1 个文件" : `任务完成！修改了 ${fileCount} 个文件`;
+                const bubbleMsg = fileCount === 1 ? "任务完成，修改了 1 个文件" : `任务完成，修改了 ${fileCount} 个文件`;
                 setTimeout(() => getPet().showBubble(bubbleMsg), 300);
               } else {
-                const bubbleMsg = "回复完成了！";
+                const bubbleMsg = "回复完成";
                 setTimeout(() => getPet().showBubble(bubbleMsg), 300);
               }
             }

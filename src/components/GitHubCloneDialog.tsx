@@ -199,7 +199,7 @@ return createPortal(
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <CheckCircle2 className="icon-2xl" style={{ color: "var(--success)", marginBottom: "16px" }} />
             <p style={{ color: "var(--text-primary)", fontSize: "var(--fs-md)", fontWeight: 500 }}>
-              {lang === "zh" ? `项目 ${projectName} 创建成功！` : `Project ${projectName} created successfully!`}
+              {lang === "zh" ? `项目 ${projectName} 创建成功` : `Project ${projectName} created successfully!`}
             </p>
           </div>
         )}

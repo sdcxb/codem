@@ -78,7 +78,7 @@ export function FreeModelNodePrompt() {
       </div>
       <div className="ofm-node-prompt-body">
         内置的免费模型插件是一个 Node 小程序（需要 22 或更高）。这台机器上没找到 Node，
-        所以它现在没启动 —— **不影响 Codem 自己的模型与聊天**。
+        所以它现在没启动 —— 不影响 Codem 自己的模型与聊天。
         可以让 Codem 现在自动装一个便携版（约 30MB，装在插件自己的目录里，删除插件时会一起清掉）。
       </div>
       {phase && <div className="ofm-node-prompt-phase">{phase}</div>}

@@ -236,7 +236,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
               <div className="bootstrap-icon">{emoji}</div>
               <h2>好了，我是 {name || "Codem"}</h2>
               <p>{creature}，{vibe}。</p>
-              <p className="bootstrap-sub">准备好了，开始吧。</p>
+              <p className="bootstrap-sub">开始使用</p>
             </div>
           )}
         </div>

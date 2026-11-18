@@ -3920,7 +3920,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   const [installing, setInstalling] = useState(false);
   const [installMsg, setInstallMsg] = useState("");
 
-  // CLI 检测：①应用内一键安装记下的启动器路径存在 → 已安装；
+  // CLI 检测：①应用内安装记下的启动器路径存在 → 已安装；
   // ②否则 execute_command 探测（exitCode/stdout/stderr 三重兜底——此前只看
   // stderr 两种英文文案，任何 stderr 为空/文案不同的失败都会误判"已安装"）
   const checkCli = useCallback(async () => {
@@ -3977,7 +3977,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
     void checkIndex();
   }, [checkCli, checkIndex]);
 
-  // 一键安装 CodeGraph（方案 B：应用内下载 → 解压 %LOCALAPPDATA%\codegraph\current
+  // 安装 CodeGraph（方案 B：应用内下载 → 解压 %LOCALAPPDATA%\codegraph\current
   // → 记录启动器路径；用户零命令行）
   const handleInstall = useCallback(async () => {
     setInstalling(true);
@@ -4014,7 +4014,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
    * - 初始化那段 `catch { return true; }` 让开关**永远显示 ON**，
    *   哪怕库里存着 `false` —— 用户以为"已经关掉了"；
    * - 「重新检测」第一句就抛 → **所有机器**都显示"✗ codegraph CLI 未安装"；
-   * - 「一键安装」在真实安装成功之后抛 → 告诉用户"✗ 安装失败"。
+   * - 「安装」在真实安装成功之后抛 → 告诉用户"✗ 安装失败"。
    *
    * 修法：改成**动态 `import()`**（异步、可 await），并且**失败不再静默** ——
    * 走既有的上报通道（`reportActionFailure`）+ 面板内可见提示。
@@ -4104,7 +4104,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
               disabled={installing}
               className="sp-btn sp-btn--lg sp-btn--primary sp-hint--lead"
             >
-              {installing ? (zh ? "⏳ 安装中..." : "⏳ Installing...") : (zh ? "⬇️ 一键安装 CodeGraph（约 52MB）" : "⬇️ Install CodeGraph (~52MB)")}
+              {installing ? (zh ? "⏳ 安装中..." : "⏳ Installing...") : (zh ? "⬇️ 安装 CodeGraph（约 52MB）" : "⬇️ Install CodeGraph (~52MB)")}
             </button>
             {installMsg && (
               <pre className="sp-output sp-output--short">

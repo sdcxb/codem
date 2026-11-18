@@ -168,7 +168,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     setNotice(
       `${what}：删除 ${result.removed} 条` +
         (result.notFound.length > 0 ? `（${result.notFound.length} 条已不存在）` : "") +
-        (landed ? "，已落库。" : `，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些删除会失效）。`) +
+        (landed ? "，已落库。" : `，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些删除会失效）。`) +
         `未勾选的条目一条都没动。`,
     );
     setVersion((v) => v + 1);
@@ -187,7 +187,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
      */
     const confirmed = await confirmDialog(
       `确定删除选中的 ${selected.size} 条记忆？此操作不可撤销。` +
-        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的" +
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是全局的" +
         "（不限于本项目/本对话）—— 此后相似的自动记忆会被静默跳过。误点可用「清空已拒绝记录」补救。",
     );
     if (!confirmed) {
@@ -270,11 +270,11 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         (result.skipped > 0 ? `（${result.skipped} 条不在待批准状态，未改动）` : "") +
         (landed
           ? ownerGone > 0 || ownerMissing > 0
-            ? `，已落库；但其中 ${ownerGone > 0 ? `${ownerGone} 条**归属已失效**（目标项目/对话不存在）` : ""}` +
+            ? `，已落库；但其中 ${ownerGone > 0 ? `${ownerGone} 条归属已失效（目标项目/对话不存在）` : ""}` +
               `${ownerGone > 0 && ownerMissing > 0 ? "、" : ""}` +
-              `${ownerMissing > 0 ? `${ownerMissing} 条**从来没有归属键**` : ""}⇒ 仍不会进任何上下文，建议删除。`
+              `${ownerMissing > 0 ? `${ownerMissing} 条从来没有归属键` : ""}⇒ 仍不会进任何上下文，建议删除。`
             : "，已落库；它们从现在起参与上下文。"
-          : `，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些批准会失效）。`) +
+          : `，但未落库：${service.getLastPersistError() ?? "未知原因"}（重启后这些批准会失效）。`) +
         `未勾选的条目一条都没动。`,
     );
     setVersion((v) => v + 1);
@@ -336,8 +336,8 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     setRejections([]);
     setNotice(
       landed
-        ? `已清空 ${result.cleared} 条「已拒绝」记录：同类事实以后**可以**再被自动提取（可能重新进入待批准）。`
-        : `已清空 ${result.cleared} 条，但**未落库**：${getMemoryService().getLastPersistError() ?? "未知原因"}（重启后这些记录会回来）。`,
+        ? `已清空 ${result.cleared} 条「已拒绝」记录：同类事实以后可以再被自动提取（可能重新进入待批准）。`
+        : `已清空 ${result.cleared} 条，但未落库：${getMemoryService().getLastPersistError() ?? "未知原因"}（重启后这些记录会回来）。`,
     );
   };
 
@@ -365,7 +365,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
       setDuplicateGroups(res.groups);
       const entries = res.groups.reduce((n, g) => n + g.ids.length, 0);
       const scope = res.truncated
-        ? `（共 ${res.total} 条记忆，本次先比对**最近 ${res.scanned} 条**；更早的未参与，清理后可再点一次）`
+        ? `（共 ${res.total} 条记忆，本次先比对最近 ${res.scanned} 条；更早的未参与，清理后可再点一次）`
         : `（比对 ${res.scanned} 条，用时 ${res.elapsedMs}ms）`;
       setNotice(
         res.groups.length === 0
@@ -396,7 +396,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
      */
     const confirmed = await confirmDialog(
       `确定删除这一组里除最早一条之外的 ${rest.length} 条？此操作不可撤销。` +
-        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的——此后相似的自动记忆会被静默跳过。",
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是全局的——此后相似的自动记忆会被静默跳过。",
     );
     if (!confirmed) {
       setNotice("已取消去重删除（没有删除任何条目）。");
@@ -411,7 +411,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     /* ★ 全量审计（低）：整组删除同样是破坏性动作 ⇒ 同一道二次确认闸 */
     const confirmed = await confirmDialog(
       `确定删除这一组的全部 ${group.ids.length} 条？此操作不可撤销。` +
-        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的——此后相似的自动记忆会被静默跳过。",
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是全局的——此后相似的自动记忆会被静默跳过。",
     );
     if (!confirmed) {
       setNotice("已取消整组删除（没有删除任何条目）。");
@@ -424,7 +424,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
   /** 把某一组从候选里划掉（"这两条我都要留着"）—— 只影响这次的结果列表，不动记忆 */
   const handleDismissDuplicateGroup = (group: DuplicateGroupView) => {
     setDuplicateGroups((prev) => (prev ? prev.filter((g) => g !== group) : prev));
-    setNotice("已把这一组从候选里划掉（**没有**改动任何记忆）。再点一次「找出相似重复」会重新找出来。");
+    setNotice("已把这一组从候选里划掉（没有改动任何记忆）。再点一次「找出相似重复」会重新找出来。");
   };
 
   const handleClearAll = async () => {
@@ -485,9 +485,9 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
       const landed = await setLegacyPoolInjectionPausedConfirmed(next);
       setNotice(
         (next
-          ? "已暂停注入旧版跨项目记忆：这些条目现在**不进上下文**（其它记忆不受影响）。处置完可再关掉开关。"
+          ? "已暂停注入旧版跨项目记忆：这些条目现在不进上下文（其它记忆不受影响）。处置完可再关掉开关。"
           : "已恢复注入旧版跨项目记忆：它们重新参与所有项目的上下文（与升级前一致）。") +
-          (landed ? "（已确认落库）" : "，但**未落库**：重启后会回到原来的状态。"),
+          (landed ? "（已确认落库）" : "，但未落库：重启后会回到原来的状态。"),
       );
     })();
     setVersion((v) => v + 1);
@@ -534,7 +534,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     }
     const confirmed = await confirmDialog(
       `确定回退到迁移前（${formatTime(snapshot.takenAt)}，${snapshot.entries} 条）？\n` +
-        `此操作**不可撤销**：会把记忆库整体恢复成迁移前那份原始内容（当前对记忆做的所有改动都会丢失）。\n` +
+        `此操作不可撤销：会把记忆库整体恢复成迁移前那份原始内容（当前对记忆做的所有改动都会丢失）。\n` +
         `回退后旧作用域条目只能在「作用域无法识别」组里看到，需要你逐条归位。`,
     );
     if (!confirmed) {
@@ -582,13 +582,13 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           <span className={`mc-scope-badge ${entry.legacyPool ? "legacy-pool" : entry.scope}`}>
             {scopeBadgeLabel(entry)}
           </span>
-          {/* M-2：旧版跨项目池的**可展示标记**（用户要能一眼认出"哪几条是被污染进来的"） */}
+          {/* M-2：旧版跨项目池的可展示标记（用户要能一眼认出"哪几条是被污染进来的"） */}
           {entry.legacyPool && <span className="mc-source-badge legacy-pool">旧版跨项目池</span>}
           {isPendingMemoryEntry(entry) && <span className="mc-source-badge pending">待批准</span>}
           {!entry.injected && <span className="mc-source-badge not-injected">不进上下文</span>}
         </div>
         <div className={`mc-entry-content ${expanded.has(entry.id) ? "expanded" : ""}`}>{entry.content}</div>
-        {/* I4：`injected=false` 必须给**真实原因**（不许只给一个徽标让用户猜） */}
+        {/* I4：`injected=false` 必须给真实原因（不许只给一个徽标让用户猜） */}
         {!entry.injected && entry.notInjectedReason && (
           <div className="mc-entry-reason">不注入的原因：{entry.notInjectedReason}</div>
         )}
@@ -617,7 +617,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             </button>
           )}
           {entry.scope === "platform" && <span className="mc-entry-owner">归属：所有项目</span>}
-          {/* 旧条目**没有 batchId** ⇒「撤销批次」对它们结构性无意义，这里如实说明 */}
+          {/* 旧条目没有 batchId ⇒「撤销批次」对它们结构性无意义，这里如实说明 */}
           {entry.legacyPool && <span className="mc-entry-owner">无批次信息（不能用「撤销批次」，请用批量删除）</span>}
         </div>
 
@@ -714,8 +714,8 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             </button>
           </div>
           <div className="mc-rejections-hint">
-            清空之后，这类事实**可以**重新被自动提取（可能再次进入待批准）。
-            在对话里**明确要求记住**的内容不受这里影响，会直接生效。
+            清空之后，这类事实可以重新被自动提取（可能再次进入待批准）。
+            在对话里明确要求记住的内容不受这里影响，会直接生效。
           </div>
           {rejections.slice(0, 10).map((r) => (
             <div key={r.id} className="mc-rejection-entry">
@@ -732,8 +732,8 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
       )}
 
       {/*
-        M-2：**暂停注入旧版跨项目记忆**开关。
-        默认**关**（保持既有可见范围不变，不偷偷改变行为）；打开后这些条目停止注入。
+        M-2：暂停注入旧版跨项目记忆开关。
+        默认关（保持既有可见范围不变，不偷偷改变行为）；打开后这些条目停止注入。
       */}
       <div className="mc-switch-bar">
         <label className="mc-switch-label">
@@ -747,12 +747,12 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         </label>
         <span className="mc-switch-hint">
           默认关闭 = 与升级前行为完全一致（这些条目仍在所有项目生效）。
-          打开后它们**停止进上下文**，直到你删除、归位或「保留为平台级」；其它记忆不受影响。
+          打开后它们停止进上下文，直到你删除、归位或「保留为平台级」；其它记忆不受影响。
         </span>
       </div>
 
       {/*
-        第 197 波：相似重复的**人工**清理入口。
+        第 197 波：相似重复的人工清理入口。
         为什么是人工而不是自动：同一条事实在真机上会散落在不同的桶（每次评测的工作目录不同 ⇒
         projectId 不同），而作用域隔离是刻意的（项目 A 的事实不该挡住项目 B 记同样的事实）
         —— 自动跨桶去重会误删"另一个项目里合法存在的那一份"。所以这里只给候选 + 证据，删不删由人定。
@@ -765,7 +765,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             </span>
             <span className="mc-duplicates-hint">
               判定口径：标题 + 正文的字符 2-gram 相似度（跨作用域一起找）。
-              「只留最早的一条」= 保留这一组里**先记下的**那条，删掉其余；删除会落库且不可撤销。
+              「只留最早的一条」= 保留这一组里先记下的那条，删掉其余；删除会落库且不可撤销。
             </span>
           </div>
           {duplicateGroups.map((group) => (
@@ -812,28 +812,28 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             <button className="mc-action-btn" onClick={handleExportSnapshot}>导出这份快照</button>
           </div>
           <div className="mc-snapshot-hint">
-            回退**不可撤销**：会把整库恢复成迁移前那份原始内容（迁移后做的改动都会丢失），
+            回退不可撤销：会把整库恢复成迁移前那份原始内容（迁移后做的改动都会丢失），
             且回退后旧作用域条目只能逐条归位。
           </div>
         </div>
       )}
 
       <div className="mc-note">
-        这里的来源/归属标注**只用于展示**：程序不会因为"看起来像自动提取"就删除或改写任何条目，
+        这里的来源/归属标注只用于展示：程序不会因为"看起来像自动提取"就删除或改写任何条目，
         删除与归位都必须由你勾选确认。归属解析不出来的一律显示「未知」，不会被算进平台级。
-        自动提取流程**不会**在后台自动删除或改写任何条目（整合只在你显式点「整合」或跑 /memory consolidate 时发生）。
+        自动提取流程不会在后台自动删除或改写任何条目（整合只在你显式点「整合」或跑 /memory consolidate 时发生）。
       </div>
 
       {migrationReport && !(migrationReport.alreadyMigrated && !migrationReport.aborted) && (
         <div className="mc-migration-note">
           {/*
-            ★ 全量审计（中）：**只判 ran 会撒谎** ——
+            ★ 全量审计（中）：只判 ran 会撒谎 ——
             ① 快照确认失败时迁移会逐条回滚（aborted/abortedEntries），而 ran 仍为 true；
-            ② 迁移**推迟**（读失败/形状不认识）时 ran=false，以前整行都不显示 ⇒ 用户零说明。
+            ② 迁移推迟（读失败/形状不认识）时 ran=false，以前整行都不显示 ⇒ 用户零说明。
           */}
           {migrationReport.ran
             ? migrationReport.aborted
-              ? `升级时的记忆迁移**没有生效**（${migrationReport.aborted}），` +
+              ? `升级时的记忆迁移没有生效（${migrationReport.aborted}），` +
                 `已逐条回滚 ${migrationReport.abortedEntries ?? 0} 条，磁盘与内存都还是迁移前的形态。`
               : `升级时迁移过记忆：旧「项目级」${migrationReport.projectToLegacyPool ?? 0} 条改为平台级（旧版跨项目池）、` +
                 `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +
@@ -856,7 +856,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
             </button>
             <span className="mc-group-title">{group.title}</span>
             <span className="mc-group-count">{group.entries.length} 条</span>
-            {/* M-2：旧池组的**批量处置**（保留为平台级）；删除/归位是下面每条的通用动作 */}
+            {/* M-2：旧池组的批量处置（保留为平台级）；删除/归位是下面每条的通用动作 */}
             {group.actionable && (
               <button
                 className="mc-group-action"
@@ -866,7 +866,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
               </button>
             )}
           </div>
-          {/* 组头**必须**写明原因：旧池组、归属未知组、归属已失效组、作用域无法识别组各自一句 */}
+          {/* 组头必须写明原因：旧池组、归属未知组、归属已失效组、作用域无法识别组各自一句 */}
           {group.unresolved && <div className="mc-group-reason">{group.note || UNRESOLVED_REASON}</div>}
           {!group.unresolved && <div className="mc-group-note">{group.note}</div>}
           <div className="mc-group-entries">{group.entries.map(renderEntry)}</div>

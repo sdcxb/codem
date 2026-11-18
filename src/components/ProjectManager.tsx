@@ -241,7 +241,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
       await loadProjectData(projectDir);
 
       setCloneStatus("done");
-      setCloneMsg(`✅ 项目 ${name} 创建成功！`);
+      setCloneMsg(`✅ 项目 ${name} 创建成功`);
       setTimeout(() => {
         onClose();
         setCloneStatus("idle");

@@ -1131,3 +1131,228 @@
 [data-ui="v2"] .sidebar-user-avatar {
   border-radius: 50%;
 }
+
+/* ========== 13. 任务中心 / 团队 / 记忆（Batch 2） ========== */
+
+/* 面板外壳：14px 圆角 + 发丝线 + 中性面；标题行做"页面标题"（20px）而不是小工具条标题。 */
+[data-ui="v2"] .task-center-panel {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+}
+
+[data-ui="v2"] .task-center-header {
+  border-bottom: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+}
+
+[data-ui="v2"] .task-center-header h2,
+[data-ui="v2"] .tc-editor-title {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* 页签：从"胶囊 + 图标"改成"下划线"，与设置/右栏同一套语言。 */
+[data-ui="v2"] .tc-tab {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: var(--space-2) var(--space-3);
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .tc-tab:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .tc-tab.is-active,
+[data-ui="v2"] .tc-tab[aria-selected="true"] {
+  background: none;
+  color: var(--ui-text);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
+
+/* 按钮：主操作 = 琥珀实心；其余 = 描边幽灵（不再每个都带色底）。 */
+[data-ui="v2"] .tc-btn,
+[data-ui="v2"] .tc-btn--sm {
+  border-radius: var(--radius);
+  border: 1px solid var(--ui-line);
+  background: none;
+  color: var(--ui-text-secondary);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .tc-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .tc-btn--primary {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-ink);
+}
+
+[data-ui="v2"] .tc-btn--primary:is(:hover, :focus-visible) {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+  color: var(--ui-accent-ink);
+}
+
+[data-ui="v2"] .tc-btn--stop {
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
+}
+
+[data-ui="v2"] .tc-field {
+  border-color: var(--ui-line);
+  background: var(--ui-surface-raised);
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .tc-field:focus {
+  border-color: var(--ui-line-strong);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .squads-card,
+[data-ui="v2"] .tc-editor {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+}
+
+[data-ui="v2"] .squads-title,
+[data-ui="v2"] .squads-name,
+[data-ui="v2"] .squads-member-name,
+[data-ui="v2"] .squads-leader-name {
+  font-weight: 500;
+}
+
+[data-ui="v2"] .squads-count-badge,
+[data-ui="v2"] .squads-member-leader-badge {
+  background: none;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-xs);
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* —— 记忆 —— */
+[data-ui="v2"] .memory-manager {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+}
+
+[data-ui="v2"] .memory-manager-header {
+  border-bottom: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .memory-manager-title {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+[data-ui="v2"] .memory-manager-icon {
+  color: var(--ui-text-muted);
+}
+
+/* 七连数字：不再是大号彩色统计，改成"数值 mono + 小标签"的一行读数。 */
+[data-ui="v2"] .memory-stats {
+  border-bottom: 1px solid var(--ui-line);
+  gap: var(--space-5);
+}
+
+[data-ui="v2"] .memory-stat-value,
+[data-ui="v2"] .memory-stat-value.project,
+[data-ui="v2"] .memory-stat-value.session,
+[data-ui="v2"] .memory-stat-value.global {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .memory-stat-label {
+  font-size: var(--fs-2xs);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .memory-item {
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .memory-item:is(:hover, :focus-visible) {
+  background: var(--ui-surface);
+  border-color: var(--ui-line);
+}
+
+[data-ui="v2"] .memory-item.selected {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+}
+
+[data-ui="v2"] .memory-item-key {
+  font-family: var(--font-mono);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .memory-item-scope {
+  background: none;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-xs);
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .memory-item-preview,
+[data-ui="v2"] .memory-item-full {
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .memory-item-meta,
+[data-ui="v2"] .memory-item-truncation,
+[data-ui="v2"] .memory-item-truncation-reason {
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .memory-notice,
+[data-ui="v2"] .mc-notice {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-accent);
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .memory-action-btn,
+[data-ui="v2"] .memory-approve-btn,
+[data-ui="v2"] .memory-delete-btn,
+[data-ui="v2"] .memory-cancel-btn {
+  border-radius: var(--radius);
+  border: 1px solid var(--ui-line);
+  background: none;
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .memory-action-btn:is(:hover, :focus-visible),
+[data-ui="v2"] .memory-cancel-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .memory-approve-btn {
+  border-color: var(--ui-success);
+  color: var(--ui-success);
+}
+
+[data-ui="v2"] .memory-delete-btn {
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
+}

@@ -242,7 +242,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                 {/* 说明文字 */}
                 <div className="mm-help">
                   💡 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
-                  默认模型（all-MiniLM-L6-v2）已随安装包内置，开箱即用。
+                  默认模型（all-MiniLM-L6-v2）已随安装包内置，已内置。
                   其他模型首次使用时从 HuggingFace 下载并缓存。超长文本自动子分块处理。
                 </div>
               </>

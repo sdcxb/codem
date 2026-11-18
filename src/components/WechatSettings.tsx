@@ -308,7 +308,7 @@ export function WechatSettings() {
 
       {/* ---- 准入管理 ---- */}
       <div className="setting-group">
-        <label>{zh ? "准入管理（Bot 主人自动放行）" : "Access control (owner auto-approved)"}</label>
+        <label>{zh ? "准入管理（Bot 账号自动放行）" : "Access control (owner auto-approved)"}</label>
 
         {access.pending.length > 0 && (
           <div className="wx-pending-list">

@@ -279,7 +279,7 @@ export function EnvironmentConfigSection() {
       <div className="settings-section-title">{zh ? "🏗️ 环境脚本配置" : "🏗️ Environment Scripts"}</div>
       <div className="git-env-desc">
         {zh
-          ? "配置项目环境脚本。打开/切换项目时自动执行设置和清理脚本，还可以定义一键操作。"
+          ? "配置项目环境脚本。打开/切换项目时自动执行设置和清理脚本，还可以定义快捷操作。"
           : "Setup/cleanup scripts run automatically on project switch. Custom operations are one-click actions."}
       </div>
 
@@ -327,7 +327,7 @@ export function EnvironmentConfigSection() {
 
         {(envConfig.customOperations || []).length === 0 && (
           <div className="empty-hint is-compact">
-            {zh ? "暂无自定义操作。点击\"添加\"创建一键构建/启动/测试等操作。" : "No custom operations yet."}
+            {zh ? "暂无自定义操作。点击\"添加\"创建构建/启动/测试等操作。" : "No custom operations yet."}
           </div>
         )}
 

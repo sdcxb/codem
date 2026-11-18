@@ -145,7 +145,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
       if (addedCount > 0) parts.push(`写入 ${addedCount} 个文件`);
       if (deletedCount > 0) parts.push(`删除 ${deletedCount} 个文件`);
       const summary = parts.length > 0 ? parts.join("，") : "没有文件需要回滚";
-      setToast({ type: "success", text: `回滚成功！${summary}（共 ${restoredCount} 个文件）` });
+      setToast({ type: "success", text: `回滚成功${summary}（共 ${restoredCount} 个文件）` });
     } catch (e: any) {
       setToast({ type: "error", text: `回滚失败：${e?.message || "未知错误"}` });
     }

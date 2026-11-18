@@ -259,7 +259,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
                   <span className="mcp-catalog-error">{state.result.error}</span>
                 )}
                 {state?.result?.success && (
-                  <span className="mcp-catalog-success">安装成功!</span>
+                  <span className="mcp-catalog-success">安装成功</span>
                 )}
                 {isInstalled ? (
                   <button
@@ -285,7 +285,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
                     disabled={state?.installing}
                   >
                     <InstallIcon size={14} />
-                    {state?.installing ? "安装中..." : "一键安装"}
+                    {state?.installing ? "安装中..." : "安装"}
                   </button>
                 )}
                 {entry.homepage && (
