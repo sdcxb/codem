@@ -12,7 +12,7 @@
 | 批次 | 内容 | 状态 | 全量门禁 |
 |---|---|---|---|
 | 0 | 基线与护栏（token 层 + 选择器作用域闸 + 文案/emoji 棘轮 + 基线截图） | **✅ 2026-11-18 完成** | 否（目标测试） |
-| 1A | `App.tsx` 三份主区抽成 `WorkspaceFrame`（纯结构） | 进行中 | **是** |
+| 1A | `App.tsx` 三份主区抽成 `WorkspaceFrame`（纯结构） | **✅ 2026-11-18 完成** | **是** |
 | 1B | 壳层 + 聊天视觉 | 待执行 | **是** |
 | 2 | 任务 / 团队 / 记忆 | 待执行 | 目标测试 |
 | 3 | 设置 + 引导 + 错误恢复 | 待执行 | **是** |
@@ -235,8 +235,48 @@ node .preview-shot/_unslop-snapshot.mjs out.json # 布局指纹（元素数 + �
 
 ---
 
-## 4. Batch 1A 的前置事实（已实测，用于排期）
+## 3A. Batch 1A · 执行结果（2026-11-18 完成）
 
+### 3A.1 实际落地
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `src/components/workspace/WorkspaceFrame.tsx` | 新增 | `WorkspaceMainColumn`（三份主区 → 一份实现）+ `WorkspaceFrame`（三套皮肤的布局包裹） |
+| `src/components/HubLayout.tsx` | 修改 | 新增可选 `rightRail`：传入即用 App 构造的右栏；不传回落旧行为 |
+| `src/App.tsx` | 修改 | 400 行三份 → `renderWorkspace()` 一次构造（侧栏/主列/右栏各一份）+ 三个 `variant` |
+| `src/test/workspace-frame.test.tsx` | 新增 | 10 例：三档布局摆放、主列节点顺序与渲染条件、**App 里这些块只能各出现一次** |
+| `src/test/ui-batch-a-d.test.ts` | 修改 | E6 从「三处 `onFork={handleFork}`」收紧为「只有一处共享接线 + 零内联实现」 |
+| `src/test/phase-b-f-regression.test.ts` | 修改 | 笔记本横幅断言改为「实现住在主列组件、App 负责传状态」 |
+
+**顺带修掉的真实漂移**：迁移前 hub 的右栏由 `HubLayout` 自渲染，**少传 `sessionId` / `workspace` / `agents`** ——
+同一块面板在 hub 下少了三样数据。现在三套皮肤共用一份右栏节点（判据：`workspace-frame.test.tsx` 的 hub 用例）。
+
+### 3A.2 等价性取证（真机、真源码）
+
+做法：`npm run dev`（Vite）+ 直接启动 `src-tauri/target/debug/codem.exe`（带 CDP 9224、独立 `CODEM_DATA_HOME` 与
+`WEBVIEW2_USER_DATA_FOLDER`），与**装机版 1.18.14**（pre-refactor，CDP 9222）在同一份数据上逐元素对比。
+
+| 项 | 结果 |
+|---|---|
+| 元素数 | **2021 = 2021** |
+| 逐元素 tag / class / `data-testid` / role | 0 处差异 |
+| 逐元素矩形 | 0 处差异 |
+| 9 项布局计算属性（display/position/flex/overflow/grid/align/justify） | 0 处差异 |
+| 截图 | 43 px、单通道 1（LCD 次像素抗锯齿的捕获路径差，容差内） |
+
+证据：`.preview-shot/unslop/batch1a/dom-compare.json`（`identical: true, problemCount: 0`）。
+
+### 3A.3 踩到的坑（写进配方，后面每批都要用）
+
+1. **dev 版白屏**不是代码问题：`Page.reload` 后 dev 模式要等 Vite 模块图 + 900 MB 库初始化，
+   原等待条件（20s）不够 → 判据读到"3 个元素"。现改为等 `.panel-content` 出现、上限 90s。
+2. **CDP 端口起不来**的根因是 **WebView2 复用已运行实例的 user-data 目录**：
+   装机版已在跑，dev 版拿到同一个 browser 进程（那个进程没有 `--remote-debugging-port`），
+   于是 env 里的端口不起作用。修法：dev 版额外给 `WEBVIEW2_USER_DATA_FOLDER`。
+
+---
+
+## 4. Batch 1A 的实现细节（留档）
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。
 
 | 块 | 行数 | 三份差异 |

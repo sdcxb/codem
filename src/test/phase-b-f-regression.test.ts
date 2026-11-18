@@ -1317,6 +1317,13 @@ describe("跨模块集成测试", () => {
   // ===== X1: App.tsx 笔记本状态 + 模式横幅 =====
   describe("X1: App.tsx 笔记本集成", () => {
     const appSrc = fs.readFileSync(path.join(__dirname, "../App.tsx"), "utf-8");
+    /* Batch 1A：三份主区收成一份后，模式横幅的**实现**搬到了 WorkspaceFrame，
+       App 负责把状态/回调作为入参传下去。判据因此两处都看：
+       App 里必须有这些状态与入参（接线），横幅 DOM 必须在主列组件里（实现）。 */
+    const mainColumnSrc = fs.readFileSync(
+      path.join(__dirname, "../components/workspace/WorkspaceFrame.tsx"),
+      "utf-8",
+    );
 
     it("导入 NotebookManager 组件", () => {
       expect(appSrc).toContain("NotebookManager");
@@ -1333,8 +1340,9 @@ describe("跨模块集成测试", () => {
     it("传递 notebookId 到 engine.process", () => {
       expect(appSrc).toContain("notebookId: activeNotebookId");
     });
-    it("包含笔记本模式横幅", () => {
-      expect(appSrc).toContain("notebook-mode-banner");
+    it("包含笔记本模式横幅（实现位于主列组件，App 传入状态）", () => {
+      expect(mainColumnSrc, "横幅 DOM 应住在 WorkspaceMainColumn 里").toContain("notebook-mode-banner");
+      expect(appSrc, "App 必须把 activeNotebookId 交给主列").toContain("activeNotebookId={activeNotebookId}");
     });
     it("Sidebar 传递 onNotebooks", () => {
       expect(appSrc).toContain("onNotebooks");

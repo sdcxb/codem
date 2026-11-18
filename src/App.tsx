@@ -422,6 +422,7 @@ import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
+import { WorkspaceFrame, WorkspaceMainColumn } from "./components/workspace/WorkspaceFrame";
 import { DreamLayout } from "./components/DreamLayout";
 // 第 47 轮补：写盘/操作失败的常驻提示（原来那条通道只在流式期间渲染）
 import { PersistFailureBanner } from "./components/PersistFailureBanner";
@@ -5593,6 +5594,177 @@ engineRef.current?.abort();
     </>
   );
 
+  /**
+   * 三套皮肤共用同一份「侧栏 / 主列 / 右栏」节点（Batch 1A）。
+   *
+   * 迁移前这段 JSX 在下面被复制了三份（hub / dream / default），主列 81 行逐 token 相同；
+   * 唯一真实差异是 hub 的右栏由 HubLayout 内部渲染、少传 sessionId/workspace/agents。
+   * 现在三份节点只构造一次，皮肤只决定「用哪个布局包裹」（WorkspaceFrame）。
+   *
+   * 为什么包成函数而不是提前算好的常量：`renderBottomPanelBody()` 依赖 db 就绪后的状态，
+   * 迁移前它只在 `dbReady` 分支里被调用；保持"按需调用"才不会在未就绪时读半初始化的状态。
+   */
+  const renderWorkspace = () => {
+    const sidebarNode = (
+      <SlotBridge name="app.sidebar" fallback={Sidebar}
+        identity={appIdentity}
+        onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
+        onProjects={() => setShowProjectManager(true)}
+        onConfig={() => setShowConfigEditor(true)}
+        onMcp={() => setShowMcpManager(true)}
+        onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
+        onSkills={() => setShowSkillManager(true)}
+        onMemory={() => setShowMemoryManager(true)}
+        onNotebooks={() => setShowNotebookManager(true)}
+        onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
+        onAgents={() => setShowAgentManager(true)}
+        onRemoveProject={(id, name, path) => {
+          setRemoveProjectDialog({ id, name, path });
+        }}
+        fileExplorerProjectId={fileExplorerProjectId}
+        onToggleFileExplorer={handleToggleFileExplorer}
+      />
+    );
+
+    /* 右栏入参三套皮肤完全一致（hub 曾经少传后三个 —— 那正是 Batch 1A 要消除的漂移）。 */
+    const rightRailNode = (
+      <SlotBridge name="app.right-sidebar" fallback={RightSidebar}
+        collapsed={!rightRailOpen}
+        onToggleCollapse={() => setRightRailOpen(!rightRailOpen)}
+        onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
+        onNewProject={() => setShowProjectManager(true)}
+        onImportProject={() => setShowProjectManager(true)}
+        onGitHubClone={() => setShowGitHubClone(true)}
+        onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+        editingFile={editingFile}
+        onEditingFileChange={setEditingFile}
+        refreshKey={fileExplorerRefreshKey}
+        sessionId={currentSession?.id || loadedSessionId || undefined}
+        workspace={currentProject?.path || appRoot}
+        agents={subagentTasks}
+      />
+    );
+
+    const mainColumn = (
+      <WorkspaceMainColumn
+        lang={lang}
+        compactionStatus={compactionStatus}
+        uiSessionId={uiSessionId}
+        activeNotebookId={activeNotebookId}
+        activeNotebookName={activeNotebookName}
+        onSaveAIResponseAsNote={handleSaveAIResponseAsNote}
+        setNotebookWorkspaceId={setNotebookWorkspaceId}
+        setNotebookWorkspaceName={setNotebookWorkspaceName}
+        setActiveNotebookId={setActiveNotebookId}
+        setActiveNotebookName={setActiveNotebookName}
+        setNotebookSourceFilter={setNotebookSourceFilter}
+        chat={{
+          onSend: handleSend,
+          onCancel: handleCancel,
+          onSendGuidance: handleSendGuidance,
+          onToggleSidebar: () => setSidebarOpen(!sidebarOpen),
+          sidebarOpen,
+          onRegenerate: handleRegenerate,
+          onEditAndResend: handleEditAndResend,
+          onEditAndRewind: handleEditAndRewind,
+          sessionId: currentSession?.id || loadedSessionId || undefined,
+          onFork: handleFork,
+          connected: true,
+          model: cliModel,
+          onModelChange: handleModelChange,
+          mode: currentMode,
+          providerId: currentProvider,
+          collaborationMode,
+          onModeChange: handleModeChange,
+          projectPath: currentProject?.path,
+          currentSessionId: currentSession?.id,
+          onCitationClick: activeNotebookId ? handleCitationClick : undefined,
+          onSourceClick: activeNotebookId ? handleSourceClick : undefined,
+          notebookId: activeNotebookId || undefined,
+        }}
+        bottomTab={bottomTab}
+        terminal={<SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />}
+        onCloseTerminal={() => setBottomTab("chat")}
+        bottomPanels={renderBottomPanelBody()}
+        game={gameEnabled && bottomTab === "game" ? (
+          <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
+            <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+              <GameViewLazy />
+            </Suspense>
+          </div>
+        ) : null}
+      />
+    );
+
+    /* 默认皮肤独有的移动端汉堡按钮（另外两套由各自布局持有） */
+    const mobileSidebarToggle = (
+      <button
+        className="mobile-sidebar-toggle"
+        onClick={() => setMobileSidebarOpen(true)}
+        title={lang === "zh" ? "打开菜单" : "Open menu"}
+        style={{ display: "none" }}
+      >
+        <Menu className="icon-lg" />
+      </button>
+    );
+
+    if (skin === "hub") {
+      return (
+        <WorkspaceFrame
+          variant="hub"
+          sidebar={sidebarOpen ? sidebarNode : null}
+          main={mainColumn}
+          rightRail={rightRailNode}
+          hub={{
+            rightRailOpen,
+            onToggleRightRail: () => setRightRailOpen(!rightRailOpen),
+            onTasks: () => setShowProjectManager(true),
+            onSkills: () => setShowSkillManager(true),
+            onNotebooks: () => setShowNotebookManager(true),
+            onTaskCenter: () => { setTaskCenterTab("overview"); setShowTaskCenter(true); },
+            onNewChat: () => {
+              // 新建全局对话（不属于任何项目）
+              useProjectStore.setState({ currentProject: null });
+              createSession();
+            },
+            onNewProject: () => setShowProjectManager(true),
+            onImportProject: () => setShowProjectManager(true),
+            onGitHubClone: () => setShowGitHubClone(true),
+            onOpenSession: (sessionId: string, projectId: string) => {
+              // 切换到指定会话
+              useProjectStore.getState().openProject(projectId);
+              useProjectStore.getState().switchSession(sessionId);
+            },
+            editingFile,
+            onEditingFileChange: setEditingFile,
+            refreshKey: fileExplorerRefreshKey,
+          }}
+        />
+      );
+    }
+
+    if (skin === "dream") {
+      return (
+        <WorkspaceFrame
+          variant="dream"
+          sidebar={sidebarOpen ? sidebarNode : null}
+          main={mainColumn}
+          rightRail={rightRailNode}
+        />
+      );
+    }
+
+    return (
+      <WorkspaceFrame
+        variant="default"
+        sidebar={sidebarOpen ? sidebarNode : null}
+        main={mainColumn}
+        rightRail={rightRailNode}
+        mobileSidebarToggle={mobileSidebarToggle}
+      />
+    );
+  };
+
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
@@ -5630,407 +5802,7 @@ engineRef.current?.abort();
             <SlotBridge name="app.bootstrap-wizard" fallback={BootstrapWizard} appRoot={appRoot} onComplete={handleBootstrapComplete}  />
           )}
 
-          {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
-          {skin === "hub" ? (
-            <SlotBridge name="app.skin-layout" fallback={HubLayout}
-              rightRailOpen={rightRailOpen}
-              onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
-              onTasks={() => setShowProjectManager(true)}
-              onSkills={() => setShowSkillManager(true)}
-              onNotebooks={() => setShowNotebookManager(true)}
-onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
-              onNewChat={() => {
-                // 新建全局对话（不属于任何项目）
-                useProjectStore.setState({ currentProject: null });
-                createSession();
-              }}
-              onNewProject={() => setShowProjectManager(true)}
-              onImportProject={() => setShowProjectManager(true)}
-              onGitHubClone={() => setShowGitHubClone(true)}
-              onOpenSession={(sessionId, projectId) => {
-                // 切换到指定会话
-                useProjectStore.getState().openProject(projectId);
-                useProjectStore.getState().switchSession(sessionId);
-              }}
-              editingFile={editingFile}
-              onEditingFileChange={setEditingFile}
-              refreshKey={fileExplorerRefreshKey}
-              sidebar={
-                sidebarOpen ? (
-                  <SlotBridge name="app.sidebar" fallback={Sidebar}
-                    identity={appIdentity}
-                    onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
-                    onProjects={() => setShowProjectManager(true)}
-                    onConfig={() => setShowConfigEditor(true)}
-                    onMcp={() => setShowMcpManager(true)}
-          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
-                    onSkills={() => setShowSkillManager(true)}
-                    onMemory={() => setShowMemoryManager(true)}
-                    onNotebooks={() => setShowNotebookManager(true)}
-onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
-                    onAgents={() => setShowAgentManager(true)}
-onRemoveProject={(id, name, path) => {
-  setRemoveProjectDialog({ id, name, path });
-}}
-                    fileExplorerProjectId={fileExplorerProjectId}
-                    onToggleFileExplorer={handleToggleFileExplorer}
-                  />
-                ) : null
-              }
-              mainPanel={
-                <div className="main-area">
-                  <div className="panel-right">
-                    <div className="panel-content">
-                      {compactionStatus && compactionStatus.sessionId === uiSessionId && (
-                        <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
-                          {compactionStatus.active ? (
-                            <><span className="compaction-spinner" /> 正在压缩上下文...</>
-                          ) : (
-                            compactionStatus.skipped ? (
-                              <div className="compaction-skipped-hint">{compactionStatus.skipReason ?? "当前没有可压缩的内容"}</div>
-                            ) : (
-                              <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
-                            )
-                          )}
-                        </div>
-                      )}
-                      {activeNotebookId && (
-                        <div className="notebook-mode-banner">
-                          <span className="notebook-mode-icon"><BookOpen size={16} /></span>
-<span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
-<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}><FolderOpen size={14} /></button>
-<button aria-label="关闭" title="关闭" className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
-</div>
-)}
-{(bottomTab === "chat" || bottomTab === "terminal") && (
-                        <SlotBridge name="app.conversation" fallback={ChatPanel}
-                          onSend={handleSend}
-                          onCancel={handleCancel}
-                          onSendGuidance={handleSendGuidance}
-                          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                          sidebarOpen={sidebarOpen}
-                          onRegenerate={handleRegenerate}
-                          onEditAndResend={handleEditAndResend}
-onEditAndRewind={handleEditAndRewind}
-                          sessionId={currentSession?.id || loadedSessionId || undefined}
-                          onFork={handleFork}
-                          connected={true}
-                          model={cliModel}
-                          onModelChange={handleModelChange}
-                          mode={currentMode}
-                          providerId={currentProvider}
-                          collaborationMode={collaborationMode}
-                          onModeChange={handleModeChange}
-projectPath={currentProject?.path}
-currentSessionId={currentSession?.id}
-onCitationClick={activeNotebookId ? handleCitationClick : undefined}
-onSourceClick={activeNotebookId ? handleSourceClick : undefined}
-notebookId={activeNotebookId || undefined}
-/>
-                      )}
-{bottomTab === "terminal" && (
-<div className="terminal-drawer">
-  <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
-    <button
-      className="terminal-drawer-close"
-      onClick={() => setBottomTab("chat")}
-      title={lang === "zh" ? "关闭终端" : "Close terminal"}
-      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
-    >
-      <X size={14} />
-    </button>
-  </div>
-  <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
-  </div>
-</div>
-)}
-
-{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
-{renderBottomPanelBody()}
-
-{gameEnabled && bottomTab === "game" && (
-  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
-      <GameViewLazy />
-    </Suspense>
-  </div>
-)}
-                    </div>
-                  </div>
-                </div>
-              }
-            />
-          ) : skin === "dream" ? (
-            <SlotBridge name="app.skin-layout" fallback={DreamLayout}>
-              {sidebarOpen && (
-<SlotBridge name="app.sidebar" fallback={Sidebar}
-identity={appIdentity}
-                  onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
-                  onProjects={() => setShowProjectManager(true)}
-                  onConfig={() => setShowConfigEditor(true)}
-                  onMcp={() => setShowMcpManager(true)}
-          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
-                  onSkills={() => setShowSkillManager(true)}
-                  onMemory={() => setShowMemoryManager(true)}
-                  onNotebooks={() => setShowNotebookManager(true)}
-onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
-onAgents={() => setShowAgentManager(true)}
-onRemoveProject={(id, name, path) => {
-  setRemoveProjectDialog({ id, name, path });
-}}
-                  fileExplorerProjectId={fileExplorerProjectId}
-                  onToggleFileExplorer={handleToggleFileExplorer}
-                />
-              )}
-
-              <div className="main-area">
-                <div className="panel-right">
-                  <div className="panel-content">
-                    {compactionStatus && compactionStatus.sessionId === uiSessionId && (
-                      <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
-                        {compactionStatus.active ? (
-                          <><span className="compaction-spinner" /> 正在压缩上下文...</>
-                        ) : (
-                          compactionStatus.skipped ? (
-                            <div className="compaction-skipped-hint">{compactionStatus.skipReason ?? "当前没有可压缩的内容"}</div>
-                          ) : (
-                            <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
-                          )
-                        )}
-                      </div>
-                    )}
-                    {activeNotebookId && (
-                      <div className="notebook-mode-banner">
-                        <span className="notebook-mode-icon"><BookOpen size={16} /></span>
-<span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
-<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}><FolderOpen size={14} /></button>
-<button aria-label="关闭" title="关闭" className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
-</div>
-)}
-{(bottomTab === "chat" || bottomTab === "terminal") && (
-<SlotBridge name="app.conversation" fallback={ChatPanel}
-onSend={handleSend}
-                        onCancel={handleCancel}
-                        onSendGuidance={handleSendGuidance}
-                        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                        sidebarOpen={sidebarOpen}
-                        onRegenerate={handleRegenerate}
-                        onEditAndResend={handleEditAndResend}
-onEditAndRewind={handleEditAndRewind}
-                        sessionId={currentSession?.id || loadedSessionId || undefined}
-                        onFork={handleFork}
-                        connected={true}
-                        model={cliModel}
-                        onModelChange={handleModelChange}
-                        mode={currentMode}
-                        providerId={currentProvider}
-                        collaborationMode={collaborationMode}
-                        onModeChange={handleModeChange}
-projectPath={currentProject?.path}
-currentSessionId={currentSession?.id}
-onCitationClick={activeNotebookId ? handleCitationClick : undefined}
-onSourceClick={activeNotebookId ? handleSourceClick : undefined}
-notebookId={activeNotebookId || undefined}
-/>
-                    )}
-{bottomTab === "terminal" && (
-<div className="terminal-drawer">
-  <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
-    <button
-      className="terminal-drawer-close"
-      onClick={() => setBottomTab("chat")}
-      title={lang === "zh" ? "关闭终端" : "Close terminal"}
-      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
-    >
-      <X size={14} />
-    </button>
-  </div>
-  <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
-  </div>
-</div>
-)}
-
-{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
-{renderBottomPanelBody()}
-
-{gameEnabled && bottomTab === "game" && (
-  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
-      <GameViewLazy />
-    </Suspense>
-  </div>
-)}
-                  </div>
-                </div>
-            </div>
-{/* Right sidebar for Dream skin */}
-<SlotBridge name="app.right-sidebar" fallback={RightSidebar}
-collapsed={!rightRailOpen}
-onToggleCollapse={() => setRightRailOpen(!rightRailOpen)}
-onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
-onNewProject={() => setShowProjectManager(true)}
-onImportProject={() => setShowProjectManager(true)}
-onGitHubClone={() => setShowGitHubClone(true)}
-onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
-editingFile={editingFile}
-onEditingFileChange={setEditingFile}
-refreshKey={fileExplorerRefreshKey}
-sessionId={currentSession?.id || loadedSessionId || undefined}
-workspace={currentProject?.path || appRoot}
-agents={subagentTasks}
-/>
-          </SlotBridge>
-          ) : (
-            <>
-              {/* 默认皮肤：原始布局，不受 ThemeManager 干预 */}
-          {/* P3 #46: Mobile sidebar hamburger button */}
-          <button
-            className="mobile-sidebar-toggle"
-            onClick={() => setMobileSidebarOpen(true)}
-            title={lang === "zh" ? "打开菜单" : "Open menu"}
-            style={{ display: "none" }}
-          >
-            <Menu className="icon-lg" />
-          </button>
-          {sidebarOpen && (
-<SlotBridge name="app.sidebar" fallback={Sidebar}
-identity={appIdentity}
-          onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
-          onProjects={() => setShowProjectManager(true)}
-          onConfig={() => setShowConfigEditor(true)}
-          onMcp={() => setShowMcpManager(true)}
-          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
-          onSkills={() => setShowSkillManager(true)}
-          onMemory={() => setShowMemoryManager(true)}
-          onNotebooks={() => setShowNotebookManager(true)}
-onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
-onAgents={() => setShowAgentManager(true)}
-onRemoveProject={(id, name, path) => {
-  setRemoveProjectDialog({ id, name, path });
-}}
-          fileExplorerProjectId={fileExplorerProjectId}
-          onToggleFileExplorer={handleToggleFileExplorer}
-        />
-      )}
-
-      <div className="main-area">
-        <div className="panel-right">
-
-          <div className="panel-content">
-            {compactionStatus && compactionStatus.sessionId === uiSessionId && (
-              <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
-                {compactionStatus.active ? (
-                  <><span className="compaction-spinner" /> 正在压缩上下文...</>
-                ) : (
-                  compactionStatus.skipped ? (
-                    <div className="compaction-skipped-hint">{compactionStatus.skipReason ?? "当前没有可压缩的内容"}</div>
-                  ) : (
-                    <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
-                  )
-                )}
-              </div>
-            )}
-            {activeNotebookId && (
-              <div className="notebook-mode-banner">
-                <span className="notebook-mode-icon"><BookOpen size={16} /></span>
-                <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
-<button
-  className="notebook-mode-save"
-  onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }}
-  title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}
-><FolderOpen size={14} /></button>
-<button aria-label="关闭" title="关闭"
-  className="notebook-mode-close"
-  onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}
->
-  <X size={14} />
-</button>
-              </div>
-            )}
-            {(bottomTab === "chat" || bottomTab === "terminal") && (
-<SlotBridge name="app.conversation" fallback={ChatPanel}
-onSend={handleSend}
-                onCancel={handleCancel}
-                onSendGuidance={handleSendGuidance}
-                onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                sidebarOpen={sidebarOpen}
-                onRegenerate={handleRegenerate}
-                onEditAndResend={handleEditAndResend}
-onEditAndRewind={handleEditAndRewind}
-                sessionId={currentSession?.id || loadedSessionId || undefined}
-                onFork={handleFork}
-                connected={true}
-                model={cliModel}
-                onModelChange={handleModelChange}
-                mode={currentMode}
-                providerId={currentProvider}
-                collaborationMode={collaborationMode}
-                onModeChange={handleModeChange}
-projectPath={currentProject?.path}
-currentSessionId={currentSession?.id}
-onCitationClick={activeNotebookId ? handleCitationClick : undefined}
-onSourceClick={activeNotebookId ? handleSourceClick : undefined}
-notebookId={activeNotebookId || undefined}
-/>
-            )}
-{bottomTab === "terminal" && (
-<div className="terminal-drawer">
-  <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
-    <button
-      className="terminal-drawer-close"
-      onClick={() => setBottomTab("chat")}
-      title={lang === "zh" ? "关闭终端" : "Close terminal"}
-      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
-    >
-      <X size={14} />
-    </button>
-  </div>
-  <div className="terminal-drawer-body">
-    <SlotBridge name="app.terminal" fallback={TerminalPanelLazy} cwd={currentProject?.path || appRoot} />
-  </div>
-</div>
-)}
-
-{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
-{renderBottomPanelBody()}
-
-{gameEnabled && bottomTab === "game" && (
-  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
-      <GameViewLazy />
-    </Suspense>
-  </div>
-)}
-          </div>
-        </div>
-      </div>
-
-{/* Right sidebar for default skin */}
-<SlotBridge name="app.right-sidebar" fallback={RightSidebar}
-collapsed={!rightRailOpen}
-onToggleCollapse={() => setRightRailOpen(!rightRailOpen)}
-onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
-onNewProject={() => setShowProjectManager(true)}
-onImportProject={() => setShowProjectManager(true)}
-onGitHubClone={() => setShowGitHubClone(true)}
-onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
-editingFile={editingFile}
-onEditingFileChange={setEditingFile}
-refreshKey={fileExplorerRefreshKey}
-sessionId={currentSession?.id || loadedSessionId || undefined}
-workspace={currentProject?.path || appRoot}
-agents={subagentTasks}
-/>
-        </>
-          )}
+                    {renderWorkspace()}
 
           {/* P3 #46: Mobile sidebar Drawer */}
           <Drawer

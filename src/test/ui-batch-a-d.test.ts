@@ -1561,11 +1561,15 @@ expect(src).toContain("for (let i = effectiveIdx + 1");
     const storeSrc = fs.readFileSync(path.resolve(__dirname, "../core/store.ts"), "utf-8");
     const sessionSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/session.ts"), "utf-8");
 
-    it("App.tsx 的三处 onFork 已收敛成同一个处理器（不再有三份内联实现）", () => {
+    it("onFork 只有一个共享接线点（Batch 1A 把三份主区收成了一份）", () => {
+      /* 迁移前：三份主区各写一遍 `onFork={handleFork}`（≥3 处）。
+         Batch 1A 之后：App 只构造一次 chat 入参（`onFork: handleFork`），
+         主列由 `WorkspaceMainColumn` 统一渲染 —— 不变量从"三处都接同一个处理器"
+         收紧成"**只有一处**，且没有内联实现"。 */
       const inline = appSrc.match(/onFork=\{\(messageIndex\) => \{/g) ?? [];
       expect(inline.length, "不应再有内联的 onFork 实现").toBe(0);
-      const wired = appSrc.match(/onFork=\{handleFork\}/g) ?? [];
-      expect(wired.length, "三处调用点都应接到 handleFork").toBeGreaterThanOrEqual(3);
+      expect(appSrc.match(/onFork=\{handleFork\}/g) ?? [], "旧的三处字面接线应已消失").toHaveLength(0);
+      expect(appSrc.match(/onFork: handleFork/g) ?? [], "共享 chat 入参里必须接一次 handleFork").toHaveLength(1);
     });
 
     it("整轮边界（endIdx）逻辑在 store 的实现里，且按“下一条 user 消息”收尾", () => {

@@ -46,10 +46,10 @@ export default {
       patches: [
         {
           file: "src/App.tsx",
-          from: "                    onAgents={() => setShowAgentManager(true)}\n",
+          from: "        onAgents={() => setShowAgentManager(true)}\n",
           to:
-            "                    onAgents={() => setShowAgentManager(true)}\n" +
-            '                    onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}\n',
+            "        onAgents={() => setShowAgentManager(true)}\n" +
+            '        onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}\n',
         },
       ],
       tests: ["src/test/sidebar-user-settings-click.test.ts"],
