@@ -1,0 +1,237 @@
+/**
+ * unslop v2 · 调色板（**唯一真相源**）
+ *
+ * ## 这个文件是什么
+ *
+ * v2 覆盖层的**原始色值**只允许出现在这里。`src/styles/unslop-v2.css` 只写 `var(--ui-*)`，
+ * 因此该文件享受 `scan-ui` 的「令牌定义源」豁免（与 `src/styles/skin-*.css` 同类），
+ * 而覆盖层**不**享受任何豁免 —— 谁在覆盖层里写死颜色，门禁当场报 error。
+ *
+ * ## 为什么单独一个文件而不是塞进 styles.css
+ *
+ * `src/styles.css` 717 KB / 22k 行，任何一次「回滚这一批」都会变成手工挑选 hunk。
+ * 现在的回滚粒度是**一个文件**：删掉 import 即回到 v1。
+ *
+ * ## 为什么不是 `src/styles/unslop-tokens.css`
+ *
+ * `src/core/theme/` 是既有门禁认定的「主题/令牌定义源」（`tools/ui-audit/scan-ui.mjs` 的
+ * ALLOWLIST 第一条）。把调色板放在这里**不需要新增任何 allowlist 条目**；
+ * 新增豁免是这次重构明确要避免的（豁免会同时放过将来写进同一文件的真违规）。
+ *
+ * ## 取值口径（与 DESIGN-DIRECTION 的差异只有一处：对比度校准）
+ *
+ * - 表面阶梯、线、accent、状态色取 DESIGN-DIRECTION §颜色；
+ * - `--ui-text-muted` / 状态色 / 亮色 accent 按**实算对比度**上调或压深一档，
+ *   因为方向稿给的是设计初值，正文与 15% 淡底上的小字必须 ≥4.5:1（`ui-token-canonical.test.ts` 守）：
+ *     · 暗色 muted `#7c817b` → `#888c87`（在 5 个表面上 4.52–5.58）；
+ *     · 暗色 danger `#d47c74` → `#d98c85`、warning `#c08a4e` → `#c69660`（自身 20% 淡底上过线）；
+ *     · 亮色 accent `#8a6a2f` → `#6d5423`（自身 20% 淡底上 4.6，且 accent-ink 5.75）；
+ *     · 亮色 success/danger/info/warning 各压深一档。
+ *   调色板的**色相**不变（琥珀 / 灰绿 / 砖红 / 钢蓝），只调明度。
+ *
+ * ## 只改颜色，不改几何
+ *
+ * Batch 0 的验收之一是「打开 v2 后布局指纹不变」。因此这里**不**动
+ * `--radius-*` / `--space-*` / `--control-*` / `--fs-*`（几何与字号在 Batch 1B 换，
+ * 那批的验收允许元素高度变化并逐张过截图）。
+ *
+ * ## 优先级
+ *
+ * `:root[data-ui="v2"]` 的特异度 (0,2,0)，高于 `[data-theme="dark"]` 与 `[data-skin="hub"]` 的 (0,1,0)；
+ * 亮色档用 (0,3,0) 再压一层。所以不需要 `!important`，也不必改 `styles.css` 的加载顺序。
+ */
+
+/* ========== 暗色（默认档） ========== */
+:root[data-ui="v2"] {
+  /* ---- 表面阶梯：越靠近内容越亮一档（中性，无色相偏移）---- */
+  --ui-bg: #0e1012;
+  --ui-sidebar: #111316;
+  --ui-surface: #15181c;
+  --ui-surface-raised: #1a1e22;
+  --ui-surface-active: #20252a;
+
+  /* ---- 线：只有两条原始值（控件边界 / 强边界），弱线由 --ui-line 派生 ---- */
+  --ui-line: rgba(233, 230, 223, 0.09);
+  --ui-line-strong: rgba(233, 230, 223, 0.16);
+
+  /* ---- 文字：三档 + 一档"硬件灰"（只给占位符/滚动条这类非正文）---- */
+  --ui-text: #e9e6df;
+  --ui-text-secondary: #a8aaa5;
+  --ui-text-muted: #888c87;
+  --ui-text-dim: #5f655f;
+
+  /* ---- accent：琥珀。使用面积 < 5%（主操作 / 当前项 / 一个关键数字）---- */
+  --ui-accent: #c6a15b;
+  --ui-accent-hover: #d2ad66;
+  --ui-accent-ink: #17130c;
+
+  /* ---- 语义色：只表意，不做装饰 ---- */
+  --ui-success: #78b892;
+  --ui-danger: #d98c85;
+  --ui-warning: #c69660;
+  --ui-info: #8aa6c8;
+
+  /* ---- 状态实心块上的文字（暗色档状态色偏亮 ⇒ 用深墨）---- */
+  --ui-on-status: #101314;
+
+  /* ---- 浮层遮罩：中性黑，两档同值 ---- */
+  --ui-backdrop: rgba(0, 0, 0, 0.5);
+  --ui-backdrop-strong: rgba(0, 0, 0, 0.72);
+}
+
+/* ========== 亮色 ========== */
+/* 暖纸表面。accent 压到 #6d5423：方向稿的 #8a6a2f 在自身 20% 淡底上只有 4.36，
+   而 accent 文字最常出现的位置恰好就是那种淡底 chip（判据 LIGHT-UI-3 同一条理由）。 */
+:root[data-ui="v2"][data-theme="light"] {
+  --ui-bg: #f7f5f0;
+  --ui-sidebar: #f2efe8;
+  --ui-surface: #fffdf9;
+  --ui-surface-raised: #efece5;
+  --ui-surface-active: #e8e3da;
+
+  --ui-line: rgba(29, 27, 23, 0.10);
+  --ui-line-strong: rgba(29, 27, 23, 0.18);
+
+  --ui-text: #1d1b17;
+  --ui-text-secondary: #565a54;
+  --ui-text-muted: #63665f;
+  --ui-text-dim: #8b8d86;
+
+  --ui-accent: #6d5423;
+  --ui-accent-hover: #5d4720;
+  --ui-accent-ink: #fffdf9;
+
+  --ui-success: #246345;
+  --ui-danger: #963732;
+  --ui-warning: #785000;
+  --ui-info: #3a5b7c;
+
+  /* 亮色档状态色压深 ⇒ 实心块上用白字 */
+  --ui-on-status: #fffdf9;
+
+  --ui-backdrop: rgba(0, 0, 0, 0.5);
+  --ui-backdrop-strong: rgba(0, 0, 0, 0.72);
+}
+
+/* ========== 派生 ========== */
+/* 与主题无关：这些值只引用 `--ui-*`，在哪个档下解析就得到哪个档的结果（CSS 变量惰性求值）。 */
+:root[data-ui="v2"] {
+  /* 弱线 = 主线的 58%（暗 9%→5.2%、亮 10%→5.8%）：结构分隔线必须比控件边界弱，
+     但又要看得见 —— 与 styles.css 里 5%/7% 那档同源。 */
+  --ui-line-weak: color-mix(in srgb, var(--ui-line) 58%, transparent);
+  --ui-glass: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  --ui-glass-strong: color-mix(in srgb, var(--ui-surface) 88%, transparent);
+}
+
+/* ========== 桥接：把 v2 调色板接到既有语义令牌 ========== */
+/*
+ * 为什么需要这一层：200+ 组件现在消费的是 `--bg-primary` / `--accent` / `--text-secondary` 这套
+ * 老令牌。Batch 0 的目标是「一条 CSS 都不用改就能看到 v2 的取色」，所以先把老令牌重新指向 `--ui-*`；
+ * 后续每批会把组件逐个迁到 `--ui-*` 上，Batch 7 再删掉这层桥。
+ *
+ * 这一段同时保证了**没有零消费方的 `--ui-*`**（`css-var-unused` 是 warn 级棘轮）：
+ * 每个 `--ui-*` 在这里至少被引用一次。
+ */
+:root[data-ui="v2"] {
+  /* ---- 表面 ---- */
+  --bg-primary: var(--ui-bg);
+  --bg-secondary: var(--ui-surface);
+  --bg-tertiary: var(--ui-surface-raised);
+  --bg-hover: var(--ui-surface-active);
+  --sidebar-bg: var(--ui-sidebar);
+  --surface-opaque-raised: var(--ui-surface-raised);
+  --input-bg: var(--ui-surface);
+  --code-bg: var(--ui-surface);
+  --system-bg: var(--ui-surface-raised);
+
+  /* ---- 文字 ---- */
+  --text-base: var(--ui-text);
+  --text-ramp-paper: var(--ui-bg);
+  --text-primary: var(--ui-text);
+  --text-secondary: var(--ui-text-secondary);
+  --text-muted: var(--ui-text-muted);
+
+  /* ---- 线 ---- */
+  --border-primary: var(--ui-line);
+  --border-secondary: var(--ui-line-weak);
+  --border-separator: var(--ui-line-weak);
+  --border-strong: var(--ui-line-strong);
+  --field-border-hover: var(--ui-line-strong);
+  --field-border-focus: var(--ui-line-strong);
+  --separator-fade: var(--ui-line-strong);
+
+  /* ---- accent ---- */
+  --accent: var(--ui-accent);
+  --accent-hover: var(--ui-accent-hover);
+  --accent-strong: var(--ui-accent);
+  --accent-muted: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+  --accent-selected: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+  --text-on-accent: var(--ui-accent-ink);
+  /* 焦点环跟随 accent（原来派生自 --accent，这里重写只为让"焦点环 = 琥珀"这件事显式可见） */
+  --focus-ring-color: color-mix(in srgb, var(--ui-accent) 75%, transparent);
+
+  /* ---- 状态 ---- */
+  --success: var(--ui-success);
+  --warning: var(--ui-warning);
+  --error: var(--ui-danger);
+  --info: var(--ui-info);
+  --success-content: var(--ui-success);
+  --warning-content: var(--ui-warning);
+  --error-content: var(--ui-danger);
+  --info-content: var(--ui-info);
+  --text-on-status: var(--ui-on-status);
+  --error-hover: color-mix(in srgb, var(--ui-danger) 84%, var(--ui-text));
+  --success-hover: color-mix(in srgb, var(--ui-success) 84%, var(--ui-text));
+  --identity-mode-worktree: var(--ui-info);
+  --reasoning-accent: var(--ui-text-muted);
+  --security-ask: var(--ui-info);
+  --security-auto: var(--ui-accent);
+  --security-full: var(--ui-success);
+
+  /* ---- 用户气泡：中性面 + 弱线（方向稿：accent 不做大面积填充）---- */
+  --user-bg: var(--ui-surface-raised);
+  --message-bubble-user: var(--ui-surface-raised);
+  --message-bubble-user-border: var(--ui-line);
+
+  /* ---- 浮层 / 玻璃 ---- */
+  --dropdown-bg: var(--ui-glass);
+  --surface-glass-raised: var(--ui-glass-strong);
+  --surface-glass-chrome: color-mix(in srgb, var(--ui-sidebar) 62%, transparent);
+  --surface-glass-chrome-native: color-mix(in srgb, var(--ui-sidebar) 88%, transparent);
+  --tooltip-bg: var(--ui-surface-raised);
+  --tooltip-text: var(--ui-text);
+  --tooltip-border: var(--ui-line);
+  --overlay-backdrop: var(--ui-backdrop);
+  --overlay-backdrop-strong: var(--ui-backdrop-strong);
+  --dropdown-hover: var(--ui-surface-active);
+
+  /* ---- 阴影：中性，无彩色 glow（方向稿：深度靠 step + hairline）---- */
+  --shadow-glow: 0 0 0 1px var(--ui-line), 0 6px 20px color-mix(in srgb, var(--ui-text) 8%, transparent);
+  --shadow-bubble: 0 1px 2px color-mix(in srgb, var(--ui-text) 6%, transparent);
+  --shadow-color: color-mix(in srgb, var(--ui-text) 18%, transparent);
+  --shadow-color-soft: color-mix(in srgb, var(--ui-text) 8%, transparent);
+
+  /* ---- 背景层：删掉彩色光斑与彩色渐变（原地置空，不删规则）---- */
+  --backdrop-blob-1: transparent;
+  --backdrop-blob-2: transparent;
+  --backdrop-blob-3: transparent;
+  --ambient-backdrop: none;
+  --scene-veil: transparent;
+  --scene-veil-alt: transparent;
+  --scene-layer: linear-gradient(168deg, var(--ui-surface) 0%, var(--ui-bg) 100%);
+
+  /* ---- 滚动条 ---- */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in srgb, var(--ui-text-dim) 55%, transparent);
+
+  /* ---- 高光边（中性）---- */
+  --highlight-top: color-mix(in srgb, var(--ui-text) 5%, transparent);
+  --highlight-top-strong: color-mix(in srgb, var(--ui-text) 9%, transparent);
+
+  /* ---- 玻璃层（codem-ui.css 里原本写死暗底 rgba(22,27,34,…)，两档共用一个色 —— 这里按档取面）---- */
+  --glass-bg: var(--ui-glass);
+  --glass-bg-strong: var(--ui-glass-strong);
+  --glass-bg-subtle: color-mix(in srgb, var(--ui-surface) 48%, transparent);
+  --glass-border: var(--ui-line);
+  --glass-border-strong: var(--ui-line-strong);
+}

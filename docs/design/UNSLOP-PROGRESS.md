@@ -11,8 +11,8 @@
 
 | 批次 | 内容 | 状态 | 全量门禁 |
 |---|---|---|---|
-| 0 | 基线与护栏（token 层 + 选择器作用域闸 + 文案/emoji 棘轮 + 基线截图） | **计划已出，待执行** | 否（目标测试） |
-| 1A | `App.tsx` 三份主区抽成 `WorkspaceFrame`（纯结构） | 待执行 | **是** |
+| 0 | 基线与护栏（token 层 + 选择器作用域闸 + 文案/emoji 棘轮 + 基线截图） | **✅ 2026-11-18 完成** | 否（目标测试） |
+| 1A | `App.tsx` 三份主区抽成 `WorkspaceFrame`（纯结构） | 进行中 | **是** |
 | 1B | 壳层 + 聊天视觉 | 待执行 | **是** |
 | 2 | 任务 / 团队 / 记忆 | 待执行 | 目标测试 |
 | 3 | 设置 + 引导 + 错误恢复 | 待执行 | **是** |
@@ -65,7 +65,63 @@ CSS 内既有漂移（本次实测，用于逐批对账「只降不升」）：
 
 ---
 
-## 2. Batch 0 · 具体 diff 计划
+## 2. Batch 0 · 执行结果（2026-11-18 完成）
+
+### 2.0 实际落地
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `src/core/theme/unslop-tokens.css` | 新增 | v2 调色板唯一真相源（暗/亮两档）+ 桥接层；原始色值只在这里出现 |
+| `src/styles/unslop-v2.css` | 新增 | 覆盖层；每条选择器带 `[data-ui="v2"]`；当前只含 `::selection` / `::placeholder` 两条 |
+| `src/core/theme/ui-layer.ts` | 新增 | `data-ui` 档位：`?ui=v2`（不落盘）> `localStorage` > 默认 v1（**移除**属性） |
+| `src/test/ui-layer.test.ts` | 新增 | 8 例：开关语义 + 作用域闸 + 覆盖层无颜色字面量 |
+| `src/test/ui-token-canonical.test.ts` | 新增 | 12 例：CSS↔`tokens.json` 逐值一致 + 两档令牌集合相同 + 无几何令牌 + 对比度实算 |
+| `src/test/ui-no-emoji.test.ts` | 新增 | 4 例：emoji 行/文件/逐文件棘轮 |
+| `src/test/ui-copy-guard.test.ts` | 新增 | 3 例：禁用词/greeting/感叹号/raw Markdown 棘轮 |
+| `src/test/helpers/ui-text-scan.ts` | 新增 | 用 TypeScript AST 取「JSX 文本 + 字符串/模板字面量」，注释天然不参与 |
+| `tools/ui-audit/copy-guard-baseline.json` | 新增 | 两条棘轮的基线（emoji 274 行 / 55 文件；banned 12 / greeting 1 / 感叹号 11 / raw MD 52） |
+| `docs/design/tokens.json` | 新增 | 机读真相源 + 校准记录（与 CSS 逐值一致） |
+| `src/main.tsx` | **3 行** | 两个 CSS import + `applyUiLayer()`（在 render 之前） |
+| `docs/design/audit/batch-0/*` | 更新 | 采集协议改为「reload + 冻结 + 移焦 + 隐藏光标」 |
+
+**未落地（按门禁事实后移，理由见 §2.1）**：`components/ui` 基础件骨架、字体/几何令牌。
+
+### 2.0b 判据与变异自证（四条都验证过"改坏会红"）
+
+| 判据 | 变异 | 结果 |
+|---|---|---|
+| 作用域闸 | 往 `unslop-v2.css` 加 `.message-bubble { color: red }` | 🔴 `offenders: [".message-bubble"]`；还原后 🟢 8/8 |
+| CSS↔JSON 逐值 | 把 `--ui-accent: #c6a15b` 改成 `#c6a15c` | 🔴 漂移比对报出 accent；还原后 🟢 |
+| emoji 棘轮 | 往 `ChatPanel.tsx` 加 `<span>🚀</span>` | 🔴 行数/文件数/逐文件三条全红；还原后 🟢 |
+| 文案棘轮 | 同一处加「一键完成」 | 🔴 `banned 12 → 13` 并打印 file:line；还原后 🟢 |
+
+### 2.0c 视觉验收（同机、同数据、同协议）
+
+| 检查 | 结果 |
+|---|---|
+| 关闭档位 vs 已提交基线 | **0 像素差异**（哈希相同） |
+| 引入两个样式表但**不开启** vs 未引入 | 43 px 变化、单通道最大 **1/255**（LCD 次像素抗锯齿的捕获路径差异，非视觉变化；容差 ≤200 px 且 ≤4/255） |
+| 开启 v2 后的布局指纹 | 元素数 **2021 = 2021**，每元素 `box` 与 9 项布局属性**全部相同**，0 处差异 |
+| 皮肤令牌解析（`data-skin=hub/dream` + v2） | `--accent` 都是 `#c6a15b`、`--bg-primary` 都是 `#0e1012` → v2 压过 hub 的橙色与 dream 的粉色 |
+| 截图 | `03-on-dark` / `04-on-light`（见 `.preview-shot/unslop/batch0/`） |
+
+### 2.0d 门禁读数（Batch 0 结束时）
+
+`tsc` 0；四个新判据 27 例全绿；`scan-ui` error 0 / warn 0；`style-literals` 11 族不涨；
+`color-roles` 51 对 + 未解析 48/49；`token-hygiene` 0；`motion` 0 裸曲线；`doc-tokens` 通过；
+`knip` 棘轮无增长（exports 46/46）；`reachability` 通过；`vite build` 通过。
+
+### 2.0e 过程中发现并修掉的两个坑（都会让"像素验收"假红）
+
+1. **聊天输入区会自动聚焦 ⇒ 文本光标闪烁不是 CSS 动画**，`animation:none` 停不住它。
+   同一页面 3 次重载得到 3 个不同哈希。修法：采集前 `document.activeElement.blur()` + `caret-color: transparent`。
+2. **CDP 截图会在"合成面/主帧"两条路径间交替**，Windows 的 LCD 次像素抗锯齿只在其一生效：
+   同一视图连续两张差 **43 px、每通道 1/255**（标题行次像素）。修法：像素比对带容差
+   （≤200 px 且 ≤4/255），并**以布局指纹为主判据**。
+
+---
+
+## 2A. Batch 0 · 原始计划（留档，含与执行的差异）
 
 目标：**不动视觉**，只建立「可回滚、可对比、可判红」的底座。默认关闭时逐像素不变。
 

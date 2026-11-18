@@ -11,13 +11,19 @@ import App from "./App";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { applyAppearanceAttributes } from "./core/theme/appearance-modes";
 import { startWithMaterialHint } from "./core/boot/material-hint";
+import { applyUiLayer } from "./core/theme/ui-layer";
 import "./styles.css";
+/* unslop v2 调色板（DEFAULT-OFF）：只有 <html data-ui="v2"> 时才命中，默认档下零声明生效。
+   放在 styles.css 之后：它重新指向的是同一批语义令牌，靠特异度(0,2,0)压过两档主题。 */
+import "./core/theme/unslop-tokens.css";
 // 共享组件样式（桌面与手机同一份）。顺序是硬的：必须排在皮肤之前 ——
 // 皮肤用 `.message-content` / `.user .message-content` 覆盖基础层，放到后面会把两套皮肤的覆盖压掉。
 import "../packages/ui/src/ui.css";
 import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
 import "./styles/codem-ui.css";
+/* unslop v2 覆盖层：最后加载，且每条规则都带 [data-ui="v2"] 前缀（判据 ui-layer.test.ts）。 */
+import "./styles/unslop-v2.css";
 
 // 全局错误捕获 — 静默记录到 console（App.tsx 另有 console 级监听）。
 // 之前用 alert() 弹原生对话框：任何未捕获错误都会阻塞打断用户操作，
@@ -93,6 +99,9 @@ async function bootstrap(): Promise<void> {
   /* 外观档位（高对比/密度）先按**镜像**应用一次：用户上次选的档要立刻生效，
      不然会先按默认档渲染一帧再跳（DB 的真值由 TitleBar 在 dbReady 后再校正一次）。 */
   applyAppearanceAttributes();
+  /* unslop v2 覆盖层的档位（`data-ui`）：默认档**不写属性**，因此与未引入覆盖层时逐像素一致。
+     在 render 之前应用，避免"先按 v1 画一帧再切"。 */
+  applyUiLayer();
   await startWithMaterialHint({ probe: applyNativeMaterialHint, render: renderApp });
   // PC 远程只有桌面网关（ADR-0005 M4）：它由用户在设置里手动启动，桌面不再拉起 Host sidecar。
 }

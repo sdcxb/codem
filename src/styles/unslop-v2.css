@@ -1,0 +1,31 @@
+/**
+ * unslop v2 · 覆盖层
+ *
+ * ## 硬约束（有判据守着）
+ *
+ * 本文件里**每一条选择器都必须以 `[data-ui="v2"]` 开头**。这样：
+ *   · 关闭档位时，本文件不可能有任何一个声明生效（"关闭 = 与未引入逐像素一致"是构造保证，
+ *     不是靠人记住别开）——判据：`src/test/ui-layer.test.ts` 的「作用域闸」；
+ *   · 本文件**不享受** `scan-ui` 的任何颜色豁免：写死色值当场 error。所有颜色必须 `var(--ui-*)`
+ *     或 `var(--radius-*)` / `var(--space-*)` / `var(--z-*)` 这类既有令牌。
+ *
+ * ## 为什么按"覆盖既有类名"而不是新建组件
+ *
+ * `src/components` 下 201 个 `.tsx`、1388 处内联样式。逐页重建组件无法在合理批次内验证完，
+ * 而且会同时改到行为。这里的路线是：**先覆盖 token（Batch 0）→ 再覆盖壳层/聊天的既有类（1B）
+ * → 逐页迁移（2–6）**；每批只动自己范围内的类，旧规则仍在，随时可回退。
+ *
+ * ## 当前内容（Batch 0）
+ *
+ * 只有"选择色跟随 accent"这一条 —— 它是唯一必须由覆盖层（而不是 token）表达的东西：
+ * `::selection` 不是自定义属性，浏览器默认蓝在深色页上会显得像别人的产品。
+ */
+
+[data-ui="v2"] ::selection {
+  background: color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] ::placeholder {
+  color: var(--ui-text-dim);
+}

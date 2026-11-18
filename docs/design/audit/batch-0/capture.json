@@ -1,8 +1,7 @@
 {
   "note": "基线指纹：只记录视口/状态/文件摘要，不提交截图本体（截图含本机会话标题与项目路径）。复现见 README.md。",
-  "capturedAt": "2026-11-18T04:54:22.799Z",
+  "capturedAt": "2026-11-18T05:18:50.676Z",
   "target": "installed Codem 1.18.14 (HEAD 8ce08b43 的 UI 与之一致)",
-  "protocol": "Page.reload → 等 .app 就绪 → Emulation 1440x900@dsf1 → 冻结动画/过渡（animation:none, transition:none）→ 采集 → 还原",
   "viewport": "Emulation 1440x900 @dsf1（布局宽度见每张的 innerW/innerH）",
   "before": {
     "theme": "dark",
@@ -23,8 +22,8 @@
   "shots": [
     {
       "name": "01-chat-dark",
-      "bytes": 108461,
-      "sha256": "a2c2fde02760d30af69d80a306d512d800b2996c0e9b844a5b72a6cca4dfe30c",
+      "bytes": 108489,
+      "sha256": "26ceacd9a0af258913b45932ead36c4b6afc81fed3343f40f10f42781d25d8bb",
       "state": {
         "theme": "dark",
         "skin": null,
@@ -36,8 +35,8 @@
     },
     {
       "name": "02-tasks-dark",
-      "bytes": 228640,
-      "sha256": "c05aff48fada6be4cdc8382f1cbf760b98e0cc773634dcf100d86f9d5dc43e8a",
+      "bytes": 228663,
+      "sha256": "75c43e96c4db6beb9843867ef081fb014058568437fe293baf47fb301bd4bb56",
       "state": {
         "theme": "dark",
         "skin": null,
@@ -76,7 +75,7 @@
     {
       "name": "05-chat-light",
       "bytes": 116339,
-      "sha256": "a27708fdaf6b7c4ae79698d04c5ca9988e28c25033173f03309b660c0f2aec38",
+      "sha256": "49680899bda528cc9a1e4b824b00f046782bbb2453c10f1c26b6cd92d0ce8f7c",
       "state": {
         "theme": "light",
         "skin": null,
@@ -101,7 +100,7 @@
     }
   ],
   "reproducibility": {
-    "tested": "同一会话内按上述协议连续跑两遍",
+    "tested": "同一会话内按上述协议连续跑两遍 + 重载 3 次各拍一张",
     "byteIdentical": [
       "01-chat-dark",
       "03-memory-dark",
@@ -109,11 +108,10 @@
       "05-chat-light",
       "06-search-modal-dark"
     ],
-    "notByteIdentical": [
-      "02-tasks-dark"
-    ],
-    "reason": "任务中心渲染实时值（相对时间/活动计数），冻结动画也无法消除；该面以布局指纹为准",
-    "diffMagnitude": "228,639 B vs 228,640 B（1 字节）"
+    "caveats": [
+      "02-tasks-dark 渲染相对时间/活动计数，逐字节不可复现（差 1 字节）；该面以布局指纹为准",
+      "文本光标闪烁（输入区自动聚焦）与 LCD 次像素抗锯齿会让相邻两张差 43 px / 1/255：采集协议已 blink 掉光标，像素比对带容差（≤200 px 且 ≤4/255）"
+    ]
   },
   "layoutFingerprint": {
     "method": "每个元素记录 tag/class/data-testid/role/aria-label/圆整矩形/文本长度/子元素数/9 项布局计算属性",
@@ -124,6 +122,42 @@
     },
     "sha256": "120d4169b3288433d992d18ff24793d0b6a49eafe7db04763ef89bae1c377446",
     "deterministic": "连续两次采集逐字节相同（2026-11-18 实测，2021 元素）",
-    "caveat": "元素数取决于当时的会话内容；与本次相同的数据状态下才可逐字节比对。批次验收以「v2 开启 vs 关闭的元素数与逐元素矩形一致」为主判据。"
+    "caveat": "元素数取决于当时的会话内容；批次验收以「v2 开启 vs 关闭的元素数与逐元素矩形一致」为主判据（Batch 0 实测 2021=2021、0 处差异）"
+  },
+  "batch0Acceptance": {
+    "at": "2026-11-18T05:20:29.180Z",
+    "offVsBaselinePixels": {
+      "changed": 0,
+      "maxDelta": 0,
+      "sameSize": true,
+      "equal": true
+    },
+    "injectedButOffPixels": {
+      "changed": 43,
+      "maxDelta": 1,
+      "sameSize": true,
+      "equal": true
+    },
+    "layout": {
+      "elements": [
+        2021,
+        2021
+      ],
+      "identical": true
+    },
+    "skinTokens": {
+      "hub": {
+        "accent": "#c6a15b",
+        "bg": "#0e1012",
+        "surface": "#15181c",
+        "sidebar": "#111316"
+      },
+      "dream": {
+        "accent": "#c6a15b",
+        "bg": "#0e1012",
+        "surface": "#15181c",
+        "sidebar": "#111316"
+      }
+    }
   }
 }

@@ -31,8 +31,20 @@ node .preview-shot/_unslop-snapshot.mjs .preview-shot/unslop/snap-v2.json --ui=v
 ```
 
 协议（截图脚本已内置，必须一致才有可比性）：`Page.reload` → 等 `.app` 就绪 →
-`Emulation.setDeviceMetricsOverride 1440×900@dsf1` → 注入 `animation:none;transition:none` 冻结动效 →
+`Emulation.setDeviceMetricsOverride 1440×900@dsf1` → **移焦 + 隐藏光标** + 注入 `animation:none;transition:none` →
 逐面采集 → 还原（移除冻结样式、清视口、关闭所有浮层）。
+
+> 移焦与隐藏光标是必须的：聊天输入区启动后自动聚焦，**文本光标的闪烁不是 CSS 动画**，
+> `animation:none` 停不住它 —— 不处理时同一页面 3 次重载会得到 3 个不同哈希。
+
+## Batch 0 的视觉验收（`_unslop-batch0-accept.mjs`）
+
+| 检查 | 结果 |
+|---|---|
+| 关闭档位 vs 已提交基线 | 0 像素差异 |
+| 引入两个样式表但不开启 vs 未引入 | 43 px / 单通道 1（LCD 次像素抗锯齿的捕获路径差异，容差内） |
+| 开启 v2 后的布局指纹 | 2021 = 2021 元素，逐元素矩形与 9 项布局属性 0 处差异 |
+| 皮肤令牌解析（hub / dream） | `--accent` 均为 `#c6a15b`（v2 压过皮肤自身的橙/粉） |
 
 对比方式：两次 `snap*.json` 的 `count`、每个元素的 `box` 与 `layout` 必须完全一致；
 `cls`/`textLen` 允许变化（那是换了 token 或文案）。脚本在 `.preview-shot/`（gitignored），
@@ -56,3 +68,5 @@ node .preview-shot/_unslop-snapshot.mjs .preview-shot/unslop/snap-v2.json --ui=v
   （`unslop-v2.css` 的每条选择器都必须带 `[data-ui="v2"]`），截图哈希只是旁证。
 - 「v2 只改 token、不改布局」的**主判据**是布局指纹：开启前后 `count` 相同、每个元素的 `box` 与 `layout` 相同。
   比截图更可靠（不受实时文本影响），也比人眼看图更能定位到具体元素。
+- 像素比对**必须带容差**：CDP 截图会在"合成面 / 主帧"两条路径间交替，Windows 的 LCD 次像素抗锯齿
+  只在其中一条生效。实测同一视图相邻两张差 43 px、单通道 1/255。判据：变化 ≤200 px 且 ≤4/255。
