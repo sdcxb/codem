@@ -157,7 +157,7 @@ function describeMessage(message: MessageLike): MessageDescription {
   // + Auto-link: bare file paths → Markdown links (rendering-layer safety net)
   const displayContent = isUser
     ? rawContent
-    : autoLinkFilePaths(rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")'));
+    : autoLinkFilePaths(rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[$1](#cite-$1 "$2")'));
 
   return {
     isUser,

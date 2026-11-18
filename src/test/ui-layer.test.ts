@@ -24,6 +24,25 @@ import {
 const ROOT = join(__dirname, "..", "..");
 const OVERLAY = join(ROOT, "src", "styles", "unslop-v2.css");
 
+/** 按**顶层**逗号切选择器列表：`:is(a, b)` 里的逗号不是分隔符 */
+function splitSelectorList(prelude: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let buf = "";
+  for (const ch of prelude) {
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      out.push(buf.trim());
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out.filter(Boolean);
+}
+
 /** 极简 CSS 规则切分：返回每条规则的 prelude（选择器或 at-rule） */
 function rulePreludes(css: string): string[] {
   const src = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -130,10 +149,15 @@ describe("v2 覆盖层的作用域闸", () => {
     expect(rules.length, "unslop-v2.css 里一条规则都没有 —— 作用域闸会变成空转").toBeGreaterThan(0);
   });
 
+  it("选择器切分不把 :is(a, b) 里的逗号当分隔符（否则作用域闸会假红）", () => {
+    expect(splitSelectorList('[data-ui="v2"] .a:is(:hover, :focus-visible)')).toEqual(['[data-ui="v2"] .a:is(:hover, :focus-visible)']);
+    expect(splitSelectorList('[data-ui="v2"] .a, [data-ui="v2"] .b')).toEqual(['[data-ui="v2"] .a', '[data-ui="v2"] .b']);
+  });
+
   it("每一条选择器都必须以 [data-ui=\"v2\"] 开头", () => {
     const offenders = rulePreludes(css)
       .filter((prelude) => !prelude.startsWith("@"))
-      .flatMap((prelude) => prelude.split(",").map((s) => s.trim()))
+      .flatMap((prelude) => splitSelectorList(prelude))
       .filter((selector) => selector.length > 0 && !selector.startsWith('[data-ui="v2"]'));
     expect(
       offenders,

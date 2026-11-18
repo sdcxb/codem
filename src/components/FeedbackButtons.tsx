@@ -1,4 +1,5 @@
 import { memo, useEffect } from "react";
+import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useAppStore, type Message } from "../store";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -56,7 +57,7 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             aria-label={S.bubble.like[lang]}
             style={inline && feedback === "like" ? { color: "var(--accent)" } : {}}
           >
-            👍
+            <ThumbsUp size={14} />
           </button>
         </TooltipTrigger>
         <TooltipContent>{S.bubble.like[lang]}</TooltipContent>
@@ -69,7 +70,7 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             aria-label={S.bubble.dislike[lang]}
             style={inline && feedback === "dislike" ? { color: "var(--accent)" } : {}}
           >
-            👎
+            <ThumbsDown size={14} />
           </button>
         </TooltipTrigger>
         <TooltipContent>{S.bubble.dislike[lang]}</TooltipContent>

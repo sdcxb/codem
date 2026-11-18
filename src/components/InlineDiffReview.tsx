@@ -313,7 +313,7 @@ function PreviewDiff({
       )}
       {isNewFile && (
         <div className="inline-diff-preview-section">
-          <span className="inline-diff-preview-badge new">✨ 新文件</span>
+          <span className="inline-diff-preview-badge new">新文件</span>
         </div>
       )}
       {!isNewFile && <div className="inline-diff-preview-arrow">↓</div>}

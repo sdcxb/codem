@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { Target } from "lucide-react";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { getSkillRegistry } from "../core/skill/skill";
 import { getSettingJSON } from "../core/storage/settings";
@@ -8,7 +9,7 @@ export interface SlashCommandItem {
   id: string;
   title: string;
   description?: string;
-  icon: string;
+  icon: ReactNode;
   onSelect: () => void;
 }
 
@@ -44,12 +45,12 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
           id: s.name,
           title: name,
           description: s.description,
-          icon: "🎯",
+          icon: <Target size={14} />,
           onSelect: () => onSelect({
             id: s.name,
             title: name,
             description: s.description,
-            icon: "🎯",
+            icon: <Target size={14} />,
             onSelect: () => {},
           }),
         });

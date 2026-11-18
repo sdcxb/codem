@@ -15,11 +15,23 @@
  * 而且会同时改到行为。这里的路线是：**先覆盖 token（Batch 0）→ 再覆盖壳层/聊天的既有类（1B）
  * → 逐页迁移（2–6）**；每批只动自己范围内的类，旧规则仍在，随时可回退。
  *
- * ## 当前内容（Batch 0）
+ * ## 索引
  *
- * 只有"选择色跟随 accent"这一条 —— 它是唯一必须由覆盖层（而不是 token）表达的东西：
- * `::selection` 不是自定义属性，浏览器默认蓝在深色页上会显得像别人的产品。
+ *   1. 字体与基础
+ *   2. 应用外壳（标题栏 / 菜单 / 侧栏 / 行 / 徽标）
+ *   3. 右栏与面板侧栏
+ *   4. 聊天头
+ *   5. 消息与气泡
+ *   6. 工具卡与工具胶囊
+ *   7. Composer
+ *   8. 运行状态 / 水位 / 回合
+ *   9. Diff（本产品的"高信息时刻"）
+ *  10. 反馈与消息操作
+ *  11. 浮层（搜索 / 弹出层 / toast / 启动屏）
+ *  12. 皮肤覆盖（hub / dream 的硬玻璃与圆胶囊）
  */
+
+/* ========== 1. 字体与基础 ========== */
 
 [data-ui="v2"] ::selection {
   background: color-mix(in srgb, var(--ui-accent) 26%, transparent);
@@ -28,4 +40,1094 @@
 
 [data-ui="v2"] ::placeholder {
   color: var(--ui-text-dim);
+}
+
+/* 数字一律等宽（元数据 `ctx 68%` / `12 tools` / `2m 14s` 的可读性来自这里） */
+[data-ui="v2"] .stats-line,
+[data-ui="v2"] .chat-header .model-badge,
+[data-ui="v2"] .sidebar-task-count,
+[data-ui="v2"] .session-unread-badge,
+[data-ui="v2"] .memory-pending-badge,
+[data-ui="v2"] .qa-turn-status-line,
+[data-ui="v2"] .turn-status-row {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========== 2. 应用外壳 ========== */
+
+[data-ui="v2"] .app {
+  background-image: none;
+  background-color: var(--ui-bg);
+}
+
+[data-ui="v2"] .main-area,
+[data-ui="v2"] .panel-right,
+[data-ui="v2"] .panel-content,
+[data-ui="v2"] .chat-panel {
+  background: var(--ui-bg);
+}
+
+/* 标题栏：40px、中性面、发丝线。不再用模糊玻璃。 */
+[data-ui="v2"] .titlebar {
+  height: 40px;
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-line);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+[data-ui="v2"] .nav-bar,
+[data-ui="v2"] .toolbar {
+  backdrop-filter: none;
+}
+
+[data-ui="v2"] .titlebar-title {
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+[data-ui="v2"] .titlebar-action-btn {
+  height: 28px;
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .titlebar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .app-menu-trigger {
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .app-menu-trigger:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .app-menu-surface {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+  backdrop-filter: none;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-text) 10%, transparent);
+}
+
+[data-ui="v2"] .app-menu-item,
+[data-ui="v2"] .dropdown-menu-item {
+  min-height: 30px;
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .app-menu-shortcut {
+  color: var(--ui-text-muted);
+  letter-spacing: 0;
+}
+
+/* —— 侧栏 —— */
+[data-ui="v2"] .sidebar {
+  background: var(--ui-sidebar);
+  border-right: 1px solid var(--ui-line);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+[data-ui="v2"] .sidebar-nav-item {
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .sidebar-nav-item:is(:hover, :focus-visible) {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-nav-item.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+/* 当前项 = 中性面 + 左侧 2px accent（方向稿：accent 只作为"当前"的标记，不做大块填充） */
+[data-ui="v2"] .sidebar-nav-item.active::before,
+[data-ui="v2"] .sidebar-session.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ui-accent);
+}
+
+[data-ui="v2"] .sidebar-nav-item,
+[data-ui="v2"] .sidebar-session {
+  position: relative;
+}
+
+[data-ui="v2"] .sidebar-tool-item {
+  height: 40px;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .sidebar-tool-row:is(:hover, :focus-within),
+[data-ui="v2"] .sidebar-tool-item:is(:hover, :focus-visible) {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-tool-item.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .sidebar-tool-item-label {
+  font-size: var(--fs-sm);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .sidebar-project-header {
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .sidebar-project.active > .sidebar-project-header {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-project-icon {
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .sidebar-project.active .sidebar-project-icon {
+  color: var(--ui-accent);
+}
+
+[data-ui="v2"] .sidebar-project-btn {
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .sidebar-project-btn.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .sidebar-add-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+}
+
+[data-ui="v2"] .sidebar-session {
+  height: 30px;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .sidebar-session:is(:hover, :focus-visible) {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-session.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-session.active .sidebar-session-title {
+  font-weight: 500;
+}
+
+[data-ui="v2"] .sidebar-session-edit-input {
+  border-color: var(--ui-line-strong);
+}
+
+/* 计数与未读：**不再用实心色块**（方向稿：不用彩色 pill）。数字仍在，只是安静。 */
+[data-ui="v2"] .sidebar-task-count,
+[data-ui="v2"] .session-unread-badge,
+[data-ui="v2"] .memory-pending-badge {
+  height: auto;
+  min-width: 0;
+  padding: 0 var(--space-1);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .sidebar-task-count {
+  color: var(--ui-accent);
+}
+
+[data-ui="v2"] .session-unread-badge,
+[data-ui="v2"] .memory-pending-badge {
+  color: var(--ui-danger);
+}
+
+/* 运行中的会话：5px 点，去掉呼吸灯（保留语义，不保留装饰） */
+[data-ui="v2"] .session-running-dot {
+  width: 5px;
+  height: 5px;
+  background: var(--ui-success);
+  animation: none;
+}
+
+/* 分组标题：句子式，不再全大写宽字距 */
+[data-ui="v2"] .sidebar-section-header span,
+[data-ui="v2"] .sidebar-section h4,
+[data-ui="v2"] .text-overline,
+[data-ui="v2"] .sidebar-session-group-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .sidebar-section-header.is-stuck::after {
+  border-bottom-color: var(--ui-line);
+}
+
+[data-ui="v2"] .sidebar-user-area,
+[data-ui="v2"] .sidebar-user-me {
+  border-top-color: var(--ui-line);
+}
+
+[data-ui="v2"] .sidebar-user-avatar {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-user-name {
+  font-weight: 500;
+}
+
+/* 侧栏收起态（rail） */
+[data-ui="v2"] .sidebar-rail {
+  background: var(--ui-sidebar);
+  border-right: 1px solid var(--ui-line);
+  backdrop-filter: none;
+}
+
+[data-ui="v2"] .sidebar-rail-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .sidebar-rail-btn.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .sidebar-rail-divider {
+  background: var(--ui-line);
+}
+
+[data-ui="v2"] .mobile-sidebar-toggle {
+  height: 32px;
+  border-radius: var(--radius);
+}
+
+/* ========== 3. 右栏与面板侧栏 ========== */
+
+[data-ui="v2"] .right-sidebar {
+  background: var(--ui-sidebar);
+  border-left: 1px solid var(--ui-line);
+  backdrop-filter: none;
+}
+
+[data-ui="v2"] .right-sidebar-tabs {
+  height: 36px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .right-sidebar-tab {
+  border-radius: var(--radius-sm);
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .right-sidebar-tab.active,
+[data-ui="v2"] .panel-sidebar-tab.active {
+  background: transparent;
+  color: var(--ui-text);
+  font-weight: 500;
+  border-bottom: 2px solid var(--ui-accent);
+}
+
+[data-ui="v2"] .right-sidebar-tab.active {
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .panel-sidebar-tabs {
+  height: 36px;
+}
+
+[data-ui="v2"] .panel-sidebar-tab {
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+[data-ui="v2"] .panel-sidebar-close {
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .floating-overlay-panel.panel-sidebar-shell {
+  background: var(--ui-surface) !important;
+  backdrop-filter: none !important;
+  border: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .right-sidebar-toggle {
+  border-radius: var(--radius-sm);
+}
+
+/* ========== 4. 聊天头 ========== */
+
+[data-ui="v2"] .chat-header {
+  height: 40px;
+  padding: 0 var(--space-3);
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .chat-title {
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .chat-title-dropdown-btn {
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .sidebar-toggle {
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .sidebar-toggle:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .agent-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .agent-toggle:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .agent-toggle.active {
+  background: var(--ui-surface-active);
+  border: 0;
+  color: var(--ui-accent);
+}
+
+[data-ui="v2"] .agent-badge {
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .chat-history-btn {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+}
+
+[data-ui="v2"] .chat-history-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .model-badge {
+  background: transparent;
+  color: var(--ui-text-secondary);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  padding: 0 var(--space-2);
+}
+
+[data-ui="v2"] .status-dot {
+  font-size: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  align-self: center;
+  background: currentColor;
+}
+
+[data-ui="v2"] .status-dot.connected {
+  color: var(--ui-success);
+}
+
+[data-ui="v2"] .status-dot.disconnected {
+  color: var(--ui-danger);
+}
+
+[data-ui="v2"] .model-picker {
+  backdrop-filter: none;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-text) 12%, transparent);
+}
+
+[data-ui="v2"] .model-option.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+/* 头部"更多"菜单（Batch 1B）：触发器与三项保持同一尺寸，菜单项是 30px 的行 + 勾选列。 */
+[data-ui="v2"] .chat-header-overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+[data-ui="v2"] .chat-header-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  padding: var(--space-1);
+  z-index: var(--z-popover);
+}
+
+[data-ui="v2"] .chat-header-overflow-item {
+  display: grid;
+  grid-template-columns: 16px 1fr 16px;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-ui="v2"] .chat-header-overflow-item:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .chat-header-overflow-item:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
+
+[data-ui="v2"] .chat-header-overflow-item.is-active {
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .chat-header-overflow-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .chat-header-overflow-item.is-active .chat-header-overflow-icon {
+  color: var(--ui-accent);
+}
+
+[data-ui="v2"] .chat-header-overflow-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-ui="v2"] .chat-header-overflow-check {
+  font-family: var(--font-mono);
+  color: var(--ui-accent);
+}
+
+/* 任务完成的勾选图形由"状态点 + 文字"表达，图标本身是重复信息 */
+[data-ui="v2"] .task-complete-badge svg {
+  display: none;
+}
+
+/* ========== 5. 消息与气泡 ========== */
+
+[data-ui="v2"] .message-content {
+  line-height: 1.62;
+}
+
+[data-ui="v2"] .user .message-content {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  padding: var(--space-3) var(--space-4);
+}
+
+[data-ui="v2"] .ai-msg-header {
+  opacity: 1;
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .ai-msg-name {
+  font-weight: 500;
+}
+
+[data-ui="v2"] .message-content code:not(pre code) {
+  background: var(--ui-surface-active);
+  border-radius: var(--radius-xs);
+}
+
+/* ========== 6. 工具卡与工具胶囊 ========== */
+
+[data-ui="v2"] .tool-card {
+  border: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+[data-ui="v2"] .tool-card-head {
+  background: var(--ui-surface-raised);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .tool-card-head:not(:last-child)::after,
+[data-ui="v2"] .tool-card-row:not(:last-child)::after {
+  background: var(--ui-line-weak);
+}
+
+[data-ui="v2"] .tool-card-status,
+[data-ui="v2"] .agent-detail-status,
+[data-ui="v2"] .mcp-catalog-installed-badge {
+  position: relative;
+  padding-left: var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .tool-card-status::before,
+[data-ui="v2"] .agent-detail-status::before,
+[data-ui="v2"] .mcp-catalog-installed-badge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+[data-ui="v2"] .tool-call-pill {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .tool-call-pill.error {
+  background: transparent;
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
+}
+
+[data-ui="v2"] .tool-pill-icon-frame {
+  border-radius: var(--radius-xs);
+}
+
+[data-ui="v2"] .tool-pill-file {
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .tool-io-section--bordered::after {
+  background: var(--ui-line-weak);
+}
+
+[data-ui="v2"] .read-more,
+[data-ui="v2"] .hint-sm {
+  color: var(--ui-text-muted);
+}
+
+/* ========== 7. Composer ========== */
+
+[data-ui="v2"] .input-area {
+  padding: var(--space-2) var(--space-5) var(--space-3);
+}
+
+[data-ui="v2"] .input-card-container {
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .input-area.input-card-container {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+}
+
+[data-ui="v2"] .input-area.input-card-container:has(.message-input:focus-visible),
+[data-ui="v2"] .input-textarea-row:has(.message-input:focus-visible) {
+  border-color: var(--ui-line-strong);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .input-card-container.drag-over {
+  border: 1px dashed var(--ui-line-strong);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .message-input {
+  min-height: 48px;
+  max-height: 220px;
+  font-size: var(--fs-md);
+  line-height: 1.55;
+}
+
+[data-ui="v2"] .message-input.expanded {
+  min-height: 160px;
+  max-height: 360px;
+}
+
+[data-ui="v2"] .send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .send-btn:hover:not(.disabled) {
+  background: var(--ui-accent-hover);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .send-btn.disabled {
+  background: var(--ui-surface-active);
+  color: var(--ui-text-dim);
+}
+
+[data-ui="v2"] .composer-effort {
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .security-mode-btn {
+  border-color: var(--ui-line);
+  color: var(--ui-text-secondary);
+  background: none;
+}
+
+[data-ui="v2"] .security-mode-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"][data-theme="dark"] .security-mode-btn {
+  border-color: var(--ui-line);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"][data-theme="dark"] .security-mode-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .context-badge {
+  height: 24px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  color: var(--ui-text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .composer-badge {
+  height: 24px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  color: var(--ui-text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .composer-badge-remove {
+  border-radius: var(--radius-xs);
+}
+
+[data-ui="v2"] .quote-context-card {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-accent);
+}
+
+[data-ui="v2"] .quote-context-label {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .mention-item.selected {
+  background: var(--ui-surface-active);
+}
+
+[data-ui="v2"] .skill-pill-token {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+/* ========== 8. 运行状态 / 水位 / 回合 ========== */
+
+[data-ui="v2"] .run-status-bar {
+  background: transparent;
+  backdrop-filter: none;
+  border-top: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .run-status-bar.phase-thinking,
+[data-ui="v2"] .run-status-bar.phase-working,
+[data-ui="v2"] .run-status-bar.phase-presenting,
+[data-ui="v2"] .run-status-bar.phase-error {
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .water-level-banner {
+  background: transparent;
+  border-bottom: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-warning);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .water-level-btn {
+  height: 28px;
+  background: none;
+  border: 1px solid var(--ui-line);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .water-level-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+}
+
+[data-ui="v2"] .water-level-close {
+  height: 24px;
+}
+
+[data-ui="v2"] .stats-line {
+  opacity: 1;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+[data-ui="v2"] .qa-turn-footer {
+  border-bottom-color: var(--ui-line-weak);
+}
+
+[data-ui="v2"] .qa-turn-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border-color: var(--ui-line);
+}
+
+/* 任务完成：从"胶囊"改成"5px 点 + 文字"（方向稿：状态用点+文字，不用彩色 pill） */
+[data-ui="v2"] .task-complete-badge {
+  position: relative;
+  padding: 0 0 0 var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--ui-text-secondary);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+}
+
+[data-ui="v2"] .task-complete-badge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: var(--ui-success);
+}
+
+[data-ui="v2"] .task-complete-badge.is-warning {
+  background: none;
+  border: 0;
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .task-complete-badge.is-warning::before {
+  background: var(--ui-warning);
+}
+
+[data-ui="v2"] .qa-turn-status-line {
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .turn-status-row {
+  border-radius: var(--radius);
+  border-color: var(--ui-line);
+  background: none;
+}
+
+[data-ui="v2"] .turn-status-row.turn-retry {
+  background: none;
+  border-color: var(--ui-line);
+}
+
+[data-ui="v2"] .turn-status-row.turn-error,
+[data-ui="v2"] .turn-status-row.turn-max-tokens {
+  background: none;
+}
+
+/* ========== 9. Diff（高信息时刻：唯一保留"富"表现的地方） ========== */
+
+[data-ui="v2"] .diff-viewer {
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .diff-viewer-modal {
+  border-radius: var(--radius-lg);
+}
+
+[data-ui="v2"] .diff-viewer-header {
+  background: var(--ui-surface-raised);
+  border-bottom: 1px solid var(--ui-line);
+}
+
+[data-ui="v2"] .diff-viewer-filename {
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+[data-ui="v2"] .diff-view-mode-toggle,
+[data-ui="v2"] .diff-mode-btn {
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .diff-mode-btn.active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .diff-accept-btn {
+  background: var(--ui-success);
+  color: var(--ui-on-status);
+  border-radius: var(--radius);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .diff-reject-btn {
+  background: none;
+  border: 1px solid var(--ui-line);
+  color: var(--ui-danger);
+  border-radius: var(--radius);
+}
+
+[data-ui="v2"] .diff-preview-badge {
+  border-radius: var(--radius-xs);
+  font-weight: 500;
+}
+
+[data-ui="v2"] .diff-side {
+  background: var(--ui-surface-raised);
+  border-radius: var(--radius-md);
+}
+
+[data-ui="v2"] .diff-header {
+  font-weight: 500;
+}
+
+[data-ui="v2"] .inline-diff-review {
+  border-radius: var(--radius-lg);
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .inline-diff-sequence-badge,
+[data-ui="v2"] .inline-diff-new-badge,
+[data-ui="v2"] .inline-diff-preview-badge {
+  border-radius: 0;
+  background: none;
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .reverted-tag {
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--ui-text-muted);
+  border: 1px solid var(--ui-line);
+}
+
+/* ========== 10. 反馈与消息操作 ========== */
+
+[data-ui="v2"] .message-actions-bar {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+[data-ui="v2"] .message-action-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .message-action-btn.active {
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .feedback-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border-color: transparent;
+}
+
+[data-ui="v2"] .feedback-btn.active {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+}
+
+[data-ui="v2"] .feedback-btn.like.active,
+[data-ui="v2"] .feedback-btn.dislike.active {
+  background: var(--ui-surface-active);
+}
+
+[data-ui="v2"] .feedback-btn.like.active {
+  color: var(--ui-success);
+}
+
+[data-ui="v2"] .feedback-btn.dislike.active {
+  color: var(--ui-danger);
+}
+
+/* ========== 11. 浮层 ========== */
+
+[data-ui="v2"] .search-dialog {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--ui-text) 16%, transparent);
+}
+
+[data-ui="v2"] .search-overlay {
+  background: var(--ui-backdrop);
+}
+
+[data-ui="v2"] .popover-shell {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+  backdrop-filter: none;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-text) 12%, transparent);
+}
+
+[data-ui="v2"] .toast-item {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-accent);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+[data-ui="v2"] .toast-close {
+  border-radius: var(--radius-sm);
+}
+
+[data-ui="v2"] .boot-splash {
+  background: var(--ui-bg);
+}
+
+[data-ui="v2"] .boot-splash-logo {
+  width: 64px;
+  height: 64px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-lg);
+}
+
+[data-ui="v2"] .boot-splash-title {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+}
+
+[data-ui="v2"] .boot-splash-progress-bar {
+  background: var(--ui-surface-active);
+  border-radius: 2px;
+}
+
+[data-ui="v2"] .boot-splash-progress-fill {
+  background: var(--ui-accent);
+  border-radius: 2px;
+}
+
+/* ========== 12. 皮肤覆盖（硬玻璃与圆胶囊） ========== */
+
+/* dream 皮肤在 6 个选择器上用 `!important` 打底了毛玻璃；v2 里一律取消（材质=中性面 + 发丝线）。 */
+[data-ui="v2"] .sidebar,
+[data-ui="v2"] .right-sidebar,
+[data-ui="v2"] .panel-right,
+[data-ui="v2"] .input-card-container,
+[data-ui="v2"] .search-dialog {
+  backdrop-filter: none !important;
+}
+
+[data-ui="v2"] .right-sidebar-tabs,
+[data-ui="v2"] .chat-header,
+[data-ui="v2"] .titlebar {
+  backdrop-filter: none !important;
+}
+
+/* dream 皮肤的圆胶囊：v2 里计数/徽标不再是 pill（见 §2），这里只兜底圆角刻度。 */
+[data-ui="v2"] .sidebar-user-avatar {
+  border-radius: 50%;
 }

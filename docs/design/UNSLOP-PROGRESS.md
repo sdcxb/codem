@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 0 | 基线与护栏（token 层 + 选择器作用域闸 + 文案/emoji 棘轮 + 基线截图） | **✅ 2026-11-18 完成** | 否（目标测试） |
 | 1A | `App.tsx` 三份主区抽成 `WorkspaceFrame`（纯结构） | **✅ 2026-11-18 完成** | **是** |
-| 1B | 壳层 + 聊天视觉 | 待执行 | **是** |
+| 1B | 壳层 + 聊天视觉 | **✅ 2026-11-18 完成（见 §3B，含一处后移）** | **是** |
 | 2 | 任务 / 团队 / 记忆 | 待执行 | 目标测试 |
 | 3 | 设置 + 引导 + 错误恢复 | 待执行 | **是** |
 | 4 | 知识 / 文档 / 媒体 / 目标 | 待执行 | 目标测试 |
@@ -276,8 +276,52 @@ node .preview-shot/_unslop-snapshot.mjs out.json # 布局指纹（元素数 + �
 
 ---
 
-## 4. Batch 1A 的实现细节（留档）
-`App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。
+## 3B. Batch 1B · 执行结果（2026-11-18 完成）
+
+### 3B.1 落地内容
+
+| 范围 | 做法 | 证据 |
+|---|---|---|
+| 字体 | `--font-ui-default` / `--font-mono` 改指 v2 系统栈（`unslop-tokens.css` 桥接），全站 9 个消费点零改动跟随 | 截图 03-on-dark 的字形 |
+| accent 淡底 | 定义 `--accent-soft`（此前只在 dream 皮肤里定义，6 处兜底真的在画紫色） | `ui-token-canonical` |
+| codem-ui 漏接令牌 | `--message-actions-*` / `--run-bar-*` / `--surface-1/2` / `--surface-hover` / `--composer-bg` / `--titlebar-bg` 全部重指到 `--ui-*` | 同上 |
+| 壳层 | 标题栏 40px、菜单/侧栏/行/项目行/会话行、rail、右栏 tab、panel-sidebar：中性面 + 发丝线；去 `backdrop-filter`；分组标题去全大写宽字距 | `unslop-v2.css` §2–3 |
+| 聊天头 | **10 个控件 → 3 + overflow**（侧栏开关 / 会话标题 / 模型 + `⋯` 菜单 7 项），每项有文字名与 `aria-checked`，Escape 关闭并还焦 | 新组件 + `chat-header-overflow.test.tsx`（5 例） |
+| 消息 | 用户气泡中性面 + 10px 圆角 + 发丝线、无阴影；正文行高 1.62；元信息 mono + `tabular-nums` | §5、§8 |
+| 工具卡 | 从"左侧 2px 线"改为 surface + 发丝线 + 10px 圆角；渐变分隔线换实线 | §6 |
+| 状态 | `任务完成` 胶囊 → 5px 绿点 + 文字（勾选图标隐藏）；`tool-card-status` / `agent-detail-status` 同样去胶囊；未读/计数去掉实心色块 | §8、§2 |
+| Composer | 12px 圆角单层面、焦点只改边框（去掉 18px 琥珀光晕）、输入 48–220px、发送键 32px 琥珀方块 | §7 |
+| Diff | 作为"唯一富表现"：12px 圆角、中性头、mono 文件名、批准的实心绿 / 拒绝的描边红 | §9 |
+| 浮层 | search / popover / toast / boot splash 全部去模糊、去彩色 glow | §11 |
+| 皮肤 | dream 的 6 处 `!important` 毛玻璃在 v2 下取消 | §12 |
+| emoji | 剥注释口径 **274 行 / 55 文件 → 253 行 / 48 文件**；聊天壳层（ChatPanel / MessageBubble / ToolCallCard / Diff / InputArea / Feedback / ContextBadge / Slash）**渲染态 emoji = 0** | 棘轮基线已收紧 |
+| 文案 | `🔴 上下文即将满！请立即压缩` → `上下文接近上限，可压缩`；`⏳/✅/⚠️/💰/▼/▶/■` 等状态字形全部改为文字或 lucide | 同上 |
+
+### 3B.2 判据
+
+- 新增 `src/test/chat-header-overflow.test.tsx`（5 例：可访问名/aria-expanded、menuitemcheckbox 与 checked、选中即关、禁用项不可点、Escape 还焦）；
+- `ui-layer.test.ts` 的作用域闸顺手修了一个**假红**：选择器切分现在按括号深度切（`:is(:hover, :focus-visible)` 里的逗号不再被当成分隔符），并新增了一条切分器自测；
+- emoji / 文案棘轮基线按"清掉多少收紧多少"更新（274→253 行、55→48 文件）。
+
+### 3B.3 本批踩到并修掉的坑
+
+1. **CRLF 锚点**：`git` 在 Windows 工作副本里是 CRLF，脚本里用 `\n` 拼的多行锚点全部匹配不到。
+   配方：先 `const EOL = src.includes("\r\n") ? "\r\n" : "\n"`，再用 `L(...)` 拼锚点。
+2. **`:is(a, b)` 逗号**：作用域闸按逗号切选择器会把 `:focus-visible)` 当成一条选择器 → 假红。
+3. **knip `types` 棘轮**：`export interface CompactionBannerStatus` / `export type ChatPanelProps` 属于"只在文件内用"的导出，
+   当场把 types 从 30 顶到 32 → 去掉 `export` 即回落（判据当场抓到，说明棘轮有效）。
+
+### 3B.4 后移项（如实记）
+
+- **专属右侧 Context 标尺**：方向稿里的右侧栏（Context 68% + 工作集 + Session + Next）需要一个**新的入口**（新 tab 或常驻列），
+  属产品决策（入口/占位/移动端表现），不在"换视觉"范围内。本批先完成既有的上下文面板与元信息样式；
+  标尺本体随 Batch 4（知识/文档/媒体）或用户拍板入口后单独做。
+- **控件尺度的全量统一**：本批统一了头部（28）、输入区（48–220）、反馈/操作（24）、qa-turn（24）；
+  其余列表行随各自批次（2 任务/3 设置/5A 文件）落地 —— 口径已写进 §3B.1。
+
+---
+
+## 4. Batch 1A 的实现细节（留档）`App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。
 
 | 块 | 行数 | 三份差异 |
 |---|---|---|

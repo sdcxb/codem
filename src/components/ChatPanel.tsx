@@ -52,8 +52,9 @@ import { useDomainReady } from "../hooks/use-domain-ready";
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, AlertTriangle, Hammer, ClipboardList, Zap,
-  Activity, Pencil, Paperclip, Clock,
+  Activity, Pencil, Paperclip, Clock, History,
 } from "lucide-react";
+import { HeaderOverflowMenu, type HeaderMenuItem } from "./chat/HeaderOverflowMenu";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
@@ -870,6 +871,93 @@ setStepTooltipLocked(false);
     scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }, [messages]);
 
+  /* 头部溢出菜单的项（Batch 1B）：每一项都保留迁移前那个按钮的**同一个 handler**，
+     只是把入口从七个图标收成一个菜单；顺带让每项都有文字名（可访问性）。
+     「现在哪个是开的」靠 aria-checked 表达，不再靠图标染色 + title。 */
+  const headerMenuItems: HeaderMenuItem[] = [
+    {
+      id: "history",
+      label: lang === "zh" ? "完整历史" : "Full history",
+      icon: <History size={14} />,
+      active: historyMode === "full",
+      disabled: !activeSessionId,
+      onSelect: () => setHistoryMode((m) => (m === "full" ? "model" : "full")),
+    },
+    {
+      id: "reasoning",
+      label: lang === "zh" ? "思考过程" : "Reasoning",
+      icon: <Brain size={14} />,
+      active: showReasoning,
+      onSelect: () => setShowReasoning(!showReasoning),
+    },
+    {
+      id: "agents",
+      label:
+        runningCount > 0
+          ? lang === "zh"
+            ? `智能体与团队（${runningCount} 运行中）`
+            : `Agents & Teams (${runningCount} running)`
+          : lang === "zh"
+            ? "智能体与团队"
+            : "Agents & Teams",
+      icon: <Bot size={14} />,
+      active: showAgentPanel,
+      onSelect: () => {
+        setShowAgentPanel(!showAgentPanel);
+        setShowSnapshotPanel(false);
+        setShowContextMonitor(false);
+        setShowTrajectoryPanel(false);
+        setSelectedAgentId(null);
+      },
+    },
+    {
+      id: "snapshot",
+      label: lang === "zh" ? "文件快照" : "File snapshots",
+      icon: <Camera size={14} />,
+      active: showSnapshotPanel,
+      onSelect: () => {
+        setShowSnapshotPanel(!showSnapshotPanel);
+        setShowAgentPanel(false);
+        setShowContextMonitor(false);
+        setShowTrajectoryPanel(false);
+        setSelectedAgentId(null);
+      },
+    },
+    {
+      id: "context",
+      label: lang === "zh" ? "上下文" : "Context",
+      icon: <BarChart3 size={14} />,
+      active: showContextMonitor,
+      onSelect: () => {
+        setShowContextMonitor(!showContextMonitor);
+        setShowAgentPanel(false);
+        setShowSnapshotPanel(false);
+        setShowTrajectoryPanel(false);
+        setSelectedAgentId(null);
+      },
+    },
+    {
+      id: "trajectory",
+      label: lang === "zh" ? "执行轨迹" : "Trajectory",
+      icon: <Activity size={14} />,
+      active: showTrajectoryPanel,
+      onSelect: () => {
+        setShowTrajectoryPanel(!showTrajectoryPanel);
+        setShowAgentPanel(false);
+        setShowSnapshotPanel(false);
+        setShowContextMonitor(false);
+        setSelectedAgentId(null);
+      },
+    },
+    {
+      id: "sidePanel",
+      label: lang === "zh" ? "侧边面板" : "Side panel",
+      icon: <LayoutGrid size={14} />,
+      active: showRightSidebar,
+      onSelect: () => setShowRightSidebar(!showRightSidebar),
+    },
+  ];
+
   return (
     <div className="chat-panel">
       {cleanupFailed && (
@@ -921,23 +1009,6 @@ setStepTooltipLocked(false);
             </>
           )}
         </div>
-        <button
-          className="context-history-close chat-history-btn"
-          onClick={() => setHistoryMode((m) => (m === "full" ? "model" : "full"))}
-          disabled={!activeSessionId}
-          aria-pressed={historyMode === "model"}
-          data-history-count={timelineMessages.length}
-          data-model-count={modelMessages.length}
-          title={
-            historyMode === "full"
-              ? (lang === "zh" ? "当前显示完整历史；点击切换到模型视图" : "Showing full history; click for model view")
-              : (lang === "zh" ? "当前显示模型视图；点击回到完整历史" : "Showing model view; click for full history")
-          }
-        >
-          {historyMode === "full"
-            ? (lang === "zh" ? "完整历史" : "Full history")
-            : (lang === "zh" ? "模型视图" : "Model view")}
-        </button>
         {/* C13：只显示"已整理到第几段"这一件事（不暴露压缩/换段术语，默认安静） */}
         {segmentEpochsOn() && segmentCount > 1 && (
           <span
@@ -1091,57 +1162,14 @@ setStepTooltipLocked(false);
             </div>
           )}
         </div>
-        <button
-          className={`agent-toggle ${showReasoning ? "active" : ""}`}
-          onClick={() => setShowReasoning(!showReasoning)}
-          title={showReasoning ? S.chat.hideReasoning[lang] : S.chat.showReasoning[lang]}
-        >
-          <Brain size={16} />
-        </button>
-        <button
-          className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
-          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
-          title={lang === "zh" ? "智能体与团队（个体任务 + 团队活动，点击成员可看个体动态）" : "Agents & Teams (individual tasks + team activity)"}
-        >
-          <Bot size={16} />
-          {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
-        </button>
-        <button
-          className={`agent-toggle ${showSnapshotPanel ? "active" : ""}`}
-          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
-          title={S.chat.snapshot[lang]}
-        >
-          <Camera size={16} />
-        </button>
-        <button
-          className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
-          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
-          title={S.chat.contextMonitor[lang]}
-        >
-          <BarChart3 size={16} />
-        </button>
-        {/* 团队完整视图（DAG/任务/邮箱）在任务管理「团队」Tab：由 AgentPanel 团队卡片
-            「团队视图 →」与侧栏任务管理入口打开（顶部已收敛为单一「智能体与团队」按钮） */}
-        <button
-          className={`agent-toggle ${showTrajectoryPanel ? "active" : ""}`}
-          onClick={() => { setShowTrajectoryPanel(!showTrajectoryPanel); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
-          title={lang === "zh" ? "执行轨迹" : "Trajectory"}
-        >
-          <Activity size={16} />
-        </button>
-        {/* 第 46 波：「搜索当前会话」已移到编辑器底部工具行（与执行模式/安全策略同一行） */}
-        {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
+        <HeaderOverflowMenu
+          label={lang === "zh" ? "更多操作" : "More actions"}
+          menuLabel={lang === "zh" ? "视图与面板" : "Views and panels"}
+          items={headerMenuItems}
+        />
         <span className="header-spacer" />
-        {/* Side panel toggle — header right */}
-        <button
-          className={`agent-toggle ${showRightSidebar ? "active" : ""}`}
-          onClick={() => setShowRightSidebar(!showRightSidebar)}
-          title={lang === "zh" ? "侧边面板" : "Side Panel"}
-        >
-          <LayoutGrid size={16} />
-        </button>
         <span className={`status-dot ${connected ? "connected" : "disconnected"}`}>
-          {connected ? "●" : "○"}
+          
         </span>
       </div>
 

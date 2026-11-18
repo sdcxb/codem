@@ -54,8 +54,7 @@ import {
   Square, ArrowRight, ChevronUp, StickyNote, Search,
   Clock, Check, Wrench, Shield, Rocket,
   Cpu,
-  Mic, Square as SquareIcon,
-} from "lucide-react";
+  Mic, Square as SquareIcon, Plus } from "lucide-react";
 
 // Map security mode emoji icons to Lucide components
 const securityIconMap: Record<string, JSX.Element> = {
@@ -603,7 +602,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
         id: att.id,
         type: "file" as const,
         label: att.name,
-        icon: "📄",
       })),
     [pendingAttachments],
   );
@@ -1690,7 +1688,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               {voiceError
                 ? (voiceError.length > 60 ? voiceError.slice(0, 60) + "…" : voiceError)
                 : whisperActive
-                  ? (zh ? "● 录音中… 点击停止并转写" : "● Recording… click to stop & transcribe")
+                  ? (zh ? "录音中… 点击停止并转写" : "Recording… click to stop & transcribe")
                   : whisperBusy
                     ? (zh ? "云端转写中…" : "Transcribing in the cloud…")
                     : voiceInterim}
@@ -1708,7 +1706,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               <button ref={plusBtnRef} className={`mode-toggle-btn mode-toggle-btn--compact ${showPlusMenu ? "is-active" : ""}`} aria-haspopup="menu" aria-expanded={showPlusMenu} onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
               >
-                ＋
+                <Plus size={14} />
               </button>
               {showPlusMenu && plusMenuPos && createPortal(
                 <>

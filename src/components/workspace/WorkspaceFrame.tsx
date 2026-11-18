@@ -31,7 +31,7 @@ import { DreamLayout } from "../DreamLayout";
 import type { SkinId } from "../../core/theme/types";
 
 /** 压缩横幅的状态形状（与 App 里 `compactionStatus` 同源，只用到这几个字段） */
-export interface CompactionBannerStatus {
+interface CompactionBannerStatus {
   sessionId?: string;
   active: boolean;
   skipped?: boolean;
@@ -40,7 +40,7 @@ export interface CompactionBannerStatus {
 }
 
 /** `ChatPanel` 的入参（直接复用组件类型，避免手抄 20 个字段时漏一个） */
-export type ChatPanelProps = ComponentProps<typeof ChatPanel>;
+type ChatPanelProps = ComponentProps<typeof ChatPanel>;
 
 export interface WorkspaceMainColumnProps {
   lang: "zh" | "en";

@@ -1300,7 +1300,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   return (
     <div className="context-monitor">
       <div className="context-monitor-header">
-        <span className="context-monitor-icon">📊</span>
+        <span className="context-monitor-icon" aria-hidden="true" />
         <span>上下文状态{!sessionId && "（未选择会话）"}</span>
         <button
           className="context-history-open context-history-close"
@@ -1742,10 +1742,10 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               }
             >
               {compacting
-                ? "⏳ 压缩中..."
+                ? "压缩中…"
                 : compactCooldown && compactResult && compactResult.removed > 0
-                  ? `✅ 已压缩（移除 ${compactResult.removed} 条）`
-                  : "▼ 压缩上下文"}
+                  ? `已压缩（移除 ${compactResult.removed} 条）`
+                  : "压缩上下文"}
             </button>
             {/*
               第 227 波（用户实报「点了压缩但没出现任何提示」）：
@@ -1786,8 +1786,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
         {!segmentOn && pressure >= 2 && sessionId && (
           <div className="context-pressure-warning">
             {pressure === 2
-              ? "⚠️ 上下文压力较高，建议压缩"
-              : "🔴 上下文即将满！请立即压缩"}
+              ? "上下文压力较高，可压缩"
+              : "上下文接近上限，可压缩"}
           </div>
         )}
 
@@ -1799,7 +1799,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
         {(balanceProviders.length > 0 || (balances.length > 0 && balanceLoading) || !!balanceError) && (
           <div className="context-balance-section">
             <div className="context-balance-title">
-              💰 账户余额
+              账户余额
               {balanceLoading && <span className="context-balance-loading">⏳</span>}
             </div>
             {balanceProviders.map((b, i) => (
@@ -1820,7 +1820,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 data-testid="context-balance-stale"
                 style={{ fontSize: 'var(--fs-xs)', color: "var(--warning, var(--text-secondary))", marginTop: 4 }}
               >
-                ⚠️ 刚才更新余额失败：{balanceError}（上面显示的是上次成功获取的数字）
+                刚才更新余额失败：{balanceError}（上面显示的是上次成功获取的数字）
               </div>
             )}
           </div>
@@ -1843,7 +1843,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               textAlign: "left",
             }}
           >
-            {showConfig ? "▼" : "▶"} 压缩参数配置
+            压缩参数配置
           </button>
           {showConfig && ctxConfig && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: 8, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
@@ -1941,7 +1941,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                   cursor: "pointer", alignSelf: "flex-start",
                 }}
               >
-                {savedConfig ? "✅ 已保存" : "保存配置"}
+                {savedConfig ? "已保存" : "保存配置"}
               </button>
             </div>
           )}

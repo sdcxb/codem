@@ -5,6 +5,7 @@
  */
 
 import { memo } from "react";
+import { BookOpen, FileText, Link2, Paperclip } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
 
 interface ContextBadge {
@@ -38,7 +39,11 @@ export const ContextBadgeList = memo(function ContextBadgeList({
   );
 });
 
-function getContextIcon(type: string): string {
-  const icons = { notebook: "📒", file: "📄", url: "🔗" };
-  return icons[type as keyof typeof icons] || "📎";
+function getContextIcon(type: string) {
+  const icons: Record<string, JSX.Element> = {
+    notebook: <BookOpen size={12} />,
+    file: <FileText size={12} />,
+    url: <Link2 size={12} />,
+  };
+  return icons[type] ?? <Paperclip size={12} />;
 }

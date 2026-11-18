@@ -121,6 +121,19 @@
   --ui-line-weak: color-mix(in srgb, var(--ui-line) 58%, transparent);
   --ui-glass: color-mix(in srgb, var(--ui-surface) 72%, transparent);
   --ui-glass-strong: color-mix(in srgb, var(--ui-surface) 88%, transparent);
+  /* accent 的淡底（Batch 1B）：`--accent-soft` 在 `:root` 里**从未定义过**，
+     只有 dream 皮肤写了它 —— 于是 6 处 `var(--accent-soft, rgba(124,108,240,…))` 的兜底
+     真的在画紫色。这里给它一个正式定义（并保留 v1 的兜底行为：只在本作用域生效）。 */
+  --ui-accent-soft: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+
+  /* ---- 字体（Batch 1B）：系统无衬线 + 系统等宽，两档同值 ----
+     不引入网络字体。`--font-ui-default` 是「默认字体」那一档的唯一落点
+     （设置页选默认会 removeProperty("--font-ui") 回到它），所以改这一处就能全站换字。
+     mono 用 ui-monospace 打头：Windows 落到 Cascadia Mono，macOS 落到 SF Mono。 */
+  --ui-font-ui: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable Text", "Segoe UI",
+    -apple-system, BlinkMacSystemFont, "Noto Sans SC", sans-serif;
+  --ui-font-mono: "Cascadia Code", "Cascadia Mono", "IBM Plex Mono", ui-monospace, "SF Mono",
+    Consolas, monospace;
 }
 
 /* ========== 桥接：把 v2 调色板接到既有语义令牌 ========== */
@@ -166,9 +179,16 @@
   --accent-strong: var(--ui-accent);
   --accent-muted: color-mix(in srgb, var(--ui-accent) 15%, transparent);
   --accent-selected: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+  --accent-soft: var(--ui-accent-soft);
   --text-on-accent: var(--ui-accent-ink);
   /* 焦点环跟随 accent（原来派生自 --accent，这里重写只为让"焦点环 = 琥珀"这件事显式可见） */
   --focus-ring-color: color-mix(in srgb, var(--ui-accent) 75%, transparent);
+
+  /* ---- 字体（Batch 1B）----
+     `--font-ui-default` 是「默认字体」档的落点；手选字体仍写行内 `--font-ui`，优先级更高，
+     所以这一行不会抢走用户在设置里选的字体。 */
+  --font-ui-default: var(--ui-font-ui);
+  --font-mono: var(--ui-font-mono);
 
   /* ---- 状态 ---- */
   --success: var(--ui-success);
@@ -234,4 +254,20 @@
   --glass-bg-subtle: color-mix(in srgb, var(--ui-surface) 48%, transparent);
   --glass-border: var(--ui-line);
   --glass-border-strong: var(--ui-line-strong);
+
+  /* ---- codem-ui.css 里**没走主题**的几组（Batch 1B 补接）----
+     它们定义在 codem-ui 的 `:root`（0,1,0），所以只要在这里重指一次就整体跟随 v2。
+     运行状态条的四个 phase 色原本是 蓝/紫/绿/红 —— v2 用「中性文字 + 状态点」表达 phase。 */
+  --message-actions-bg: var(--ui-surface-raised);
+  --message-actions-shadow: var(--shadow-bubble);
+  --run-bar-bg: var(--ui-surface);
+  --run-bar-thinking: var(--ui-info);
+  --run-bar-working: var(--ui-text-secondary);
+  --run-bar-presenting: var(--ui-success);
+  --run-bar-error: var(--ui-danger);
+  --surface-1: color-mix(in srgb, var(--ui-surface) 70%, transparent);
+  --surface-2: color-mix(in srgb, var(--ui-surface-raised) 82%, transparent);
+  --surface-hover: var(--ui-surface-active);
+  --composer-bg: var(--ui-surface);
+  --titlebar-bg: var(--ui-bg);
 }

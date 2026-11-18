@@ -147,7 +147,7 @@ function TerminalBlock({ model }) {
             className="tool-card-copy"
             title={copied ? '已复制' : '复制输出'}
           >
-            {copied ? '✓' : '复制'}
+            {copied ? '已复制' : '复制'}
           </button>
         )}
       </div>
