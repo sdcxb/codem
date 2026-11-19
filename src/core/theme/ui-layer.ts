@@ -7,11 +7,14 @@
  * `[data-ui="v2"]` 作用域里，所以「关掉」必须是**结构上等同于没引入**，而不是"靠人记得别开"。
  * 开关本身只有一件事：决定 `<html>` 上有没有 `data-ui="v2"`。
  *
- * ## 三个来源与优先级
+ * ## 三个来源与优先级（Batch 7 起默认 `v2`）
  *
- * 1. `?ui=v2`（**仅 QA/验收**）：一次性生效，**不写回**任何存储 —— 否则一次验收会让整机永久停在新层；
- * 2. `localStorage["codem-ui-layer"] = "v2"`：持久档（用户在验收期手动打开，或将来做设置项）；
- * 3. 都没有 → `v1`（默认），**不写 `data-ui` 属性**，页面与引入覆盖层之前逐像素一致。
+ * 1. `?ui=v1`（**仅 QA/回退对比**）：一次性生效，**不写回**任何存储；
+ * 2. `localStorage["codem-ui-layer"] = "v1"`：持久档（用户在设置里切回经典）；
+ * 3. 都没有 → `v2`（**默认**），写 `data-ui="v2"`。
+ *
+ * 历史：Batch 0–6 期间默认是 `v1`（覆盖层逐批验收），Batch 7 由用户拍板切成默认 `v2`；
+ * 回退通道保留成 `v1` —— 用户在「设置 → 外观 → 界面版本」点经典即可，不改代码。
  *
  * ## 为什么不进 SQLite
  *
@@ -33,9 +36,9 @@ export const UI_LAYER_STORAGE_KEY = "codem-ui-layer";
 /** `<html>` 上的属性名 */
 export const UI_LAYER_ATTRIBUTE = "data-ui";
 
-/** 只认字面量 "v2"；其它一切值（含 "v1"、空串、损坏数据）都回到默认档 */
+/** 只认显式 "v1"（回退档）；其它一切值（null、空串、损坏数据）都走默认的 v2 */
 function normalize(value: string | null | undefined): UiLayer {
-  return value === "v2" ? "v2" : "v1";
+  return value === "v1" ? "v1" : "v2";
 }
 
 export interface UiLayerSources {
@@ -54,16 +57,18 @@ export function readUiLayer(sources: UiLayerSources = {}): UiLayer {
   const search = sources.search ?? (typeof globalThis.location !== "undefined" ? globalThis.location.search : "");
   try {
     const params = new URLSearchParams(search || "");
+    /* QA 回退：`?ui=v1` 一次性关掉覆盖层，用来和经典界面对比 */
+    if (params.get("ui") === "v1") return "v1";
     if (params.get("ui") === "v2") return "v2";
   } catch {
     /* search 不合法就当没有（不影响存储档） */
   }
   const storage = sources.storage ?? safeStorage();
-  if (!storage) return "v1";
+  if (!storage) return "v2";
   try {
     return normalize(storage.getItem(UI_LAYER_STORAGE_KEY));
   } catch {
-    return "v1";
+    return "v2";
   }
 }
 
@@ -85,8 +90,8 @@ export interface UiLayerRoot {
 /**
  * 把档位写到 `<html>`。幂等：值没变时不碰 DOM。
  *
- * 默认档**移除属性**而不是写 `data-ui="v1"` —— 这样"引入覆盖层"与"未引入"的 DOM 完全一致，
- * 也让「关闭时逐像素不变」不需要额外条件。
+ * 回退档（v1）**移除属性**而不是写 `data-ui="v1"` —— 这样"回退"与"未引入覆盖层"的 DOM 完全一致，
+ * 逐像素对比不需要额外条件。
  */
 export function applyUiLayer(root?: UiLayerRoot | null, layer?: UiLayer): UiLayer {
   const target = root === undefined ? (typeof document !== "undefined" ? document.documentElement : null) : root;

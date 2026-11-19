@@ -2399,3 +2399,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* 模型配置面板里的「服务商标题」输入框只有 20px 高（比同级控件矮 8px），
+   键盘/触控都难命中；与同面板其它输入统一到 28。 */
+[data-ui="v2"] .sp-input--title {
+  min-height: 28px;
+  height: 28px;
+}

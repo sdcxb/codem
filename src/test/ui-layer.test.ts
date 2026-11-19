@@ -87,28 +87,41 @@ function fakeRoot(initial: Record<string, string> = {}) {
 }
 
 describe("UI 覆盖层开关（data-ui）", () => {
-  it("默认档是 v1：读不到存储、没有 ?ui 时不动", () => {
-    expect(readUiLayer({ storage: null, search: "" })).toBe("v1");
-    expect(readUiLayer({ storage: { getItem: () => null }, search: "" })).toBe("v1");
-    // 存储里是坏值也回到 v1（不能让一个拼错的值把界面切成半迁移态）
-    expect(readUiLayer({ storage: { getItem: () => "V2" }, search: "" })).toBe("v1");
-    expect(readUiLayer({ storage: { getItem: () => "" }, search: "" })).toBe("v1");
+  it("默认档是 v2（Batch 7 起）：读不到存储、没有 ?ui 时也开新层", () => {
+    expect(readUiLayer({ storage: null, search: "" })).toBe("v2");
+    expect(readUiLayer({ storage: { getItem: () => null }, search: "" })).toBe("v2");
+    /* 存储里是坏值（拼错 / 空串 / 大小写不对）一律回到默认的 v2：
+       不能让一个坏值把界面切成"半迁移"态。 */
+    expect(readUiLayer({ storage: { getItem: () => "V2" }, search: "" })).toBe("v2");
+    expect(readUiLayer({ storage: { getItem: () => "" }, search: "" })).toBe("v2");
   });
 
-  it("存储写 v2 就生效；?ui=v2 一次性生效且**不读也不写**存储", () => {
-    expect(readUiLayer({ storage: { getItem: () => "v2" }, search: "" })).toBe("v2");
+  it("显式 v1 才回退；?ui=v1 一次性回退且**不读也不写**存储", () => {
+    expect(readUiLayer({ storage: { getItem: () => "v1" }, search: "" })).toBe("v1");
     let reads = 0;
     const storage = {
       getItem: () => {
         reads += 1;
-        return null;
+        return "v2";
+      },
+    };
+    expect(readUiLayer({ storage, search: "?ui=v1" })).toBe("v1");
+    expect(reads, "?ui=v1 是 QA 覆盖，不该顺带读存储（否则行为取决于机器状态）").toBe(0);
+  });
+
+  it("?ui=v2 仍然一次性开新层且不读存储", () => {
+    let reads = 0;
+    const storage = {
+      getItem: () => {
+        reads += 1;
+        return "v1";
       },
     };
     expect(readUiLayer({ storage, search: "?ui=v2" })).toBe("v2");
-    expect(reads, "?ui=v2 是 QA 覆盖，不该顺带读存储（否则行为取决于机器状态）").toBe(0);
+    expect(reads).toBe(0);
   });
 
-  it("applyUiLayer 只在 v2 时写属性；默认档必须是**移除**属性（关掉 = 与未引入一致）", () => {
+  it("applyUiLayer 在 v2 写属性、v1（回退档）必须**移除**属性（回退 = 与未引入覆盖层一致）", () => {
     const v2 = fakeRoot();
     applyUiLayer(v2.root, "v2");
     expect(v2.attrs.get(UI_LAYER_ATTRIBUTE)).toBe("v2");

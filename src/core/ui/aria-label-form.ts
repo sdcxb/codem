@@ -79,11 +79,14 @@ export function labelFormControlsByFallback(root: ParentNode | null | undefined)
       fixed += 1;
       continue;
     }
-    /* 没有 placeholder：用同一行里的可见文字（≤ 40 字）当名字 */
-    const row = el.closest(".sp-row, .field-row, .setting-group, .settings-row");
-    const text = (row?.textContent || "").trim().replace(/\s+/g, " ");
-    if (text && text.length <= 40) {
-      el.setAttribute("aria-label", text);
+    /* 没有 placeholder：用同一行里的可见文字当名字。
+       口径：取**第一句**（按 。：换行 切），再截 40 字 ——
+       设置项的说明常常跟在标题后面（「沙箱模式（限制写入范围到工作目录）开启后，…」），
+       整段塞进 aria-label 会让屏幕阅读器念一长串。 */
+    const row = el.closest(".sp-row, .field-row, .setting-group, .settings-row, .provider-header");
+    const first = (row?.textContent || "").trim().replace(/\s+/g, " ").split(/[。：\n]/)[0].trim();
+    if (first) {
+      el.setAttribute("aria-label", first.slice(0, 40));
       fixed += 1;
     }
   }
@@ -116,11 +119,21 @@ export function installAutoAriaLabels(doc: Document = document): () => void {
       for (const node of Array.from(record.addedNodes)) {
         if (node.nodeType === 1) pending.push(node as Element);
       }
+      /* 属性变化也要看：设置面板与会话常常是"先挂载、后显示"（display/class 切换），
+         只在 childList 上等会让"打开设置"这一下补不到名字（实测剩下 1 个复选框就是这样漏的）。 */
+      if (record.type === "attributes" && record.target.nodeType === 1) {
+        pending.push(record.target as Element);
+      }
     }
     if (pending.length === 0 || timer) return;
     timer = setTimeout(flush, 200);
   });
-  observer.observe(doc.body, { childList: true, subtree: true });
+  observer.observe(doc.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden", "aria-hidden"],
+  });
   return () => {
     observer.disconnect();
     if (timer) clearTimeout(timer);
