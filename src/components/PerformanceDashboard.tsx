@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
 import { getTelemetry, refreshTelemetryProjection } from "../core/telemetry/telemetry";
+import { copyText } from "../utils/clipboard";
 
 interface PerformanceDashboardProps {
   onClose: () => void;
@@ -131,7 +132,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
     // Export most recent session
     const latestSession = sessions[0];
     const otelJson = telemetry.exportOTel(latestSession.sessionId);
-    navigator.clipboard.writeText(otelJson);
+    void copyText(otelJson);
     setExportMsg(`${S.perf.exportCopied[lang]} (${latestSession.sessionId.slice(0, 12)}...)`);
     setTimeout(() => setExportMsg(""), 3000);
   }, [sessionStats, telemetry, lang]);

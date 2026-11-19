@@ -26,33 +26,64 @@ export function OllamaSettingsPanel() {
   const [checking, setChecking] = useState(false);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  /** 取模型列表失败的原因（连接检测成功 ≠ 取模型也成功，两者的原因要分开说） */
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const provider = getOllamaProvider();
 
+  /**
+   * 异常 → 一句可读原因（本轮修的是一类"异步处理器没有 catch"的缺陷：
+   * 没有 catch 时忙碌标记只在 finally 跑到时才清，用户既看不到原因、
+   * 又可能面对一个永久 disabled 的按钮）。
+   */
+  const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
   const checkConnection = useCallback(async () => {
     setChecking(true);
-    const result = await provider.checkConnection();
-    setStatus(result);
-    setChecking(false);
+    try {
+      const result = await provider.checkConnection();
+      setStatus(result);
+    } catch (e) {
+      /*
+       * 改前 `disabled={checking}` + 没有 try：`checkConnection` 一旦 reject，
+       * 这个按钮就**永久点不动**（连"再试一次"的机会都没有了）。
+       * 失败同时写进 status：面板本来就用「未连接 + 原因」这一行展示连接失败。
+       */
+      setStatus({
+        connected: false,
+        url: provider.getBaseUrl(),
+        modelCount: 0,
+        error: `测试 Ollama 连接失败：${reasonOf(e)}`,
+      });
+    } finally {
+      setChecking(false);
+    }
   }, [provider]);
 
   const fetchModels = useCallback(async () => {
     setLoadingModels(true);
-    const result = await provider.listModels();
-    setModels(result);
-    setLoadingModels(false);
+    setModelsError(null);
+    try {
+      const result = await provider.listModels();
+      setModels(result);
+    } catch (e) {
+      // 改前没有 try：reject 后 loadingModels 永久为真 ⇒「刷新模型列表」永久 disabled
+      setModelsError(`获取模型列表失败：${reasonOf(e)}`);
+    } finally {
+      setLoadingModels(false);
+    }
   }, [provider]);
 
-  // Auto-check on mount
+  // Auto-check on mount（失败已在内部收口，不需要再冒未处理 rejection）
   useEffect(() => {
-    checkConnection();
+    void checkConnection();
   }, [checkConnection]);
 
   // Fetch models if connected
   useEffect(() => {
     if (status?.connected && autoDetect) {
-      fetchModels();
+      void fetchModels();
     }
   }, [status, autoDetect, fetchModels]);
 
@@ -62,7 +93,7 @@ export function OllamaSettingsPanel() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     // Re-check connection with new URL
-    checkConnection();
+    void checkConnection();
   }, [baseUrl, autoDetect, checkConnection]);
 
   return (
@@ -184,6 +215,13 @@ export function OllamaSettingsPanel() {
               {S.ollama.refreshModels[lang]}
             </button>
           </div>
+
+          {/* 取模型失败必须说清楚：连接是好用的，失败的只是"列模型"这一步 */}
+          {modelsError && (
+            <div role="alert" style={{ marginBottom: 8, color: "var(--error)", fontSize: 'var(--fs-sm)' }}>
+              {modelsError}
+            </div>
+          )}
 
           {models.length === 0 ? (
             <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 'var(--fs-sm)' }}>

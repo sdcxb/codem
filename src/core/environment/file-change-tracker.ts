@@ -762,7 +762,7 @@ export class FileChangeTracker {
           const tracked = await invoke("execute_command", {
             command: `git -C ${psQuote(workspace)} ls-files --error-unmatch ${psQuote(f.path)}`,
             cwd: workspace,
-            timeout_ms: GIT_TIMEOUT_MS,
+            timeoutMs: GIT_TIMEOUT_MS,
           });
           if ((tracked.exitCode ?? 1) === 0) continue; // 已被跟踪：patch 会处理
           const removed = await invoke("execute_command", {

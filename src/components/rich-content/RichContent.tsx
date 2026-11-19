@@ -16,11 +16,13 @@
  * 自主实现，组件命名和逻辑均独立编写。
  */
 
-import { memo, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { memo, useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, Quote } from "lucide-react";
-import { CodeBlockView } from "./CodeBlockView";
+/* 代码块（含 Prism + 24 门语法）**不许静态进主包**：它在首屏就会被求值，
+   实测主包 3.04MB（另有 618KB CSS），其中 Prism 与语法注册是一大块，而刚打开应用时
+   一条消息都还没有。改成 lazy ⇒ 首块代码出现时才拉独立 chunk（与 katex / mermaid 同策略）。 */
 import { TableScrollView } from "./TableScrollView";
 import { MermaidCanvasView } from "./MermaidCanvasView";
 import { ImagePreviewView } from "./ImagePreviewView";
@@ -28,6 +30,21 @@ import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
 import { handleFileLinkClick, handleFileLinkContextMenu } from "../../utils/file-link";
 import { autoLinkFilePaths } from "../../utils/auto-link-paths";
 import type { FileMentions } from "../../utils/file-mentions";
+
+const CodeBlockViewLazy = lazy(() =>
+  import("./CodeBlockView").then((m) => ({ default: m.CodeBlockView })),
+);
+
+/** 代码块未加载时的占位：与最终形态同字体同底色，避免「先白后黑」的跳动 */
+function CodeBlockFallback({ code }: { code: string }) {
+  /* 语义与加载完成后的形态一致：pre > code（而不是一段裸文本），
+     这样「高亮 chunk 还没到」时的无障碍树、复制行为与判据都与最终态相同。 */
+  return (
+    <pre className="content-code-fallback">
+      <code>{code}</code>
+    </pre>
+  );
+}
 
 /**
  * ParagraphWithActions — P2 #31: 段落级 hover 操作按钮
@@ -157,7 +174,11 @@ export const RichContent = memo(function RichContent({
     if (language === "json" && code.length > 50) {
       try {
         JSON.parse(code);
-        return <CodeBlockView code={code} language="json" streaming={streaming} />;
+        return (
+          <Suspense fallback={<CodeBlockFallback code={code} />}>
+            <CodeBlockViewLazy code={code} language="json" streaming={streaming} />
+          </Suspense>
+        );
       } catch {
         // 非法 JSON，走普通代码块
       }
@@ -244,7 +265,11 @@ export const RichContent = memo(function RichContent({
     }
 
     // 普通代码块
-    return <CodeBlockView code={code} language={language} streaming={streaming} />;
+    return (
+      <Suspense fallback={<CodeBlockFallback code={code} />}>
+        <CodeBlockViewLazy code={code} language={language} streaming={streaming} />
+      </Suspense>
+    );
   }, [streaming, fileMentions]);
 
   // 表格渲染器

@@ -3376,3 +3376,27 @@ background: var(--bg-secondary);
     transform: none !important;
   }
 }
+
+/* 代码块懒加载期间的占位（Prism chunk 到达前）：与 .code-block-view 同字体同底色，
+   避免"先白后黑"的跳动；只承担占位，不做高亮。 */
+.content-code-fallback {
+  margin: 0.75em 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  /* 只给底色，文字颜色**继承**：新增一对「前景压背景」就要登记颜色角色，
+     而占位块没有自己的语义色需求（继承正文色即可）。 */
+  background: var(--rich-code-bg);
+  border: 1px solid var(--rich-code-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-ui);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.content-code-fallback code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}

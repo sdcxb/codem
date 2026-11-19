@@ -106,16 +106,28 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
       return
     }
     if (state?.status === 'loading') return // 按钮已禁用，防御性兜底
-    const result = await manager.enable(entry.codemAnchor)
-    if (result.success) {
+    try {
+      const result = await manager.enable(entry.codemAnchor)
+      if (result.success) {
+        notify(
+          result.enabledList.length > 1
+            ? `已安装并启用 ${entry.dshName}（等价内置 ${entry.codemAnchor}，含 ${result.enabledList.length - 1} 个依赖）`
+            : `已安装并启用 ${entry.dshName}（等价内置 ${entry.codemAnchor}）`,
+          'success',
+        )
+      } else {
+        notify(`安装并启用「${entry.dshName}」失败：${result.error || '未知原因'}`, 'error')
+      }
+    } catch (e) {
+      /*
+       * 改前没有 try：`manager.enable` reject ⇒ 既不成功也不提示，用户点了没反应
+       * （按钮状态还由 manager 的 loading 决定，可能一直停在「启用中…」）。
+       * 这里用本文件既有的 notify 链路报错 —— 父组件统一把它渲染成 toast。
+       */
       notify(
-        result.enabledList.length > 1
-          ? `已安装并启用 ${entry.dshName}（等价内置 ${entry.codemAnchor}，含 ${result.enabledList.length - 1} 个依赖）`
-          : `已安装并启用 ${entry.dshName}（等价内置 ${entry.codemAnchor}）`,
-        'success',
+        `安装并启用「${entry.dshName}」失败：${e instanceof Error ? e.message : String(e)}`,
+        'error',
       )
-    } else {
-      notify(result.error || '启用失败', 'error')
     }
   }, [manager, pluginStates, onToggle, notify])
 
@@ -123,10 +135,22 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
     setSearching(true)
     // 跟随搜索框输入（空时用 dsh 生态宽搜默认值）
     const q = query.trim()
-    const hits = await searchDshNpmPackages(q || 'dsh cordis plugin')
-    setOnline(hits)
-    setSearching(false)
-    if (hits.length === 0) notify(zh ? '未检索到结果或网络不可用' : 'No results or network unavailable', 'warning')
+    try {
+      const hits = await searchDshNpmPackages(q || 'dsh cordis plugin')
+      setOnline(hits)
+      if (hits.length === 0) notify(zh ? '未检索到结果或网络不可用' : 'No results or network unavailable', 'warning')
+    } catch (e) {
+      /*
+       * 改前没有 try：检索 reject ⇒ `setSearching(false)` 永远跑不到，
+       * 按钮永久 disabled + 永久「检索中...」，用户只能关面板。
+       */
+      notify(
+        `检索 npm 包失败：${e instanceof Error ? e.message : String(e)}`,
+        'error',
+      )
+    } finally {
+      setSearching(false)
+    }
   }, [query, zh, notify])
 
   return (

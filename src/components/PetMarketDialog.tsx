@@ -118,11 +118,30 @@ interface InstallProgress {
   message: string;
 }
 
+/**
+ * 异常 → 一句可读原因。
+ *
+ * 本轮修的是一整类缺陷：**异步点击处理器只有 `try/finally`（或者干脆没有 `try`）**，
+ * 于是 promise 一旦 reject：① 忙碌标记只在 `finally` 跑到时才清，用户看着按钮转圈到底；
+ * ② 更糟的是用户**一个字都看不到**（没有任何 catch 去说原因）。
+ * 所有新加的 catch 都用这个口径：**命令 + 原因**，别只说"失败"。
+ */
+function reasonOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
   const CloseIcon = ActionIcons.close;
   const [pets, setPets] = useState<MarketPet[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 安装/卸载这类**动作**的失败原因。
+   *
+   * 不能复用 `error`：列表错误会把整片卡片网格换成错误行（那是"加载失败"的正确形态），
+   * 而一次安装失败不该让用户看不见其它宠物。
+   */
+  const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -134,25 +153,37 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
   const loadMarket = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { pets: marketPets, error: err } = await listMarketPets((msg) => {
-      // 可选：显示加载阶段消息
-    });
-    if (err) {
-      setError(err);
+    setActionError(null);
+    try {
+      const { pets: marketPets, error: err } = await listMarketPets((msg) => {
+        // 可选：显示加载阶段消息
+      });
+      if (err) {
+        setError(`加载宠物市场失败：${err}`);
+      }
+      // 标记已安装状态
+      const installedSlugs = new Set(installedPets.map((p) => p.slug));
+      const marked = marketPets.map((p) => ({
+        ...p,
+        installed: installedSlugs.has(p.slug),
+      }));
+      setPets(marked);
+    } catch (e) {
+      /*
+       * 改前这里**没有 try**：`listMarketPets` 一旦 reject，`setLoading(false)` 就永远跑不到，
+       * 用户看到的是"空白列表 + 『正在加载宠物市场...』永久转圈"。
+       * 现在：失败必须结束 loading、给出原因，并让「重试」按钮可用。
+       */
+      setError(`加载宠物市场失败：${reasonOf(e)}`);
+    } finally {
+      setLoading(false);
     }
-    // 标记已安装状态
-    const installedSlugs = new Set(installedPets.map((p) => p.slug));
-    const marked = marketPets.map((p) => ({
-      ...p,
-      installed: installedSlugs.has(p.slug),
-    }));
-    setPets(marked);
-    setLoading(false);
   }, [installedPets]);
 
   useEffect(() => {
     if (open) {
-      loadMarket();
+      // `void`：加载失败已在 loadMarket 内部收口（错误进 state），这里不需要再冒一个未处理 rejection
+      void loadMarket();
     }
   }, [open, loadMarket]);
 
@@ -167,46 +198,64 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
   // 安装宠物
   const handleInstall = useCallback(async (pet: MarketPet) => {
+    setActionError(null);
     setInstallProgress({ slug: pet.slug, progress: 0, message: "准备安装..." });
-    const result = await installMarketPet(
-      pet,
-      (progress, message) => {
-        setInstallProgress({ slug: pet.slug, progress, message });
-      },
-      true, // overwrite
-    );
+    try {
+      const result = await installMarketPet(
+        pet,
+        (progress, message) => {
+          setInstallProgress({ slug: pet.slug, progress, message });
+        },
+        true, // overwrite
+      );
 
-    if (result.success) {
-      // 刷新已安装列表
-      await refreshInstalledPets();
-      // 更新市场列表中的安装状态
-      setPets((prev) => prev.map((p) =>
-        p.slug === pet.slug ? { ...p, installed: true } : p
-      ));
-      // 自动激活刚安装的宠物
-      await setActivePet(pet.slug);
-      // 自动启用宠物系统（如果尚未启用）
-      if (!enabled) {
-        setEnabled(true);
+      if (result.success) {
+        // 刷新已安装列表
+        await refreshInstalledPets();
+        // 更新市场列表中的安装状态
+        setPets((prev) => prev.map((p) =>
+          p.slug === pet.slug ? { ...p, installed: true } : p
+        ));
+        // 自动激活刚安装的宠物
+        await setActivePet(pet.slug);
+        // 自动启用宠物系统（如果尚未启用）
+        if (!enabled) {
+          setEnabled(true);
+        }
+      } else {
+        setActionError(`安装「${pet.name}」失败：${result.error || "未知原因"}`);
       }
-    } else {
-      setError(result.error || "安装失败");
+    } catch (e) {
+      /*
+       * 改前没有 try：`installMarketPet` reject ⇒ `setInstallProgress(null)` 永远跑不到，
+       * 那一格卡片就永久停在进度条上（连"再点一次"的按钮都没有了）。
+       */
+      setActionError(`安装「${pet.name}」失败：${reasonOf(e)}`);
+    } finally {
+      // 两条路径都必须收起进度行
+      setInstallProgress(null);
     }
-    setInstallProgress(null);
   }, [refreshInstalledPets, setActivePet, setEnabled, enabled]);
 
   // 卸载宠物
   const handleUninstall = useCallback(async (pet: MarketPet) => {
-    const result = await uninstallPet(pet.slug);
-    if (result.success) {
-      await refreshInstalledPets();
-      setPets((prev) => prev.map((p) =>
-        p.slug === pet.slug ? { ...p, installed: false } : p
-      ));
-    } else {
-      setError(result.error || "卸载失败");
+    setActionError(null);
+    try {
+      const result = await uninstallPet(pet.slug);
+      if (result.success) {
+        await refreshInstalledPets();
+        setPets((prev) => prev.map((p) =>
+          p.slug === pet.slug ? { ...p, installed: false } : p
+        ));
+      } else {
+        setActionError(`卸载「${pet.name}」失败：${result.error || "未知原因"}`);
+      }
+    } catch (e) {
+      // 改前没有 try：卸载失败静默，卡片仍显示「卸载」，用户以为点了没反应
+      setActionError(`卸载「${pet.name}」失败：${reasonOf(e)}`);
+    } finally {
+      setRefreshKey((k) => k + 1);
     }
-    setRefreshKey((k) => k + 1);
   }, [refreshInstalledPets]);
 
   if (!open) return null;
@@ -270,11 +319,18 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
               <div className="petm-state-icon">😞</div>
               <div className="petm-state-gap">{error}</div>
               <button
-                onClick={() => { setError(null); loadMarket(); }}
+                onClick={() => { setError(null); void loadMarket(); }}
                 className="petm-retry"
               >
                 重试
               </button>
+            </div>
+          )}
+
+          {/* 单个动作（安装/卸载）失败：只加一行错误，不把整片网格换掉 */}
+          {actionError && (
+            <div className="petm-state petm-state--error" role="alert">
+              <div className="petm-state-gap">{actionError}</div>
             </div>
           )}
 

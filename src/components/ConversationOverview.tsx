@@ -70,10 +70,18 @@ export const ConversationOverview = memo(function ConversationOverview({
     };
   }, [messages, sessionId]);
 
+  /*
+   * 限额必须跟着**本轮统计**重算，不能只在挂载时读一次。
+   *
+   * 现场（性能/交互审计发现的真实缺陷）：这个 useMemo 依赖写的是 `[]`，而同一屏的
+   * UsageStats「保存限额」会 `tracker.setLimits(...)` 改同一份数据 ⇒ 保存成功后上方的
+   * 费用进度条仍按旧限额画，直到切走再切回。依赖 `stats.cost` 既能覆盖这次改动，
+   * 又不会引入每渲染重算（cost 不变就不重算）。
+   */
   const limits = useMemo(() => {
     const tracker = getCostTracker();
     return tracker.getLimits();
-  }, []);
+  }, [stats.cost, sessionId]);
 
   const costRatio = limits.perSession
     ? Math.min(100, (stats.cost / limits.perSession) * 100)

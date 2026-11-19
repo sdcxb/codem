@@ -546,6 +546,120 @@ AVD `codem-x86`（x86_64 / API 35 / 1080×2400）。原来那个 `emulator-5554`
 
 ---
 
+## 3H. 第 5 轮：全面测试 + 修复（2026-11-19）
+
+用户口径：「功能、性能、数据链路、信息流、页面调用、页面交互全面测试；遇到 bug 修复（不论新旧、不论谁引入）；
+以根治为目标；不要用绕开真实 bug 的方式让用例变绿」。这一节记的就是这一轮**测出来了什么、怎么修的、判据在哪**。
+
+### 3H.1 测法（三层，互补）
+
+| 层 | 做什么 | 覆盖 |
+|---|---|---|
+| 静态审计（3 份并行） | ①TS↔Rust 的 IPC 面（命令名/参数名/事件通道）②点击处理器的「静默失败」形态 ③渲染/数据路径性能 | 241 个前端调用点 / 133 个 Rust 命令 / 17 个事件通道 / 242 个 tsx |
+| 运行时爬取 | 真机（Tauri WebView2 + CDP）点遍可达 UI：每个可点元素单独点一次，记录 console.error、未捕获拒绝、IPC 失败、空白浮层、无变化点击 | 805 次点击（主界面 + 8 个面板），破坏性动作按名单跳过并记账 |
+| 端到端信息流 | 真实发消息（文本回合 + 工具回合），断言用户气泡、助手气泡、工具卡片、流式状态与全程零异常 | 2 个真实回合，0 异常 / 0 未捕获拒绝 / 0 IPC 失败 |
+
+### 3H.2 数据链路（最严重的一类：静默失效）
+
+**IPC 参数大小写**：Tauri v2 按 **camelCase** 从 JS 取键、再映射到 Rust 的 snake_case 参数；传错大小写**不报错**
+（`Option<T>` 拿到 `None`、多余键被 serde 忽略）。实测 8 处：
+
+- `write_file` 传 `sandbox_enabled` / `allowed_roots` ⇒ Rust 收到 `None` ⇒ 沙箱按「开着」处理（**用户关掉沙箱仍被拒**），
+  且设置里的允许目录白名单**完全不生效**；
+- `execute_command` 传 `timeout_ms` / `bash_path` ⇒ 超时回落到 Rust 默认 **600s**（卡死命令挂 10 分钟）、
+  自定义 bash 路径失效。
+
+修法是改键名（8 处），并加**判据**把这一类钉死：`src/test/ipc-arg-casing.test.ts`（新增两条）——
+①每条 `invoke("cmd", {…})` 的键必须等于该命令 Rust 参数的 camelCase；②命令名必须真的在 `generate_handler!` 里。
+
+**命令不存在**：CI/CD「保存工作流」调 `dialog_save` / `write_text_file` —— 全仓 133 个命令里**没有**这两个，
+该按钮 100% 失败（错误只写进 `actionMsg`，看起来像偶发）。改成 Tauri v2 插件命令 `plugin:dialog|save`
+（capabilities 已授权）→ 拿到用户选定路径后走本仓 `write_file`（用户选的路径不再走工作区守卫，语义见
+`src/core/file-api.ts::writeFileAtUserChosenPath`）。上面第②条判据即为此设。
+
+**每击键一次 IPC**：`useDraftPersistence` 把「防抖 500ms」与「切会话立即冲刷」写在同一条 effect 里，
+依赖含 `draft` 而 cleanup 无条件写盘 ⇒ **每敲一个字一次 `settings.set`**，防抖被完全绕过。
+拆成两条 effect（防抖只清定时器、冲刷只依赖 `draftKey`）；判据 `src/test/draft-persistence-ipc.test.ts`（4 条）。
+
+**每击键 ≥3 次整份 JSON 解析**：`InputArea` 渲染体里 `getModelsForMode(mode)` → `getConfiguredApiModels()`
+要对 `codem-settings`、动态模型、免费模型插件各 parse 一次。改为局部 `useMemo(mode, 版本号)`，
+版本号由 `codem-settings-changed` 事件推进；判据 `src/test/input-models-memo.test.tsx`（3 条）。
+**没有**做成模块级全局缓存：那份缓存判断不了「绕过 `setSetting` 的写入」（迁移/导入/插件/mock），
+实测会让 4 个既有用例假红 —— 局部 memo 的失效点只有事件，语义清楚。
+
+**附件 N+1**：`listMessagesFromIndex` 原来对**每条消息**调一次 `attachmentsFromMirror`，
+而端口 `domains.find()` 是「整表复制 + 全量过滤」⇒ 读 M 条消息 = M 次整表复制（M=500/A=2000 时百万级行复制）。
+改为按会话一次读完再按 `message_id` 分桶；判据 `src/test/attachment-bulk-read.test.ts`（2 条，断言只读 1 次）。
+
+### 3H.3 页面交互（点了没反应 / 永久转圈 / 静默消失）
+
+「`try { … } finally { … }` 没有 `catch`」是本轮出现最多的一种形态：`finally` 会复位忙碌标志，
+但**异常继续上抛成未捕获拒绝**，用户看不到任何提示；有的连标志都没复位，按钮就永久转圈。修了 14 处
+（宠物市场加载/安装/卸载、Ollama 检查/取模型、MCP 连接/断开/全部连接、技能安装、插件安装/检索、
+DSH 外部插件卡加载/检查更新/升级），每处都补 `catch` + 具体错误文案 + 清忙碌标志，
+判据 `src/test/async-handler-failures.test.tsx`（14 条，改前 14/14 红）。
+
+另有 8 处「可见控件承诺了不会发生的事」：
+
+| 位置 | 现象 | 修法 |
+|---|---|---|
+| 设置页内嵌 `ToolManager`/`AgentManager` 的关闭 X | 传的是 `() => {}`，点了完全没反应（同屏 `UsageStats` 的 X 却能返回） | 改成 `setActiveTab("general")`，与兄弟面板一致 |
+| 笔记本输入区的「切换到计划模式」 | `onModeChange={() => {}}`，title 承诺切换但无反应 | 宿主没有该能力时**不渲染**按钮（不再骗用户） |
+| `app.goal-bar` 插槽 | `<SlotBridge fallback={null} />` 不传 props，而 `GoalBar` 判 `goal === undefined ⇒ null` ⇒ 目标条**永远不显示** | 新增 `src/components/GoalBarConnected.tsx`（订阅目标事件 + 读当前会话目标 + 暂停/恢复），插件注册它；判据 `src/test/goal-bar-connected.test.tsx` |
+| 六个面板的异步处理器 | 见上段 | 见上段 |
+
+**剪贴板未捕获拒绝**：真机爬取打出 3 条 `NotAllowedError: Document is not focused` —— 窗口未聚焦时
+`navigator.clipboard.writeText` 必拒，而十来处调用点不管返回值。新增唯一入口 `src/utils/clipboard.ts::copyText`
+（Clipboard API → `execCommand` 兜底 → 返回布尔，绝不抛），11 处调用点改走它；
+判据 `src/test/clipboard-copy.test.ts`（5 条）。
+
+**赞/踩没有选中态语义**：只改行内 color/class，没有 `aria-pressed` ⇒ 读屏用户与自动化都看不出「评价过没有」。
+补 `aria-pressed`；判据 `src/test/feedback-toggle-state.test.tsx`。
+
+### 3H.4 性能（用户可感的三处）
+
+| 修法 | 之前 | 之后 | 判据 |
+|---|---|---|---|
+| 合并气泡按内容缓存（`src/components/assistant-group-merge.ts`） | 每次渲染新建 `merged` 对象 ⇒ `MessageBubble` 的 `memo` 必然失效 ⇒ 每个 assistant 组每秒被强制重渲染约 20 次（10 次流式 flush + 10 次滚动），每次重跑 markdown 解析与全文 `autoLinkFilePaths` | 内容不变复用同一对象引用 | `src/test/chat-merge-cache.test.ts`（5 条） |
+| 代码块懒加载 | Prism + 24 门语法**静态进主包**（首屏必解析） | 独立 chunk，首块代码出现时才拉 | 主包 3.04MB → **2.91MB**（实测构建产物）；占位块与最终形态同字体同底色 |
+| `TitleBar` 最大化状态 | 500ms 一次 `isMaximized` IPC（空闲时每秒 2 次跨进程调用） | 改为 `resize` 事件 + rAF 合并 + `onResized` 监听 | 代码注释 + 真机爬取无 IPC 失败 |
+
+顺带修：`ConversationOverview` 的限额 `useMemo` 依赖写的是 `[]` ⇒ 在用量页保存新限额后上方进度条仍按旧值画，
+直到切走再切回；改为依赖 `stats.cost`。
+
+### 3H.5 读数（本轮结束时的实测）
+
+- `npx vitest run`：**10281 passed / 18 skipped / 984 files / 0 failed**；`tsc --noEmit` 0 错误；
+- 结构门禁：`scan-ui` 0 error / 0 warn、`knip` 46/46 exports、30/30 types、可达性通过、
+  `css-contract` 3129 个类快照对齐、颜色角色 51 对全登记；
+- 运行时爬取（新构建）：**805 次点击 / 0 console.error / 0 未捕获拒绝 / 0 IPC 失败 / 0 空白浮层**；
+- 端到端：文本回合与工具回合均通过（工具卡片 `1 个工具调用 / 1/1`），全程零异常。
+
+### 3H.6 仓库内对应实现（证据落点）
+
+| 结论 | 仓库内文件 |
+|---|---|
+| IPC 参数与命令名判据 | `src/test/ipc-arg-casing.test.ts`、`src/core/command-api.ts`、`src/core/file-api.ts` |
+| CI/CD 保存工作流 | `src/core/dialog-api.ts`、`src/components/CicdPanel.tsx` |
+| 草稿防抖 | `src/hooks/useDraftPersistence.ts`、`src/test/draft-persistence-ipc.test.ts` |
+| 模型列表 memo | `src/components/InputArea.tsx`、`src/test/input-models-memo.test.tsx` |
+| 附件批量读 | `src/core/storage/message.ts`、`src/test/attachment-bulk-read.test.ts` |
+| 异步失败可见 | `src/test/async-handler-failures.test.tsx` 与其覆盖的 6 个组件 |
+| 死键/静默失败 | `src/test/ui-feedback-and-dead-keys.test.tsx`、`src/components/GoalBarConnected.tsx` |
+| 剪贴板 | `src/utils/clipboard.ts`、`src/test/clipboard-copy.test.ts` |
+| 合并气泡缓存 | `src/components/assistant-group-merge.ts`、`src/test/chat-merge-cache.test.ts` |
+| 样式令牌与占位块 | `src/styles/codem-ui.css`、`src/components/rich-content/RichContent.tsx` |
+
+### 3H.7 仍未做（如实记账）
+
+- **移动端配色未重建 APK**：`mobile/lib/design/tokens.dart` 已改（强调色由紫 `#7C6CF0` 改为琥珀 `#C6A15B`，
+  浅色 `#6D5423` 保对比度），但本机**没有 Flutter SDK**（`flutter`/`dart` 均不在 PATH，也没有安装目录），
+  所以改的是源码、**没有**重新构建与装机验证 —— 这一条不能算「已验证」。
+- **真实 arm64 安卓机**仍未验证（前几轮只用 x86_64 模拟器；模拟器缺 Google Play/推送，PRoot 与厂商保活没覆盖）。
+- 静态审计里另外几项**未修**（低收益/高不确定）：`Sidebar` 每 5s 对每个项目重读会话表、
+  水位轮询每 3s 全量读一次消息、`App.tsx` 无选择器订阅整店（改动面太大，需单独一轮带回归基线）。
+- 目标条目前只覆盖「显示 + 暂停/恢复/清除」，**编辑目标**入口未接线（`onEdit` 未传）。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

@@ -7,6 +7,7 @@
 
 import { useState, memo } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, RotateCcw, Copy } from "lucide-react";
+import { copyText } from "../utils/clipboard";
 
 interface ErrorCardProps {
   /** 错误标题 */
@@ -35,7 +36,7 @@ export const ErrorCard = memo(function ErrorCard({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(`${title}: ${message}\n${details || ""}`);
+    void copyText(`${title}: ${message}\n${details || ""}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

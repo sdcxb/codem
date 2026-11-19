@@ -556,25 +556,35 @@ return true;
     setMarketInstallProgress({ value: 0, message: "准备安装..." });
     setMarketError(null);
 
-    const result = await installMarketSkill(
-      skill,
-      (progress, message) => setMarketInstallProgress({ value: progress, message }),
-    );
-
-    if (result.success) {
-      setMarketInstallProgress(null);
-      // 更新已安装状态
-      setMarketSkills((prev) =>
-        prev.map((s) => s.id === skill.id ? { ...s, installed: true } : s),
+    try {
+      const result = await installMarketSkill(
+        skill,
+        (progress, message) => setMarketInstallProgress({ value: progress, message }),
       );
-      // 刷新本地技能列表
-      setRefreshKey((k) => k + 1);
-    } else {
-      setMarketInstallProgress(null);
-      setMarketError(result.error || "安装失败");
-    }
 
-    setInstallingSkillId(null);
+      if (result.success) {
+        // 更新已安装状态
+        setMarketSkills((prev) =>
+          prev.map((s) => s.id === skill.id ? { ...s, installed: true } : s),
+        );
+        // 刷新本地技能列表
+        setRefreshKey((k) => k + 1);
+      } else {
+        setMarketError(`安装「${skill.displayName || skill.name}」失败：${result.error || "未知原因"}`);
+      }
+    } catch (err) {
+      /*
+       * 改前没有 try：`installMarketSkill` reject ⇒ `setInstallingSkillId(null)` 永远跑不到，
+       * 那张卡片上的「安装」按钮就永久转圈 + 永久点不动，进度条停在「准备安装...」。
+       */
+      setMarketError(
+        `安装「${skill.displayName || skill.name}」失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      // 两条路径都必须收起进度并清掉进行中的技能（按钮的 disabled/转圈都靠它）
+      setMarketInstallProgress(null);
+      setInstallingSkillId(null);
+    }
   };
 
   // ===== Icons =====

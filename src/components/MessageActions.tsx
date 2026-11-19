@@ -13,6 +13,7 @@
 
 import { useState, useCallback, memo } from "react";
 import { Copy, Check, ThumbsUp, ThumbsDown, GitBranch, Pencil } from "lucide-react";
+import { copyText } from "../utils/clipboard";
 
 export interface MessageActionsProps {
   messageId: string;
@@ -37,7 +38,7 @@ export const MessageActions = memo(function MessageActions({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content).catch(() => {});
+    void copyText(content);
     onCopy?.(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

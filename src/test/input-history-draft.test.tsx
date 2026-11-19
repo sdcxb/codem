@@ -80,14 +80,11 @@ describe("HIST-DRAFT：历史浏览不许吃掉草稿（第 184 轮）", () => {
     /* 先让防抖（500ms）把这份草稿落盘 —— 用假定时器推过窗口，再读存储。
        ⚠️ 断言要读**settings 存储**（`getSetting`），不是 `localStorage`：
        草稿走的是 core/storage/settings，不是直接写 localStorage（第一版读错了地方）。 */
+    /* ⚠️ 不能用「装假定时器再 advance」：这次写入的 500ms 定时器是**输入那一刻**
+       （真实定时器）排的，之后装假定时器推不动它 —— 实测这会让本用例假红。
+       直接真等 650ms，测的就是防抖语义本身。 */
     await act(async () => {
-      vi.useFakeTimers();
-      try {
-        vi.advanceTimersByTime(700);
-        await Promise.resolve();
-      } finally {
-        vi.useRealTimers();
-      }
+      await new Promise((resolve) => setTimeout(resolve, 650));
     });
     expect(storedDraft(), "大段文字应当已经落盘").toBe(LARGE);
 

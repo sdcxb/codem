@@ -18,6 +18,17 @@ import {
   type DshInstalledPlugin,
 } from "../../core/plugin-market/external-dsh-plugins";
 
+/**
+ * 异常 → 一句可读原因。
+ *
+ * 本轮修的是一整类缺陷：异步处理器只有 `try/finally`（或者没有 `try`），promise 一旦 reject，
+ * 忙碌标记在 `finally` 里复位了，但**用户一个字都看不到**；`load` 那种更糟 ——
+ * 读失败反而让整张卡片 `return null`，与「一个都没装」完全不可区分。
+ */
+function reasonOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function renderPluginRow(
   p: DshInstalledPlugin,
   zh: boolean,
@@ -62,10 +73,21 @@ export function DshExternalPluginsCard({
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const list = await readDshInstalledPlugins();
-    setPlugins(list.map((p) => ({ ...p, enabled: isExternalPluginEnabled(p.name) })));
-    const firstError = list.find((p) => p.error)?.error;
-    setError(firstError ?? null);
+    try {
+      const list = await readDshInstalledPlugins();
+      setPlugins(list.map((p) => ({ ...p, enabled: isExternalPluginEnabled(p.name) })));
+      const firstError = list.find((p) => p.error)?.error;
+      setError(firstError ?? null);
+    } catch (e) {
+      /*
+       * 改前没有 try：读失败 ⇒ `plugins` 仍是 `[]`、`error` 仍是 `null`
+       * ⇒ 下面那句 `if (plugins.length === 0 && !error) return null` 把**整张卡片吞掉**。
+       * 于是「读失败」与「一个都没装」在界面上完全一样，用户连"这是出错了"都不知道。
+       * 现在：失败写进 error —— 卡片照常渲染，并把原因显示出来。
+       */
+      setPlugins([]);
+      setError(`读取 DSH 已安装插件失败：${reasonOf(e)}`);
+    }
   }, []);
 
   useEffect(() => {
@@ -95,6 +117,14 @@ export function DshExternalPluginsCard({
       } else {
         notify?.(zh ? "已是最新版本" : "Already up to date", "success");
       }
+    } catch (e) {
+      /*
+       * 改前只有 `finally`、没有 catch：转圈停了，但用户**看不到任何原因**
+       * （「检查更新」看起来像"什么都没发生"）。现在原因同时进卡片错误行与 toast。
+       */
+      const message = `检查更新失败：${reasonOf(e)}`;
+      setError(message);
+      notify?.(message, "error");
     } finally {
       setChecking(false);
     }
@@ -112,6 +142,11 @@ export function DshExternalPluginsCard({
         notify?.(zh ? `已升级 ${p.name} ${r.from} → ${r.to}` : `Upgraded ${p.name} ${r.from} → ${r.to}`, "success");
         await load();
       }
+    } catch (e) {
+      // 改前只有 `finally`：升级 reject 后按钮恢复了，但用户不知道升级失败了
+      const message = `升级「${p.name}」失败：${reasonOf(e)}`;
+      setError(message);
+      notify?.(message, "error");
     } finally {
       setBusy(null);
     }
@@ -123,6 +158,10 @@ export function DshExternalPluginsCard({
     notify?.(zh ? `${p.name} 已${enabled ? "启用" : "停用"}` : `${p.name} ${enabled ? "enabled" : "disabled"}`, "info");
   };
 
+  /*
+   * ⚠️ `!error` 这一半是**契约的一半**，不是顺手写的：只有「一个都没装而且没出错」才允许把卡片藏掉。
+   * 读失败必须让卡片留下来显示原因 —— 否则「读失败」会伪装成「没装任何插件」。
+   */
   if (plugins.length === 0 && !error) return null;
 
   return (

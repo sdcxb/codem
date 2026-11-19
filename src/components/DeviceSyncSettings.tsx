@@ -155,6 +155,14 @@ export function DeviceSyncSettings({ zh }: { zh: boolean }): React.ReactElement 
           : `Paired (device ${result.deviceId || "?"}). Turn on sync to start.`,
       });
       refresh();
+    } catch (e) {
+      /** 修前这里只有 `finally`：配对 reject 时卡片一片安静，用户只能反复点。 */
+      setNotice({
+        kind: "error",
+        text: isZh
+          ? `配对失败：${e instanceof Error ? e.message : String(e)}。请检查 Host 地址与配对码后重试。`
+          : `Pairing failed: ${e instanceof Error ? e.message : String(e)}. Check the host address and code, then retry.`,
+      });
     } finally {
       setBusy("");
     }
@@ -176,6 +184,14 @@ export function DeviceSyncSettings({ zh }: { zh: boolean }): React.ReactElement 
         });
       }
       refresh();
+    } catch (e) {
+      /** 修前只有 `finally`：`syncNow()` reject 时没有任何提示，按钮复位后像"点了没反应"。 */
+      setNotice({
+        kind: "error",
+        text: isZh
+          ? `同步失败：${e instanceof Error ? e.message : String(e)}。没有删除任何数据，可以稍后重试。`
+          : `Sync failed: ${e instanceof Error ? e.message : String(e)}. Nothing was deleted; you can retry later.`,
+      });
     } finally {
       setBusy("");
     }

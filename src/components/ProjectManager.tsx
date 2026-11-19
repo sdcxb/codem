@@ -13,16 +13,19 @@ const isTauri = () => !!(window as any).__TAURI__;
 
 async function openFolderPicker(): Promise<string | null> {
   if (!isTauri()) return null;
-  try {
-    const { invoke } = (window as any).__TAURI__.core;
-    console.log("[FolderPicker] Invoking open_folder_dialog...");
-    const result = await invoke("open_folder_dialog");
-    console.log("[FolderPicker] Result:", result);
-    return result || null;
-  } catch (e) {
-    console.error("[FolderPicker] Error:", e);
-    return null;
-  }
+  const { invoke } = (window as any).__TAURI__.core;
+  const result = await invoke("open_folder_dialog");
+  return result || null;
+}
+
+/**
+ * 失败原因的统一取法：`Error.message` 优先，其余按字符串显示。
+ *
+ * 这里刻意**不再吞掉选择器的异常**（修前 `openFolderPicker` 自己 catch 后返回 null，
+ * 与"用户点了取消"完全同形）—— 打开失败要能走到调用方的 catch 里说出来。
+ */
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 /** Escape a path for PowerShell single-quoted strings */
@@ -42,6 +45,9 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
   const [newDesc, setNewDesc] = useState("");
   const [envConfig, setEnvConfig] = useState<EnvironmentConfig>({});
   const [envSaved, setEnvSaved] = useState(false);
+  /** 新建/打开/选目录失败时的同屏提示（修前这些动作失败 = 弹窗不动、一个字都不说） */
+  const [actionError, setActionError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   // Git project creation state
   const [gitRepoName, setGitRepoName] = useState("");
@@ -59,10 +65,18 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
   const handleCreate = async () => {
     if (!newName.trim() || !newPath.trim()) return;
-    await createProjectFiles(newPath);
-    const project = createProject(newName, newPath, newDesc);
-    await loadProjectData(newPath);
-    onClose();
+    setActionError("");
+    setCreating(true);
+    try {
+      await createProjectFiles(newPath);
+      createProject(newName, newPath, newDesc);
+      await loadProjectData(newPath);
+      onClose();
+    } catch (e) {
+      setActionError(`创建项目失败：${errorText(e)}。请检查路径是否可写，然后重试。`);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleGitCreate = async () => {
@@ -255,9 +269,16 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
   };
 
   const handleOpen = async (project: typeof projects[0]) => {
-    openProject(project.id);
-    await loadProjectData(project.path);
-    onClose();
+    setActionError("");
+    try {
+      openProject(project.id);
+      await loadProjectData(project.path);
+      onClose();
+    } catch (e) {
+      setActionError(
+        `打开项目失败：${errorText(e)}。项目文件可能已被移动或无法读取，请检查路径后重试。`,
+      );
+    }
   };
 
   const handleDelete = async (projectId: string) => {
@@ -267,16 +288,21 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
   };
 
   const handlePickFolder = async () => {
-    console.log("[ProjectManager] Opening folder picker...");
-    const folder = await openFolderPicker();
-    console.log("[ProjectManager] Folder picker returned:", folder);
-    if (folder) {
-      setNewPath(folder);
-      // Auto-fill name from folder
-      if (!newName.trim()) {
-        const folderName = folder.split(/[/\\]/).pop() || "";
-        setNewName(folderName);
+    setActionError("");
+    try {
+      console.log("[ProjectManager] Opening folder picker...");
+      const folder = await openFolderPicker();
+      console.log("[ProjectManager] Folder picker returned:", folder);
+      if (folder) {
+        setNewPath(folder);
+        // Auto-fill name from folder
+        if (!newName.trim()) {
+          const folderName = folder.split(/[/\\]/).pop() || "";
+          setNewName(folderName);
+        }
       }
+    } catch (e) {
+      setActionError(`打开文件夹选择器失败：${errorText(e)}。也可以直接在输入框里填写路径。`);
     }
   };
 
@@ -310,6 +336,16 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
           <h3><Folder size={16} className="icon-inline" /> 项目管理</h3>
           <button aria-label="关闭" title="关闭" className="settings-close" onClick={onClose}><ActionIcons.close size={16} /></button>
         </div>
+
+        {/*
+          新建 / 打开 / 选目录失败必须有话说（修前 dialog 原地不动、零反馈）。
+          用共享 StatusBanner（role="alert"）而不是各分支自己写一套错误块。
+        */}
+        {actionError && (
+          <StatusBanner tone="error" data-testid="project-action-error">
+            {actionError}
+          </StatusBanner>
+        )}
 
         {mode === "list" && (
           <div className="project-list-body">
@@ -419,7 +455,9 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
             </div>
             <div className="project-form-actions">
               <button className="project-action-btn secondary" onClick={() => setMode("list")}>返回</button>
-              <button className="project-action-btn primary" onClick={handleCreate}>创建项目</button>
+              <button className="project-action-btn primary" onClick={handleCreate} disabled={creating}>
+                {creating ? "创建中…" : "创建项目"}
+              </button>
             </div>
           </div>
         )}
@@ -478,13 +516,18 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                       placeholder="点击右边按钮选择文件夹"
                     />
                     <button className="path-picker-btn" onClick={async () => {
-                      const folder = await openFolderPicker();
-                      if (folder) {
-                        setGitProjectPath(folder);
-                        if (!gitRepoName.trim()) {
-                          const folderName = folder.split(/[/\\]/).pop() || "";
-                          setGitRepoName(folderName);
+                      setActionError("");
+                      try {
+                        const folder = await openFolderPicker();
+                        if (folder) {
+                          setGitProjectPath(folder);
+                          if (!gitRepoName.trim()) {
+                            const folderName = folder.split(/[/\\]/).pop() || "";
+                            setGitRepoName(folderName);
+                          }
                         }
+                      } catch (e) {
+                        setActionError(`打开文件夹选择器失败：${errorText(e)}。也可以直接在输入框里填写路径。`);
                       }
                     }} title="选择文件夹">
                       <Folder size={16} />

@@ -22,6 +22,7 @@ import {
 import { handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
 import { DiffBlockCard, type DiffHunk } from "./DiffBlockCard";
 import { ToolCardView, classifyTool, deriveFilePath } from "../../packages/ui/src/tool-card";
+import { copyText } from "../utils/clipboard";
 
 // ====== 类型定义 ======
 
@@ -97,7 +98,7 @@ function TerminalBlock({ model }) {
 
   const onCopy = () => {
     if (!model.output) return
-    navigator.clipboard.writeText(model.output).catch(() => {})
+    void copyText(model.output)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }

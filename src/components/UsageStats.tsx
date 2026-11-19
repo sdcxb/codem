@@ -69,6 +69,8 @@ export function UsageStats({ onClose }: UsageStatsProps) {
   const [savingLimits, setSavingLimits] = useState(false);
   /** 限额保存结果（D-21）：只有确认落库才显示"已保存"，否则如实显示未确认 */
   const [limitsSaveState, setLimitsSaveState] = useState<"idle" | "saved" | "failed">("idle");
+  /** 保存限额抛异常时的具体原因（修前这里是 `finally` 缺席的裸 async：reject 后卡在「保存中…」） */
+  const [limitsSaveError, setLimitsSaveError] = useState("");
   const [vizRecords, setVizRecords] = useState<UsageRecord[]>([]);
 
   useEffect(() => {
@@ -417,21 +419,33 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Save button */}
             <button
               onClick={async () => {
-                const tracker = getCostTracker();
                 /**
                  * D-21：`setLimits` 是"内存即时生效 + 异步落库"（`setSettingJSON` 返回 void），
                  * 所以"已保存"不能无条件显示 —— 先记失败水位，等写队列排空后再决定显示什么。
+                 *
+                 * 每一步都在 try 里：`getCostTracker` / `setLimits` / 写队列确认任一环抛异常，
+                 * 都要**先解除忙态**（否则按钮永远停在「保存中…」）并给出具体原因。
                  */
-                const probe = beginSettingsWriteProbe();
-                // `null` 是刻意的哨兵（见 LimitDraft 的说明）：消费方按真值判断，null = 不限
-                tracker.setLimits(limits as unknown as CostLimits);
                 setSavingLimits(true);
+                setLimitsSaveError("");
                 setLimitsSaveState("idle");
-                const report = await flushSettingsWrites(probe, 1500);
-                setSavingLimits(false);
-                setLimitsSaveState(report.settled ? "saved" : "failed");
-                if (report.settled) {
-                  setTimeout(() => setLimitsSaveState("idle"), 2000);
+                try {
+                  const tracker = getCostTracker();
+                  const probe = beginSettingsWriteProbe();
+                  // `null` 是刻意的哨兵（见 LimitDraft 的说明）：消费方按真值判断，null = 不限
+                  tracker.setLimits(limits as unknown as CostLimits);
+                  const report = await flushSettingsWrites(probe, 1500);
+                  setLimitsSaveState(report.settled ? "saved" : "failed");
+                  if (report.settled) {
+                    setTimeout(() => setLimitsSaveState("idle"), 2000);
+                  }
+                } catch (e) {
+                  setLimitsSaveState("idle");
+                  setLimitsSaveError(
+                    `保存限额失败：${e instanceof Error ? e.message : String(e)}。限额可能没有生效，请重试。`,
+                  );
+                } finally {
+                  setSavingLimits(false);
                 }
               }}
               className="usage-save-btn"
@@ -444,6 +458,11 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                     ? <span className="usage-saved">⚠️ 未确认保存（未落库）</span>
                     : "保存限额"}
             </button>
+            {limitsSaveError && (
+              <div className="usage-record-error" role="alert" data-testid="usage-limits-error">
+                {limitsSaveError}
+              </div>
+            )}
           </div>
         )}
       </div>

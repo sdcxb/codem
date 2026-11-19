@@ -372,6 +372,15 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           ? `没有找到相似重复的记忆${scope}。判定口径：标题+正文的 2-gram 相似度，详见「去重」那一节的说明。`
           : `找到 ${res.groups.length} 组相似重复，共 ${entries} 条${scope}。每组都给了相似度读数，删除由你逐组确认。`,
       );
+    } catch (e) {
+      /**
+       * 修前只有 `finally`：扫描 reject 时结果区一直空白，用户只会以为"按钮没反应"。
+       * 现在明确说失败原因，并说明**没有改动任何记忆**（扫描是只读的），再给重试出路。
+       */
+      setDuplicateGroups(null);
+      setNotice(
+        `找出相似重复失败：${e instanceof Error ? e.message : String(e)}。现有记忆没有被修改，可以稍后重试。`,
+      );
     } finally {
       setDupProgress(null);
     }

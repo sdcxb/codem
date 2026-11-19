@@ -34,6 +34,7 @@ import {
   type SessionSortDir,
   describeSessionSort,
 } from "../core/session/session-sort";
+import { copyText } from "../utils/clipboard";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -474,7 +475,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   };
 
   const handleCopySessionId = (sessionId: string) => {
-    navigator.clipboard.writeText(sessionId);
+    void copyText(sessionId);
   };
 
   // #9: Group sessions by time

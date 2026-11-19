@@ -2565,6 +2565,19 @@
     "height": "8px",
     "width": "8px"
   },
+  "content-code-fallback": {
+    "background": "var(--rich-code-bg)",
+    "border": "1px solid var(--rich-code-border)",
+    "border-radius": "var(--radius-md)",
+    "font-family": "var(--font-mono)",
+    "font-size": "var(--fs-sm)",
+    "line-height": "var(--lh-ui)",
+    "margin": "0.75em 0",
+    "overflow-x": "auto",
+    "padding": "var(--space-3) var(--space-4)",
+    "white-space": "pre-wrap",
+    "word-break": "break-word"
+  },
   "content-collapsed-hint": {
     "display": "none"
   },

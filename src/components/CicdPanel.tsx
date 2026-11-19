@@ -22,6 +22,9 @@ import {
   PIPELINE_TEMPLATES, WorkflowRun, ProjectType, WorkflowFile,
 } from "../core/cicd";
 import { reportActionFailure } from "../core/storage/persist-failure";
+import { saveFileDialog } from "../core/dialog-api";
+import { writeFileAtUserChosenPath } from "../core/file-api";
+import { copyText } from "../utils/clipboard";
 
 interface CicdPanelProps {
   onClose?: () => void;
@@ -234,7 +237,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
 
   const handleCopyYaml = useCallback(() => {
     if (!generatedWorkflow) return;
-    navigator.clipboard.writeText(generatedWorkflow.content);
+    void copyText(generatedWorkflow.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [generatedWorkflow]);
@@ -244,15 +247,16 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
     try {
       const isTauri = !!(window as any).__TAURI__;
       if (isTauri) {
-        const { invoke } = (window as any).__TAURI__.core;
-        // Use the dialog to get save path
-        const filePath = await invoke("dialog_save", {
+        /* 原实现调 `dialog_save` / `write_text_file` —— 这两个命令在 Rust 侧**不存在**
+           （全仓 133 个命令里没有），所以这个按钮 100% 失败。Tauri v2 的对话框在插件里：
+           `plugin:dialog|save`，写盘走本仓自己的 `write_file`（用户选定的路径不再走工作区守卫）。 */
+        const filePath = await saveFileDialog({
           title: "Save Workflow",
           defaultPath: generatedWorkflow.path,
           filters: [{ name: "YAML", extensions: ["yml", "yaml"] }],
         });
         if (filePath) {
-          await invoke("write_text_file", { path: filePath, content: generatedWorkflow.content });
+          await writeFileAtUserChosenPath(filePath, generatedWorkflow.content);
           setActionMsg(`${S.cicd.saved[lang]}`);
         }
       } else {

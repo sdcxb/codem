@@ -331,9 +331,29 @@ export async function writeFile(path: string, content: string, options?: { encod
     content,
     encoding: options?.encoding,
     workspace: options?.workspace,
-    sandbox_enabled: sandboxEnabled,
+    /* ⚠️ camelCase：蛇形键会被 Rust 静默丢弃 ⇒ `sandbox_enabled` 变 None ⇒ 关掉沙箱仍按开着判定。 */
+    sandboxEnabled: sandboxEnabled,
     // 写侧的 Rust 守卫必须和前端同一份白名单，否则「TS 放行、Rust 拦下」
-    allowed_roots: sandboxEnabled ? getSandboxAllowedDirs() : [],
+    allowedRoots: sandboxEnabled ? getSandboxAllowedDirs() : [],
+  });
+}
+
+/**
+ * 写到**用户刚刚在原生对话框里选定**的路径（CI/CD 保存工作流）。
+ *
+ * 为什么不复用 `writeFile()`：它会在 IPC 之前跑 `assertWithinWorkspace`（前端沙箱判定），
+ * 而用户明确选了一个工作区之外的位置（例如把 ci.yml 存到桌面）—— 那是**用户的决定**，
+ * 不是模型的越权。这里只跳过前端守卫，同时把 `sandboxEnabled` 交给 Rust 侧的唯一一份判定
+ * （Rust 看到 `false` 就不再拦），行为与 Rust 的语义一致，不额外开旁路。
+ *
+ * 注意键名是 camelCase（Tauri v2 取键规则）；写成 `sandbox_enabled` 会被静默丢弃，
+ * 判据见 `src/test/ipc-arg-casing.test.ts`。
+ */
+export async function writeFileAtUserChosenPath(path: string, content: string): Promise<void> {
+  await tauriInvoke("write_file", {
+    path,
+    content,
+    sandboxEnabled: false,
   });
 }
 
@@ -504,9 +524,9 @@ export async function executeCommand(
   return tauriInvoke("execute_command", {
     command,
     cwd,
-    timeout_ms: timeoutMs,
+    timeoutMs: timeoutMs,
     shell: shellPlan?.kind ?? "powershell",
-    bash_path: shellPlan?.bashPath ?? null,
+    bashPath: shellPlan?.bashPath ?? null,
     sessionId,
   });
 }

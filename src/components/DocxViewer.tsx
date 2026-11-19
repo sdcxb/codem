@@ -15,6 +15,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { FileText, Search, Loader2, AlertCircle, Copy, Save } from 'lucide-react';
 import { ActionIcons } from '../core/icons/icon-map';
 import { useLang } from '../core/i18n/lang';
+import { copyText } from "../utils/clipboard";
 
 interface DocxViewerProps {
   filePath?: string;
@@ -189,7 +190,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               </button>
             )}
             <button
-              onClick={() => navigator.clipboard.writeText(text)}
+              onClick={() => void copyText(text)}
               title={isZh ? '复制文本' : 'Copy Text'}
               style={{
                 background: 'none', border: '1px solid var(--border-primary)',

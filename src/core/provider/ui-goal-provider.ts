@@ -13,7 +13,8 @@
  * inject: ['slots'] — 框架保证 ctx.get('slots') 可用后才执行。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { GoalBar } from '../../components/GoalBar'
+/* 目标条需要「当前会话的目标」这份领域数据：由连接层订阅 goal 事件后再喂给纯组件 GoalBar。 */
+import { GoalBarConnected } from '../../components/GoalBarConnected'
 
 export const uiGoalProvider: Plugin = Object.assign(
   (ctx: any) => {
@@ -39,7 +40,7 @@ export const uiGoalProvider: Plugin = Object.assign(
 
     // Register React component to Slot — inject 保证 slots 可用
     const slots = ctx.get('slots')
-    const unreg = slots.register({ name: 'app.goal-bar', id: 'r8-goalbar', priority: 5 }, GoalBar)
+    const unreg = slots.register({ name: 'app.goal-bar', id: 'r8-goalbar', priority: 5 }, GoalBarConnected)
 
     /**
      * 第 62 轮（清理第 4 包）：删掉 `conversation.composer.dock` 那条 `-sub` 注册 ——

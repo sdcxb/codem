@@ -121,24 +121,19 @@ export function useDraftPersistence(draftKey: string | null) {
   }, [draftKey, updateDraft]);
 
   /**
-   * 保存草稿（防抖 500ms）+ **卸载/切换会话立即冲刷**。
+   * 草稿落盘：**防抖 500ms** + **切会话/卸载立即冲刷**（两件事拆成两条 effect）。
    *
-   * P1-11：原来只有 `clearTimeout`，卸载/切换会把防抖窗口里的最后一次输入直接丢掉
-   * （用户看到的字，切回会话就没了）。
+   * ⚠️ 2026-11-19 修（真实缺陷）：原来两件事写在同一条 effect 里 ——
+   * 依赖含 `draft`，cleanup 里无条件 `writeDraft(...)` ⇒ 每敲一个字 React 就跑一次
+   * 上一版 effect 的 cleanup ⇒ **一次 `settings.set` IPC**。500ms 防抖被 cleanup 完全绕过
+   * （敲 100 字 = 100 次跨进程写，真机输入变卡的直接原因之一）。
    *
-   * 两个必须同时成立的约束：
-   * - **卸载**必须写（这是丢字的场景）；
-   * - **切换会话**必须写回**旧** key（不能写进新 key）。
-   * 所以在 cleanup 里判断"key 变了没有"，而不是在 effect 体里（effect 体里读到的
-   * 是上一版的 ref，恰恰是旧 key，会写错地方 —— 实测过）。
-   * 冲刷只写存储、**不 setState**，因此卸载后不会出现"更新已卸载组件"的告警。
-   * 因为输入而触发的同 key 重跑不进冲刷分支，500ms 防抖语义保持不变。
+   * 现在：
+   * ① 防抖 effect（依赖 `draft`）只负责「停手 500ms 后写一次」，cleanup 只清定时器；
+   * ② 冲刷 effect（只依赖 `draftKey`）负责「切会话/卸载立刻写回**旧** key」。
    *
-   * ⚠️ 第 54 轮：定时器里加了**与 cleanup 完全相同的"值不值得写"判据**。
-   * 原来它无条件 `writeDraft(key, draftRef.current)` —— 于是"切到某个会话、一个字不敲、
-   * 待满 500ms"就会给那个会话写一条**空草稿**（真机实证：`settings` 里 24 条
-   * `composer-draft-*`，一部分的会话已经删掉了，值全是空串）。
-   * 注释一直写着"遍历过的会话不该攒出无意义的行"，实现与之相反 —— 现在是实现对。
+   * 两条都保留「值不值得写」判据（空文本且从没落过盘 ⇒ 不写），
+   * 避免「路过的会话」攒出空草稿行（第 54 轮的教训）。
    */
   useEffect(() => {
     if (!draftKey) return;
@@ -147,16 +142,19 @@ export function useDraftPersistence(draftKey: string | null) {
     const timer = setTimeout(() => {
       if (worthWriting()) writeDraft(keyWhenScheduled, draftRef.current);
     }, 500);
+    return () => clearTimeout(timer);
+  }, [draft, draftKey, writeDraft]);
+
+  /* 切换会话 / 卸载：立即把**旧 key** 的草稿冲刷掉（不写新 key）。
+     只在 `draftKey` 变化或卸载时跑，所以「边打字边落盘」不会发生在这里。 */
+  useEffect(() => {
+    if (!draftKey) return;
+    const keyWhenScheduled = draftKey;
     return () => {
-      clearTimeout(timer);
-      /*
-       * 2026-11-09 修：冲刷必须写回**调度时的旧 key**。
-       * 旧实现调用 flushDraft()，它读的是 draftKeyRef.current（切换后已经是新 key），
-       * 于是把旧会话的字写进新会话，切回旧会话就空了。
-       */
+      const worthWriting = () => draftRef.current !== "" || storedValueRef.current !== null;
       if (worthWriting()) writeDraft(keyWhenScheduled, draftRef.current);
     };
-  }, [draft, draftKey, flushDraft, writeDraft]);
+  }, [draftKey, writeDraft]);
 
   const clearDraft = useCallback(() => {
     const key = updateDraft("");

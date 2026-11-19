@@ -124,16 +124,35 @@ export function TitleBar({
     return null;
   }, []);
 
+  /**
+   * 最大化状态：用**事件**驱动，不再 500ms 轮询。
+   *
+   * 原来这里每 500ms 发一次 `isMaximized` IPC —— 空闲时也每秒 2 次跨进程调用，
+   * 笔记本电池上这些唤醒是白烧的。Tauri 的窗口本来就有 resize 事件，最大化/还原一定会改尺寸，
+   * 所以在 resize（加 rAF 合并）与挂载时各读一次就够；读数本身仍走 IPC，但只在真的变了的时候。
+   */
   useEffect(() => {
     const win = getWin();
     if (!win) return;
-    win.isMaximized().then((m: boolean) => setMaximized(m)).catch(() => {});
-
-    const interval = setInterval(() => {
-      win.isMaximized().then((m: boolean) => setMaximized(m)).catch(() => {});
-    }, 500);
-
-    return () => clearInterval(interval);
+    let frame = 0;
+    const sync = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        win.isMaximized().then((m: boolean) => setMaximized(m)).catch(() => {});
+      });
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    const unlisten = win.onResized?.(() => sync());
+    return () => {
+      window.removeEventListener("resize", sync);
+      if (frame) cancelAnimationFrame(frame);
+      /* onResized 返回 Promise<UnlistenFn>（Tauri v2）；卸载时若已就绪就解绑 */
+      void Promise.resolve(unlisten).then((fn) => {
+        if (typeof fn === "function") fn();
+      }).catch(() => {});
+    };
   }, [getWin]);
 
   const handleMinimize = useCallback(() => {

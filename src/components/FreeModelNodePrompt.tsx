@@ -63,6 +63,9 @@ export function FreeModelNodePrompt() {
       const result = await freeModelPlugin.installNode((p, message) => setPhase(`${p}：${message}`));
       setNotice(result.message);
       if (result.ok) await freeModelPlugin.models.refresh();
+    } catch (e) {
+      /** 修前只有 `finally`：安装 reject 时提示区始终为空，用户只看到按钮复位。 */
+      setNotice(`安装 Node 失败：${e instanceof Error ? e.message : String(e)}。可以稍后重试，或自行安装 Node.js 22+。`);
     } finally {
       setInstalling(false);
       setPhase("");

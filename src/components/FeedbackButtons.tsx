@@ -55,6 +55,8 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             className={inline ? "toolbar-btn" : `feedback-btn like ${feedback === "like" ? "active" : ""}`}
             onClick={() => handleFeedback("like")}
             aria-label={S.bubble.like[lang]}
+            /* 赞/踩是 toggle：选中态必须进无障碍树（否则读屏用户与自动化都看不出「是否已评价」） */
+            aria-pressed={feedback === "like"}
             style={inline && feedback === "like" ? { color: "var(--accent)" } : {}}
           >
             <ThumbsUp size={14} />
@@ -68,6 +70,7 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             className={inline ? "toolbar-btn" : `feedback-btn dislike ${feedback === "dislike" ? "active" : ""}`}
             onClick={() => handleFeedback("dislike")}
             aria-label={S.bubble.dislike[lang]}
+            aria-pressed={feedback === "dislike"}
             style={inline && feedback === "dislike" ? { color: "var(--accent)" } : {}}
           >
             <ThumbsDown size={14} />

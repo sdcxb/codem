@@ -285,7 +285,7 @@ export function NbChatPanel({
           isStreaming={isSessionStreaming}
           noSession={!currentSessionId}
           collaborationMode={collaborationMode}
-          onModeChange={onModeChange || (() => {})}
+          onModeChange={onModeChange}
           projectPath={projectPath}
           quoteContext={quoteContext}
           onClearQuote={() => { setQuoteContext(null); }}

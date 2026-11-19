@@ -59,7 +59,7 @@ async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; st
   const result = await invoke("execute_command", {
     command: buildGitCommand(cwd, args),
     cwd,
-    timeout_ms: 30_000,
+    timeoutMs: 30_000,
   });
   return {
     stdout: result.stdout || "",

@@ -31,6 +31,17 @@ function emptyConfig(): MCPServerConfig {
   return { name: "", transport: "http", url: "", timeout: 5000 };
 }
 
+/**
+ * 异常 → 一句可读原因。
+ *
+ * 本轮修的是一整类缺陷：**异步点击处理器只有 `try/finally`（或者没有 `try`）**，
+ * promise 一旦 reject，用户要么看不到任何原因，要么看着「连接中...」永远不收尾。
+ * 所有 catch 都按同一口径说话：**命令 + 原因**。
+ */
+function reasonOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function McpManager({ onClose }: McpManagerProps) {
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [statuses, setStatuses] = useState<Map<string, MCPServerStatus>>(new Map());
@@ -44,6 +55,8 @@ export function McpManager({ onClose }: McpManagerProps) {
   const [connecting, setConnecting] = useState<Set<string>>(new Set());
   /** 「全部连接」是否正在进行（按钮的进行中态；也是重复点击的闸门） */
   const [connectingAll, setConnectingAll] = useState(false);
+  /** 「全部连接」整批失败的原因 —— 单条失败进各自的状态行，整批失败没有"那一行"，得单独说 */
+  const [connectAllError, setConnectAllError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
@@ -106,20 +119,54 @@ export function McpManager({ onClose }: McpManagerProps) {
   // 连接/断开
   const handleConnect = async (config: MCPServerConfig) => {
     markConnecting([config.name], true);
-    const registry = getMCPRegistry();
-    const status = await registry.connect(config);
-    setStatuses((prev) => new Map(prev).set(config.name, status));
-    markConnecting([config.name], false);
+    setConnectAllError(null);
+    try {
+      const registry = getMCPRegistry();
+      const status = await registry.connect(config);
+      setStatuses((prev) => new Map(prev).set(config.name, status));
+    } catch (e) {
+      /*
+       * 改前没有 try：`registry.connect` reject ⇒ `markConnecting(false)` 永远跑不到，
+       * 这一行就永久停在「连接中...」且按钮点不动。
+       * 失败写进 status（面板本来就用「错误 + 原因」这一行展示连接失败），
+       * 但 connected 必须是 false —— 不许把失败演成"连上了"。
+       */
+      setStatuses((prev) => new Map(prev).set(config.name, {
+        name: config.name,
+        connected: false,
+        tools: [],
+        error: `连接「${config.name}」失败：${reasonOf(e)}`,
+      }));
+    } finally {
+      markConnecting([config.name], false);
+    }
   };
 
   const handleDisconnect = async (name: string) => {
-    const registry = getMCPRegistry();
-    await registry.disconnect(name);
-    setStatuses((prev) => {
-      const next = new Map(prev);
-      next.delete(name);
-      return next;
-    });
+    try {
+      const registry = getMCPRegistry();
+      await registry.disconnect(name);
+      setStatuses((prev) => {
+        const next = new Map(prev);
+        next.delete(name);
+        return next;
+      });
+    } catch (e) {
+      /*
+       * 改前没有 try：断开失败静默，状态仍显示「已连接」——用户不知道到底断没断。
+       * 这里**保留**原状态（connected 不变）并只加一行原因：断开没有成功，
+       * 谎报「未连接」比不说更糟。
+       */
+      setStatuses((prev) => {
+        const next = new Map(prev);
+        const current = prev.get(name);
+        next.set(name, {
+          ...(current ?? { name, connected: true, tools: [] }),
+          error: `断开「${name}」失败：${reasonOf(e)}`,
+        });
+        return next;
+      });
+    }
   };
 
   /**
@@ -136,6 +183,7 @@ export function McpManager({ onClose }: McpManagerProps) {
     const names = registry.getConfigs().map((c) => c.name);
 
     setConnectingAll(true);
+    setConnectAllError(null);
     markConnecting(names, true);
     try {
       await registry.connectAll((status) => {
@@ -143,6 +191,13 @@ export function McpManager({ onClose }: McpManagerProps) {
         setStatuses((prev) => new Map(prev).set(status.name, status));
         markConnecting([status.name], false);
       });
+    } catch (e) {
+      /*
+       * 改前只有 `finally`、**没有 catch**：进行中态会复位，但整批 reject 之后
+       * 用户**一个字都看不到**（既没有错误行，也没有任何提示）。
+       * 单条失败在 `connectAll` 内部已经各自成 status；能走到这里的只有整批级失败。
+       */
+      setConnectAllError(`全部连接失败：${reasonOf(e)}`);
     } finally {
       // 兜底：正常路径下每条都在回调里摘过了，这里只清"回调没跑到"的那些名字
       markConnecting(names, false);
@@ -240,6 +295,11 @@ export function McpManager({ onClose }: McpManagerProps) {
           onSave={handleAdd}
           onCancel={() => { setShowAdd(false); setNewServer(emptyConfig()); }}
         />
+      )}
+
+      {/* 整批失败的原因（单条失败在各自的状态行里说） */}
+      {connectAllError && (
+        <div className="mcp-json-error" role="alert">{connectAllError}</div>
       )}
 
       {/* Server List */}

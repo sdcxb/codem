@@ -113,7 +113,8 @@ async function tauriRunGit(
   const result = await invoke("execute_command", {
     command: buildGitCommand(cwd, withGlobalGitArgs(args)),
     cwd,
-    timeout_ms: opts.timeoutMs ?? GIT_TIMEOUT_MS,
+    /* ⚠️ 键名必须 camelCase：Tauri v2 按 camelCase 取键，`timeout_ms` 会被静默丢弃 ⇒ 回落 600s。 */
+    timeoutMs: opts.timeoutMs ?? GIT_TIMEOUT_MS,
   });
   return {
     stdout: String(result?.stdout ?? ""),
@@ -138,7 +139,8 @@ async function tauriRunGitBatch(
   const result = await invoke("execute_command", {
     command: body,
     cwd,
-    timeout_ms: opts.timeoutMs ?? GIT_TIMEOUT_MS,
+    /* ⚠️ 键名必须 camelCase：Tauri v2 按 camelCase 取键，`timeout_ms` 会被静默丢弃 ⇒ 回落 600s。 */
+    timeoutMs: opts.timeoutMs ?? GIT_TIMEOUT_MS,
   });
   return parseGitBatchOutput(String(result?.stdout ?? ""), commands.length).map((item) => ({
     stdout: item.stdout,

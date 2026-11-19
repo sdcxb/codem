@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
+import { mergeAssistantGroup } from "./assistant-group-merge";
 /* 第 215 波：模型选择器要能标出「当前不可用」的免费模型（判定与文案都在 model-index / service 里） */
 import { isFreeModelId } from "../core/free-model-plugin/model-index";
 import { modelModalityLabel as modalityLabelForModel } from "../core/llm/model-modality";
@@ -1502,18 +1503,9 @@ setStepTooltipLocked(false);
                     group.push(displayMessages[j]);
                     lastIdx = j;
                   }
-                  // Create merged message
-                  const merged: Message = {
-                    ...msg,
-                    id: msg.id, // keep first message's ID
-                    content: group.map(m => m.content).filter(Boolean).join("\n\n---\n\n"),
-                    reasoning: group.map(m => m.reasoning).filter(Boolean).join("\n\n---\n\n") || undefined,
-                    toolCalls: group.flatMap(m => m.toolCalls || []),
-                    status: group[group.length - 1].status,
-                    generatedFiles: group.flatMap(m => m.generatedFiles || []).length > 0
-                      ? group.flatMap(m => m.generatedFiles || [])
-                      : undefined,
-                  };
+                  /* 合并气泡按内容缓存（见 components/assistant-group-merge.ts 的注释）：
+                     内容不变时复用同一个 Message 引用，否则 MessageBubble 的 memo 每次渲染都失效。 */
+                  const merged = mergeAssistantGroup(group);
                   renderList.push({ msg: merged, skip: false, isLastInGroup: true, origIndex: i, groupLastIdx: lastIdx });
                   // Mark intermediate messages as skipped
                   for (let j = i + 1; j <= lastIdx; j++) {
@@ -2023,7 +2015,7 @@ canEdit={editable}
           }}
         />
       ) : null}
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} providerId={providerId} onModelChange={onModelChange} mode={mode}
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} providerId={providerId} onModelChange={onModelChange} mode={mode}
         /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
         searchOpen={showSearch}
         onToggleSearch={() => {

@@ -1390,7 +1390,17 @@ export function listMessagesFromIndex(sessionId: string, limit?: number, include
     // limit 语义与旧实现一致：取**最后** limit 条（`listMessagesMerged` 也是 slice(-limit)）
     const rows = limit ? visible.slice(-limit) : visible;
     // 附件在另一张表：端口读路径要显式补上（否则「消息回来了、附件没了」）
-    return rows.map((r) => withMirrorAttachments(messageRowToMessage(r)));
+    /* 附件**只读一次**：原来对每条消息调 attachmentsFromMirror() ⇒ 每条一次
+       domains.find()，而它的实现是"整表复制 + 全量过滤"（rust-port: all() = [...list]）。
+       M 条消息 × A 行附件 ⇒ O(M×A)；M=500 / A=2000 时单次开会话就是百万级行复制。
+       现在按 session 一次读完、在内存里分桶（O(A + M)），语义不变（仍按 added_at 升序）。 */
+    const attachmentsByMessage = attachmentsForSessionFromMirror(sessionId);
+    return rows.map((r) => {
+      const message = messageRowToMessage(r);
+      if (message.attachments && message.attachments.length > 0) return message;
+      const atts = attachmentsByMessage?.get(message.id);
+      return atts && atts.length > 0 ? { ...message, attachments: atts } : message;
+    });
   }
   /**
    * 第 91 波（架构级修正）：索引是**可重建的查询索引**，日志才是权威 ——
@@ -2743,9 +2753,48 @@ function attachmentsFromMirror(messageId: string): MessageAttachment[] | undefin
     }));
 }
 
+/**
+ * 从 **attachments 域镜像**一次取出某个会话的全部附件，并按 `message_id` 分桶。
+ *
+ * 为什么要有它（`listMessagesFromIndex` 的批量读路径）：逐个消息调
+ * `attachmentsFromMirror()` 时，每次都会触发一次 `domains.find()` ——
+ * 而端口实现的 `all()` 是「整表复制 + 全量过滤」，M 条消息 × A 行附件 = O(M×A)。
+ * 这里只读一次，分桶是 O(A + M)，投影规则与 `attachmentsFromMirror` 完全一致
+ * （元数据；`content` 留空，按需经 `getAttachmentContent` 懒加载）。
+ *
+ * @returns undefined = 该域没接手（A 态由旧库路径负责）
+ */
+function attachmentsForSessionFromMirror(
+  sessionId: string,
+): Map<string, MessageAttachment[]> | undefined {
+  const rows = domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r, { session_id: sessionId });
+  if (!rows) return undefined;
+  const byMessage = new Map<string, MessageAttachment[]>();
+  // 与单条读路径同口径：组内按 added_at 升序（稳定排序，缺字段按 0）
+  const ordered = [...rows].sort((a, b) => Number(a.added_at ?? 0) - Number(b.added_at ?? 0));
+  for (const r of ordered) {
+    const messageId = String(r.message_id ?? "");
+    if (!messageId) continue;
+    const attachment = {
+      id: String(r.id ?? ""),
+      name: String(r.name ?? ""),
+      type: String(r.type ?? "file") as MessageAttachment["type"],
+      content: undefined, // 懒加载：getAttachmentContent
+      preview: (r.preview as string | undefined) ?? undefined,
+      path: (r.path as string | undefined) ?? undefined,
+      sandboxPath: (r.sandbox_path as string | undefined) ?? undefined,
+      mimeType: (r.mime_type as string | undefined) ?? undefined,
+      size: typeof r.size === "number" ? (r.size as number) : undefined,
+    } as MessageAttachment;
+    const list = byMessage.get(messageId);
+    if (list) list.push(attachment);
+    else byMessage.set(messageId, [attachment]);
+  }
+  return byMessage;
+}
+
 /** 给一条已映射好的消息补上附件（仅在端口接手时生效） */
-function withMirrorAttachments(message: Message): Message {
-  if (message.attachments && message.attachments.length > 0) return message;
+function withMirrorAttachments(message: Message): Message {  if (message.attachments && message.attachments.length > 0) return message;
   const atts = attachmentsFromMirror(message.id);
   if (!atts || atts.length === 0) return message;
   return { ...message, attachments: atts };

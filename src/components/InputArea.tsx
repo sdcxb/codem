@@ -84,7 +84,11 @@ noSession?: boolean;
 /** Session ID — when this changes, internal state (attachments, skills, draft) is reset */
 sessionKey?: string;
   collaborationMode: CollaborationMode;
-  onModeChange: (mode: CollaborationMode) => void;
+  /**
+   * 切换协作模式。**可选**：宿主不支持计划模式时（如笔记本工作区）必须传 `undefined`，
+   * 而不是一个空函数 —— 空函数会让「切换到计划模式」按钮看起来可点、点了却什么都不发生。
+   */
+  onModeChange?: (mode: CollaborationMode) => void;
   /** Project path for per-project security mode */
   projectPath?: string;
   /** #5: Quoted text from selection tooltip */
@@ -1090,8 +1094,30 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     setBlurFolded(false);
   };
 
+  /*
+   * 模型列表：**每次渲染都重算**曾经是输入延迟的直接来源。
+   *
+   * `getModelsForMode(mode)` → `getConfiguredApiModels()` 内部对 `codem-settings`、动态模型、
+   * 免费模型插件各做一次整份 JSON 解析；而它在**渲染体**里，每击键都会跑一遍（≥3 次解析/键）。
+   *
+   * 这里用 `useMemo` 把依赖收敛成 (mode, 版本号)：版本号由 `codem-settings-changed` 事件推进，
+   * 所以设置真的变了仍然会刷新选择器；击键不会。
+   *
+   * 为什么不做成 model-config 的全局缓存：那份缓存要判断「存储变了吗」，而真实写入路径不止
+   * `setSetting`（迁移/导入/插件/测试 mock），一个判错的失效键会让模型列表显示过期内容 ——
+   * 实测让 4 个既有用例红。局部 memo 的失效点只有事件，语义清楚、不会串味。
+   */
+  const [modelCatalogVersion, setModelCatalogVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setModelCatalogVersion((v) => v + 1);
+    window.addEventListener("codem-settings-changed", bump);
+    return () => window.removeEventListener("codem-settings-changed", bump);
+  }, []);
   // P0: Model list for inline model selector
-  const modelList: ModelOption[] = getModelsForMode(mode);
+  const modelList: ModelOption[] = useMemo(
+    () => getModelsForMode(mode),
+    [mode, modelCatalogVersion],
+  );
   const currentModelName = modelList.find(m => m.id === model && (!providerId || !m.providerId || m.providerId === providerId))?.name || model || "";
   const [reasoningEffort, setReasoningEffort] = useState<string>(() =>
     getSettingJSON<string>("codem-reasoning-effort", "high"),
@@ -1820,22 +1846,26 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             </div>
 
             {/* Collaboration mode — SlotBridge 消费 app.plan-mode-chip */}
-            <SlotBridge
-              name="app.plan-mode-chip"
-              fallback={PlanModeChip}
-              mode={collaborationMode}
-              onModeChange={(m: CollaborationMode) => onModeChange?.(m)}
-              locked={isStreaming}
-            />
-            {/* 内联回退：当 PlanModeChip 未显示时（非 plan 模式），保留可点击的切换按钮 */}
-            {collaborationMode !== 'plan' && (
-              <button
-                className="mode-toggle-btn"
-                onClick={() => onModeChange?.('plan')}
-                title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
-              >
-                <Zap size={14} />
-              </button>
+            {onModeChange && (
+              <>
+                <SlotBridge
+                  name="app.plan-mode-chip"
+                  fallback={PlanModeChip}
+                  mode={collaborationMode}
+                  onModeChange={(m: CollaborationMode) => onModeChange(m)}
+                  locked={isStreaming}
+                />
+                {/* 内联回退：当 PlanModeChip 未显示时（非 plan 模式），保留可点击的切换按钮 */}
+                {collaborationMode !== 'plan' && (
+                  <button
+                    className="mode-toggle-btn"
+                    onClick={() => onModeChange('plan')}
+                    title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
+                  >
+                    <Zap size={14} />
+                  </button>
+                )}
+              </>
             )}
 
             {/* P4: Knowledge source selector (notebook mode) — hidden when hideSourceSelector is true */}

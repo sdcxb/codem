@@ -95,10 +95,11 @@ describe("ALLOW-3 白名单存取", () => {
 });
 
 describe("ALLOW-4 闸门与 Rust 守卫都认白名单", () => {
-  it("ALLOW-4: file-api / tools / Rust 三处都有 allowed_roots 逻辑", () => {
+  it("ALLOW-4: file-api / tools / Rust 三处都有 allowed roots 逻辑（IPC 键名 camelCase）", () => {
     const fileApi = read("src/core/file-api.ts");
     expect(fileApi).toContain("isWithinAllowedDirs(target, getSandboxAllowedDirs())");
-    expect(fileApi).toContain("allowed_roots: sandboxEnabled ? getSandboxAllowedDirs() : []");
+    /* 2026-11-19：键名必须是 camelCase —— Tauri v2 按 camelCase 取键，蛇形键会被静默丢弃（IPC-ARGS 判据）。 */
+    expect(fileApi).toContain("allowedRoots: sandboxEnabled ? getSandboxAllowedDirs() : []");
     const tools = read("src/core/llm/tools.ts");
     expect(tools).toContain("isWithinAllowedDirs(resolvedPath, getSandboxAllowedDirs())");
     // 工具管线在**进工具之前**还有一道路径闸（read 的越界就是被它拦的）

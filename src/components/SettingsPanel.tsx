@@ -2704,7 +2704,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 {activeTab === "tools" && (
 <>
 {/* Tool Registry Management */}
-<ToolManager onClose={() => {}} />
+<ToolManager onClose={() => setActiveTab("general")} />
 </>
 )}
 {activeTab === "codegraph" && (
@@ -2764,7 +2764,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     </button>
   ))}
 </div>
-{advancedSubTab === "agents" && <AgentManager onClose={() => {}} />}
+{advancedSubTab === "agents" && <AgentManager onClose={() => setActiveTab("general")} />}
 {advancedSubTab === "heartbeat" && <HeartbeatMonitor />}
 {advancedSubTab === "retry" && <RetryConfigPanel />}
 {advancedSubTab === "prompt" && <PromptDebugger />}

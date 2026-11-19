@@ -953,7 +953,6 @@ notebookId={notebookId}
               onModelChange={onNotebookModelChange || (() => {})}
               mode="api"
               collaborationMode={collaborationMode}
-              onModeChange={() => {}}
               currentSessionId={notebookCurrentSession.id}
               onCitationClick={onCitationClick}
               onSourceClick={onSourceClick}

@@ -74,6 +74,9 @@ export function FreeModelPluginCard({
       const result = await freeModelPlugin.installNode((_phase, message) => setNodePhase(message));
       setNotice(result.message);
       if (result.ok) await freeModelPlugin.models.refresh();
+    } catch (e) {
+      /** 修前只有 `finally`：安装进度会清空、按钮复位，却一个字都不说 —— 看起来像"没反应"。 */
+      setNotice(`自动安装 Node 失败：${e instanceof Error ? e.message : String(e)}。可以稍后重试，或自行安装 Node.js 22+。`);
     } finally {
       setInstallingNode(false);
       setNodePhase("");
@@ -95,6 +98,8 @@ export function FreeModelPluginCard({
       const result = await freeModelPlugin.recoverAndRestart();
       setNotice(result.message);
       if (result.ok) await freeModelPlugin.models.refresh();
+    } catch (e) {
+      setNotice(`结束残留进程并重试失败：${e instanceof Error ? e.message : String(e)}。可以稍后再点一次，或查看下面的插件日志。`);
     } finally {
       setBusy("none");
       await refresh();
@@ -107,6 +112,7 @@ export function FreeModelPluginCard({
 
   const act = useCallback(
     async (kind: "enable" | "pause" | "remove") => {
+      const label = kind === "enable" ? "启用插件" : kind === "pause" ? "暂停插件" : "删除插件";
       setBusy(kind);
       setNotice("");
       try {
@@ -118,6 +124,17 @@ export function FreeModelPluginCard({
               : await freeModelPlugin.remove();
         setNotice(result.message);
         if (kind === "enable") await freeModelPlugin.models.refresh();
+      } catch (e) {
+        /**
+         * 修前这里只有 `finally`，而调用点是 `() => void act(...)` ⇒ rejection 被静默吞掉，
+         * 用户只看到按钮复位。现在把动作名与原因都写出来（删除失败时尤其不能装作删掉了）。
+         */
+        setNotice(
+          `${label}失败：${e instanceof Error ? e.message : String(e)}。` +
+            (kind === "remove"
+              ? "插件的数据目录可能没有删干净，可以稍后重试。"
+              : "可以稍后重试，或刷新状态看看它当前的真实形态。"),
+        );
       } finally {
         setBusy("none");
         await refresh();
