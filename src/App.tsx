@@ -1,3 +1,6 @@
+import { useDismissableLayer } from "./hooks/useDismissableLayer";
+import { closeTopmostModal } from "./core/ui/modal-close-target";
+import { installAutoAriaLabels } from "./core/ui/aria-label-form";
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
@@ -601,6 +604,20 @@ function App() {
   useEffect(() => {
     streamingRef.current = isStreaming;
   }, [isStreaming]);
+
+  /* 键盘可达性（Batch 6C）：Esc 关掉最上层 App 级弹窗。
+     这批弹窗是早期手写结构，只有「点遮罩 / 点关闭」，而遮罩不可聚焦 ⇒ 键盘用户会被卡住。
+     监听统一走 useDismissableLayer（仓里 OVERLAY-1 门禁只允许这一处键盘监听）；
+     关谁由纯函数 closeTopmostModal 决定 —— 只点**显式关闭按钮**，
+     不合成遮罩点击（那可能被权限确认类弹窗解读成拒绝）。 */
+  useDismissableLayer({ open: true, restoreFocus: false, onDismiss: () => { closeTopmostModal(); } });
+
+  /* 无障碍（Batch 6C）：给没有 label 的输入/下拉/文本域补可访问名。
+     运行时补齐（而不是逐个改 26 处 label）：设置页与会话是异步挂载的，只在挂载时跑一次会漏，
+     所以这里装一个只观察"新增子树"的观察器（200ms 合并一次）。 */
+  useEffect(() => installAutoAriaLabels(), []);
+
+  /* 无障碍兜底（Batch 6C）：没有 label 的输入框用 placeholder / 同行文字当可访问名。
 
   /**
    * 整页缩放：mock 以 1400×875 为设计基准。
@@ -5715,6 +5732,7 @@ engineRef.current?.abort();
           sidebar={sidebarOpen ? sidebarNode : null}
           main={mainColumn}
           rightRail={rightRailNode}
+          mobileSidebarToggle={mobileSidebarToggle}
           hub={{
             rightRailOpen,
             onToggleRightRail: () => setRightRailOpen(!rightRailOpen),
@@ -5750,6 +5768,7 @@ engineRef.current?.abort();
           sidebar={sidebarOpen ? sidebarNode : null}
           main={mainColumn}
           rightRail={rightRailNode}
+          mobileSidebarToggle={mobileSidebarToggle}
         />
       );
     }

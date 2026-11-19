@@ -2262,3 +2262,140 @@
   font-size: var(--fs-sm);
   color: var(--ui-text-muted);
 }
+
+/* ========== 21. 无障碍：触控尺寸与焦点可见（Batch 6C） ==========
+
+   审计（_unslop-a11y-audit.mjs，真机）实测三类问题：
+   ① 收藏星标只有 12×28（宽 12）—— WCAG 2.5.8 要求 24×24；
+   ② 插件卡的开关 39×23、快速访问搜索框高 23、紧凑模式按钮 18×28 —— 高度差 1px 的都不达标；
+   ③ 标题栏「执行模式」按钮**聚焦后没有任何可见变化**（outline none 且 box-shadow 不变）——
+      键盘用户看不出焦点在哪（WCAG 2.4.7）。
+   本节只修这三类；表单控件的「可访问名」（设置页 35 个输入只有 placeholder）留待下一批做
+   label 关联 —— 那是 TSX 结构改动，见账本 §6C。 */
+
+/* ① 收藏：宽度撑到 24（图形仍是 14px，只是点击区域达标） */
+[data-ui="v2"] .card-favorite {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ② 小于 24 的控件补齐（只补尺寸，不改外观） */
+[data-ui="v2"] .switch-root {
+  min-height: 24px;
+}
+
+[data-ui="v2"] .quick-access-search {
+  min-height: 24px;
+}
+
+[data-ui="v2"] .mode-toggle-btn--compact {
+  min-width: 24px;
+}
+
+/* ③ 焦点可见：统一用 --focus-ring-color 画 2px 环 + 1px 内衬，
+      不再依赖各组件自己的 outline（很多组件把 outline 设成 none 后没有替代）。
+      只覆盖 v2 作用域，v1 的既有行为不动。 */
+[data-ui="v2"] :is(.titlebar-action-btn, .titlebar-btn, .app-menu-trigger, .chat-header-overflow-item, .settings-sidebar-item, .sidebar-nav-item, .sidebar-tool-item, .sidebar-rail-btn, .tc-tab, .settings-subnav-pill, .panel-sidebar-tab, .right-sidebar-tab):focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/* ========== 22. 窄视口（<768px）不横溢（Batch 6B） ==========
+
+   实测（_unslop-mobile-check.mjs，390×844 新挂载）：文档横向溢出 **39px**，
+   越界元素 10 个，来源两处：
+     ① dream 皮肤的装饰层固定 430px 宽（.dream-bg-layer / .dream-decorations /
+        .dream-decoration.rose-right 到 462px）；
+     ② 标题栏右侧窗口按钮组（.titlebar-buttons）右边缘到 429px，且标题不收缩。
+   这两处都不是"移动端"专有 —— 桌面窗口拉窄到 760 也一样横溢，所以在本层一起修。
+
+   注意：真机（Android/iOS）仍未验证，这里只保证**窄视口布局不横溢、汉堡按钮存在**。 */
+
+@media (max-width: 768px) {
+  /* ① 装饰层不得撑宽文档：裁到视口内，且不再接收指针事件 */
+  [data-ui="v2"] .dream-bg-layer,
+  [data-ui="v2"] .dream-bg-overlay,
+  [data-ui="v2"] .dream-decorations {
+    max-width: 100vw;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* 窄屏把装饰收掉：它们是 fixed 定位的图形，任何 max-width 都挡不住
+     "定位在视口外但仍计入 scrollWidth"（实测 rose-right 右边缘 422 > 390）。 */
+  [data-ui="v2"] .dream-decoration {
+    display: none;
+  }
+
+  /* ② 标题栏：标题可收缩并省略，按钮组不再顶出去 */
+  [data-ui="v2"] .titlebar {
+    padding-right: var(--space-2);
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  [data-ui="v2"] .titlebar-title,
+  [data-ui="v2"] .titlebar-app-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 标题栏按钮组改为绝对定位贴右内边距：flex 布局下它会被标题与菜单往外挤（实测右边缘 433 > 390） */
+  [data-ui="v2"] .titlebar-buttons {
+    position: absolute;
+    right: var(--space-2);
+    top: 50%;
+    transform: translateY(-50%);
+    flex: none;
+    margin-left: 0;
+  }
+
+  /* ③ 应用菜单在窄屏让位（没有空间同时放菜单与按钮组）。
+        真实类名是 .app-menubar（原来写的 .app-menu-bar 不存在，所以菜单没被收掉，
+        在 390 视口里竖排成四条压在标题栏上）。 */
+  [data-ui="v2"] :is(.app-menubar, .app-menu-bar) {
+    display: none;
+  }
+
+  /* ④ 汉堡按钮与标题栏左区重叠（两者都在左上角）：
+        窄屏把「应用图标 + 名称」收掉，位置让给汉堡；汉堡固定在标题栏垂直中线上。 */
+  [data-ui="v2"] .titlebar-left > :is(.titlebar-logo, .titlebar-app-name, .titlebar-title) {
+    display: none;
+  }
+
+  [data-ui="v2"] .mobile-sidebar-toggle {
+    top: 4px;
+    left: var(--space-2);
+    width: 32px;
+    height: 28px;
+    padding: 0;
+  }
+
+  [data-ui="v2"] .titlebar-left {
+    /* 汉堡占位：留 48（令牌 --space-14）给 32 宽按钮 + 8 左边距 + 8 间隙 */
+    padding-left: var(--space-14);
+    min-width: 0;
+  }
+}
+
+/* 手机竖屏（≤480）：建议卡改单列 —— 两列时每张只有 150px，中文一行只能放 4 个字，
+   实测「让我帮你编写、重构或调试代码」被切成 5 行。 */
+@media (max-width: 480px) {
+  [data-ui="v2"] .new-chat-suggestions {
+    grid-template-columns: 1fr;
+  }
+
+  [data-ui="v2"] .new-chat-page {
+    padding: var(--space-4);
+  }
+
+  [data-ui="v2"] .quick-access-grid {
+    grid-template-columns: 1fr;
+  }
+}

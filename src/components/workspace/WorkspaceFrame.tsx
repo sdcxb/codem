@@ -174,7 +174,7 @@ export interface WorkspaceFrameProps {
   sidebar: ReactNode;
   main: ReactNode;
   rightRail: ReactNode;
-  /** 默认皮肤独有的移动端汉堡按钮（其它两套由各自布局持有） */
+  /** 移动端汉堡按钮：三套皮肤**都要有**（窄视口下没有它就没法打开侧栏） */
   mobileSidebarToggle?: ReactNode;
   /** hub 需要的 `HubLayout` 入参（除 sidebar/mainPanel/rightRail 外） */
   hub?: Omit<ComponentProps<typeof HubLayout>, "sidebar" | "mainPanel" | "rightRail">;
@@ -185,14 +185,24 @@ export interface WorkspaceFrameProps {
  *
  * 注意：`variant` 不是"新造的三套布局"，而是**保留既有三套包裹**（HubLayout / DreamLayout / 裸 fragment），
  * 只是把"包裹与内容"之间的关系收敛到一处。真正统一皮肤是 Batch 6A 的事。
+ *
+ * 2026-11-19（Batch 6B）：汉堡按钮原来只挂在默认皮肤的裸 fragment 上，
+ * hub / dream 两套在 390px 视口下**根本没有打开侧栏的入口**（真机布局实测：
+ * `document.querySelector(".mobile-sidebar-toggle")` 为 null）。三套都挂上。
  */
 export function WorkspaceFrame({ variant, sidebar, main, rightRail, mobileSidebarToggle, hub }: WorkspaceFrameProps) {
   if (variant === "hub") {
-    return <HubLayout {...hub} sidebar={sidebar} mainPanel={main} rightRail={rightRail} />;
+    return (
+      <>
+        {mobileSidebarToggle}
+        <HubLayout {...hub} sidebar={sidebar} mainPanel={main} rightRail={rightRail} />
+      </>
+    );
   }
   if (variant === "dream") {
     return (
       <DreamLayout>
+        {mobileSidebarToggle}
         {sidebar}
         {main}
         {rightRail}

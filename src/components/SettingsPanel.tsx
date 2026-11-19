@@ -1,3 +1,4 @@
+import { labelFormControls } from "../core/ui/aria-label-form";
 import { applyUiLayer, readUiLayer, setStoredUiLayer, type UiLayer } from "../core/theme/ui-layer";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // 第 207 波：模型管理里要把内置免费模型插件的模型也列出来（它们不需要 API Key）
@@ -664,6 +665,12 @@ export function SettingsPanel({
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
 const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "device-sync" | "codegraph" | "advanced" | "help" | "usage" | "performance" | "memory-checkup">((initialTab as any) || "general");
+
+  /* 无障碍（Batch 6C）：设置页有 26 处 label 没有 for、控件也没有 id，屏幕阅读器只会念「编辑框」。
+     这里在每次切页签后补齐 aria-labelledby（幂等；只补没有可访问名的控件）。 */
+  useEffect(() => {
+    labelFormControls(document.querySelector(".settings-panel"));
+  }, [activeTab]);
   /**
    * 切到「安全」时**重新读一次**允许目录。
    *
