@@ -11,6 +11,7 @@
 
 import { memo, useCallback } from "react";
 import { Code2, FileSearch, Bug, BookOpen, Lightbulb, Rocket } from "lucide-react";
+import { useLang } from "../core/i18n/lang";
 
 interface NewChatPageProps {
   /** 应用名称 */
@@ -87,7 +88,9 @@ export const NewChatPage = memo(function NewChatPage({
   onSuggestionClick,
   connected = true,
 }: NewChatPageProps) {
-  const lang = typeof window !== "undefined" ? (document.documentElement.lang === "zh" ? "zh" : "en") : "en";
+  /* 语言跟随全站设置（useLang）。原来读 document.documentElement.lang，而 index.html 写的是 zh-CN，
+     === "zh" 永远不成立 —— 中文界面里新对话页会整页英文（真机截图抓到）。 */
+  const lang = useLang();
   const suggestions = lang === "zh" ? SUGGESTIONS_ZH : SUGGESTIONS_EN;
 
   const handleClick = useCallback((prompt: string) => {

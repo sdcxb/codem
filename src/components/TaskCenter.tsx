@@ -136,8 +136,10 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
 
   /* 24:1264：Bot Team 默认关闭；关闭时页签不出现（不是灰掉，是不暴露）。 */
 
-  // 看板（Issues 7 列）、子智能体（场景画布）、概览（含插件贡献的用量面板）都需要更宽的面板；
-  const wide = activeTab === "board" || activeTab === "subagents" || activeTab === "overview" || activeTab === "bots";
+  /* 面板宽度**固定**（Batch 4B）：原来按页签在 960 / 1180 之间切换 ——
+     用户实测的「同一个父窗口里切页签，窗口忽大忽小」就是这条。窄页签多出来的空间留给内容，
+     比让窗口跳动更好；`data-wide` 保留（样式钩子 + 判据），恒为 "1"。 */
+  const PANEL_WIDTH = "min(1180px, 96vw)";
   /**
    * 内容区是否**自己铺满一屏**（自己管滚动）。
    *
@@ -164,10 +166,10 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         role="dialog"
         aria-modal="true"
         aria-label="任务中心"
-        data-wide={wide ? "1" : "0"}
+        data-wide="1"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: wide ? "min(1180px, 96vw)" : "min(960px, 92vw)",
+          width: PANEL_WIDTH,
           maxWidth: "96vw",
           height: "min(720px, 88vh)",
           maxHeight: "90vh",

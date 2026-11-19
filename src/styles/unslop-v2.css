@@ -1573,6 +1573,27 @@
 }
 
 
+/* 二级页签与用量页签：图标 12/14px、文字 12px，但行盒取了 1.6 行高 ⇒ 中心线差 -1.1 / -2.8px。
+   给它们一个"等于图标高度"的固定行高，两者中心线就重合（判据：审计的图标偏差列）。 */
+[data-ui="v2"] .settings-subnav-pill {
+  line-height: 14px;
+}
+
+/* 用量页签：原来是 inline 布局，图标与文字各按自己的行盒排 ⇒ 相差 -2.8px；
+   改成 flex + 居中（不要只改 line-height：那会把文字行盒压到 14px 而图标仍是 14px 的
+   独立行盒，实测反而偏 -13.7px）。 */
+[data-ui="v2"] .usage-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  line-height: 1.2;
+}
+
+[data-ui="v2"] :is(.settings-subnav-pill, .usage-tab) > svg {
+  display: block;
+  flex: none;
+}
+
 /* 设置页的紧凑控件兜底：把各波次自己造的 27/29/30/31/33/34px 一律收成 28px。
    排除：能整行点的大卡片（mode-btn）、图标格（identity-emoji）、头像、返回键、虚线投放区、
    以及开关（语义上必须是 24 的胶囊）。这些是"不同的控件类型"，不是刻度不一致。 */
@@ -1715,4 +1736,529 @@
 /* 弹窗遮罩：统一走 token，不再各自写半透明黑 */
 [data-ui="v2"] :is(.modal-overlay, .settings-overlay, .search-overlay) {
   background: var(--ui-backdrop);
+}
+
+/* ========== 17. 弹窗/浮层/终端：把 §16 的刻度补到「没走 .modal-panel」的那些壳 ==========
+
+   实测（_unslop-surfaces-audit.mjs）：
+   · 任务中心 8 个页签的面板宽度在 960 与 1180 之间跳（组件按页签切 wide）—— TSX 已改为恒 1180；
+   · modal-editor 的宽度随内容飘：智能体管理 899、记忆/MCP/技能/插件 1179、笔记本 899；
+   · 对话旁的四个浮层（上下文 / 轨迹 / 智能体与团队 / 快照）控件高度 16/27/31 三档、圆角 4/6；
+   · 终端抽屉控件 27px、圆角 6。
+
+   本节只做三件事：统一面板宽度上限 1180、控件 28 / 8px / 12px、面板圆角 14。 */
+
+/* 面板宽度上限：一律 1180（设置是唯一允许满屏的），内联 maxWidth 需要 !important */
+[data-ui="v2"] :is(.modal-editor, .task-center-panel, .project-overview-panel, .petm-panel) {
+  max-width: min(1180px, 96vw) !important;
+}
+
+[data-ui="v2"] .task-center-panel {
+  width: min(1180px, 96vw) !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+/* 任务中心的页签：33px 高 / 13px 字 → 28 / 12（与设置页同一刻度） */
+[data-ui="v2"] .task-center-panel [data-tab-id] {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+/* 对话右侧的浮层（上下文 / 轨迹 / 智能体与团队 / 快照 / 侧边面板） */
+[data-ui="v2"] :is(.chat-float-panel, .context-monitor, .trajectory-panel, .agent-panel, .snapshot-panel, .side-session-panel, .panel-sidebar-shell) :is(button, .btn):not([class*="toggle"]):not([class*="switch"]):not(.sp-avatar) {
+  height: 28px;
+  min-height: 28px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+[data-ui="v2"] :is(.chat-float-panel, .context-monitor, .trajectory-panel, .agent-panel, .snapshot-panel, .side-session-panel, .panel-sidebar-shell) {
+  border-radius: var(--radius-lg);
+}
+
+/* 终端抽屉：27px / 6px → 28 / 8 */
+[data-ui="v2"] :is(.terminal-drawer, .terminal-panel) :is(button, .btn) {
+  height: 28px;
+  min-height: 28px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+}
+
+[data-ui="v2"] .terminal-drawer {
+  border-top: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+}
+
+/* ========== 20. 对话输入区 / 工具条 / 任务中心页签（Batch 4B） ==========
+
+   审计实测（对话主界面）里剩下的控件高度档：18/22/23/25/27/32/34，
+   字号档：10/11/13/14/16 —— 集中在**输入区工具行**与**对话头**：
+     · .input-control-item 25px @11、.security-mode-btn 27px @11、.composer-effort 24px @10、
+     · .model-selector 18px @13、.chat-title-dropdown-btn 22px @14、.mode-toggle-btn 34px @16 与 18px @10、
+     · .card-favorite 20px @14、.scroll-to-bottom-btn 28px @13.33。
+   本节把它们收进 28 / 12 一套；主操作（发送）保持 32。
+
+   注意：这些组件大量使用**内联样式**（React style），所以这里必须 `!important` 才盖得住；
+   下一批把它们迁到类名后即可去掉。 */
+
+[data-ui="v2"] .input-control-item,
+[data-ui="v2"] .input-aux-btn,
+[data-ui="v2"] .security-mode-btn,
+[data-ui="v2"] .mode-toggle-btn,
+[data-ui="v2"] .chat-title-dropdown-btn,
+[data-ui="v2"] .model-selector,
+[data-ui="v2"] .card-favorite,
+[data-ui="v2"] .scroll-to-bottom-btn {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-radius: var(--radius) !important;
+  font-size: var(--fs-sm) !important;
+  line-height: 1.2 !important;
+}
+
+/* 输入区的三枚小标签（执行强度 / 上下文开关）在视觉上是"元信息"，允许 24 但字号统一 11 */
+[data-ui="v2"] .composer-effort,
+[data-ui="v2"] .input-control-item .input-aux-label {
+  height: 24px !important;
+  min-height: 24px !important;
+  font-size: var(--fs-2xs) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+[data-ui="v2"] .send-btn {
+  height: 32px !important;
+  min-width: 32px;
+  border-radius: var(--radius) !important;
+  font-size: var(--fs-md) !important;
+}
+
+[data-ui="v2"] .send-more-btn {
+  height: 32px !important;
+  border-radius: var(--radius) !important;
+  font-size: var(--fs-2xs) !important;
+}
+
+/* 任务中心页签：内联 `padding: 10px 14px` + `font-size: var(--fs-base)` ⇒ 33px / 13px，
+   与设置页的 28 / 12 不一致。这里盖掉内联值（组件下一批再迁到类名）。 */
+[data-ui="v2"] .task-center-panel [data-tab-id] {
+  padding: 0 var(--space-3) !important;
+  font-size: var(--fs-sm) !important;
+  line-height: 1.2 !important;
+}
+
+/* ========== 18. 文件 / 编辑器 / 终端 / 工作台 ========== */
+
+/* 本节把四类表面压到同一套令牌上：去掉玻璃与彩色 glow，只留 --ui-* 面 + 发丝线；
+   控件收成 24（纯图标）/ 28（密集）/ 32（表单与主操作）三档；圆角一律 var(--radius)；
+   diff 只保留「增绿 / 删红」的语义淡底，行内文字回正文色。
+
+   实测的 v1 现状：文件树行 26 高、圆角 6、字号 14；终端与抽屉里的按钮 22–27 高、圆角 6–8；
+   工作台页签 11 号字、激活态用 accent 文字；CI/CD 状态是行内 background 上色的实心药丸
+   （CicdPanel.tsx 的 STATUS_COLORS 与 StatusBadge 的 style）；diff 审阅卡 hover 会整圈变 accent 描边。
+
+   两点口径：编辑器是单文件形态（没有多页签 tab 条），由 .file-editor-header 承担页签行的角色，
+   与终端页签条同高同内边距；xterm 画布读不到 CSS 令牌，配色仍来自 TerminalPanel.tsx 的 theme。 */
+
+/* —— 18.1 共同刻度：条 32 / 行 28 / 图标 24 —— */
+/* 条：编辑器头、预览工具条、终端页签条与抽屉头、工作台页签条同一档 */
+[data-ui="v2"] .file-editor-header,
+[data-ui="v2"] .file-preview-toolbar,
+[data-ui="v2"] .terminal-tab-bar,
+[data-ui="v2"] .terminal-drawer-header,
+[data-ui="v2"] .workbench-view-tabs {
+  height: 32px; padding: 0 var(--space-3); align-items: center;
+  background: var(--ui-surface); border-bottom: 1px solid var(--ui-line);
+}
+
+/* 纯图标控件：v1 是按内容撑开的（16–24 之间飘），这里统一 24 见方；hover 沿用 --bg-hover */
+[data-ui="v2"] .file-explorer-search-refresh,
+[data-ui="v2"] .file-preview-toolbar button,
+[data-ui="v2"] .terminal-tab-close,
+[data-ui="v2"] .terminal-tab-new,
+[data-ui="v2"] .terminal-drawer-close,
+[data-ui="v2"] .workbench-toggle,
+[data-ui="v2"] .diff-close-btn {
+  width: 24px; height: 24px; padding: 0;
+  border-radius: var(--radius); color: var(--ui-text-muted);
+}
+
+/* 密集控件：28 高 / 圆角 8 / --fs-sm（v1 靠 padding 撑出 20–33 的几种高度） */
+[data-ui="v2"] .file-editor-btn,
+[data-ui="v2"] .jobs-panel-btn,
+[data-ui="v2"] .cicd-btn,
+[data-ui="v2"] .cicd-refresh-btn,
+[data-ui="v2"] .terminal-stop-btn,
+[data-ui="v2"] .terminal-tab,
+[data-ui="v2"] .workbench-view-tab,
+[data-ui="v2"] .diff-mode-btn,
+[data-ui="v2"] .inline-diff-view-mode-btn,
+[data-ui="v2"] .inline-diff-btn {
+  height: 28px; padding: 0 var(--space-3);
+  border-radius: var(--radius); font-size: var(--fs-sm); line-height: 1.2;
+}
+
+/* 状态点：5px 圆点 + 文字，不再用实心彩色药丸 */
+[data-ui="v2"] .workbench-item.tool-running::before,
+[data-ui="v2"] .workbench-item.tool-completed::before,
+[data-ui="v2"] .workbench-item.tool-error::before,
+[data-ui="v2"] .jobs-panel-status::before,
+[data-ui="v2"] .jobs-panel-live::before,
+[data-ui="v2"] .cicd-badge::before {
+  content: ""; width: 5px; height: 5px; flex-shrink: 0;
+  border-radius: var(--radius-full); background: var(--ui-text-muted);
+}
+
+/* —— 18.2 文件树 —— */
+[data-ui="v2"] .file-explorer { background: var(--ui-bg); }
+[data-ui="v2"] .file-explorer-search-bar { height: 28px; padding: 0 var(--space-2); background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius); }
+[data-ui="v2"] .file-tree { padding: var(--space-1) var(--space-2) var(--space-4); }
+
+/* 行高与右内边距在这里定；层级缩进由组件的行内 paddingLeft 给（行内优先，不会被这条压掉） */
+[data-ui="v2"] .file-entry { height: 28px; padding: 0 var(--space-2); border-radius: var(--radius); font-size: var(--fs-sm); color: var(--ui-text-secondary); }
+[data-ui="v2"] .file-entry:is(:hover, :focus-visible) { background: var(--ui-surface-active); color: var(--ui-text); }
+/* 当前文件：中性面 + 主文字，去掉 0 0 0 1px 的描边环（那是一圈装饰性边框） */
+[data-ui="v2"] .file-entry.selected { background: var(--ui-surface-active); color: var(--ui-text); box-shadow: none; }
+/* 图标不再用 accent 上色：彩点只留给「当前项」，树里只留形状差异 */
+[data-ui="v2"] .file-entry-icon,
+[data-ui="v2"] .file-entry.directory .file-entry-icon { color: inherit; }
+[data-ui="v2"] .file-editor-icon { color: var(--ui-text-muted); }
+
+/* —— 18.3 编辑器 —— */
+[data-ui="v2"] .file-editor,
+[data-ui="v2"] .file-editor-body { background: var(--ui-bg); }
+[data-ui="v2"] .file-editor-name { font-size: var(--fs-sm); font-weight: 500; color: var(--ui-text); }
+[data-ui="v2"] .file-editor-path { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--ui-text-muted); }
+[data-ui="v2"] .file-editor-btn { background: none; border: 1px solid var(--ui-line); color: var(--ui-text-secondary); }
+/* v1 把「保存 / 放大 / 关闭」悬停时整块涂成 accent */
+[data-ui="v2"] .file-editor-btn:is(:hover, :focus-visible):not(:disabled) { background: var(--ui-surface-active); border-color: var(--ui-line-strong); color: var(--ui-text); }
+[data-ui="v2"] .file-editor-btn.close { border-color: transparent; }
+
+/* —— 18.4 预览：主操作走 32 高常规控件，不再是 accent 实心大按钮 —— */
+[data-ui="v2"] .file-preview-office-btn { height: 32px; padding: 0 var(--space-4); background: var(--ui-surface-raised); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text); font-size: var(--fs-sm); }
+[data-ui="v2"] .file-preview-office-btn:is(:hover, :focus-visible) { background: var(--ui-surface-active); border-color: var(--ui-line-strong); opacity: 1; }
+
+/* —— 18.5 工作台 —— */
+[data-ui="v2"] .workbench { padding: var(--space-3); background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--ui-text-secondary); }
+[data-ui="v2"] .workbench-header { min-height: 28px; margin-bottom: var(--space-2); font-size: var(--fs-sm); font-weight: 500; color: var(--ui-text); }
+/* 收起态的按钮是一段文字而不是图标，所以单独给 28 高与发丝线 */
+[data-ui="v2"] .workbench-toggle.collapsed { width: auto; height: 28px; padding: 0 var(--space-3); background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text-secondary); font-size: var(--fs-sm); }
+[data-ui="v2"] .workbench-view-tabs { padding: 0; gap: var(--space-1); align-items: end; margin-bottom: var(--space-2); border-bottom: 1px solid var(--ui-line); }
+[data-ui="v2"] .workbench-view-tab { background: transparent; border-radius: var(--radius) var(--radius) 0 0; color: var(--ui-text-muted); }
+[data-ui="v2"] .workbench-view-tab.active { background: var(--ui-surface-active); color: var(--ui-text); font-weight: 500; }
+/* 分组标题：句子式，去掉全大写与宽字距 */
+[data-ui="v2"] .workbench-section h4 { margin: 0 0 var(--space-2); text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--ui-text-muted); }
+/* 工具状态：文字保持中性，状态只由左侧 5px 点表达（v1 整行染成 warning、success、danger） */
+[data-ui="v2"] .workbench-item { display: flex; align-items: center; gap: var(--space-2); min-height: 28px; margin-bottom: 0; padding: 0 var(--space-2); border-radius: var(--radius-sm); font-size: var(--fs-sm); color: var(--ui-text-secondary); }
+[data-ui="v2"] .workbench-item.tool-running::before { background: var(--ui-warning); }
+[data-ui="v2"] .workbench-item.tool-completed::before { background: var(--ui-success); }
+[data-ui="v2"] .workbench-item.tool-error::before { background: var(--ui-danger); }
+[data-ui="v2"] .workbench-file,
+[data-ui="v2"] .workbench-activity-entry { min-height: 28px; align-items: center; padding: 0; border-bottom: 1px solid var(--ui-line-weak); font-size: var(--fs-2xs); }
+[data-ui="v2"] .workbench-file .file-path { font-family: var(--font-mono); }
+/* 脚注不再半透明（0.5 的透明度在暗色档几乎读不出来） */
+[data-ui="v2"] .workbench-disclaimer { padding: var(--space-2) 0 0; border-top: 1px solid var(--ui-line-weak); font-size: var(--fs-2xs); color: var(--ui-text-muted); opacity: 1; }
+
+/* —— 18.6 终端 —— */
+[data-ui="v2"] .terminal-panel { background: var(--ui-bg); }
+[data-ui="v2"] .terminal-tab-bar { gap: var(--space-1); align-items: end; }
+[data-ui="v2"] .terminal-tab { gap: var(--space-1); background: transparent; border-radius: var(--radius) var(--radius) 0 0; color: var(--ui-text-muted); }
+[data-ui="v2"] .terminal-tab:is(:hover, :focus-visible) { background: var(--ui-surface-active); color: var(--ui-text); }
+/* 激活页签与画布同面：--ui-bg 与 xterm 主题色只差一点，接缝看不出来 */
+[data-ui="v2"] .terminal-tab.active { background: var(--ui-bg); color: var(--ui-text); font-weight: 500; }
+/* 关闭页签：悬停只把字变 danger，不铺红色底 */
+[data-ui="v2"] .terminal-tab-close:is(:hover, :focus-visible) { background: none; color: var(--ui-danger); }
+[data-ui="v2"] .terminal-stop-btn { padding: 0 var(--space-3); background: none; border: 1px solid var(--ui-line); color: var(--ui-danger); }
+[data-ui="v2"] .terminal-stop-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--ui-danger) 12%, transparent); border-color: var(--ui-line-strong); }
+
+/* —— 18.7 后台任务 —— */
+[data-ui="v2"] .jobs-panel { gap: var(--space-3); padding: var(--space-3); background: var(--ui-bg); color: var(--ui-text); }
+[data-ui="v2"] .jobs-panel-live { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-2xs); color: var(--ui-text-muted); }
+[data-ui="v2"] .jobs-panel-live::before { background: var(--ui-success); }
+[data-ui="v2"] .jobs-panel-btn { background: none; border: 1px solid var(--ui-line); color: var(--ui-text-secondary); }
+[data-ui="v2"] .jobs-panel-btn:is(:hover, :focus-visible) { background: var(--ui-surface-active); border-color: var(--ui-line-strong); color: var(--ui-text); }
+[data-ui="v2"] .jobs-panel-btn.is-danger { color: var(--ui-danger); }
+[data-ui="v2"] .jobs-panel-notice { padding: var(--space-2) var(--space-3); background: var(--ui-surface-raised); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text-secondary); font-size: var(--fs-sm); }
+[data-ui="v2"] .jobs-panel-row { min-height: 32px; padding: 0 var(--space-2); gap: var(--space-3); background: none; border: 0; border-bottom: 1px solid var(--ui-line-weak); border-radius: 0; font-size: var(--fs-sm); }
+[data-ui="v2"] .jobs-panel-status { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 64px; font-size: var(--fs-2xs); color: var(--ui-text-secondary); }
+[data-ui="v2"] .jobs-panel-status.is-running::before { background: var(--ui-info); }
+[data-ui="v2"] .jobs-panel-status.is-completed::before,
+[data-ui="v2"] .jobs-panel-status.is-done::before { background: var(--ui-success); }
+[data-ui="v2"] .jobs-panel-status.is-failed::before { background: var(--ui-danger); }
+[data-ui="v2"] .jobs-panel-id,
+[data-ui="v2"] .jobs-panel-meta { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--ui-text-muted); }
+/* 错误详情仍用 danger：上面那条同特异度、更靠后的规则不能把它一起压成 muted */
+[data-ui="v2"] .jobs-panel-meta.is-error { color: var(--ui-danger); }
+
+/* —— 18.8 CI/CD 面板 —— */
+[data-ui="v2"] .cicd-repo-input { height: 32px; padding: 0 var(--space-3); background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text); font-size: var(--fs-sm); }
+[data-ui="v2"] .cicd-repo-input:focus { border-color: var(--ui-line-strong); }
+[data-ui="v2"] .cicd-load-btn { height: 32px; padding: 0 var(--space-4); background: var(--ui-accent); border: 1px solid var(--ui-accent); border-radius: var(--radius); color: var(--ui-accent-ink); font-size: var(--fs-sm); }
+[data-ui="v2"] .cicd-btn,
+[data-ui="v2"] .cicd-refresh-btn { background: none; border: 1px solid var(--ui-line); color: var(--ui-text-secondary); }
+[data-ui="v2"] .cicd-btn:is(:hover, :focus-visible),
+[data-ui="v2"] .cicd-refresh-btn:is(:hover, :focus-visible) { background: var(--ui-surface-active); color: var(--ui-text); }
+[data-ui="v2"] .cicd-run-card { padding: var(--space-3); background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius-md); }
+/* 两处 !important 只为一件事：CicdPanel.tsx 用行内 style 写了装饰性状态色
+   （统计卡的 borderColor、状态徽标的 background），行内优先级压不住，只能这样摘掉；
+   状态本身仍由数值颜色与文字表达，不靠描边和实心药丸。 */
+[data-ui="v2"] .cicd-summary-card { padding: var(--space-2) var(--space-3); background: var(--ui-surface); border-color: var(--ui-line) !important; border-radius: var(--radius-md); }
+[data-ui="v2"] .cicd-badge { padding: 0; background: none !important; border-radius: 0; color: var(--ui-text-secondary); font-size: var(--fs-sm); font-weight: 500; text-transform: none; }
+[data-ui="v2"] .cicd-badge::before { background: currentColor; }
+
+/* —— 18.9 Diff：淡底只表意 —— */
+[data-ui="v2"] .diff-viewer-overlay { background: var(--ui-backdrop); }
+[data-ui="v2"] .diff-viewer-modal { background: var(--ui-surface); border: 1px solid var(--ui-line); }
+[data-ui="v2"] .diff-viewer-path { padding: var(--space-2) var(--space-3); background: var(--ui-surface-raised); border-bottom: 1px solid var(--ui-line-weak); font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--ui-text-muted); }
+[data-ui="v2"] .diff-view-mode-toggle,
+[data-ui="v2"] .inline-diff-mode-toggle { padding: 0; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: var(--radius); }
+[data-ui="v2"] .diff-mode-btn,
+[data-ui="v2"] .inline-diff-view-mode-btn { background: transparent; border-radius: var(--radius); color: var(--ui-text-muted); }
+[data-ui="v2"] .diff-mode-btn.active,
+[data-ui="v2"] .inline-diff-view-mode-btn.active { background: var(--ui-surface-active); color: var(--ui-text); font-weight: 500; }
+/* 审阅卡 hover 不再整圈变 accent 描边 */
+[data-ui="v2"] .inline-diff-review:is(:hover, :focus-visible) { border-color: var(--ui-line); }
+[data-ui="v2"] .inline-diff-header { padding: var(--space-2) var(--space-3); gap: var(--space-2); background: var(--ui-surface-raised); border-bottom: 1px solid var(--ui-line); }
+[data-ui="v2"] .inline-diff-header:is(:hover, :focus-visible) { background: var(--ui-surface-active); }
+[data-ui="v2"] .inline-diff-line.inline-diff-added { background: color-mix(in srgb, var(--ui-success) 12%, transparent); }
+[data-ui="v2"] .inline-diff-line.inline-diff-removed { background: color-mix(in srgb, var(--ui-danger) 12%, transparent); }
+/* 行内文字回正文色：整行染绿或染红是装饰，语义交给「+ 与 − 标记 + 淡底」 */
+[data-ui="v2"] .inline-diff-added .inline-diff-line-content pre { color: var(--ui-text); }
+[data-ui="v2"] .inline-diff-removed .inline-diff-line-content pre { color: var(--ui-text-secondary); }
+[data-ui="v2"] .inline-diff-added .inline-diff-line-marker { color: var(--ui-success); }
+[data-ui="v2"] .inline-diff-removed .inline-diff-line-marker { color: var(--ui-danger); }
+[data-ui="v2"] .inline-diff-line-num { font-size: var(--fs-2xs); color: var(--ui-text-muted); opacity: 1; }
+[data-ui="v2"] .inline-diff-btn.reject { background: none; border: 1px solid var(--ui-line); color: var(--ui-text); }
+/* 拒绝的悬停不再整块填红：只把描边与字变成 danger */
+[data-ui="v2"] .inline-diff-btn.reject:is(:hover, :focus-visible) { background: none; border-color: var(--ui-danger); color: var(--ui-danger); }
+[data-ui="v2"] .inline-diff-btn.accept-all { background: none; border: 1px solid var(--ui-line); color: var(--ui-text-secondary); }
+[data-ui="v2"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) { background: var(--ui-surface-active); color: var(--ui-text); }
+
+/* —— 18.10 变更列表 —— */
+[data-ui="v2"] .file-changes-list { gap: var(--space-1); padding: var(--space-2); }
+[data-ui="v2"] .file-changes-empty { padding: var(--space-3); color: var(--ui-text-muted); font-size: var(--fs-sm); }
+[data-ui="v2"] .file-changes-empty-detail { font-size: var(--fs-2xs); opacity: 1; }
+[data-ui="v2"] .file-changes-error-banner { padding: var(--space-2) var(--space-3); background: color-mix(in srgb, var(--ui-danger) 10%, transparent); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text); font-size: var(--fs-2xs); }
+
+/* ========== 19. 插件 / 市场 / 技能 / 智能体 / MCP ========== */
+
+/* 覆盖面：技能管理 / 技能市场 / 插件管理 / 插件详情 / 插件市场（DSH 外部插件）/
+   MCP 管理 / MCP 市场 / 智能体管理 / 智能体详情 / 免费模型插件卡。
+
+   刻度与 §13–§17 同源：卡片 = --ui-surface + 发丝线 + 10px（--radius-md）；
+   面板 14px（§16 已给 .modal-editor）；控件 28px / 8px / --fs-sm；
+   元信息 = --fs-2xs + var(--font-mono)；标签 = 4–6px（--radius-xs）。
+   本节只补 §15/§16 够不到的：卡片本体（不是 button，收不到按钮刻度）、
+   标签形状（--radius-full 在 v2 里没改，仍是 9999px）、状态块、页签、图标位。
+
+   一条纪律：卡片不再有「悬停抬升 + 投影」—— styles.css 打磨层给 .market-skill-card
+   写了 translateY 与 shadow-raise-2，v2 的层次只靠 表面阶梯 + 发丝线，这里用更高
+   特异度就地压掉（旧规则不动，回退仍是一条 import）。 */
+
+/* —— 19.1 卡片本体 —— */
+
+[data-ui="v2"] :is(.market-skill-card, .mcp-catalog-card, .agent-card, .ofm-card) {
+  padding: var(--space-6);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+[data-ui="v2"] :is(.market-skill-card, .mcp-catalog-card, .agent-card, .ofm-card):is(:hover, :focus-visible) {
+  background: var(--ui-surface-raised);
+  border-color: var(--ui-line-strong);
+}
+
+/* 已安装不再靠「整卡变淡 + 绿描边」：卡里本来就有「已安装」徽标（MCP 目录那份
+   §6 已改成 5px 点 + 文字），整张卡再压到 0.75 只会让描述读不清。 */
+[data-ui="v2"] :is(.market-skill-card, .mcp-catalog-card).installed {
+  opacity: 1;
+  border-color: var(--ui-line);
+}
+
+[data-ui="v2"] .market-skill-card.selected {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+  box-shadow: none;
+}
+
+[data-ui="v2"] :is(.market-skill-card-header, .mcp-catalog-card-header) {
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* —— 19.2 动作：主操作琥珀实心，其余幽灵描边 —— */
+
+[data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn, .ofm-btn, .dsh-ext-btn, .plugin-detail-btn) {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  background: none;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+  box-shadow: none;
+  filter: none;
+}
+
+[data-ui="v2"] .market-skill-link-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: var(--ui-line);
+  border-radius: var(--radius);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn, .ofm-btn, .dsh-ext-btn, .plugin-detail-btn, .market-skill-link-btn):is(:hover, :focus-visible):not(:disabled) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
+  filter: none;
+}
+
+[data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary, .dsh-ext-btn--primary) {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-ink);
+}
+
+[data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary, .dsh-ext-btn--primary):is(:hover, :focus-visible):not(:disabled) {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+  color: var(--ui-accent-ink);
+}
+
+[data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary):disabled {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line);
+  color: var(--ui-text-dim);
+  opacity: 1;
+}
+
+[data-ui="v2"] :is(.mcp-catalog-btn.uninstall, .ofm-btn.danger) {
+  background: none;
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
+}
+
+/* —— 19.3 标签：v2 不用胶囊 —— */
+
+[data-ui="v2"] :is(.ofm-model-chip, .skill-filter-count, .mcp-catalog-tags > *, .plugin-detail-tags > *) {
+  height: auto;
+  padding: 0 var(--space-3);
+  background: none;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-xs);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+}
+
+/* —— 19.4 元信息：2xs + 等宽 —— */
+
+[data-ui="v2"] :is(.market-skill-author, .market-skill-stars, .mcp-catalog-author, .ofm-card-meta, .dsh-ext-meta, .agent-builtin-tag, .plugin-detail-label, .plugin-detail-status) {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--ui-text-muted);
+}
+
+/* —— 19.5 状态与页签 —— */
+
+[data-ui="v2"] .ofm-card-state {
+  position: relative;
+  padding: 0 0 0 var(--space-3);
+  border: 0;
+  background: none;
+  font-size: var(--fs-2xs);
+}
+
+[data-ui="v2"] .ofm-card-state::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc(50% - 2.5px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+[data-ui="v2"] :is(.skill-tab-btn, .plugin-mgr-tab) {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-sm);
+}
+
+[data-ui="v2"] :is(.skill-tab-btn, .plugin-mgr-tab):is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-radius: 0;
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] :is(.skill-tab-btn.active, .plugin-mgr-tab.is-active) {
+  border-bottom-color: var(--ui-accent);
+  color: var(--ui-text);
+}
+
+/* —— 19.6 图标位：emoji 收成中性占位块 ——
+   .market-skill-icon / .mcp-catalog-icon / .mcp-marketplace-title-icon 装的是 emoji
+   （📦 ⚡ 🏪）或一个汉字，CSS 换不了矢量图标。这里只保证「它们看起来属于同一套卡片」：
+   28×28 中性面 + 发丝线 + 8px。字形用 font-size 0 收掉而不是隐藏整个盒子 ——
+   盒子必须继续占位，否则卡片头会塌成两行；等 TSX 换上 lucide，它自然退化成
+   「所有图标共用的底托」，不必再改回来。
+
+   :not(:has(svg)) 是关键判据：已装 svg 的位置（FreeModelPluginCard / AgentManager /
+   ZvecGrepMarketCard）不是 emoji，它们的真图标要照常显示。
+
+   background 必须 !important：PluginMarketTab.tsx:218 与 ZvecGrepMarketCard.tsx:124
+   用行内 style 写了 background（后者还是一条 accent 渐变），而行内样式优先级高于这里的
+   任何选择器；不压掉就会留下 v2 明令取消的彩色渐变。本节唯一一处 !important。 */
+
+[data-ui="v2"] :is(.market-skill-icon, .mcp-catalog-icon, .mcp-marketplace-title-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  background: var(--ui-surface-raised) !important;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius);
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] :is(.market-skill-icon, .mcp-catalog-icon, .mcp-marketplace-title-icon):not(:has(svg)) {
+  font-size: 0;
+}
+
+/* —— 19.7 提示条与智能体详情小节 —— */
+
+[data-ui="v2"] .plugin-mgr-toast {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-line);
+  border-left: 2px solid var(--ui-text-muted);
+  border-radius: var(--radius-md);
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .agent-detail-section h4 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-sm);
+  color: var(--ui-text-muted);
 }

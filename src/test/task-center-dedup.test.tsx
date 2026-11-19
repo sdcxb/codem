@@ -209,12 +209,15 @@ describe("TC-DEDUP 单一元数据来源", () => {
 
   it("DEDUP-7: 内容区滚动规则与面板宽度解耦 —— 概览可滚动，看板/子智能体由插件外壳管滚动", () => {
     const src = read("components/TaskCenter.tsx");
-    // 宽度（wide）与「是否铺满一屏」（fillsViewport）必须是两个判断
-    expect(src).toMatch(/const wide = activeTab === "board" \|\| activeTab === "subagents" \|\| activeTab === "overview"/);
+    /* Batch 4B：面板宽度不再随页签变（用户实报「切页签窗口忽大忽小」），
+       所以这里断言的是**新的不变量**：宽度是常量、且 overflow 与宽度判断解耦。 */
+    expect(src).toMatch(/const PANEL_WIDTH = "min\(1180px, 96vw\)"/);
+    expect(src).toContain('width: PANEL_WIDTH,');
     expect(src).toMatch(/const fillsViewport = activeTab === "board" \|\| activeTab === "subagents"/);
     expect(src).toContain('overflow: fillsViewport ? "hidden" : "auto"');
-    // 不能再把 overflow 绑在 wide 上（那会让概览被裁掉、没有滚动条）
+    // 不能再把 overflow 绑在宽度上（那会让概览被裁掉、没有滚动条）
     expect(src).not.toContain('overflow: wide ? "hidden" : "auto"');
+    expect(src).not.toMatch(/width: wide \?/)
   });
 });
 
