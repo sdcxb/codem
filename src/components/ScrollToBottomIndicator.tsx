@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { useLang, S } from "../core/i18n/lang";
 
@@ -14,6 +14,7 @@ interface ScrollToBottomIndicatorProps {
  * scrolled up and there are new messages below.
  */
 export const ScrollToBottomIndicator = memo(function ScrollToBottomIndicator({
+  containerRef,
   messagesEndRef,
 }: ScrollToBottomIndicatorProps) {
   const lang = useLang();
@@ -23,8 +24,25 @@ export const ScrollToBottomIndicator = memo(function ScrollToBottomIndicator({
   const setScrollPosition = useAppStore((s) => s.setScrollPosition);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Only show when scrolled up
-  const shouldShow = scrollPosition === "scrolled-up";
+  /*
+   * 只在「滚上去了」**且容器真的能滚**时显示。
+   *
+   * 真机教训（Batch 7 收口截图）：新对话空状态里也冒出这个按钮，正好压住最后一张
+   * 快速访问卡片的描述文字。原因是 scrollPosition 是**上一个会话**留下的
+   * scrolled-up（store 常驻），而空状态根本没有可滚内容。
+   * 判据：容器 scrollHeight - clientHeight > 24 才算「能滚」。
+   */
+  const [hasOverflow, setHasOverflow] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) {
+      setHasOverflow(false);
+      return;
+    }
+    setHasOverflow(el.scrollHeight - el.clientHeight > 24);
+  }, [containerRef, scrollPosition]);
+
+  const shouldShow = scrollPosition === "scrolled-up" && hasOverflow;
 
   if (!shouldShow) return null;
 
