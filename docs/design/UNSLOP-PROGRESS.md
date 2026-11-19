@@ -504,6 +504,21 @@ diff 只留增删淡底。插件/市场/技能/智能体/MCP：卡片 surface + 
 - **触控尺寸**：13/15/18/54 → 0/2/1/0（收藏 12px→24、开关 23→24、紧凑模式 18→24）。
 - **焦点环**：标题栏/侧栏/页签/菜单项补 `:focus-visible`（用 CDP 真键盘 Tab 验证，programmatic focus 不触发）。
 
+### 3F.5b 安卓模拟器验证（用户授权用虚拟机）
+
+AVD `codem-x86`（x86_64 / API 35 / 1080×2400）。原来那个 `emulator-5554` 系统服务只有 67 个、`pm`/`wm` 全挂，
+`emu kill` 后 `-no-snapshot-load` 冷启动 `emulator-5556`（290 个服务）才可用。
+
+1. **桌面 Web UI 在 Android Chrome**（`http://10.0.2.2:1420/?ui=v2`）**能渲染**：琥珀主色、发丝线、28px 控件都对；
+   但缺 `window.__TAURI__` ⇒ 落进首次引导、拿不到数据 —— 只作兼容性观察，不当移动端形态。
+   **由此抓到一条窄屏真问题**：窗口按钮绝对定位后压住右侧动作图标（齿轮与最小化重叠）⇒ 给 `.titlebar-nav-actions` 留占位。
+2. **Flutter 原生客户端**（`Codem-Mobile-1.1.0-x86_64.apk`）`adb install` 成功、`MainActivity` 起来、首页正常。
+   一致性发现：移动端强调色是**靛蓝**（`0xFF7C6CF0`），与桌面 v2 的琥珀 `#C6A15B` 不同一套；
+   改 `mobile/lib/design/tokens.dart` 三个值即可，但本机**没有 Flutter SDK** ⇒ 只记不改（改完无法重建验证）。
+3. 真机仍 blocked；`android-shell` 未重跑（它打的是 `packages/host/web`，与本次 `src/` UI 不是同一份代码）。
+
+证据：`docs/design/audit/batch-6/after-android.md`；截图 `.preview-shot/unslop/android/*.png`。
+
 ### 3F.6 仍未做
 
 - 真机 Android/iOS（blocked，无设备）。
