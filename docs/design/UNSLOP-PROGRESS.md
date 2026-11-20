@@ -875,6 +875,69 @@ DSH 外部插件卡加载/检查更新/升级），每处都补 `catch` + 具体
 另外，探针里用来判断"还在流式"的停止按钮选择器在本仓 UI 下**匹配不到**（`streamingStarted` 一直为 false）——
 它不影响结果判定（判定看文件内容 / 命令输出），但这一条也记下来，免得下一个人以为流式状态没生效。
 
+## 3M. 第 8 轮：把「仍未做」的三件做完（审批链路 / 运行层计数 / arm64 取证）（2026-11-20）
+
+### 3M.1 审批链路端到端（之前唯一没有端到端证据的交互面）
+
+**为什么之前看不到审批**：开发实例的安全模式是「完全访问」，且 `请求批准` 模式下**新建**文件也不问；
+只有**覆盖已有文件**才触发审批。本轮按这个口径设计探针：
+
+| 步骤 | 读数 |
+|---|---|
+| 预置 `e2e-approval.txt`，让模型用 `write` 覆盖它 | 出现 `inline-diff-review` 面板（截图 `permission-dialog*`），按钮：`批准 / 拒绝 / 全部批准 / 自定义` |
+| 点「批准」 | 文件内容变成新值（逐字校验）；面板消失；回合继续 |
+| 再覆盖一次，点「拒绝」 | 文件**保持原内容**（逐字校验）；助手回复里明确说明被拒绝 |
+| 全程 | 0 `console.error`、0 未捕获拒绝 |
+
+判据落在**文件系统 + 面板文本**上，不是"点到了按钮"就算过。截图：
+`.preview-shot/unslop/e2e/approval-dialog.png`、`approval-dialog-deny.png`；
+结构化结果 `approval-e2e-result.json`（`ok: true`）。
+
+### 3M.2 运行层 IPC 计数（之前说"受 `__TAURI__.core` 冻结限制做不了"的那件）
+
+**做在哪**：`src-tauri/src/storage.rs::storage_invoke` —— **所有仓储命令的唯一入口**，
+在宿主进程里按命令名累加；新增两条**特例命令**（不进 `codem-db` 的 dispatch）：
+`ipc_stats` / `ipc_stats_reset`。渲染侧 `invoke("storage_invoke", {command:"ipc_stats"})` 即可读。
+
+- Rust 单测 `storage::tests::ipc_stats_counts_and_resets` 守住"累加 / 排序稳定 / reset 清零"
+  （恒 0 的计数器最容易骗人，所以先证它真的会动）。
+- **真机读数**（重编译二进制后重启开发实例，探针 `_e2e-ipc-stats.mjs`）：
+  - **空闲 15 秒：0 条仓储命令**（`total: 0`）—— 侧栏/水位改成事件驱动的直接证据；
+  - 一个普通回合：**25 条**，分布 `crud.upsert 5 / crud.list 4 / events.append 4 / fts.upsert 3 /
+    messages.upsert_index 3 / settings.set 3 / events.append_batch 2 / settings.remove 1` —— 没有风暴。
+- 结果：`.preview-shot/unslop/e2e/ipc-stats.json`（`ok: true`）。
+
+⚠️ 口径说明：域镜像就绪后，`domainReadMany` 读的是**内存镜像**，本来就不产生 IPC。
+所以这个计数证明的是"空闲没有 IPC 风暴"，**不是**"侧栏省下了 N 次 IPC"；
+侧栏/水位省下的是**镜像扫描与消息解析**的 CPU（那部分由单元基线 + 变异自证守着，见 §3J）。
+
+### 3M.3 arm64：能做的做完，不能做的说清楚
+
+| 事项 | 结果 |
+|---|---|
+| debug arm64 包 | `flutter build apk --debug --target-platform android-arm64 --split-per-abi` → `app-arm64-v8a-debug.apk`（264 MB，只含 `arm64-v8a`） |
+| release arm64 包 | `--release --split-per-abi` → `app-arm64-v8a-release.apk`（**77 MB**），`libarm64-v8a/{libapp.so,libflutter.so}` **全部 AArch64 ELF**（`libapp.so` 8 MB 是 AOT 产物） |
+| arm64 模拟器 | **不可能**：`FATAL | Avd's CPU Architecture 'arm64' is not supported by the QEMU2 emulator on x86_64 host`（实测输出原文） |
+| 真机 | 无 arm64 设备可用 |
+
+**本轮还查出一条真问题（比"没硬件"更值得记）**：
+`mobile/android/app/src/main/jniLibs/` 只有 **x86_64** 的本机 Host 可执行文件
+（`libproot.so` / `libproot_loader.so` / `libcodem_db.so` / `libnode.so`），`assets/abi.txt` 也写着 `x86_64`。
+⇒ arm64 设备上 Flutter 界面能跑，但「本机 Host（PRoot/Ubuntu）」不可用。
+**好在这条有明确的失败路径**：`LocalHostRuntime.installExes` 会抛
+「APK 未包含 libproot.so（设备 ABI：arm64-v8a），请安装匹配 ABI 的安装包」——
+不是崩溃、不是静默失败（代码里已有该判据式的提示）。
+
+**要真正支持 arm64 还差**：交叉编译 aarch64 的 proot/proot_loader、aarch64 Android 的 node、
+aarch64 的 `codem_db`，放进 `jniLibs/arm64-v8a/`；本机没有这套交叉工具链，**本轮不假装做了**。
+
+### 3M.4 读数
+
+- `tsc` 0；前端全量测试见提交前最后一条记录；Rust `cargo test --lib ipc_stats` 1 passed；
+- `storage-command-parity` / `no-sync-mirror-reads` 全绿（新增特例命令不影响命令契约）；
+- 新增探针：`_e2e-approval.mjs`、`_e2e-ipc-stats.mjs`、`_check-arm64-apk*.cjs`（都在 `.preview-shot/`，不进仓库）；
+- 结构化证据：`.preview-shot/unslop/e2e/{approval-e2e-result.json,ipc-stats.json,arm64-*-check.json}`。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

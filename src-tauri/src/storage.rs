@@ -38,7 +38,7 @@
 //! 但"二进制是否是最新的"只能靠这条流程纪律。
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use codem_db::{capabilities, dispatch, DbError, Engine};
 use serde_json::{json, Value};
@@ -515,6 +515,54 @@ pub fn prune_old_events(state: &StorageState, keep: i64, before_ts: i64) -> Resu
     }
 }
 
+/// IPC 计数（第 8 轮）：`storage_invoke` 是**所有仓储命令的唯一入口**，
+/// 在这里按命令名计数，就能在真机上量出"空闲时到底有没有在偷偷读库"。
+///
+/// 为什么必须放在 Rust 侧：渲染侧的 `window.__TAURI__.core` 是 `Object.freeze` 的
+/// （`invoke` 不可写、`configurable:false`），前端包不住 IPC 入口 —— 实测装 wrapper 后
+/// 计数恒为 0。而 `storage_invoke` 在宿主进程里，绕不过去。
+///
+/// 边界（写清楚，免得被当成性能剖析器）：只统计**命令次数**，不含耗时；
+/// 不统计文档库分流前的那一条判断（`documents.*` 也照样计数，方便看文档索引的调用量）。
+fn ipc_counter() -> &'static Mutex<std::collections::HashMap<String, u64>> {
+    static COUNTER: OnceLock<Mutex<std::collections::HashMap<String, u64>>> = OnceLock::new();
+    COUNTER.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+fn note_storage_command(command: &str) {
+    if let Ok(mut map) = ipc_counter().lock() {
+        *map.entry(command.to_string()).or_insert(0) += 1;
+    }
+}
+
+/// 读/清 IPC 计数（`storage_invoke` 的特例命令，不进 `codem-db` 的 dispatch）。
+fn storage_ipc_stats(reset: bool) -> Value {
+    let mut map = match ipc_counter().lock() {
+        Ok(m) => m,
+        Err(_) => return json!({ "items": [], "error": "counter poisoned" }),
+    };
+    let mut items: Vec<Value> = map
+        .iter()
+        .map(|(k, v)| json!({ "command": k, "count": v }))
+        .collect();
+    /* 稳定顺序：按次数降序、再按名字升序 —— 同一份数据两次读出来的形状必须一样 */
+    items.sort_by(|a, b| {
+        let ca = a.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+        let cb = b.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+        cb.cmp(&ca).then_with(|| {
+            a.get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .cmp(b.get("command").and_then(|v| v.as_str()).unwrap_or(""))
+        })
+    });
+    let total: u64 = map.values().sum();
+    if reset {
+        map.clear();
+    }
+    json!({ "total": total, "items": items, "reset": reset })
+}
+
 fn reply(result: Result<Value, DbError>) -> StorageReply {
     match result {
         Ok(v) => StorageReply {
@@ -543,6 +591,14 @@ pub fn storage_invoke(
     params: Option<Value>,
 ) -> StorageReply {
     let params = params.unwrap_or_else(|| json!({}));
+    /* 第 8 轮：IPC 计数（真机量「空闲时到底有没有在读库」）*/
+    if command == "ipc_stats" {
+        return reply(Ok(storage_ipc_stats(false)));
+    }
+    if command == "ipc_stats_reset" {
+        return reply(Ok(storage_ipc_stats(true)));
+    }
+    note_storage_command(&command);
     /*
      * 文档索引命令**先分流**：它们用的是独立库，不依赖主库是否就绪。
      *
@@ -819,6 +875,31 @@ pub fn storage_info(state: State<'_, StorageState>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// IPC 计数（第 8 轮）：计数必须**按命令累加、按次数排序、reset 清零**。
+    ///
+    /// 这条判据守的是"测量本身可信"：如果计数不累加或 reset 不清零，
+    /// 真机上量到的"空闲 0 次"就可能是假读数（恒 0 的计数器最容易骗人）。
+    #[test]
+    fn ipc_stats_counts_and_resets() {
+        /* 用独立的计数器实例口径：先清空，再累加，再读 */
+        let _ = storage_ipc_stats(true);
+        note_storage_command("sessions.list");
+        note_storage_command("sessions.list");
+        note_storage_command("messages.list");
+        let stats = storage_ipc_stats(false);
+        assert_eq!(stats.get("total").and_then(|v| v.as_u64()), Some(3));
+        let items = stats.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        assert_eq!(items.len(), 2, "两条命令应各自成一项");
+        assert_eq!(items[0].get("command").and_then(|v| v.as_str()), Some("sessions.list"));
+        assert_eq!(items[0].get("count").and_then(|v| v.as_u64()), Some(2));
+        /* reset：读出的是清零前的数，之后归零 */
+        let after_reset = storage_ipc_stats(true);
+        assert_eq!(after_reset.get("total").and_then(|v| v.as_u64()), Some(3));
+        let empty = storage_ipc_stats(false);
+        assert_eq!(empty.get("total").and_then(|v| v.as_u64()), Some(0));
+    }
+
 
     /// 改环境变量的用例**共用同一把锁**（进程级环境变量是两个用例之间唯一的共享可变状态；
     /// 各写各的 `static` 等于没锁 —— 第 230 波把原来函数内的那个锁提到模块级就是为了这个）。
