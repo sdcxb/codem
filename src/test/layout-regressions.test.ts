@@ -131,6 +131,15 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     expect(css, "缺最后一个柱子的右对齐覆盖").toContain(".usage-chart-bar:last-child .usage-chart-bar-tooltip");
   });
 
+  it("LAYOUT-8: 插件卡片的徽标不许换行（名称先省略）", () => {
+    const css = readCss("src/styles.css");
+    const badge = blockOf(css, ".ofm-compact-badge {");
+    expect(badge, "找不到 .ofm-compact-badge 规则").toBeTruthy();
+    expect(badge, "徽标会被长名称挤成两行（真机：「外部服/务」）").toContain("white-space: nowrap");
+    const name = blockOf(css, ".market-skill-name {");
+    expect(name, "名称必须可省略，否则它自己撑破标题行").toContain("text-overflow: ellipsis");
+  });
+
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {
     const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
     for (const rule of ["R1", "R2", "R3", "R4"]) {

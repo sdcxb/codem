@@ -216,7 +216,9 @@ window.__layoutAudit = function () {
     }
 
     /* R6 文字间距离群 */
-    if (!hasElementKid && leafText.length > 0) {
+    /* 终端渲染器（xterm）自己控制字符网格与字距，不属于 UI 排版 */
+    var inTerminal = !!(el.closest && el.closest(".xterm"));
+    if (!hasElementKid && leafText.length > 0 && !inTerminal) {
       var fs2 = parseFloat(cs.fontSize) || 0;
       var ls = cs.letterSpacing;
       if (ls && ls !== "normal" && fs2 > 0) {
@@ -333,6 +335,11 @@ const SCENES = [
   })),
   { name: "taskcenter-subagents-scene", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }], after: 1400 },
   { name: "taskcenter-subagents-settings", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }, { label: "设置", mode: "exact", container: ".lo-task" }], after: 1200 },
+  { name: "dialog-plugins", steps: [{ label: "插件管理", mode: "contains" }], after: 1400 },
+  { name: "dialog-search", steps: [{ label: "搜索", mode: "exact" }], after: 1000 },
+  { name: "menu-file", steps: [{ label: "文件", mode: "exact" }], after: 800 },
+  { name: "notebook-workspace", steps: [{ label: "知识笔记本", mode: "exact" }, { label: "打开", mode: "contains" }], after: 1600 },
+  { name: "dialog-projects", steps: [{ label: "新对话", mode: "contains" }], after: 1000 },
   { name: "manager-mcp", steps: [{ label: "MCP", mode: "exact" }], after: 1200 },
   { name: "manager-skills", steps: [{ label: "技能", mode: "exact" }], after: 1200 },
   { name: "manager-memory", steps: [{ label: "记忆", mode: "exact" }], after: 1200 },

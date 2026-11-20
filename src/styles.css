@@ -8427,6 +8427,10 @@ color: var(--text-on-accent);
 }
 
 .market-skill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
@@ -21968,7 +21972,13 @@ html[data-contrast="high"] {
 .plugin-detail-status { margin-left: auto; color: var(--text-muted); font-size: var(--fs-xs); }
 .ofm-compact-card { cursor: pointer; align-self: start; }
 .ofm-compact-card.is-off { opacity: var(--opacity-disabled); }
-.ofm-compact-badge { color: var(--text-muted); font-size: var(--fs-xs); }
+.ofm-compact-badge {
+  /* 第 9 轮（1280 实测）：徽标被长插件名挤成两行「外部服/务」—— 徽标必须 nowrap、名称先省略 */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
 .ofm-compact-more { margin-left: auto; color: var(--accent); font-size: var(--fs-xs); }
 
 /* ========== 长程目标模式状态条（ADR-0006） ==========
