@@ -219,7 +219,7 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     for (const rule of ["R9", "R12"]) {
       expect(tool, `布局审计缺少 ${rule}`).toContain(`push("${rule}"`);
     }
-    for (const rule of ["R10", "R11"]) {
+    for (const rule of ["R10", "R11", "R13"]) {
       expect(tool, `布局审计缺少 ${rule}`).toContain(`rule: '${rule}'`);
     }
     for (const flag of ["SUBSTATES", "HOVER", "FOCUS"]) {
@@ -255,6 +255,80 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     const label = blockOf(nb, ".nb-section-label {");
     expect(label, "缺 .nb-section-label").toBeTruthy();
     expect(label, "中文小节标签不该有 letter-spacing（10px + 0.5px 会显得松散）").not.toContain("letter-spacing");
+  });
+
+  it("LAYOUT-20: 不许出现「悬空选择器列表」（顶层逗号 + 段落横幅注释 + 下一条规则）", () => {
+    // 第 13 轮静态分析实测三处：段落操作条 / 三个 0 引用按钮类 / pet-window-mode，
+    // 都因「顶层选择器列表尾部逗号 + 紧跟段落横幅注释」把下一条规则的样式并进了自己。
+    // 只扫大括号深度 0 的逗号（声明值里的逗号不算，避免 box-shadow 多值误报）。
+    const offenders: string[] = [];
+    for (const file of CSS_FILES) {
+      const css = readFileSync(file, "utf8");
+      let depth = 0;
+      for (let i = 0; i < css.length; i++) {
+        const ch = css[i];
+        if (ch === "/" && css[i + 1] === "*") {
+          const end = css.indexOf("*/", i + 2);
+          i = end < 0 ? css.length : end + 1;
+          continue;
+        }
+        if (ch === "{") { depth++; continue; }
+        if (ch === "}") { depth = Math.max(0, depth - 1); continue; }
+        if (ch !== "," || depth !== 0) continue;
+        let j = i + 1;
+        while (j < css.length && /\s/.test(css[j])) j++;
+        if (!css.startsWith("/*", j)) continue;
+        const end = css.indexOf("*/", j);
+        const comment = css.slice(j, end + 2);
+        if (/^\/\*\s*=/.test(comment)) {
+          const line = css.slice(0, i).split("\n").length;
+          offenders.push(`${file.replace(ROOT + "\\", "").replace(ROOT + "/", "")}:${line}`);
+        }
+      }
+    }
+    expect(offenders, "尾部逗号后跟段落横幅注释 ⇒ 下一条规则会被并入这组选择器").toEqual([]);
+  });
+
+  it("LAYOUT-21: 会裁切的容器内统一 inset 焦点环（含 !important 压过全局环）", () => {
+    const css = readCss("src/styles.css");
+    const rule = css.match(/\:is\(\.chat-body[^{]*\{[^}]*\}/);
+    expect(rule, "缺「裁切容器内统一 inset 环」这条策略").toBeTruthy();
+    for (const cls of [".chat-body", ".settings-body", ".modal-editor", ".task-center-panel", ".notebook-manager", ".terminal-drawer"]) {
+      expect(rule![0], `策略里必须包含 ${cls}`).toContain(cls);
+    }
+    expect(rule![0]).toContain("outline: none !important");
+    expect(rule![0]).toContain("inset 0 0 0 var(--focus-ring-width)");
+  });
+
+  it("LAYOUT-22: 全局兜底环 (0,3,0) 之下，各组件的 inset 环必须带 !important", () => {
+    const css = readCss("src/styles.css");
+    /* 直接按「规则 + 其后 300 字符内出现 outline: none !important」断言，避免 continue 式静默通过 */
+    const checks: Array<[string, string]> = [
+      ["workspace-tabs 组", "\\.workspace-tabs > \\*:focus-visible,"],
+      ["kg-node", "\\.kg-node:focus-visible \\{"],
+      ["sidebar-user-me", "\\.sidebar-user-me--clickable:focus-visible \\{"],
+    ];
+    for (const [name, re] of checks) {
+      const m = new RegExp(re + "[\\s\\S]{0,400}?outline: none !important").exec(css);
+      expect(m, `${name} 的 outline:none 不带 !important（会被全局环盖过，外扩环再被容器裁掉）`).toBeTruthy();
+    }
+    const ppt = readCss("src/components/ppt/ppt-editor.css");
+    expect(ppt).toMatch(/\.ppt-slide-canvas:focus-visible \{[\s\S]{0,120}?outline: none !important/);
+    const ui = readCss("packages/ui/src/ui.css");
+    expect(ui).toMatch(/\.file-entry:focus-visible \{[\s\S]{0,120}?outline: none !important/);
+  });
+
+  it("LAYOUT-23: 有选中环的元素用「内嵌 outline」画焦点，不许顶掉 box-shadow", () => {
+    const css = readCss("src/styles.css");
+    const block = blockOf(css, ".skin-card:focus-visible,");
+    expect(block, "缺皮肤卡/项目按钮的焦点规则").toBeTruthy();
+    expect(block).toContain("outline: var(--focus-ring-width) solid var(--focus-ring-color) !important");
+    expect(block).toContain("outline-offset: calc(-1 * var(--focus-ring-width)) !important");
+    /* 统一 inset 策略必须排除搜索框（胶囊已有 :has 环）与这两类（active 用 box-shadow） */
+    const wide = /:is\([^)]*settings-body[^{]*\{/.exec(css)?.[0] ?? "";
+    for (const cls of [".sp-search-input", ".skin-card", ".sidebar-project-btn"]) {
+      expect(wide, `统一策略必须排除 ${cls}（否则会覆盖其 box-shadow/形成双环）`).toContain(`:not(${cls})`);
+    }
   });
 
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {

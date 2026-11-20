@@ -922,7 +922,8 @@
   border-color: var(--lo-zone-token);
   border-style: solid;
 }
-.lo-pixel-room:focus-visible { outline: 2px solid var(--lo-zone-token); outline-offset: 2px; }
+/* 第 13 轮：房间 absolute 铺满 .lo-scene（overflow:hidden），外扩环会被场景裁 ⇒ inset 环 */
+.lo-pixel-room:focus-visible { outline: none !important; box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color); }
 /* 同一块 bounds 上承载多个岗位时（gateway 前台·调度台 / task_queues 借还台·交付，两者 bounds 逐像素相同）：
  * 房间框仍是**完整视觉**（位置/大小/标签一个像素都不动），命中改由内层条带承载 ——
  * 外层关掉命中（否则 DOM 靠后的那个会把整块吃掉，另一个岗位在自己的区域里永远点不到），

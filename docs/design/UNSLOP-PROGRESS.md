@@ -1235,6 +1235,88 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 3. **800 以下（如 640）不在产品的最小窗口范围内**（`minWidth: 800`），未测；
 4. 真机（Android / 桌面安装包）上的 WebView 字体度量与开发实例不同，本审计是 Chromium 开发实例口径。
 
+## 3R. 第 13 轮：穷举 hover/focus + 真实模型审批弹窗（把最后两类边界压掉）（2026-11-20）
+
+上一轮还留着两条边界：「hover 只取 8 个控件、focus 只走 12 次 Tab（采样不是穷举）」
+与「真实模型回合才出现的审批弹窗没有场景」。本轮两条都压掉，并按用户要求用了**真实模型回合**。
+
+### 3R.1 从「采样」到「按类名穷举」
+
+| 能力 | 旧 | 新 |
+|---|---|---|
+| hover | 每场景取前 8 个控件（按类名+文字去重） | **按类名去重后穷举**（默认上限 80）：每类一个代表，仍用真实鼠标悬停，稳定 key 比较兄弟位移、复现一次才记 |
+| focus | 连按 12 次 Tab（只能覆盖 tab 序列前 12 个） | **按类名穷举可聚焦元素**（默认上限 120）：先按一次 Tab 进入键盘模态，再逐个 `el.focus()` 读 `:focus-visible` 几何 |
+
+实测覆盖量：单个场景 hover 15–22 个类、focus 19–25 个类（旧版分别是 8 与 12）。
+
+### 3R.2 真实模型审批弹窗（新场景 `dialog-approval`）
+
+流程（只在 `--real-model` 时启用，避免例行审计烧 token）：
+1. 把安全模式切到**请求批准**（必须先切，再发消息 —— 第一次跑 NO-PANEL 就是顺序错了）；
+2. 预置工作区文件 → 用 composer 发「覆盖写入」指令 → 等 `.inline-diff-review` 出现（最长 150s）；
+3. **面板打开状态下**量布局（含 hover/focus 探针）→ 截图 → 点「批准」→ 恢复完全访问 → 删探针文件。
+
+真实回合实测：面板出现、`dialog-approval` 基线 0 违规；顺带抓到并修掉 **1 个真问题**：
+「思考」按钮（`.reasoning-toggle`）在 24px 高、`overflow:hidden` 的 `.reasoning-row` 里，焦点环上下被裁
+→ 改 inset 环（R11 复测通过）。
+
+### 3R.3 静态分析（子智能体）+ 它带出的修复
+
+并行跑了一个只读子智能体，扫全仓 CSS 的 `:hover` 与 `:focus-visible`，产出 18 条 hover 风险、
+12 条焦点环裁剪、2 条焦点反馈缺失。真正修掉的：
+
+| # | 问题 | 修 |
+|---|---|---|
+| 1 | **特异度战**：全局兜底环 `:is(...[tabindex]):focus-visible` 是 **(0,3,0)**，各处 inset 修复只有 (0,2,0) 且无 `!important` ⇒ 外扩环被重新画出来再被容器裁掉 | 所有 inset 环统一加 `outline: none !important`；并把「已知会裁切的容器」收敛成**一条策略**：容器内可聚焦元素一律 inset 环（`.chat-body / .settings-body / .modal-editor / .task-center-panel / .notebook-manager / .terminal-drawer / .lo-task__content / .sidebar / .right-sidebar / .input-tools-left / .reasoning-row / .memory-list`） |
+| 2 | 设置左侧栏搜索框**完全没有焦点指示**（input `outline:none`，胶囊无 `:has` 环） | `.settings-side-search:has(.sp-search-input:focus-visible)` 画 inset 环 + 边框色 |
+| 3 | 笔记本管理器/终端抽屉的关闭按钮贴边，环被裁 | 已并入上面的统一策略 |
+| 4 | 两处**悬空选择器列表**（尾部逗号 + 段落横幅注释）：`.message-paragraph-actions,` 把未读徽标样式并给了段落操作条；`.project-open-btn, .new-chat-btn, .sidebar-config-btn,` 把 `.chat-panel` 并进了按钮样式 | 删除 0 引用的悬空选择器；新增判据 LAYOUT-20 防复发 |
+| 5 | 第三处悬空列表把 `html.pet-window-mode, html.pet-window-mode body,` 并进 `.guidance-messages-bar` | 补齐 pet-window-mode 的透明背景规则，隔离 guidance 样式 |
+| 6 | `.lo-pixel-room` 外扩环被 `.lo-scene`（overflow hidden）裁 | 改 inset 环 |
+| 7 | `.sidebar-user-me--clickable` 贴侧栏边，环被裁 | 改 inset 环 |
+
+**判据新增**：LAYOUT-20（悬空选择器列表）、LAYOUT-21（裁切容器统一 inset 策略）、LAYOUT-22（全局环下 inset 必须 `!important`），累计 **22 条**。
+
+### 3R.4 读数
+
+**终轮（最终构建，穷举 hover/focus + R13）**：
+
+| 宽度 | 场景（含二级页签 / hover 穷举 / focus 穷举 / 详情 / 浮层） | R1–R6 / R9–R13 |
+|---|---|---|
+| 800×600（最小窗口） | 44 场景 × 状态 | **0** |
+| 900×700 | 同上 | **0** |
+| 1100×760 | 同上 | **0** |
+| 1280×800 | 同上 | **0** |
+| 1600×900 | 同上 | **0** |
+
+真实模型审批场景（1280，面板打开态）：dialog-approval **0 违规**（hover 23 个类 / focus 23 个类），
+跑完安全模式恢复「完全访问」、探针文件已删除。
+
+### 3R.6 审查驱动的补充修复（第二轮，同轮内）
+
+把改动交给一个只读审查子智能体后，它找出 7 处问题（含 2 处既有判据变红、1 处真实双环、1 处选中态丢失），逐条修掉：
+
+| # | 审查发现 | 修法 |
+|---|---|---|
+| 1 | `USERCLICK-197-4` 仍断言旧的 `outline: 2px solid var(--accent)` ⇒ 变红 | 断言更新为新的 inset box-shadow 契约（意图不变：键盘用户必须看得见），并注明为什么改成 inset |
+| 2 | 删除悬空选择器后 `css-contract` 快照过期（31 条差异） | `node tools/ui-audit/css-contract.mjs --write` 重建快照 |
+| 3 | 宽策略给 `.sp-search-input` 也上了 inset 环，压掉它自己的 `box-shadow:none` ⇒ 侧栏搜索框**双紫环** | 宽策略加 `:not(.sp-search-input)`；胶囊的 `:has` 环是唯一指示 |
+| 4 | `.skin-card.active` / `.sidebar-project-btn.active` 的选中环是 box-shadow，会被 inset 焦点环顶掉 | 这两类改用**内嵌 outline**（`outline-offset: -2px`）画焦点：与 box-shadow 可叠加、不被祖先裁切 |
+| 5 | R11 看到 `outline:none` 直接返回 `hasRing:false`，调用方只消费 `clipped` ⇒ 删掉 inset 也不红 | 新增 **R13**：可聚焦元素既无 outline、也无 box-shadow、祖先也没有环 ⇒ 「键盘焦点不可见」；同时支持 `forced-colors` 回退 |
+| 6 | 审批场景：安全模式是持久化设置，失败路径会留在「请求批准」；清理写在 record 内、面板关闭后才跑 hover/focus；二级页签会重复 record | 抽出 `setSecurityMode`（切换 + 验证 + 3 次重试）、`cleanupApproval`（重复批准 → 等 `.run-status-bar` 消失 → 恢复模式 → 删文件）；失败路径也清理；审批场景不再展开二级页签；`try/finally` 保证清理 |
+| 7 | LAYOUT-20 正则漏检/误报；LAYOUT-22 的 `continue` 会静默通过 | LAYOUT-20 改为**按大括号深度扫描**（只算深度 0 的逗号，声明里的多值不误报）；LAYOUT-22 改为「规则 + 其后 400 字符内必须出现 `outline: none !important`」，缺失直接红；新增 LAYOUT-23（选中环用内嵌 outline、宽策略排除三类元素） |
+
+**真实模型场景的收尾实测**：跑完后安全模式恢复为「完全访问」、探针文件已删除（`file: False`）。
+
+### 3R.7 边界（进一步收窄后仍存在的，如实记）
+
+1. **hover/focus 按类名去重**：同一类里不同实例（内容长度、disabled 态）不会逐个覆盖；
+2. **真实模型场景只有审批弹窗**：工具确认、失败重试、取消/中断这些弹窗还没做场景；
+3. 侧栏行悬停「时间↔操作」互换是**有意的**（给操作让位），审计把侧栏排除在 hover 探针外；
+4. 800 以下（640 等）不在产品最小窗口范围；
+5. R13 用「祖先 3 层内有没有 box-shadow」判断“焦点反馈画在祖先上”，更深层的自定义指示器可能漏判。
+
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

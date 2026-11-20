@@ -2470,14 +2470,12 @@ font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
-.project-open-btn,
-.new-chat-btn,
-.sidebar-config-btn,
-
-
-.project-open-btn:is(:hover, :focus-visible),
-.new-chat-btn:is(:hover, :focus-visible),
-.sidebar-config-btn:is(:hover, :focus-visible),
+/*
+ * 第 13 轮（静态分析）：这里原本有两组**悬空选择器列表**（尾部逗号 + 注释 + 下一条规则）：
+ *   `.message-content p:hover .message-paragraph-actions,` 把未读徽标的样式并给了段落操作条；
+ *   `.project-open-btn, .new-chat-btn, .sidebar-config-btn,` 把 `.chat-panel` 并进了按钮样式。
+ * 这些类名全仓 0 引用，属于潜在缺陷（一旦有人渲染它们就会拿到错误样式），已删除。
+ */
 /* ========== Chat Panel ========== */
 .chat-panel {
   flex: 1;
@@ -3528,6 +3526,61 @@ z-index: 50;
     row-gap: var(--space-2);
   }
   .input-action-row { align-items: flex-start; }
+}
+
+/*
+ * 第 13 轮（真实审批回合里的 R11）：`.reasoning-row:not([data-expanded])` 是 24px 高 + overflow:hidden，
+ * 里面的「思考」按钮外扩焦点环上下各被裁 ~3px。改 inset 环。
+ */
+.reasoning-row .reasoning-toggle:focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/*
+ * 第 13 轮（真实审批回合 + 静态分析）：
+ *  - 笔记本管理器 / 终端抽屉的关闭按钮贴着 overflow:hidden 的容器边，外扩环被裁；
+ *  - 设置左侧栏搜索框（胶囊 + 裸 input）**完全没有焦点指示**：input 的 outline 是 none，
+ *    胶囊又没有 :has 环 —— 键盘用户看不到焦点。这两类都改 inset/胶囊环。
+ */
+.notebook-manager :is(button, [role="button"]):focus-visible,
+.terminal-drawer :is(button, [role="button"]):focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+.settings-side-search:has(.sp-search-input:focus-visible) {
+  border-color: var(--focus-ring-color);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/*
+ * 第 13 轮（穷举焦点扫描）：焦点环裁剪的**根因**是全局兜底环特异度 (0,3,0)，
+ * 而各个 inset 修复都是 (0,2,0) —— 只有加 !important 才真正生效。与其逐个容器打补丁，
+ * 这里把「已知会裁切的容器」统一成一条策略：容器内可聚焦元素一律 inset 环。
+ * 新增会裁切的容器时，把类名加进这个 :is() 列表（tools/ui-audit R11 会持续验证）。
+ */
+:is(.chat-body, .settings-body, .settings-sidebar, .modal-editor, .task-center-panel, .notebook-manager, .terminal-drawer, .lo-task__content, .sidebar, .right-sidebar, .input-tools-left, .reasoning-row, .memory-list) :is(button, [role="button"], [role="tab"], a, input, select, textarea, [tabindex]):not(.sp-search-input):not(.skin-card):not(.sidebar-project-btn):focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/*
+ * 这两类元素的**选中态**是用 box-shadow 画的（`.skin-card.active` / 项目按钮 active）。
+ * 统一 inset 策略若用 box-shadow 画焦点环，会把选中环顶掉、聚焦时看不到“已选中”。
+ * 所以它们用 inset outline（负 offset 画在盒内，不被祖先裁切，且不动 box-shadow）。
+ */
+.skin-card:focus-visible,
+.sidebar-project-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color) !important;
+  outline-offset: calc(-1 * var(--focus-ring-width)) !important;
+}
+
+/* 高对比模式：box-shadow/outline:none 会被系统覆盖，给键盘焦点留一条系统色 outline */
+@media (forced-colors: active) {
+  :is(button, [role="button"], [role="tab"], a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 1px !important;
+  }
 }
 
 /* P-UI: 右侧发送组 */
@@ -14367,7 +14420,10 @@ overflow: hidden;
 */
 html.pet-window-mode,
 html.pet-window-mode body,
-
+html.pet-window-mode #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
 
 /* ========== Guidance (Mid-Turn Steering) ========== */
 
@@ -14916,7 +14972,6 @@ html.pet-window-mode body,
   position: relative;
 }
 
-.message-content p:is(:hover, :focus-visible) .message-paragraph-actions,
 
 /* ========== P1 #6: Unread message badge ========== */
 .session-unread-badge {
@@ -15027,9 +15082,10 @@ html.pet-window-mode body,
 .sidebar-user-me--clickable:is(:hover, :focus-visible) {
   background: var(--bg-hover);
 }
+/* 第 13 轮：它用负 margin 贴到侧栏边缘，外扩环外沿只剩 ~2px（侧栏 overflow:hidden）⇒ 改 inset */
 .sidebar-user-me--clickable:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 
 .sidebar-user-avatar {
@@ -20015,17 +20071,19 @@ select:focus-visible {
 
 /* 横向滚动容器（overflow 非 visible 的那一侧会**双向**裁切）里，子元素的外扩环会被切掉，
    所以换成 inset 环。三个容器是实测出 overflow 的：工作区标签栏、PPT 缩略图栏、面板侧栏标签。 */
+/* 第 13 轮：全局兜底环是 (0,3,0)（:is(...[tabindex]) + :focus-visible），不带 !important 的 outline:none 压不住，
+   外扩环会被重新画出来再被容器裁掉。以下容器的 inset 环统一加 !important。 */
 .workspace-tabs > *:focus-visible,
 .ppt-thumbnail-bar > *:focus-visible,
 .panel-sidebar-tabs > *:focus-visible {
-  outline: none;
+  outline: none !important;
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 /* 文件树条目（第 39 波新补的键盘可达元素）：树是纵向滚动容器，外扩环同样会被裁。
    组件的焦点环随组件迁到 `packages/ui/src/ui.css`（`.file-entry:focus-visible`）。 */
 /* 图谱节点：React Flow 节点外壳自带边框与投影，inset 环与它同构 */
 .kg-node:focus-visible {
-  outline: none;
+  outline: none !important;
   border-radius: var(--radius-lg);
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }

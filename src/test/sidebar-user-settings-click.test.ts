@@ -130,7 +130,9 @@ describe("USERCLICK-197 侧栏底部用户区点击打开设置", () => {
       .toMatch(/margin:\s*calc\(var\(--space-2\) \* -1\)/);
     expect(CSS, "缺悬停/焦点背景").toMatch(/\.sidebar-user-me--clickable:is\(:hover, :focus-visible\)/);
     const focus = cssRuleBody(".sidebar-user-me--clickable:focus-visible");
-    expect(focus, "缺焦点环（键盘用户要看得见）").toMatch(/outline:\s*2px solid var\(--accent\)/);
+    /* 第 13 轮：它用负 margin 贴到侧栏边（侧栏 overflow:hidden），外扩 outline 会被裁掉，
+       所以焦点环改成 inset box-shadow（与输入工具行/右侧栏同一套）。断言语义不变：键盘用户必须看得见。 */
+    expect(focus, "缺焦点环（键盘用户要看得见）").toMatch(/box-shadow:\s*inset 0 0 0 var\(--focus-ring-width\)/);
   });
 });
 

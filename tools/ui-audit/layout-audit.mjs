@@ -26,13 +26,18 @@
  * - **R10 hover 改变布局**：悬停后元素自身 offset 尺寸或同父兄弟位置变化（只许改颜色/阴影）。
  * - **R11 焦点环被裁**：`:focus-visible` 的外扩环超出最近的 `overflow:hidden` 祖先。
  * - **R12 浮层超出视口**：绝对/固定定位的菜单/气泡/弹窗越过窗口边缘 >2px。
+ * - **R13 键盘焦点不可见**：可聚焦元素既无 outline、也无 box-shadow、祖先也没有环（第 13 轮）。
  *
  * ## 状态覆盖（第 12 轮）
  *
  * 每个场景除了静态页，还会：① 逐个点开二级页签；② 悬停主内容区控件（R10）；
  * ③ 连按 Tab 走键盘焦点（R11）；④ 管理器/任务中心点开第一张卡（详情态）；
  * ⑤ 三个浮层场景（模型菜单 / 斜杠命令 / 会话右键）。
- * 开关：`--no-substates` / `--no-hover` / `--no-focus` / `--no-detail`，限量：`--hover-max` / `--focus-max`。
+ * 开关：`--no-substates` / `--no-hover` / `--no-focus` / `--no-detail`，限量：`--hover-max` / `--focus-max`。 *
+ * **第 13 轮：hover/focus 改为「按类名穷举」**（每类取一个代表，默认 hover 80 / focus 120），
+ * 并新增真实模型场景 `dialog-approval`（仅 `--real-model` 时运行，会消耗一次模型回合）：
+ * 切到「请求批准」→ 覆盖写入已有文件 → 等内嵌 diff 审批面板 → 量面板布局 → 点批准 → 恢复模式。
+ * 浮层/计时器这类「内容自己会动」的元素已从 hover 探针里排除（否则会把活内容重渲染误报成 hover 位移）。
  *
  * ## 用法（需要一个已开 CDP 的开发实例 + 已在 1420 上服务的 dist）
  *
@@ -62,8 +67,11 @@ const SUBSTATES = args.get("no-substates") !== "true";
 const HOVER = args.get("no-hover") !== "true";
 const FOCUS = args.get("no-focus") !== "true";
 const DETAIL = args.get("no-detail") !== "true";
-const HOVER_MAX = Number(args.get("hover-max") ?? 8);
-const FOCUS_MAX = Number(args.get("focus-max") ?? 12);
+/* 真实模型场景（审批弹窗）默认关：只在显式 --real-model 时跑，避免例行审计消耗 token */
+const REAL_MODEL = args.get("real-model") === "true";
+const APPROVAL_FILE = args.get("approval-file") ?? "lo-approval-probe.txt";
+const HOVER_MAX = Number(args.get("hover-max") ?? 80);
+const FOCUS_MAX = Number(args.get("focus-max") ?? 120);
 const MAX_SCENES = Number(args.get("max-scenes") ?? 0);
 const VERBOSE = args.get("verbose") === "true";
 /* 是否给每个场景存一张截图（人工复核用；默认关，产物在 layout-audit/shots/） */
@@ -71,7 +79,9 @@ const SHOTS = args.get("shots") === "true";
 /* 视口宽度：窄窗口是"挤压/换行"最容易暴露的地方（默认 1600×900） */
 const VIEW_W = Number(args.get("width") ?? 1600);
 const VIEW_H = Number(args.get("height") ?? 900);
-const OUT_DIR = path.resolve(args.get("out") ?? ".preview-shot/unslop/layout-audit");
+const OUT_DIR = path.resolve(args.get("out") ?? ".preview-shot/unslop/layout-audit");/* dev 实例的工作区（WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 那套 data-home） */
+const APPROVAL_WORKSPACE = path.resolve(".preview-shot/unslop/data-home/workspace");
+const APPROVAL_PATH = path.join(APPROVAL_WORKSPACE, args.get("approval-file") ?? "lo-approval-probe.txt");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -247,6 +257,8 @@ window.__layoutAudit = function () {
     var scrollable = cs.overflowX === "auto" || cs.overflowX === "scroll" || cs.overflowY === "auto" || cs.overflowY === "scroll";
     /* 屏读专用类（视觉上就该藏起来，不是“文本被切”） */
     var isSrOnly = (el.className && String(el.className).indexOf("sr-only") >= 0) || !!(el.closest && el.closest(".sr-only"));
+    /* 「已折叠」的长消息/卡片是**有意截断**（有展开控件），不算静默裁切 */
+    if (el.closest && el.closest('[class*="collapsed"]')) return;
     if (isSrOnly) return;
     if (!innerScroller && !intentionalClamp && !scrollable && (cs.overflowX === "hidden" || cs.overflowX === "clip" || cs.overflowY === "hidden" || cs.overflowY === "clip") && t.length > 0) {
       /* 画布/缩放内容：transform: scale() 不改变 scrollHeight，但视觉上没有溢出 —— 跳过 */
@@ -426,6 +438,7 @@ const SCENES = [
   })),
   { name: "taskcenter-subagents-scene", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }], after: 1400 },
   { name: "taskcenter-subagents-settings", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }, { label: "设置", mode: "exact", container: ".lo-task" }], after: 1200 },
+  { name: "dialog-approval", special: "approval", steps: [], after: 0 },
   { name: "menu-model", special: "model-menu", steps: [], after: 300 },
   { name: "menu-slash", special: "slash-menu", steps: [], after: 300 },
   { name: "menu-session", special: "session-menu", steps: [], after: 300 },
@@ -556,6 +569,42 @@ async function hoverDelta(ctx, id, before) {
 }
 
 /** 键盘 Tab 之后读当前焦点元素：焦点环是否被 overflow:hidden 的祖先裁掉。 */
+/** 收集可聚焦元素（按类名去重，取每类第一个），用于穷举焦点环。 */
+async function collectFocusables(ctx, limit) {
+  return ctx.evalJs('(function (limit) {' +
+    'var sel = \'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [role="button"], [role="tab"]\';' +
+    'var roots = [document.querySelector(".settings-content"), document.querySelector("main"), document.querySelector(".modal-editor"), document.querySelector(".task-center-panel"), document.querySelector(".app-content")].filter(Boolean);' +
+    'if (!roots.length) roots = [document];' +
+    'var nodes = [];' +
+    'for (var ri = 0; ri < roots.length; ri++) nodes = nodes.concat(Array.prototype.slice.call(roots[ri].querySelectorAll(sel)));' +
+    'var seen = {}; var out = [];' +
+    'for (var i = 0; i < nodes.length; i++) {' +
+    '  var el = nodes[i];' +
+    '  if (el.disabled) continue;' +
+    '  var r = el.getBoundingClientRect();' +
+    '  if (r.width < 8 || r.height < 8) continue;' +
+    '  if (el.closest(".sidebar") || el.closest(".titlebar")) continue;' +
+    '  /* 活内容（计时器/状态条每秒重渲染）会自己挪位置，不是 hover 引起的 */' +
+    '  if (el.closest(".run-status-bar") || el.closest(".thinking-indicator") || el.closest("[class*=elapsed]") || el.closest("[class*=timer]") || el.closest(".lo-task__clock")) continue;' +
+    '  var cls = (el.className || "").toString().trim().split(/\\s+/).slice(0, 2).join(".");' +
+    '  var key = cls || (el.tagName + "|" + (el.getAttribute("role") || ""));' +
+    '  if (seen[key]) continue; seen[key] = 1;' +
+    '  el.setAttribute("data-lo-focus", String(out.length));' +
+    '  out.push({ id: out.length, ident: (el.tagName || "").toLowerCase() + "." + cls, label: (el.innerText || el.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim().slice(0, 18) });' +
+    '  if (out.length >= limit) break;' +
+    '}' +
+    'return out;' +
+  '})(' + JSON.stringify(limit) + ')');
+}
+
+/** 聚焦某个探针元素（返回是否成功）。 */
+async function focusTarget(ctx, id) {
+  return ctx.evalJs('(function () {' +
+    'var el = document.querySelector(\'[data-lo-focus="' + id + '"]\');' +
+    'if (!el) return false; el.focus(); return document.activeElement === el;' +
+  '})()');
+}
+
 async function focusRingInfo(ctx) {
   return ctx.evalJs('(function () {' +
     'var el = document.activeElement;' +
@@ -563,9 +612,13 @@ async function focusRingInfo(ctx) {
     'var cs = getComputedStyle(el);' +
     'var ow = parseFloat(cs.outlineWidth) || 0;' +
     'var oo = parseFloat(cs.outlineOffset) || 0;' +
-    'if ((ow === 0 || cs.outlineStyle === "none") && cs.boxShadow === "none") return { hasRing: false };' +
-    'if (cs.outlineStyle === "none") return { hasRing: false, inset: cs.boxShadow !== "none" };' +
+    'var ancShadow = false; var pa0 = el.parentElement;' +
+    'for (var d0 = 0; d0 < 3 && pa0; d0++, pa0 = pa0.parentElement) { if (getComputedStyle(pa0).boxShadow !== "none") { ancShadow = true; break; } }' +
+    'if ((ow === 0 || cs.outlineStyle === "none") && cs.boxShadow === "none") return { hasRing: false, ancestorShadow: ancShadow };' +
+    'if (cs.outlineStyle === "none") return { hasRing: false, inset: cs.boxShadow !== "none", ancestorShadow: ancShadow };' +
     'var r = el.getBoundingClientRect();' +
+    '/* 视口外（滚动容器里被 focus() 带到的元素）不判“环被裁”：看不到的元素谈不上可见性 */' +
+    'if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) return { hasRing: true, clipped: false, offscreen: true };' +
     'var ring = { l: r.left - ow - oo, t: r.top - ow - oo, r: r.right + ow + oo, b: r.bottom + ow + oo };' +
     'var a = el.parentElement;' +
     'while (a && a !== document.body) {' +
@@ -573,7 +626,7 @@ async function focusRingInfo(ctx) {
     '  var hidden = acs.overflow === "hidden" || acs.overflowX === "hidden" || acs.overflowY === "hidden";' +
     '  if (hidden) {' +
     '    var ar = a.getBoundingClientRect();' +
-    '    if (ring.l < ar.left - 0.5 || ring.t < ar.top - 0.5 || ring.r > ar.right + 0.5 || ring.b > ar.bottom + 0.5) {' +
+    '    if (ring.l < ar.left - 1.5 || ring.t < ar.top - 1.5 || ring.r > ar.right + 1.5 || ring.b > ar.bottom + 1.5) {' +
     '      return { hasRing: true, clipped: true, by: String(a.className).slice(0, 40), ring: ring, box: { l: Math.round(ar.left), t: Math.round(ar.top), r: Math.round(ar.right), b: Math.round(ar.bottom) } };' +
     '    }' +
     '  }' +
@@ -599,7 +652,7 @@ async function collectHoverTargets(ctx, limit) {
     '  if (r.width < 12 || r.height < 12 || r.top < 0 || r.top > window.innerHeight - 8) continue;' +
     '  var cs = getComputedStyle(el);' +
     '  if (cs.visibility === "hidden" || cs.pointerEvents === "none") continue;' +
-    '  var key = (el.className || "").toString().slice(0, 40) + "|" + (el.innerText || el.getAttribute("aria-label") || "").slice(0, 16);' +
+    '  var key = (el.className || "").toString().trim().split(/\s+/).slice(0, 2).join(".") || (el.tagName + "|" + (el.getAttribute("role") || ""));' +
     '  if (seen[key]) continue;' +
     '  seen[key] = 1;' +
     '  el.setAttribute("data-lo-hover", String(out.length));' +
@@ -636,8 +689,58 @@ async function ensureMeasure() {
 }
 await ensureMeasure();
 
+/** 等审批面板出现（真实模型回合，最长 150s）。 */
+async function waitApproval(ctx, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const open = await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")); return panels.some(function (el) { return el.getBoundingClientRect().height > 0; }); })()');
+    if (open) return true;
+    await sleep(600);
+  }
+  return false;
+}
+
+/**
+ * 切换安全模式并**验证生效**（按钮文案就是当前模式）。
+ * 为什么需要重试：菜单是异步渲染的，流式回合期间还会被重渲染；一次点击不保证成功。
+ */
+async function setSecurityMode(ctx, label) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const current = await ctx.evalJs('(function () { var b = document.querySelector(".security-mode-btn"); return b ? (b.innerText || "").trim() : ""; })()');
+    if (current === label) return true;
+    await ctx.evalJs('(function () { var b = document.querySelector(".security-mode-btn"); if (b) b.click(); return !!b; })()');
+    await sleep(500);
+    const clicked = await ctx.evalJs('(function (label) { var items = Array.prototype.slice.call(document.querySelectorAll(".bottom-bar-dropdown-item")); var it = items.find(function (x) { var t = (x.textContent || "").trim(); return t === label; }); if (it) { it.click(); return true; } return false; })(' + JSON.stringify(label) + ')');
+    await sleep(500);
+    if (clicked) return true;
+  }
+  return false;
+}
+
+/**
+ * 审批场景收尾：点批准（若还开着）→ 恢复「完全访问」→ 删探针文件。
+ * 失败路径也必须调用：安全模式是**持久化设置**，留在「请求批准」会改变后续所有回合的行为。
+ */
+async function cleanupApproval(ctx) {
+  /* 先批准（若面板还开着），再等回合结束——流式期间菜单会被重渲染，切换容易失败 */
+  await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
+  /* 等回合真正结束：本轮实测「停止按钮」并不存在（控制按钮在别处），
+     可靠信号是运行状态条 .run-status-bar；期间若又弹出审批（同一回合的第二次写入）就继续批准。 */
+  for (let i = 0; i < 150; i++) {
+    await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
+    const busy = await ctx.evalJs('!!document.querySelector(".run-status-bar") || !!document.querySelector(".thinking-indicator")');
+    if (!busy) break;
+    await sleep(1000);
+  }
+  const restored = await setSecurityMode(ctx, "完全访问");
+  if (!restored) console.log("   ⚠️ 安全模式未能恢复为「完全访问」，请手动检查");
+  try { fs.unlinkSync(APPROVAL_PATH); } catch { /* ignore */ }
+}
+
+let CURRENT_SPECIAL = null;
 const results = [];
 let scenes = SCENES;
+if (!REAL_MODEL) scenes = scenes.filter((s) => s.special !== "approval");
 if (ONLY) scenes = scenes.filter((s) => s.name.includes(ONLY));
 if (MAX_SCENES > 0) scenes = scenes.slice(0, MAX_SCENES);
 
@@ -667,8 +770,40 @@ for (const scene of scenes) {
     continue;
   }
   await sleep(scene.after ?? 800);
+
+  if (scene.special === "approval") {
+    /* 顺序很重要：必须先把安全模式切到「请求批准」，否则消息发出去时是「完全访问」，
+       写入会被直接执行、永远看不到审批面板（第一次跑 NO-PANEL 就是这个原因）。 */
+    const askOk = await setSecurityMode(ctx, "请求批准");
+    if (!askOk) {
+      results.push({ scene: "dialog-approval", navOk: false, steps: stepResults, violations: [], note: "security mode switch failed" });
+      console.log("dialog-approval".padEnd(34), "MODE-SWITCH-FAILED");
+      await cleanupApproval(ctx);
+      continue;
+    }
+    fs.mkdirSync(APPROVAL_WORKSPACE, { recursive: true });
+    const oldValue = "old-" + Date.now();
+    const newValue = "new-layout-probe-" + Date.now();
+    fs.writeFileSync(APPROVAL_PATH, oldValue + "\n", "utf8");
+    const prompt = "请用 write 工具把工作区根目录 " + APPROVAL_FILE + " 的内容改成 " + newValue + "（覆盖原文件，原内容 " + oldValue + "）。只做这一步。";
+    await ctx.evalJs('(function (text) {' +
+      'var el = document.querySelector(".message-input"); if (!el) return false;' +
+      'var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;' +
+      'setter.call(el, text); el.dispatchEvent(new Event("input", { bubbles: true })); el.focus(); return true;' +
+    '})(' + JSON.stringify(prompt) + ')');
+    await sleep(250);
+    await ctx.evalJs('(function () { var el = document.querySelector(".message-input"); if (!el) return false; el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true })); return true; })()');
+  }
   /* 浮层场景：需要“打开某个菜单”的动作（不是按文字点按钮） */
-  if (scene.special === "model-menu") {
+  if (scene.special === "approval") {
+    /* 只等面板：模式切换与发消息都在 prepare 里（见那里的顺序注释） */
+    if (!(await waitApproval(ctx, 150000))) {
+      results.push({ scene: 'dialog-approval', navOk: false, steps: stepResults, violations: [], note: 'approval panel not shown (check API key / prompt)' });
+      console.log('dialog-approval'.padEnd(34), 'NO-PANEL');
+      await cleanupApproval(ctx);
+      continue;
+    }
+  } else if (scene.special === "model-menu") {
     await evalJs(ctx, `(function () { var b = document.querySelector(".model-selector-inline"); if (b) b.click(); return !!b; })()`);
     await sleep(700);
   } else if (scene.special === "slash-menu") {
@@ -699,6 +834,7 @@ for (const scene of scenes) {
   }
 
   const record = async (name) => {
+    CURRENT_SPECIAL = scene.special ?? null;
     /* 页面可能刚被外部重建/导航打断（dist 换了 hash）——先确保测量函数在，再量 */
     await ensureMeasure();
     const violations = (await measure(ctx)) ?? [];
@@ -713,6 +849,7 @@ for (const scene of scenes) {
       for (const v of violations.slice(0, 40)) console.log(`   ${v.rule} ${v.selector} — ${v.detail} — 「${v.text}」`);
     }
     await snap(name.replace(/[^\p{L}\p{N}_-]+/gu, "_"));
+
   };
 
 
@@ -743,7 +880,7 @@ async function probeDetail(sceneName, record, stepResults) {
 }
 
 async function probeStates(sceneName, record, stepResults) {
-  if (SUBSTATES) {
+  if (SUBSTATES && CURRENT_SPECIAL !== "approval") {
     const tabs = (await collectSubstates(ctx)) ?? [];
     if (VERBOSE) console.log('   sub-tabs=' + tabs.length);
     for (const tab of tabs) {
@@ -790,14 +927,26 @@ async function probeStates(sceneName, record, stepResults) {
   if (FOCUS) {
     const bad = [];
     let checked = 0;
-    for (let i = 0; i < FOCUS_MAX; i++) {
-      await ctx.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
-      await ctx.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
-      await sleep(80);
+    /* 先按一次 Tab 进入键盘焦点模态，之后 focus() 才会命中 :focus-visible */
+    await ctx.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await ctx.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await sleep(80);
+    const targets = (await collectFocusables(ctx, FOCUS_MAX)) ?? [];
+    if (VERBOSE) console.log('   focus targets=' + targets.length);
+    for (const t of targets) {
+      const ok = await focusTarget(ctx, t.id);
+      if (!ok) continue;
+      await sleep(40);
       const info = await focusRingInfo(ctx);
       if (info) checked++;
+      /* 这两类焦点反馈画在祖先上（composer 靠 .input-area:has() 的边框、搜索框靠胶囊 :has 环），
+         自身没有 outline/shadow 是设计，不算缺口 */
+      const ringOnAncestor = /(^|\s)(message-input|sp-search-input)(\s|$)/.test(t.ident.split(".").slice(1).join("."));
+      if (info && info.hasRing === false && !info.inset && !info.ancestorShadow && !ringOnAncestor) {
+        bad.push({ rule: 'R13', selector: sceneName + ' :: focus [' + t.ident + ']', detail: '可聚焦元素既无 outline 也无 box-shadow（键盘焦点不可见）', text: t.label || t.ident });
+      }
       if (info && info.clipped) {
-        bad.push({ rule: 'R11', selector: sceneName + ' :: focus', detail: '焦点环被 ' + info.by + ' 裁掉（ring ' + JSON.stringify(info.ring) + ' vs box ' + JSON.stringify(info.box) + '）', text: info.by });
+        bad.push({ rule: 'R11', selector: sceneName + ' :: focus [' + t.ident + ']', detail: '焦点环被 ' + info.by + ' 裁掉（ring ' + JSON.stringify(info.ring) + ' vs box ' + JSON.stringify(info.box) + '）', text: t.label || info.by });
       }
     }
     if (VERBOSE) console.log('   focus checked=' + checked);
@@ -828,7 +977,11 @@ async function probeStates(sceneName, record, stepResults) {
     }
   } else {
     await record(scene.name);
-    await probeStates(scene.name, record, stepResults);
+    try {
+      await probeStates(scene.name, record, stepResults);
+    } finally {
+      if (scene.special === "approval") await cleanupApproval(ctx);
+    }
     if (DETAIL && /^(manager-|taskcenter-)/.test(scene.name)) await probeDetail(scene.name, record, stepResults);
   }
 }

@@ -556,7 +556,7 @@
 
 /* 第 39 波：文件树条目是可聚焦元素，树是纵向滚动容器 ⇒ 外扩焦点环会被裁，用 inset 环 */
 .file-entry:focus-visible {
-  outline: none;
+  outline: none !important;
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 
