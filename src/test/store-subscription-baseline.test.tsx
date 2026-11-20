@@ -103,6 +103,17 @@ describe("STORE-SUB：无关字段不得触发外壳重渲染", () => {
   });
 });
 
+describe("STORE-SUB：App 不订阅 messages（流式期间不重渲染外壳）", () => {
+  it("App 的选择器里没有 messages；自动保存走 useSessionAutosave", () => {
+    const app = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
+    expect(
+      app,
+      "App 又订阅了 messages ⇒ 流式期间每 100ms 一次 append 都会重渲染 6500 行的外壳（连带 4 棵子树）",
+    ).not.toContain("messages: s.messages");
+    expect(app, "自动保存必须走订阅版 hook（它不需要 App 重渲染）").toContain("useSessionAutosave(saveMessages)");
+  });
+});
+
 describe("STORE-SUB：源码口径", () => {
   const FILES = [
     "src/App.tsx",

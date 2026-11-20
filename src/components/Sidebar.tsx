@@ -37,6 +37,7 @@ import {
 } from "../core/session/session-sort";
 import { copyText } from "../utils/clipboard";
 import { useShallow } from "zustand/react/shallow";
+import { subscribeDomainWrites } from "../core/storage/domain-write-events";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -337,12 +338,28 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   }, [loadAllSessions, projects.length, currentSession?.id, currentProject?.id]);
 
   /**
-   * 5s 心跳：只建一次定时器（不依赖 `allSessions`，否则每 tick 自己把自己重建一遍）。
+   * 会话列表刷新：**由写入通知驱动**（第 6 轮），30s 兜底一次。
    *
-   * 页面隐藏时跳过（用户看不到列表，没必要每 5s 读一次库）；重新可见时立即补一次。
+   * ## 为什么不再每 5s 读一次
+   *
+   * 5s 轮询的唯一目的是「别人可能改了会话表」。而本进程内的写路径（`domain-store` 的
+   * `persistWriteThrough`）**知道**自己刚写了哪张表 —— 它写完就 `notifyDomainWrite`。
+   * 于是常态可以做到「没有写 ⇒ 一次都不读」，而不是「每分钟读 12 次整表」。
+   *
+   * ## 保留的两条兜底
+   *
+   * - **30s 安全轮询**：通知只覆盖本进程内的写；镜像整表重载、引擎侧主动推来的变化收不到；
+   * - **可见性**：页面隐藏时一律不读，切回来立即补一次。
+   *
+   * ## 流式期间为什么跳过
+   *
+   * 一个回合里消息表每 100ms 写一次（appendToMessage → 落库），每次都刷侧栏等于把 5s 轮询
+   * 换成 400ms 轮询 —— 比原来更糟。而流式期间用户就在看这个会话，「未读」本来也不该涨。
+   * 回合结束时 `isStreaming` 变 false，紧接着的消息写会再触发一次，届时刷新即可。
    */
   useEffect(() => {
-    const tick = () => {
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
       if (typeof document !== "undefined" && document.hidden) return;
       try {
         loadAllSessions();
@@ -350,13 +367,28 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         console.warn("[Sidebar] 会话列表刷新失败（保留上一次结果）:", e);
       }
     };
-    const interval = setInterval(tick, 5000);
+    /* 1.5s 合并窗口：一次回合里可能连着写好几张表，合并成一读 */
+    const schedule = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        refresh();
+      }, 1500);
+    };
+    const unsub = subscribeDomainWrites((table) => {
+      if (table !== "sessions" && table !== "messages") return;
+      if (useAppStore.getState().isStreaming) return;
+      schedule();
+    });
+    const safety = setInterval(refresh, 30_000);
     const onVisible = () => {
-      if (!document.hidden) tick();
+      if (!document.hidden) refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearInterval(interval);
+      unsub();
+      if (pending) clearTimeout(pending);
+      clearInterval(safety);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [loadAllSessions]);

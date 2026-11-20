@@ -415,15 +415,24 @@ describe("FC-I1：笔记本回合与 currentSession（P0-I1）", () => {
     expect(predicateBody, "判据必须以 loadedSessionId 为第一判据").toContain(
       "useAppStore.getState().loadedSessionId === sessionId",
     );
-    // ③ 自动保存：按 loadedSessionId 落库（不再按 currentSession 认领列表）
-    const autoIdx = src.indexOf("// Auto-save messages with debounce");
-    const autoEnd = src.indexOf("}, [messages, isStreaming, loadedSessionId]);", autoIdx);
-    expect(autoEnd, "自动保存的 effect 依赖里必须有 loadedSessionId").toBeGreaterThan(autoIdx);
-    const autoBody = src.slice(autoIdx, autoEnd);
-    expect(autoBody, "自动保存必须按列表归属落库").toContain("const owner = loadedSessionId;");
-    expect(autoBody, "落库目标不许再用 currentSession.id（认领列表的口径已换成归属）").not.toContain(
-      "saveMessages(currentSession",
+    // ③ 自动保存：按 loadedSessionId 落库（第 6 轮搬到 hooks/useSessionAutosave.ts，判据跟着落点走）
+    const autosaveSrc = readFileSync(
+      path.join(process.cwd(), "src", "hooks", "useSessionAutosave.ts"),
+      "utf8",
     );
+    expect(
+      autosaveSrc,
+      "自动保存必须按列表归属落库（owner 只能来自 loadedSessionId）",
+    ).toContain("owner: initial.loadedSessionId");
+    expect(autosaveSrc, "变化判据里必须包含归属变化（否则切会话不会重写归属）").toContain(
+      "next.loadedSessionId === prev.owner",
+    );
+    /* 只禁止**用它落库**，不禁止注释里提到它（注释正在解释这条语义为什么必须按归属） */
+    expect(
+      autosaveSrc,
+      "落库目标不许用 currentSession.id（认领列表的口径已换成归属）",
+    ).not.toMatch(/saveMessages\(currentSession/);
+    expect(src, "App 里不许再有第二份自动保存（第二条口径）").not.toContain("// Auto-save messages with debounce");
   });
 
   it("FC-I1c: 行为 —— 列表属于笔记本会话时 saveMessages 就写笔记本会话（与 currentSession 指向谁无关）", () => {

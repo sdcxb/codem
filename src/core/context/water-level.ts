@@ -36,6 +36,7 @@ import { getTokenTracker, estimateToolDefinitionTokens } from "../llm/token-trac
 import { peekLLMEngine } from "../llm";
 import { readRequestContext, messageSetFingerprint } from "../llm/request-context";
 import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
+import { useAppStore } from "../../store";
 
 /**
  * 拿不到真实窗口时的兜底窗口。
@@ -342,7 +343,7 @@ export function reduceWaterBanner(
  */
 export function useStableContextWaterLevel(
   sessionId: string,
-  pollMs = 3000,
+  pollMs = 30_000,
 ): WaterBannerState {
   const [state, setState] = useState<WaterBannerState>(INITIAL_WATER_BANNER_STATE);
   useEffect(() => {
@@ -351,26 +352,63 @@ export function useStableContextWaterLevel(
       return;
     }
     setState(INITIAL_WATER_BANNER_STATE);
-    /*
-     * 第 6 轮：**页面隐藏时不轮询**。
+    /**
+     * 第 6 轮：从「每 3 秒整会话读一次」改成「**事件驱动 + 30s 兜底**」。
      *
-     * 横幅在隐藏页面里本来就看不见，读出来的数字没人用；而每 3s 的整会话读在后台照样占 CPU。
-     * 变回可见时立即补一拍（不等下一个周期），所以切回来看到的永远是新值 ——
-     * 这是纯收益、零语义变化的那一半（试过的"加缓存键"被 WL-3/WL-5 证否，见测试文件注释）。
+     * ## 为什么之前只能轮询
+     *
+     * 注释里写过「没有便宜的版本号可用」：`useAppStore().messages` 只装最后 10 条、
+     * `messageCount` 会随压缩变小、消息表没有对外发订阅。于是只能每 3 秒整会话读一次
+     * （`readContextWaterLevel` 的第一句就是 `listVisibleMessages`）。
+     *
+     * ## 现在为什么可以事件驱动
+     *
+     * 渲染侧真正会改变水位的动作（发消息、流式追加、删除、编辑后重发）**都会改 store 里的
+     * `messages` 引用**；压缩/隐藏则会让 `isStreaming` 从 true 变 false（回合结束）并重新装载。
+     * 所以订阅 store 就够了，不需要"知道具体改了什么"：
+     *
+     * - `messages` 引用变化 ⇒ 调度一次重算（**2s 节流**：流式期间每 100ms 一次，不节流会比轮询更糟）；
+     * - `isStreaming` 由 true 变 false ⇒ **立即**重算一次（回合结束是水位跳变最明显的时刻）；
+     * - 30s 兜底：订阅覆盖不到的变化（镜像重载、引擎侧压缩、别处写库）最多陈旧 30s；
+     * - 页面隐藏时一律不读，`visibilitychange` 变回可见立即补一拍。
+     *
+     * 语义上比原来更**及时**（回合结束立刻更新，而不是等下一个 3s），成本从"常态 0.33 次/秒"
+     * 降到"有动作才读、流式期间 ≤0.5 次/秒、空闲 0"。
      */
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const tick = () => {
       if (typeof document !== "undefined" && document.hidden) return;
       const next = readContextWaterLevel(sessionId);
       setState((prev) => reduceWaterBanner(prev, next));
     };
+    /** 合并短时间内的多次变化（流式 flush 是 100ms 一次） */
+    const schedule = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        tick();
+      }, 2000);
+    };
+
     tick();
-    const timer = setInterval(tick, pollMs);
+    const safety = setInterval(tick, pollMs);
     const onVisible = () => {
       if (!document.hidden) tick();
     };
     document.addEventListener("visibilitychange", onVisible);
+
+    const unsubscribe = useAppStore.subscribe((next, prev) => {
+      if (next.messages !== prev.messages) {
+        schedule();
+        return;
+      }
+      if (prev.isStreaming && !next.isStreaming) tick();
+    });
+
     return () => {
-      clearInterval(timer);
+      unsubscribe();
+      clearInterval(safety);
+      if (refreshTimer) clearTimeout(refreshTimer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, pollMs]);

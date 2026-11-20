@@ -465,6 +465,7 @@ import { reportCredentialStartupIssues } from "./core/storage/credential-startup
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
 import { alertDialog } from "./core/ui/native-dialog";
 import { useShallow } from "zustand/react/shallow";
+import { useSessionAutosave } from "./hooks/useSessionAutosave";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -579,12 +580,11 @@ function App() {
    * 判据：src/test/store-subscription-baseline.test.tsx（无关字段变化不得增加 commit 数）。
    */
   const {
-    messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall,
+    addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall,
     loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed,
     removeGuidanceMessage, clearGuidanceMessages, loadedSessionId,
   } = useAppStore(
     useShallow((s) => ({
-      messages: s.messages,
       addMessage: s.addMessage,
       appendToMessage: s.appendToMessage,
       setStreaming: s.setStreaming,
@@ -1793,8 +1793,9 @@ controller.abort();
 abortControllersRef.current.clear();
 
     // Save current messages before switching models
-    if (currentProject && currentSession && messages.length > 0) {
-      console.log(`[ModelChange] Saving ${messages.length} messages before switching to ${model}`);
+    const liveBeforeModelSwitch = useAppStore.getState().messages;
+    if (currentProject && currentSession && liveBeforeModelSwitch.length > 0) {
+      console.log(`[ModelChange] Saving ${liveBeforeModelSwitch.length} messages before switching to ${model}`);
       saveMessages(currentSession.id);
     }
 
@@ -2748,7 +2749,8 @@ flushStreamBuffer(); // flush all on unmount
       const modeChanged = effectiveMode !== prevMode;
 
       // Save messages before switching modes
-      if (modeChanged && currentProject && currentSession && messages.length > 0) {
+      const liveBeforeModeSwitch = useAppStore.getState().messages;
+      if (modeChanged && currentProject && currentSession && liveBeforeModeSwitch.length > 0) {
         saveMessages(currentSession.id);
       }
 
@@ -3148,7 +3150,7 @@ flushStreamBuffer(); // flush all on unmount
        * —— 用 ref 判定就会把笔记本的列表写给主会话（被 `saveMessages` 的归属守卫拒绝 + 误报失败）。
        */
       const loaded = useAppStore.getState().loadedSessionId;
-      if (loaded && loaded !== currentSession.id && messages.length > 0) {
+      if (loaded && loaded !== currentSession.id && useAppStore.getState().messages.length > 0) {
         saveMessages(loaded);
       }
       messagesSessionRef.current = currentSession.id;
@@ -3189,47 +3191,21 @@ flushStreamBuffer(); // flush all on unmount
     }
   }, [currentProject?.id, currentSession?.id]);
 
-  // Auto-save messages with debounce (every 2 seconds during streaming, immediately when done)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    /**
-     * ## 自动保存按"列表的归属"保存，而不是按 `currentSession`（第 45 轮 P0-I1）
-     *
-     * 这段原来要求 `messagesSessionRef.current === currentSession.id` 并用
-     * `currentSession.id` 落库 —— 也就是"用全局当前会话去认领这份列表"。
-     * 笔记本回合原来靠改写 `currentSession` 让这个判据恰好成立（于是笔记本的自动保存**
-     * 反而被跳过**：`messagesSessionRef` 还是主会话，条件不成立）；
-     * 一旦不再改写（本轮的修法），同一条判据就会把**笔记本的列表**当成主会话的列表去写
-     * → 被 `saveMessages` 的归属守卫拒绝并每 2 秒上报一次假失败。
-     *
-     * 正确口径只有一个：这份 `messages` 属于谁（`loadedSessionId`）就写给谁。
-     * 于是笔记本回合期间：自动保存写的是**笔记本会话**（原来是漏保存的）；
-     * 主聊天：与改之前完全一致；后台会话：依旧由 loop 的显式落库负责。
-     */
-    const owner = loadedSessionId;
-    if (owner && messages.length > 0) {
-      if (isStreaming) {
-        // Debounce during streaming
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => {
-          debugLog("autosave", `Debounce save: ${messages.length} messages to ${owner}`);
-          saveMessages(owner);
-        }, 2000);
-      } else {
-        // Save immediately when not streaming
-        console.log(`[AutoSave] Immediate save: ${messages.length} messages to ${owner}`);
-        saveMessages(owner);
-      }
-    }
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [messages, isStreaming, loadedSessionId]);
+  /*
+   * 第 6 轮：自动保存搬到 `useSessionAutosave`（**store 订阅**）。
+   *
+   * 原来它是一个依赖 `[messages, isStreaming, loadedSessionId]` 的 effect —— 语义没问题，
+   * 但它让 App 必须订阅 `messages` ⇒ 流式期间每 100ms 一次 append 都会重渲染 6500 行的 App
+   * （连带 TitleBar/Sidebar/RightSidebar/ChatPanel 四棵子树）。自动保存只需要“看到变化就写库”，
+   * 不需要重渲染；判据见 `src/test/session-autosave-subscription.test.tsx`（6 条，逐条对齐原语义）。
+   */
+  useSessionAutosave(saveMessages);
 
   // Save messages before unmount or session switch
   useEffect(() => {
     return () => {
-      if (currentSession && messages.length > 0) {
+      const liveMessages = useAppStore.getState().messages;
+      if (currentSession && liveMessages.length > 0) {
         saveMessages(currentSession.id);
       }
     };
@@ -3965,7 +3941,7 @@ if (!session) {
   const handleSaveAIResponseAsNote = () => {
     if (!activeNotebookId) return;
     // Find the last AI message
-    const lastAIMessage = [...messages].reverse().find(m => m.role === 'assistant' && m.content.trim());
+    const lastAIMessage = [...useAppStore.getState().messages].reverse().find(m => m.role === 'assistant' && m.content.trim());
     if (!lastAIMessage) {
       void alertDialog(lang === 'zh' ? '没有可保存的 AI 回复' : 'No AI response to save');
       return;

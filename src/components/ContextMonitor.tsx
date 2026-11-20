@@ -16,6 +16,7 @@ import {
 import { getLLMEngine, peekLLMEngine } from "../core/llm";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
+import { useAppStore } from "../store";
 import { pruneLargeToolResult } from "../core/llm/context-fold";
 import { foldForLevelIfNeeded } from "../core/llm/tool-output-fold";
 import {
@@ -651,6 +652,9 @@ export function manualCompact(sessionId: string): {
 }
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
+  /** 刷新入口的 ref（订阅在另一个 effect 里，不能把订阅塞进定时器 effect 的依赖） */
+  const updateRef = useRef<() => void>(() => {});
+
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
   /** 24:1264：Bot Team 默认关闭；关闭时两个面板都不渲染。 */
   useEffect(() => {
@@ -1016,13 +1020,16 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       }
     };
 
+    /* 事件驱动入口：订阅里调用它（effect 里定义的 update 只能这样暴露） */
+    updateRef.current = update;
     update();
     /* 第 6 轮：页面隐藏时不轮询（面板看不见；变回可见时立即补一拍） */
     const gatedUpdate = () => {
       if (typeof document !== "undefined" && document.hidden) return;
       void update();
     };
-    const interval = setInterval(gatedUpdate, 3000);
+    /* 第 6 轮：3s 轮询 → 30s 兜底；真正触发来自下面的 store 订阅 */
+    const interval = setInterval(gatedUpdate, 30_000);
     const onVisible = () => {
       if (!document.hidden) void update();
     };
@@ -1032,6 +1039,34 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, visible]);
+  /**
+   * 第 6 轮：数据变了才刷新（面板原来每 3s 整会话读一次，不管有没有变）。
+   *
+   * 触发条件与提示条一致：`messages` 引用变化（2s 合并）或回合结束（立即）；
+   * 30s 兜底在定时器 effect 里（覆盖订阅收不到的变化），页面隐藏时一律不读。
+   */
+  useEffect(() => {
+    if (!visible) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        updateRef.current();
+      }, 2000);
+    };
+    const unsubscribe = useAppStore.subscribe((next, prev) => {
+      if (next.messages !== prev.messages) {
+        schedule();
+        return;
+      }
+      if (prev.isStreaming && !next.isStreaming) updateRef.current();
+    });
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
+  }, [visible]);
 
   /**
    * 第 227 波：换会话时把**压缩回执与冷却期**清掉。

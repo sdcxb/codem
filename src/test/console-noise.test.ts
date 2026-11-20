@@ -109,9 +109,16 @@ describe("控制台噪声契约（第 58 波）", () => {
     expect(provider).not.toMatch(/console\.log\("\[Provider\] Tool call end:"/);
     expect(provider).toContain('debugLog("provider", "Tool call end:"');
 
+    /*
+     * 第 6 轮：自动保存从 App 的 effect 搬到 `useSessionAutosave`（store 订阅，见该文件注释）。
+     * 判据的**意图不变**：autosave 的日志必须走 debugLog（而不是每 2 秒一条 console.log），
+     * 只是落点从 App.tsx 变成那个 hook。
+     */
     const app = read("App.tsx");
+    const autosave = read("hooks/useSessionAutosave.ts");
     expect(app).not.toMatch(/console\.log\(`\[AutoSave\] Debounce save/);
-    expect(app).toContain('debugLog("autosave"');
+    expect(autosave).toContain('debugLog("autosave"');
+    expect(autosave).not.toMatch(/console\.log\(`\[AutoSave\]/);
   });
 
   /**

@@ -744,6 +744,83 @@ DSH 外部插件卡加载/检查更新/升级），每处都补 `catch` + 具体
 - 运行层 IPC 计数在 `__TAURI__.core` 被冻结的前提下无法实现；若要，得在 Rust 侧加计数或改前端封装，
   两者都超出「不改业务逻辑」的边界（前者可做，但需要改 Rust 并重启应用，留作下一轮）。
 
+## 3J. 第 7 轮：把三项性能债**做完**（轮询 → 通知驱动；外壳不再随流式重渲染）（2026-11-20）
+
+第 6 轮做的是「三项的第一半」：侧栏换成一次整表读、水位只加了可见性闸门、外壳换成逐字段选择。
+这一轮把它们各自的**剩余成本**消掉 —— 全部有「改前红 / 改后绿」的基线，且每项都做了变异自证。
+
+### 3J.1 地基：域写通知（`core/storage/domain-write-events.ts`）
+
+侧栏 5s 重读、水位 3s 全量读，目的都只是「数据可能变了，再读一遍」。而写路径**知道**自己刚写了哪张表：
+`domain-store.persistWriteThrough` 是唯一落点（镜像 `applyWriteMany` / `applyDelete` 之后）。
+于是新增 `subscribeDomainWrites(listener)`，在落点通知；边界写在文件头：
+
+- 只覆盖**本进程内**经 domain-store 的写；镜像整表重载与引擎侧主动推来的变化**收不到** ⇒ 订阅方必须保留低频兜底；
+- 监听方抛错**不影响写**（写是事实，通知是尽力而为）。
+
+判据 `src/test/domain-write-events.test.ts`（写 ⇒ 收到表名；监听抛错写仍返回 true；取消订阅后不再收到）。
+
+### 3J.2 侧栏：每 5s 重读 → **有写才读**
+
+- 心跳改为：订阅 `sessions` / `messages` 的域写 ⇒ **1.5s 合并窗口**后刷新一次；
+  `isStreaming` 期间跳过（否则一个回合里消息表每 100ms 写一次，会把 5s 轮询变成 400ms 轮询，比原来更糟）；
+  30s 安全轮询兜底；页面隐藏一律不读，切回立即补一次。
+- 读数（判据实测）：无写入时 **10 秒 0 次整表读**（改前 2 次）；一次回合结束后的批量写只触发 **1 次**。
+- 判据 `src/test/sidebar-session-polling.test.tsx`（5 条）。
+  **变异自证**：①把心跳退回 `setInterval(refresh, 5000)` ⇒ 「10 秒 0 次」红（实测 3 次）；
+  ②把 `notifyDomainWrite` 从落点删掉 ⇒ `domain-write-events` 判据红。
+
+### 3J.3 水位：每 3s 整会话读 → **事件驱动 + 30s 兜底**
+
+- 触发条件与提示条语义对齐：store 的 `messages` 引用变化（**2s 合并**）、`isStreaming` true→false（**立即**）、
+  30s 兜底、`visibilitychange` 立即补拍；页面隐藏一律不读。
+- 读数（判据实测）：挂载后 **9 秒内只读 1 次**（改前 4 次）；回合结束立刻多一次（比原来的 3s 轮询更及时）。
+- `ContextMonitor` 面板同样处理：3s → 30s 兜底 + store 订阅（2s 合并 / 回合结束立即）。
+- 判据 `src/test/water-poll-visibility.test.ts`（5 条）。
+  **变异自证**：把轮询改回 3s ⇒ 「9 秒 1 次」红（实测 4 次）。
+
+### 3J.4 外壳：App 不再订阅 `messages`（流式期间不重渲染）
+
+自动保存原来是 App 里依赖 `[messages, isStreaming, loadedSessionId]` 的 effect —— 语义正确，
+但它让 **App 必须订阅 `messages`**：流式期间每 100ms 一次 `appendToMessage` ⇒ 6500 行的 App 重渲染一次，
+连带它渲染的 TitleBar / Sidebar / RightSidebar / ChatPanel 四棵子树（都不是 memo）。
+
+- 搬到 `src/hooks/useSessionAutosave.ts`：**store 订阅**里按同一套规则写库
+  （归属 = `loadedSessionId`；流式 2s 防抖；非流式立即；无归属/空列表不写；卸载清计时器）。
+  日志仍走 `debugLog("autosave", …)`。
+- App 的选择器里删掉 `messages`；其余用到 messages 的地方（模型切换前保存、模式切换前保存、
+  切会话前保存、保存 AI 回复为笔记）改成**调用时刻** `useAppStore.getState().messages` —— 语义等价且更新鲜。
+- 判据：`src/test/session-autosave-subscription.test.tsx`（6 条，逐条对齐原 effect 的语义）；
+  `src/test/store-subscription-baseline.test.tsx` 增加「App 选择器里没有 `messages`」。
+  **变异自证**：①订阅回调改成 no-op ⇒ 自动保存三条红；②把 `messages: s.messages` 加回 App 选择器 ⇒ 源码口径红。
+- 影响范围说明（如实）：`ChatPanel` 仍然订阅 `messages` —— 它**必须**随流式更新才能显示文字；
+  这一轮消掉的是「外壳跟着流式重渲染」这部分，不是「消息列表渲染」本身。
+
+### 3J.5 运行层复测与一处探针更正
+
+- 新构建爬取 **261 次点击 / 0 console.error / 0 未捕获拒绝 / 0 空白浮层**；
+  测试会话里点会话行切换：4 条 → 0 条（空会话）→ 切回 4 条且标记仍在（`E2E-203988`）。
+- 整页 reload 后助手消息与点赞状态仍在（持久化探针 `ok: true`）。
+- **上一轮那个 65 条「死点击」是探针假阳性**，不是产品缺陷：爬虫每轮都会点「新建会话」，
+  开发库攒到 174 个空会话；两个空会话互切时正文完全相同，而当时的 DOM 指纹不含「选中态」。
+  已修探针（指纹加入当前选中会话/页签标题；「新建会话/新建项目」这类会创建实体的按钮改为跳过），
+  复跑回到 **5 条**（都是窗口控制等已知的假阳性）。
+
+### 3J.6 读数
+
+- `tsc --noEmit` 0；全量测试 **10311 passed / 18 skipped / 991 files / 0 failed**；
+- `scan-ui` 0 error / 0 warn、knip 46/46·30/30、可达性通过、上报点分诊 314=314=314；
+- 新增判据文件：`domain-write-events.test.ts`、`session-autosave-subscription.test.tsx`，
+  以及三处既有判据的锚点更新（`console-noise`、`feature-context-fixes` FC-I1b、`session-unread-badge` UNREAD-8）
+  —— 三处都是「实现搬家、意图不变」，注释里写明了为什么改锚点。
+
+### 3J.7 仍未做 / 已知边界
+
+- **`ChatPanel` 流式重渲染**：它必须重渲染才能显示新文字；要再降只能把消息列表拆成独立订阅的子树
+  （`MessageBubble` 已 memo、合并对象已按内容缓存，单次成本已经很低），属结构性重构，留待需要时再做；
+- **arm64 真机**仍未验证；
+- **运行层 IPC 计数**受 `__TAURI__.core` 冻结限制，无法在前端实现（要做得改 Rust 侧计数）。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

@@ -153,11 +153,16 @@ describe("会话未读（已读水位）", () => {
      * 第 6 轮：轮询体抽成了 `tick()`（定时器只建一次，不再依赖 allSessions 反复重建）。
      * 判据跟着改到新形态上，但**意图不变**：刷新必须发生在心跳里，而不是只靠挂载那一次。
      */
+    /*
+     * 第 7 轮：心跳改成「域写通知驱动 + 30s 兜底」（`subscribeDomainWrites`）。
+     * 判据的**意图不变**：会话列表刷新必须挂在心跳路径上，而不是只靠挂载那一次。
+     */
+    expect(sidebar, "心跳必须订阅域写（有变化才刷新）").toContain("subscribeDomainWrites(");
     expect(
       sidebar,
-      "侧栏心跳里必须刷新会话列表（只按旧快照算 = 有新消息也不显示徽标 —— 真机抓到过）",
-    ).toMatch(/const tick = \(\) => \{[\s\S]{0,400}?loadAllSessions\(\);/);
-    expect(sidebar, "心跳必须真的挂到定时器上（否则 tick 写得再对也不会跑）").toContain("setInterval(tick, 5000)");
+      "心跳里必须真的调用 loadAllSessions（只订阅不刷新 = 徽标永远不动）",
+    ).toMatch(/const refresh = \(\) => \{[\s\S]{0,200}?loadAllSessions\(\);/);
+    expect(sidebar, "30s 安全轮询必须挂上（通知覆盖不到的变化靠它兜底）").toContain("setInterval(refresh, 30_000)");
     expect(chat, "正在看的会话要按同一频率再推进一次水位（最后一条落库可能晚于 effect）").toContain("setInterval(mark");
   });
 });

@@ -28,6 +28,7 @@
 import { getStoragePort, hasStoragePort } from "./port";
 import { reportPersistFailure, type PersistFailureOptions } from "./persist-failure";
 import { recordWrite } from "./write-audit";
+import { notifyDomainWrite } from "./domain-write-events";
 
 /** 域镜像端口（`RustDomainMirror` 的能力子集；不直接依赖 rust-port 以免循环引用） */
 export interface DomainMirrorPort {
@@ -750,6 +751,9 @@ function persistWriteThrough(
     // 不需要第二套 API；这与当场写路径的 `applyDelete` 是同一条规则。
     port.domains.applyDelete(table, (resolved.where as Record<string, unknown> | undefined) ?? {});
   }
+  /* 第 6 轮：镜像已应用，通知订阅方（侧栏/水位据此「有变化才读」） */
+  notifyDomainWrite(table);
+
   const ids = resolved._ids as string[] | undefined;
   const lineParams = pickLineParams(resolved);
   recordWrite(cmd, lineParams);
