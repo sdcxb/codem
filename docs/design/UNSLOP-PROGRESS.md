@@ -660,6 +660,90 @@ DSH 外部插件卡加载/检查更新/升级），每处都补 `catch` + 具体
   水位轮询每 3s 全量读一次消息、`App.tsx` 无选择器订阅整店（改动面太大，需单独一轮带回归基线）。
 - 目标条目前只覆盖「显示 + 暂停/恢复/清除」，**编辑目标**入口未接线（`onEdit` 未传）。
 
+## 3I. 第 6 轮：移动端装配验证 + 三项「改动面大」的性能债（2026-11-20）
+
+用户口径：装 Flutter SDK、装完在模拟器上验配色；把上一轮判断「改动面大还没做」的三项**带回归基线**做掉。
+
+### 3I.1 移动端：从「改了源码」到「装机可见」
+
+| 步骤 | 结果 |
+|---|---|
+| Flutter SDK | 官方 stable **3.47.9**（Dart **3.13.7**，正好满足 `mobile/pubspec.yaml` 的 `sdk: ^3.13.7`），装在 `C:\dev\flutter`，zip 的 sha256 与官方 `releases_windows.json` 逐字一致 |
+| 工具链 | `flutter doctor`：Android 工具链 ✅（SDK 36.0.0 / build-tools 36.0.0 / JDK 17.0.20 / 许可全部已接受）、`emulator-5556`（Android 15, x86_64）在线；只有 Chrome 缺席（与安卓无关） |
+| 构建 | `flutter build apk --debug --target-platform android-x64` → `mobile/build/app/outputs/flutter-apk/app-debug.apk`（Gradle `assembleDebug` 96.5s，退出码 0） |
+| 装机 | `adb -s emulator-5556 install -r` → `Success`；`am start` 后截图 |
+| 配色（深色） | 徽标底色、`新会话` 主按钮、`全部` 选中 chip 边框、演示数据横幅、底部选中 tab **全部是琥珀 `#C6A15B` 系**，无紫色残留 |
+| 配色（浅色） | 切到浅色主题：选中 chip 边框/填充、开关、选中 tab 是**深琥珀 `#6D5423` 系**，白底上对比清晰 |
+
+⚠️ 这一条只覆盖 **x86_64 模拟器**。**arm64 真机仍未验证**（PRoot / 厂商保活 / 推送依旧没有证据）——
+上一轮记的这条限制**依然成立**，只是「源码改了但没装机」这一半现在补上了。
+
+### 3I.2 三项性能债（每项都有「改前红、改后绿」的基线）
+
+**① 侧栏 5s 刷新：从 O(项目数 × 整表) 到 O(整表)，且定时器不再被重建**
+
+- 改前：`loadAllSessions()` 对**每个项目**调一次 `getProjectSessions(p.id)` → `listSessions` → 端口
+  `domains.find({project_id})`（实现是「整表复制 + 全量过滤」）；更糟的是它被塞进依赖 `[allSessions]`
+  的 effect 里、定时器又调它 ⇒ 每次 tick 都在**清掉并重建** interval。
+- 改后：新增 `listSessionsGroupedByProject()`（一次整表读 + 内存分桶，与 `listSessions` 共用
+  `compareSessions` / `isChildSession` / `withPendingMessageWrites` 三处语义），侧栏心跳只建一次定时器，
+  未读水位在**同一个 tick** 里用刚读到的数据重算；页面隐藏时跳过、变回可见立即补一拍。
+- 判据：`src/test/sidebar-session-polling.test.tsx`。**变异自证**：把 `loadAllSessions` 退回「按项目逐个读」
+  ⇒ 判据红（`逐项目读 0 次` 失败）。
+
+**② 水位轮询：隐藏时不读（试过的「缓存键」方案被既有判据证否，已撤销）**
+
+- 现场：`readContextWaterLevel()` 第一句就是 `listVisibleMessages()`（整会话读），而它被每 3 秒调一次；
+  原来的 `waterCache` 键要**先读出 visible 才能算**，所以缓存只省了估算、没省那次读。
+- 先做的方案（用会话行 `message_count/lastMessageAt` 当闸门键）**被 WL-3 / WL-5 证否**：
+  压缩/隐藏会让消息集合变化而条数不变，闸门会让提示条在压缩后继续显示「上下文即将满」——
+  那是把缺陷修出来了，所以整段撤销（`water-gate.ts` 与它的判据一起删掉）。
+- 最终只做零语义风险的那一半：**页面隐藏时不轮询**，`visibilitychange` 变回可见立即补一拍；
+  `ContextMonitor` 的 3s 轮询同样处理。
+- 判据：`src/test/water-poll-visibility.test.ts`（隐藏 3 周期读 0 次；可见每周期 1 次；切回立即 1 次）。
+  既有 24 条水位判据全绿（含 WL-3 / WL-5）。
+
+**③ 外壳整店订阅：无关字段不许触发重渲染**
+
+- 改前：`App` / `ChatPanel` / `Sidebar` / `InputArea` / `RightSidebar` 都是
+  `const {...} = useAppStore()`（无选择器）⇒ Zustand v5 下等价于订阅整个 state ⇒ **任何一次 `set()`**
+  （反馈、持久化告警、别的会话的活跃标记…）都会让外壳重渲染，App 一渲染就重建
+  TitleBar / Sidebar / RightSidebar / ChatPanel 四棵子树。
+- 改后：五个组件全部改成 `useShallow` 逐字段选择（动作单独选，引用稳定）。
+- 判据：`src/test/store-subscription-baseline.test.tsx`：①往 `feedback` 写一条（侧栏不读它）⇒
+  侧栏 commit 数**不变**；②`projects` 换一份 ⇒ commit 数**必须增加**（反向对照，防「永不更新的选择器」）；
+  ③源码口径：五个文件里不许再出现 `= useAppStore();` / `= useProjectStore();`。
+  **变异自证**：把 Sidebar 退回整店订阅 ⇒ ① 红（commit 4 vs 3）且 ③ 红。
+
+### 3I.3 测量口径的一处更正（重要）
+
+上一轮报告里的「爬取：0 IPC 失败」**是假读数**：本仓渲染侧走 `window.__TAURI__.core.invoke`
+（`withGlobalTauri: true`），而 `__TAURI__.core` 是 **`Object.freeze` 的**（`invoke` 的 `writable:false`、
+`configurable:false`），因此既包不住全局入口，也拦不到它内部闭包持有的 `__TAURI_INTERNALS__.invoke`。
+本轮实测：手动装 wrapper 后 `__manual` 仍为空 ⇒ IPC 计数恒 0。
+
+- **仍然可信**：`console.error` / `window.error` / `unhandledrejection`（这三个钩子是独立装的，
+  上一轮抓到的「复制消息 → NotAllowedError 未捕获」就是它们抓出来的，那条修复真实有效）。
+- **不可信**：IPC 失败计数（恒 0）、以及依赖它的「死点击」补充判据。
+- 本轮的替代做法：把可验证的成本**下沉到判据层**（上面的三组基线 + 变异自证），
+  运行层只保留可观测的 console/异常/崩溃/空白浮层检查。
+
+### 3I.4 读数
+
+- `tsc --noEmit` 0 错误；全量测试见本轮提交前的最后一条记录；
+- Flutter 构建：`assembleDebug` 退出码 0，APK 装机成功，深浅两色截图见上表；
+- 三个新判据文件：`sidebar-session-polling.test.tsx`、`water-poll-visibility.test.ts`、
+  `store-subscription-baseline.test.tsx`，各自都有变异自证记录。
+
+### 3I.5 仍未做（如实记账）
+
+- **arm64 真机**（PRoot / WebView / 厂商保活）仍无证据；
+- `App`/`ChatPanel` 的**流式期间**重渲染成本没有降：`messages` 仍是它们要读的字段，
+  真正的解法是「把消息列表的渲染订阅从 App 里挪走」+ 给外壳子树加 memo 边界，
+  那是另一次结构性改动（本轮只做了「无关字段」这一半，并给出了可复跑的基线）。
+- 运行层 IPC 计数在 `__TAURI__.core` 被冻结的前提下无法实现；若要，得在 Rust 侧加计数或改前端封装，
+  两者都超出「不改业务逻辑」的边界（前者可做，但需要改 Rust 并重启应用，留作下一轮）。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

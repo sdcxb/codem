@@ -351,13 +351,28 @@ export function useStableContextWaterLevel(
       return;
     }
     setState(INITIAL_WATER_BANNER_STATE);
+    /*
+     * 第 6 轮：**页面隐藏时不轮询**。
+     *
+     * 横幅在隐藏页面里本来就看不见，读出来的数字没人用；而每 3s 的整会话读在后台照样占 CPU。
+     * 变回可见时立即补一拍（不等下一个周期），所以切回来看到的永远是新值 ——
+     * 这是纯收益、零语义变化的那一半（试过的"加缓存键"被 WL-3/WL-5 证否，见测试文件注释）。
+     */
     const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       const next = readContextWaterLevel(sessionId);
       setState((prev) => reduceWaterBanner(prev, next));
     };
     tick();
     const timer = setInterval(tick, pollMs);
-    return () => clearInterval(timer);
+    const onVisible = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [sessionId, pollMs]);
   return state;
 }

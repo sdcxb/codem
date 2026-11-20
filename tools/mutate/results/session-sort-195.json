@@ -1,8 +1,8 @@
 {
   "wave": "session-sort-195",
   "description": "O-57 的第三件事：侧栏会话的显示排序（两种键 × 两种方向 + 持久化 + 反向对照「不弄坏存储层的 sort_order」），以及它依赖的两条实现约束（引擎/替身维护活动时间、渲染侧不许当第二个写入者）。",
-  "runAt": "2026-10-10T02:45:08.710Z",
-  "specFingerprint": "f8fa62f20113e1122292cd658c8eb9b49e8950dc",
+  "runAt": "2026-11-20T01:17:19.129Z",
+  "specFingerprint": "0068e5c735257ffa71b489fc79ab8142920858e2",
   "files": [
     "src/core/session/session-sort.ts",
     "src/components/Sidebar.tsx",
@@ -36,7 +36,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4562
+      "ms": 7470
     },
     {
       "id": "MUT-2 比较器不再让置顶优先",
@@ -57,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4505
+      "ms": 8417
     },
     {
       "id": "MUT-3 名称比较退化成码点比较（去掉 numeric）",
@@ -77,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2254
+      "ms": 4538
     },
     {
       "id": "MUT-4 解析偏好时不校验（坏值当合法值用）",
@@ -97,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2221
+      "ms": 4433
     },
     {
       "id": "MUT-5 偏好写进设置时写成默认值",
@@ -118,7 +118,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4527
+      "ms": 8571
     },
     {
       "id": "MUT-6 侧栏装载会话时不排序",
@@ -126,8 +126,8 @@
       "patches": [
         {
           "file": "src/components/Sidebar.tsx",
-          "from": "      sessionsMap[p.id] = sortSessionsForDisplay(getProjectSessions(p.id), sessionSort);",
-          "to": "      sessionsMap[p.id] = getProjectSessions(p.id);"
+          "from": "      sessionsMap[p.id] = sortSessionsForDisplay(grouped.get(p.id) ?? [], sessionSort);",
+          "to": "      sessionsMap[p.id] = grouped.get(p.id) ?? [];"
         }
       ],
       "tests": [
@@ -138,7 +138,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4510
+      "ms": 8455
     },
     {
       "id": "MUT-7 展开项目时绕过排序函数",
@@ -158,7 +158,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4510
+      "ms": 7758
     },
     {
       "id": "MUT-8 换排序时不重算 allSessions（依赖数组少一项）",
@@ -166,8 +166,8 @@
       "patches": [
         {
           "file": "src/components/Sidebar.tsx",
-          "from": "  }, [projects.length, currentSession?.id, currentProject?.id, sessionSort]);",
-          "to": "  }, [projects.length, currentSession?.id, currentProject?.id]);"
+          "from": "  }, [projects, sessionSort]);",
+          "to": "  }, [projects]);"
         }
       ],
       "tests": [
@@ -178,7 +178,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4517
+      "ms": 8386
     },
     {
       "id": "MUT-9 假端口不再与引擎同形（不维护活动时间）",
@@ -199,7 +199,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2507
+      "ms": 4287
     },
     {
       "id": "MUT-10 渲染侧又变成第二个写入者（改名顺手盖 Date.now()）",
@@ -219,7 +219,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2378
+      "ms": 4720
     },
     {
       "id": "MUT-11 反向对照：只改一行说明注释",
@@ -240,7 +240,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4486
+      "ms": 7876
     }
   ]
 }

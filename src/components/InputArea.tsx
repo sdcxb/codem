@@ -71,6 +71,7 @@ const securityIconMap: Record<string, JSX.Element> = {
  * 被误判为"不支持视觉"（真机 bug）。现在只做**转出口**，不再定义任何模型清单。
  */
 import { modelSupportsVision } from "../core/llm/model-capabilities";
+import { useShallow } from "zustand/react/shallow";
 
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -617,7 +618,19 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [showSourceSelector, setShowSourceSelector] = useState(false);
   const [notebookSources, setNotebookSources] = useState<Array<{ id: string; name: string; type: "notebook" | "file" | "url" }>>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
-  const { currentProject, currentSession, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
+  /* 第 6 轮：逐字段选择（整店订阅会让 2000 行的输入区跟着任何一次无关 set() 重渲染） */
+  const { currentProject, currentSession, projects, openProject, createSession, switchSession, getProjectSessions } =
+    useProjectStore(
+      useShallow((s) => ({
+        currentProject: s.currentProject,
+        currentSession: s.currentSession,
+        projects: s.projects,
+        openProject: s.openProject,
+        createSession: s.createSession,
+        switchSession: s.switchSession,
+        getProjectSessions: s.getProjectSessions,
+      })),
+    );
 
   /**
    * 文档索引集合（ADR-0008）：项目优先，无项目退会话级。

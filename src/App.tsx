@@ -464,6 +464,7 @@ import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaint
 import { reportCredentialStartupIssues } from "./core/storage/credential-startup-report";
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
 import { alertDialog } from "./core/ui/native-dialog";
+import { useShallow } from "zustand/react/shallow";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -566,8 +567,50 @@ function App() {
   const lang = useLang();
   // 窗口状态持久化（对标 dsh main-window-state）：恢复上次窗口尺寸/位置
   useWindowState();
-  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages, loadedSessionId } = useAppStore();
-  const { currentProject, currentSession, projects, createSession, dbReady, loadFromDB } = useProjectStore();
+  /*
+   * 第 6 轮：外壳不再**整店订阅**。
+   *
+   * 原来 useAppStore() / useProjectStore() 没有选择器 ⇒ 任何一次 set()（反馈、持久化告警、
+   * 别的会话的活跃标记、工具审批状态…）都会让 6500 行的 App 重渲染，进而重建
+   * TitleBar / Sidebar / RightSidebar / ChatPanel 这几棵子树（它们都不是 memo 的）。
+   * 用 useShallow 一次挑出**本组件真正读的字段**：语义等价（任一字段变仍会重渲染），
+   * 无关字段变则不再重渲染。
+   *
+   * 判据：src/test/store-subscription-baseline.test.tsx（无关字段变化不得增加 commit 数）。
+   */
+  const {
+    messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall,
+    loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed,
+    removeGuidanceMessage, clearGuidanceMessages, loadedSessionId,
+  } = useAppStore(
+    useShallow((s) => ({
+      messages: s.messages,
+      addMessage: s.addMessage,
+      appendToMessage: s.appendToMessage,
+      setStreaming: s.setStreaming,
+      isStreaming: s.isStreaming,
+      addToolCall: s.addToolCall,
+      updateToolCall: s.updateToolCall,
+      loadMessages: s.loadMessages,
+      saveMessages: s.saveMessages,
+      setLLMStatus: s.setLLMStatus,
+      addGuidanceMessage: s.addGuidanceMessage,
+      markGuidanceConsumed: s.markGuidanceConsumed,
+      removeGuidanceMessage: s.removeGuidanceMessage,
+      clearGuidanceMessages: s.clearGuidanceMessages,
+      loadedSessionId: s.loadedSessionId,
+    })),
+  );
+  const { currentProject, currentSession, projects, createSession, dbReady, loadFromDB } = useProjectStore(
+    useShallow((s) => ({
+      currentProject: s.currentProject,
+      currentSession: s.currentSession,
+      projects: s.projects,
+      createSession: s.createSession,
+      dbReady: s.dbReady,
+      loadFromDB: s.loadFromDB,
+    })),
+  );
 
   /**
    * S4 / O-45：记忆面板与侧栏角标读的**必须是同一对键**，否则会出现最坏的一类缺陷 ——

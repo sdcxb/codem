@@ -149,12 +149,15 @@ describe("会话未读（已读水位）", () => {
     const chat = src.readFileSync("src/components/ChatPanel.tsx", "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
 
+    /*
+     * 第 6 轮：轮询体抽成了 `tick()`（定时器只建一次，不再依赖 allSessions 反复重建）。
+     * 判据跟着改到新形态上，但**意图不变**：刷新必须发生在心跳里，而不是只靠挂载那一次。
+     */
     expect(
       sidebar,
-      "侧栏轮询里必须先刷新会话列表（只按旧快照算 = 有新消息也不显示徽标 —— 真机抓到过）。" +
-        "判据要落在**轮询体内那一句**上：文件别处（挂载时的那个 effect）也有 loadAllSessions()，" +
-        "只断言'文件里出现过'会被它蒙混过去",
-    ).toContain("loadAllSessions(); } catch");
+      "侧栏心跳里必须刷新会话列表（只按旧快照算 = 有新消息也不显示徽标 —— 真机抓到过）",
+    ).toMatch(/const tick = \(\) => \{[\s\S]{0,400}?loadAllSessions\(\);/);
+    expect(sidebar, "心跳必须真的挂到定时器上（否则 tick 写得再对也不会跑）").toContain("setInterval(tick, 5000)");
     expect(chat, "正在看的会话要按同一频率再推进一次水位（最后一条落库可能晚于 effect）").toContain("setInterval(mark");
   });
 });

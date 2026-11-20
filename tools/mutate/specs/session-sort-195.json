@@ -11,7 +11,10 @@
           "to": "      if (ta !== tb) return ta - tb;"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/session-display-sort.test.ts",
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -24,7 +27,10 @@
           "to": "    const pa = 0;\n    const pb = 0;\n    if (pa !== pb) return pb - pa;"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/session-display-sort.test.ts",
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +43,9 @@
           "to": "      const cmp = String(a.title ?? \"\") < String(b.title ?? \"\") ? -1 : String(a.title ?? \"\") > String(b.title ?? \"\") ? 1 : 0;"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts"],
+      "tests": [
+        "src/test/session-display-sort.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +58,9 @@
           "to": "  void validKey;\n  void validDir;\n  return { key: (key ?? \"recent\") as SessionSortKey, dir: (dir ?? \"desc\") as SessionSortDir };"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts"],
+      "tests": [
+        "src/test/session-display-sort.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -63,7 +73,10 @@
           "to": "    setSetting(SESSION_SORT_SETTING_KEY, JSON.stringify(DEFAULT_SESSION_SORT));"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/session-display-sort.test.ts",
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -72,11 +85,13 @@
       "patches": [
         {
           "file": "src/components/Sidebar.tsx",
-          "from": "      sessionsMap[p.id] = sortSessionsForDisplay(getProjectSessions(p.id), sessionSort);",
-          "to": "      sessionsMap[p.id] = getProjectSessions(p.id);"
+          "from": "      sessionsMap[p.id] = sortSessionsForDisplay(grouped.get(p.id) ?? [], sessionSort);",
+          "to": "      sessionsMap[p.id] = grouped.get(p.id) ?? [];"
         }
       ],
-      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -89,7 +104,9 @@
           "to": "        const sessions = getProjectSessions(projectId);"
         }
       ],
-      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -98,11 +115,13 @@
       "patches": [
         {
           "file": "src/components/Sidebar.tsx",
-          "from": "  }, [projects.length, currentSession?.id, currentProject?.id, sessionSort]);",
-          "to": "  }, [projects.length, currentSession?.id, currentProject?.id]);"
+          "from": "  }, [projects, sessionSort]);",
+          "to": "  }, [projects]);"
         }
       ],
-      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -115,7 +134,10 @@
           "to": "          sessRow.last_message_at = Number(sessRow.last_message_at ?? 0);"
         }
       ],
-      "tests": ["src/test/fake-port-fidelity.test.ts", "src/test/session-activity-time.test.ts"],
+      "tests": [
+        "src/test/fake-port-fidelity.test.ts",
+        "src/test/session-activity-time.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -128,7 +150,9 @@
           "to": "    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { reportPersistFailure(\"store.updateSession\", e); }"
         }
       ],
-      "tests": ["src/test/session-activity-time.test.ts"],
+      "tests": [
+        "src/test/session-activity-time.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -141,7 +165,10 @@
           "to": " * （反向对照：只改这一行注释，行为逐字不变）\n * 否则「选了按名称排」会把置顶会话淹掉 —— 那是把用户的显式意图吃掉。"
         }
       ],
-      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "tests": [
+        "src/test/session-display-sort.test.ts",
+        "src/test/sidebar-session-sort.test.tsx"
+      ],
       "expectRed": false
     }
   ]

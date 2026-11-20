@@ -84,6 +84,7 @@ import { deleteGeneratedFiles } from "../core/ui/generated-files-cleanup";
 import { decideAutoScroll } from "../core/ui/scroll-pinning";
 import { useEdgeFade } from "./EdgeFade";
 import { playSoundCue } from "../core/ui/sound-cues";
+import { useShallow } from "zustand/react/shallow";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -163,8 +164,42 @@ function segmentEpochsOn(): boolean {
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, messagesLoading, loadMoreReadUnavailable } = useAppStore();
-  const { currentSession, currentProject } = useProjectStore();
+  /*
+   * 第 6 轮：**逐字段选择**，不再 `useAppStore()` 整店订阅。
+   *
+   * 整店订阅等于「任何一次 `set()` 都重渲染本组件」—— 包括它根本不读的字段
+   * （反馈、持久化告警、其他会话的活跃标记…）。`useShallow` 一次挑出真正用到的字段：
+   * 语义等价（任一字段变 ⇒ 重渲染），但无关字段变 ⇒ 不重渲染。
+   * 判据：`src/test/store-subscription-baseline.test.tsx`（无关字段变化不得增加 commit 数）。
+   */
+  const {
+    messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore,
+    loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode,
+    guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, messagesLoading, loadMoreReadUnavailable,
+  } = useAppStore(
+    useShallow((s) => ({
+      messages: s.messages,
+      isStreaming: s.isStreaming,
+      activeSessions: s.activeSessions,
+      removeGeneratedFiles: s.removeGeneratedFiles,
+      hasMoreMessages: s.hasMoreMessages,
+      isLoadingMore: s.isLoadingMore,
+      loadMoreMessages: s.loadMoreMessages,
+      stepProgress: s.stepProgress,
+      streamStartTime: s.streamStartTime,
+      llmStatus: s.llmStatus,
+      displayMode: s.displayMode,
+      setDisplayMode: s.setDisplayMode,
+      guidanceMessages: s.guidanceMessages,
+      removeGuidanceMessage: s.removeGuidanceMessage,
+      messagesReadUnavailable: s.messagesReadUnavailable,
+      messagesLoading: s.messagesLoading,
+      loadMoreReadUnavailable: s.loadMoreReadUnavailable,
+    })),
+  );
+  const { currentSession, currentProject } = useProjectStore(
+    useShallow((s) => ({ currentSession: s.currentSession, currentProject: s.currentProject })),
+  );
   const [showModelPicker, setShowModelPicker] = useState(false);
   /*
    * 用户实报：暂停免费模型插件后，模型菜单没有刷新，仍能选已经停掉的免费模型。

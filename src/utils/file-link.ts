@@ -1,3 +1,4 @@
+import { copyText } from "./clipboard";
 /**
  * File link handler — shared between RichContent and MessageBubble.
  *
@@ -201,7 +202,7 @@ export async function copyFilePath(rawHref: string): Promise<void> {
   const absPath = await resolveFilePath(rawHref);
   if (!absPath) return;
   try {
-    await navigator.clipboard.writeText(absPath);
+    await copyText(absPath);
   } catch (err) {
     console.error("[copyFilePath] failed:", err);
   }

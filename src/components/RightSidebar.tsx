@@ -26,6 +26,7 @@ import { FileChangesList } from "./FileChangesList";
 import { useStableContextWaterLevel } from "../core/context/water-level";
 import { usePaneResize } from "../hooks/usePaneResize";
 import { RightSidebarResizeHandle } from "./RightSidebarResizeHandle";
+import { useShallow } from "zustand/react/shallow";
 
 interface RightSidebarProps {
   /** 外部控制收起状态（由顶部 TitleBar 的 rightRailOpen 驱动） */
@@ -55,7 +56,15 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const zh = lang === "zh";
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<"changes" | "files" | "subagents" | "browser">("files");
-  const { currentProject, currentSession, sessions, projects } = useProjectStore();
+  /* 第 6 轮：逐字段选择（原来任何一次无关 set() 都会重渲染整个右栏） */
+  const { currentProject, currentSession, sessions, projects } = useProjectStore(
+    useShallow((s) => ({
+      currentProject: s.currentProject,
+      currentSession: s.currentSession,
+      sessions: s.sessions,
+      projects: s.projects,
+    })),
+  );
   const loadedSessionId = useAppStore((s) => s.loadedSessionId);
   const contextWater = useStableContextWaterLevel(
     props.sessionId || currentSession?.id || loadedSessionId || "",

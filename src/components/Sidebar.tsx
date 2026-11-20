@@ -14,6 +14,7 @@ import { SearchDialog } from "./SearchDialog";
 import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
 import { applyStoredUiFont, applyStoredUiFontFamily } from "../core/ui-font";
 import * as SessionStorage from "../core/storage/session";
+import type { Session } from "../core/types";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
@@ -35,6 +36,7 @@ import {
   describeSessionSort,
 } from "../core/session/session-sort";
 import { copyText } from "../utils/clipboard";
+import { useShallow } from "zustand/react/shallow";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -116,13 +118,33 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onP
     return () => clearInterval(interval);
   }, []);
   const lang = useLang();
-  const { clearMessages, loadMessages } = useAppStore();
+  /*
+   * 第 6 轮：动作**单独选**（Zustand 的 action 引用是稳定的，选它不会带来重渲染），
+   * 数据字段用 `useShallow` 一次挑出。原来 `useAppStore()` / `useProjectStore()` 是整店订阅：
+   * 任何一次无关的 `set()`（别的会话活跃标记、反馈、持久化告警…）都会让 1300 行的侧栏重渲染。
+   */
+  const clearMessages = useAppStore((s) => s.clearMessages);
+  const loadMessages = useAppStore((s) => s.loadMessages);
   const {
     projects, currentProject, currentSession,
     createSession, createCoordinatorSession, switchSession, deleteSession,
     openProject, getProjectSessions, updateProject,
     renameSession,
-  } = useProjectStore();
+  } = useProjectStore(
+    useShallow((s) => ({
+      projects: s.projects,
+      currentProject: s.currentProject,
+      currentSession: s.currentSession,
+      createSession: s.createSession,
+      createCoordinatorSession: s.createCoordinatorSession,
+      switchSession: s.switchSession,
+      deleteSession: s.deleteSession,
+      openProject: s.openProject,
+      getProjectSessions: s.getProjectSessions,
+      updateProject: s.updateProject,
+      renameSession: s.renameSession,
+    })),
+  );
   /**
    * S4 / O-45：外壳级「待批准记忆」角标。
    *
@@ -273,55 +295,71 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   const resizeStartWidth = useRef(0);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const loadAllSessions = () => {
-    const sessionsMap: Record<string, any[]> = {};
-    // Load global sessions (projectId = "")
-    sessionsMap["__global__"] = sortSessionsForDisplay(SessionStorage.listSessions(""), sessionSort);
+  /**
+   * 刷新侧栏的会话分组。
+   *
+   * ## 第 6 轮修的两件事（都有回归基线）
+   *
+   * 1. **O(项目数 × 会话行数)**：原来 `for (const p of projects) getProjectSessions(p.id)`，
+   *    每个项目一次 `listSessions()`，而它的端口实现是「整表复制 + 按 project_id 过滤」
+   *    ⇒ 每次刷新复制 N 份整表。现在一次 `listSessionsGroupedByProject()`（整表读一次，
+   *    内存分桶），语义完全一致（同一套过滤/读模型/排序，见 `session.ts::compareSessions`）。
+   * 2. **每 5s 重建定时器**：原来这个函数被塞在依赖 `[allSessions]` 的 effect 里，
+   *    而定时器又调它 ⇒ `setAllSessions` 换对象 ⇒ effect 重跑 ⇒ 清掉旧定时器再建新的。
+   *    现在刷新函数是 `useCallback`（只依赖真正影响内容的东西），定时器 effect 只建一次；
+   *    未读水位在**同一个 tick** 里用刚读到的数据重算，不再依赖 effect 重跑。
+   */
+  const loadAllSessions = useCallback(() => {
+    const grouped = SessionStorage.listSessionsGroupedByProject();
+    if (!grouped) return;
+    const sessionsMap: Record<string, Session[]> = {};
+    sessionsMap["__global__"] = sortSessionsForDisplay(grouped.get("") ?? [], sessionSort);
     for (const p of projects) {
-      sessionsMap[p.id] = sortSessionsForDisplay(getProjectSessions(p.id), sessionSort);
+      sessionsMap[p.id] = sortSessionsForDisplay(grouped.get(p.id) ?? [], sessionSort);
     }
     setAllSessions(sessionsMap);
-  };
+    /* 未读水位必须用**刚读到的**条数算（旧实现靠 effect 重跑，等于多一轮渲染 + 一次全量遍历） */
+    try {
+      const all = (Object.values(sessionsMap).flat() as Array<{ id?: string; messageCount?: number }>).map((s) => ({
+        id: String(s?.id ?? ""),
+        messageCount: s?.messageCount,
+      }));
+      ensureReadStateInitialized(all);
+      setSessionUnread(computeUnreadBySession(all));
+    } catch (e) {
+      console.warn("[Sidebar] 未读水位计算失败（不影响会话列表）:", e);
+    }
+  }, [projects, sessionSort]);
 
+  /* 内容相关的变化（项目数/当前会话/当前项目/排序）立即刷新一次 */
   useEffect(() => {
     loadAllSessions();
-    /*
-     * `sessionSort` **必须在依赖里**（GAP-LIST `O-57`）：换排序时只 `setSessionSort`
-     * 不会让上面这个 effect 重跑，而 `allSessions` 里存的是**已经排好的数组** ——
-     * 不重跑就表现为"菜单里选了没反应"（直到下次轮询才生效）。
-     * 它只在用户改选择时换一次身份，不会造成额外渲染。
-     */
-  }, [projects.length, currentSession?.id, currentProject?.id, sessionSort]);
+  }, [loadAllSessions, projects.length, currentSession?.id, currentProject?.id]);
 
   /**
-   * 会话未读：① 首次运行做**一次性迁移**（把此刻已存在的会话标记为已读 —— 否则历史会话，
-   * 例如本机 657 条的那个，升级后会立刻顶一个 657 的徽标）；② 按"已读水位"算未读。
+   * 5s 心跳：只建一次定时器（不依赖 `allSessions`，否则每 tick 自己把自己重建一遍）。
    *
-   * ⚠️ 真机核对抓到的两条（都在这里修掉）：
-   * 1. **必须先刷新会话列表**再算未读：`allSessions` 是"上次加载时"的快照，
-   *    而消息条数是会变的（委派出去的子会话在后台产出）—— 只按快照算，
-   *    徽标会一直用旧条数，表现成"明明有新消息却不显示"（第一次真机核对就是这样：0 个徽标）；
-   * 2. 轮询与收件箱徽标同频（5 秒），刷新走同一个 `loadAllSessions()`（镜像内的同步读，很便宜）。
+   * 页面隐藏时跳过（用户看不到列表，没必要每 5s 读一次库）；重新可见时立即补一次。
    */
   useEffect(() => {
-    const refresh = () => {
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
-        const all = (Object.values(allSessions).flat() as Array<{ id?: string; messageCount?: number }>)
-          .map((s) => ({ id: String(s?.id ?? ""), messageCount: s?.messageCount }));
-        ensureReadStateInitialized(all);
-        setSessionUnread(computeUnreadBySession(all));
+        loadAllSessions();
       } catch (e) {
-        console.warn("[Sidebar] 未读水位计算失败（不影响会话列表）:", e);
+        console.warn("[Sidebar] 会话列表刷新失败（保留上一次结果）:", e);
       }
     };
-    refresh();
-    const interval = setInterval(() => {
-      // 先取新的条数（loadAllSessions 会 setState → 本 effect 重跑 → 再用新快照算一遍）
-      try { loadAllSessions(); } catch { /* 读不到就按旧快照算，不影响别的功能 */ }
-      refresh();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [allSessions]);
+    const interval = setInterval(tick, 5000);
+    const onVisible = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loadAllSessions]);
 
   // Apply saved font family/weight on mount (theme is handled by TitleBar)
   useEffect(() => {

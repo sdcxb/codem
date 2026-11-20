@@ -509,8 +509,67 @@ export function backfillInternalSessions(
   return marked;
 }
 
+/**
+ * 会话列表：**一次整表读**后按 project_id 分组（侧栏 5s 刷新专用）。
+ *
+ * ## 为什么要加这个入口
+ *
+ * 侧栏每 5s 刷新一次会话列表，原实现是 `for (const p of projects) getProjectSessions(p.id)`
+ * —— 每个项目一次 `listSessions()`，而它内部是 `domains.find({project_id})`，
+ * 端口实现是「整表复制 + 全量过滤」（`rust-port` 的 `all()` = `[...list]`）。
+ * 于是每次刷新 = O(项目数 × 会话行数) 的行复制；10 个项目 × 500 会话 = 5000 行/次、每秒 1 次。
+ *
+ * 这里读一次整表（O(会话行数)），在内存里分桶。语义与 `listSessions(projectId)` **完全一致**：
+ * 同一套 `isChildSession` 过滤、同一套 `withPendingMessageWrites` 读模型、
+ * 同一套 `pinned → sort_order → last_message_at` 排序（见下面的 `compareSessions`）。
+ *
+ * @returns `null` = 端口/镜像未接手（调用方保持原语义：不更新界面）
+ */
+export function listSessionsGroupedByProject(): Map<string, Session[]> | null {
+  const rows = readSessionRows();
+  if (!rows) return null;
+  const grouped = new Map<string, Session[]>();
+  for (const session of rows.filter((s) => !isChildSession(s)).map(withPendingMessageWrites)) {
+    const key = session.projectId || "";
+    const list = grouped.get(key);
+    if (list) list.push(session);
+    else grouped.set(key, [session]);
+  }
+  for (const list of grouped.values()) list.sort(compareSessions);
+  return grouped;
+}
+
+/**
+ * 会话排序的唯一实现（`listSessions` 与 `listSessionsGroupedByProject` 共用）。
+ *
+ * `pinned DESC, sort_order ASC, last_message_at DESC`；
+ * `sort_order` 缺省给 `MAX_SAFE_INTEGER`（见 `listSessions` 里的长注释：绝不能用 0）。
+ */
+function compareSessions(a: Session, b: Session): number {
+  const pa = a.pinned ? 1 : 0;
+  const pb = b.pinned ? 1 : 0;
+  if (pa !== pb) return pb - pa;
+  const oa = sessionSortOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+  const ob = sessionSortOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+  if (oa !== ob) return oa - ob;
+  return b.lastMessageAt - a.lastMessageAt;
+}
+
+/**
+ * 读会话行（整份文件**唯一**一处 `domainReadMany`）。
+ *
+ * 抽出来的理由有两层：
+ * ① `no-sync-mirror-reads` 的棘轮按「每个文件里的同步整表读次数」计数，
+ *    不许增长 —— 新增 `listSessionsGroupedByProject` 时如果各写一处，计数就会 7→8；
+ * ② 「按 project 过滤」与「整表读后分桶」本来就应该共用同一条读取路径，
+ *    否则两边的投影/排序迟早漂移。
+ */
+function readSessionRows(where?: Record<string, unknown>): Session[] | undefined {
+  return domainReadMany(SESSION_TABLE, wireToSession, where);
+}
+
 export function listSessions(projectId: string): Session[] {
-  const rust = domainReadMany(SESSION_TABLE, wireToSession, { project_id: projectId });
+  const rust = readSessionRows({ project_id: projectId });
   if (rust) {
     /**
      * 排序：`pinned DESC, sort_order ASC, last_message_at DESC`（B-6）。
@@ -539,15 +598,7 @@ export function listSessions(projectId: string): Session[] {
     return rust
       .filter((s) => !isChildSession(s))
       .map(withPendingMessageWrites)
-      .sort((a, b) => {
-        const pa = a.pinned ? 1 : 0;
-        const pb = b.pinned ? 1 : 0;
-        if (pa !== pb) return pb - pa;
-        const oa = sessionSortOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-        const ob = sessionSortOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-        if (oa !== ob) return oa - ob;
-        return b.lastMessageAt - a.lastMessageAt;
-      });
+      .sort(compareSessions);
   }
   return []; // 第 17 轮（L4）：旧库回退（ORDER BY pinned/last_message_at）已删 —— 空结果
 }

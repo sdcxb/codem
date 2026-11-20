@@ -1017,8 +1017,20 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     };
 
     update();
-    const interval = setInterval(update, 3000);
-    return () => clearInterval(interval);
+    /* 第 6 轮：页面隐藏时不轮询（面板看不见；变回可见时立即补一拍） */
+    const gatedUpdate = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void update();
+    };
+    const interval = setInterval(gatedUpdate, 3000);
+    const onVisible = () => {
+      if (!document.hidden) void update();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [sessionId, visible]);
 
   /**
