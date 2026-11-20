@@ -140,6 +140,53 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     expect(name, "名称必须可省略，否则它自己撑破标题行").toContain("text-overflow: ellipsis");
   });
 
+  it("LAYOUT-9: 搜索框是「胶囊 + 裸输入框」：内层不许自带底/高度", () => {
+    const v2 = readCss("src/styles/unslop-v2.css");
+    expect(
+      v2,
+      "设置里「所有输入框染 raised 底」的规则必须排除 .sp-search-input（否则底色溢出胶囊边框）",
+    ).toContain('input[type="text"]:not(.sp-search-input)');
+    const ui = readCss("src/styles/codem-ui.css");
+    const input = blockOf(ui, ".settings-side-search .sp-search-input {");
+    expect(input, "找不到侧栏搜索输入框规则").toBeTruthy();
+    expect(input).toContain("background: transparent");
+    expect(input, "高度必须跟随胶囊（30px），否则会从胶囊里溢出来").toContain("height: 100%");
+    const pill = blockOf(ui, ".settings-side-search {");
+    expect(pill, "胶囊自身要裁掉溢出（双保险）").toContain("overflow: hidden");
+  });
+
+  it("LAYOUT-10: 卡片型按钮不许被「统一 28px 高」压扁（两条规则都要排除）", () => {
+    const v2 = readCss("src/styles/unslop-v2.css");
+    /* 两处 blanket 规则：设置面板 / 弹窗+任务中心。少排一处，那一处的卡片就会被压扁 */
+    const settingsRule = /\[data-ui="v2"\] \.settings-panel :is\(button, \.btn\)[^{]*\{/.exec(v2)?.[0] ?? "";
+    const modalRule = /\[data-ui="v2"\] :is\(\.modal-panel, \.modal-editor, \.search-dialog, \.task-center-panel\) :is\(button, \.btn\)[^{]*\{/.exec(v2)?.[0] ?? "";
+    expect(settingsRule, "找不到设置面板的按钮高度规则").not.toBe("");
+    expect(modalRule, "找不到弹窗/任务中心的按钮高度规则").not.toBe("");
+    for (const cls of [".sp-mode-btn", ".skin-card", ".lo-session-card", ".lo-scene-option"]) {
+      expect(settingsRule, `设置面板按钮规则必须排除卡片 ${cls}`).toContain(`:not(${cls})`);
+      expect(modalRule, `弹窗按钮规则必须排除卡片 ${cls}（任务中心里的卡片属于这一条）`).toContain(`:not(${cls})`);
+    }
+  });
+
+  it("LAYOUT-11: 带文字的「新建」按钮不许套用正方形图标按钮尺寸", () => {
+    const v2 = readCss("src/styles/unslop-v2.css");
+    const square = blockOf(v2, '[data-ui="v2"] .market-skill-link-btn:not(.agent-new-btn) {');
+    expect(square, "正方形只应用于纯图标按钮").toBeTruthy();
+    expect(square).toContain("width: 28px");
+    const text = blockOf(v2, '[data-ui="v2"] .agent-new-btn {');
+    expect(text, "带文字的按钮宽度必须按内容走").toContain("width: auto");
+  });
+
+  it("LAYOUT-12: 记忆管理器整页可滚，列表区有明确高度（不许被压成 0）", () => {
+    const css = readCss("src/styles.css");
+    const root = blockOf(css, ".memory-manager {");
+    expect(root).toContain("flex-direction: column");
+    expect(root, "管理器必须可纵向滚动（内容比弹窗高）").toContain("overflow-y: auto");
+    const content = blockOf(css, ".memory-content {");
+    expect(content, "列表区必须有明确高度（原来 flex:1 被挤成 0）").toContain("height: clamp(");
+    expect(content, "列表区不许再靠 flex:1 抢高度").toContain("flex: 0 0 auto");
+  });
+
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {
     const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
     for (const rule of ["R1", "R2", "R3", "R4"]) {

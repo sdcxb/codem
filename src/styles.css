@@ -7788,6 +7788,12 @@ color: var(--text-on-accent);
   padding: var(--space-4) var(--space-8);
   align-items: center;
 }
+/*
+ * 第 11 轮（R9 实测）：工具栏里「新建」按钮被压成 28px 宽 ⇒ 图标+文字比按钮宽 8px，
+ * 图标从左侧溢出 4px。规则：**按钮不收缩、搜索框先让**（`min-width:0` 才让 flex 真能收）。
+ */
+.skill-manager-toolbar > * { flex: 0 0 auto; }
+.skill-manager-toolbar > .skill-search-box { flex: 1 1 auto; min-width: 0; }
 
 .skill-search-box {
   flex: 1;
@@ -8583,6 +8589,12 @@ color: var(--text-on-accent);
   flex-direction: column;
   height: 100%;
   background: var(--bg-secondary);
+  /*
+   * 第 11 轮（R9 实测）：统计 ×2 + 提示 ×3 + 待批准条 + 批次区 加起来比弹窗高；
+   * 而 `.memory-content` 是 flex:1 ⇒ 高度被压成 0、列表区整块不可见。
+   * 管理器本身可纵向滚动；列表区在下面拿一个明确高度。
+   */
+  overflow-y: auto;
 }
 
 .memory-manager-header {
@@ -8726,7 +8738,9 @@ color: var(--text-on-accent);
 }
 
 .memory-content {
-  flex: 1;
+  /* 明确高度：视口的 46%，夹在 300~560（原来 flex:1 会被上面的区块挤成 0） */
+  flex: 0 0 auto;
+  height: clamp(300px, 46vh, 560px);
   display: flex;
   min-height: 0;
   overflow: hidden;

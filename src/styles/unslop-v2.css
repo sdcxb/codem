@@ -1441,7 +1441,20 @@
 }
 
 /* 开关 / 下拉 / 输入：统一 8px 圆角与发丝线；焦点只改边框 */
-[data-ui="v2"] .settings-panel :is(.settings-input, .settings-select, .setting-input, input[type="text"], input[type="number"], textarea, select) {
+/**
+ * ⚠️ 第 11 轮：**必须排除搜索框**（类名 .sp-search-input）。
+ *
+ * 用户现场（设置 → 高级 截图）：左侧栏搜索框的灰底**溢出到边框外**、宽度也不够。
+ * 根因就是这条「设置里所有输入框都染成 raised 底」的规则：它的特异度是 (0,3,1)
+ * （[data-ui] + .settings-panel + :is(input[type=text])），**压过**了
+ * .settings-side-search .sp-search-input（0,2,0）里的 background: transparent。
+ * 而搜索框是「胶囊里嵌裸输入框」的形态：输入框自己的底/圆角/高度一旦生效，
+ * 就会盖在胶囊边框上、并且比胶囊高 8px ⇒ 看起来就是「颜色溢出 + 宽度不够」。
+ *
+ * 所以这一类「chrome-less 输入框」要在这里显式排除；新增同类控件时，
+ * 给它一个稳定的类名并加进这个 :not()。
+ */
+[data-ui="v2"] .settings-panel :is(.settings-input, .settings-select, .setting-input, input[type="text"]:not(.sp-search-input), input[type="number"], textarea, select) {
   border-color: var(--ui-line);
   border-radius: var(--radius);
   background: var(--ui-surface-raised);
@@ -1597,7 +1610,19 @@
 /* 设置页的紧凑控件兜底：把各波次自己造的 27/29/30/31/33/34px 一律收成 28px。
    排除：能整行点的大卡片（mode-btn）、图标格（identity-emoji）、头像、返回键、虚线投放区、
    以及开关（语义上必须是 24 的胶囊）。这些是"不同的控件类型"，不是刻度不一致。 */
-[data-ui="v2"] .settings-panel :is(button, .btn):not(.settings-sidebar-item):not(.settings-subnav-pill):not(.usage-tab):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not(.settings-back):not(.sp-btn--dashed):not(.sp-btn--block) {
+/*
+ * ⚠️ 第 11 轮：这两条「设置/弹窗里所有按钮统一 28px 高」的规则**必须排除卡片型按钮**。
+ *
+ * 用户现场（设置 → 高级 截图）暴露了同一类问题：搜索框的底色溢出到胶囊边框外；
+ * 用布局审计（tools/ui-audit/layout-audit.mjs 的 R9「子元素溢出父容器」）又量出四处：
+ *   · 设置→安全 的三个模式卡片（标题+说明两行，被压成 28px ⇒ 说明文字溢出卡片 32~44px）；
+ *   · 设置→外观 的皮肤卡片（预览图+名称+说明，说明溢出 24px）；
+ *   · 任务管理里 `lo-session-card` / `lo-scene-option`（卡片被压成 28px，内容溢出 12/33px）。
+ *
+ * 这些是**卡片**不是**控件**：高度该由内容决定。以后新增卡片型按钮时，
+ * 给它一个语义类名并加进下面两处 :not()，不要靠「碰巧没被扫到」。
+ */
+[data-ui="v2"] .settings-panel :is(button, .btn):not(.settings-sidebar-item):not(.settings-subnav-pill):not(.usage-tab):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not(.settings-back):not(.sp-btn--dashed):not(.sp-btn--block):not(.sp-mode-btn):not(.skin-card):not(.lo-session-card):not(.lo-scene-option) {
   height: 28px;
   min-height: 28px;
   border-radius: var(--radius);
@@ -1705,7 +1730,7 @@
 }
 
 /* 弹窗内的紧凑控件：与设置页同一套刻度（28/32 · 8px · 12px），排除整行卡片与开关 */
-[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .task-center-panel) :is(button, .btn):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not([class*="toggle"]):not([class*="switch"]) {
+[data-ui="v2"] :is(.modal-panel, .modal-editor, .search-dialog, .task-center-panel) :is(button, .btn):not(.sp-avatar):not(.identity-emoji):not(.mode-btn):not([class*="toggle"]):not([class*="switch"]):not(.sp-mode-btn):not(.skin-card):not(.lo-session-card):not(.lo-scene-option) {
   height: 28px;
   min-height: 28px;
   border-radius: var(--radius);
@@ -2113,13 +2138,23 @@
   filter: none;
 }
 
-[data-ui="v2"] .market-skill-link-btn {
+/*
+ * 正方形只适用于**纯图标**的链接按钮；工具栏里的「+ 新建」是同名类但带文字，
+ * 被压成 28px 宽后图标就从左侧溢出 4px（第 11 轮 R9 实测）。
+ */
+[data-ui="v2"] .market-skill-link-btn:not(.agent-new-btn) {
   width: 28px;
   height: 28px;
   padding: 0;
   border-color: var(--ui-line);
   border-radius: var(--radius);
   color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .agent-new-btn {
+  width: auto;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
 }
 
 [data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn, .ofm-btn, .dsh-ext-btn, .plugin-detail-btn, .market-skill-link-btn):is(:hover, :focus-visible):not(:disabled) {

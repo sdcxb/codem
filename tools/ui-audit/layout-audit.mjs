@@ -236,6 +236,26 @@ window.__layoutAudit = function () {
         }
       }
     }
+    /* R9：子元素从父容器里"溢出来"（父容器有边框/底色，子元素静态定位却比父容器大） */
+    (function () {
+      var hasChrome = (parseFloat(cs.borderTopWidth) || 0) > 0 || (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)");
+      if (!hasChrome || cs.overflow !== "visible") return;
+      if (el.children.length === 0) return;
+      var pr = el.getBoundingClientRect();
+      var escaped = 0;
+      var worst = null;
+      for (var ci2 = 0; ci2 < el.children.length; ci2++) {
+        var kid2 = el.children[ci2];
+        var kcs2 = getComputedStyle(kid2);
+        if (kcs2.position === "absolute" || kcs2.position === "fixed") continue;
+        var kr2 = kid2.getBoundingClientRect();
+        if (kr2.width === 0 || kr2.height === 0) continue;
+        var over = Math.max(pr.left - kr2.left, kr2.right - pr.right, pr.top - kr2.top, kr2.bottom - pr.bottom);
+        if (over > 1.5) { escaped++; if (!worst || over > worst.over) worst = { over: Math.round(over), kid: (kid2.tagName || "").toLowerCase() + "." + (String(kid2.className || "").trim().split(/\s+/)[0] || "") }; }
+      }
+      if (escaped > 0) push("R9", el, escaped + " child overflow, max " + worst.over + "px (" + worst.kid + ")", worst);
+    })();
+
     /* R8：两端对齐（中文两端对齐会造成字距忽大忽小） */
     if (!hasElementKid && cs.textAlign === "justify" && leafText.length >= 8) {
       push("R8", el, "text-align justify on CJK", { textAlign: cs.textAlign });

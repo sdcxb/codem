@@ -2346,6 +2346,8 @@ body.resizing-columns * {
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-muted);
+  /* 第 11 轮：输入框比胶囊高时裁在胶囊内，不再溢出到边框外（用户现场） */
+  overflow: hidden;
 }
 .settings-side-search .sp-search-icon {
   flex: none;
@@ -2353,8 +2355,14 @@ body.resizing-columns * {
 .settings-side-search .sp-search-input {
   min-width: 0;
   flex: 1;
+  /* 裸输入框：底/边框/圆角/内边距归零，高度跟随胶囊（30px），不靠 overflow 遮丑 */
+  height: 100%;
+  padding: 0;
+  margin: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--text-primary);
   font: inherit;
   font-size: var(--fs-sm);

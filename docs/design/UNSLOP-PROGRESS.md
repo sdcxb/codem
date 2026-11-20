@@ -1099,6 +1099,70 @@ docker run --rm --platform linux/arm64 -v C:\mimo-gui:/work -w /work \
   工具链、可复跑命令、APK 逐项 ELF 表、验证结果、边界。
 - 至此 §3M 的第 3 条（arm64 只差宿主二进制）**已闭环**，剩余的唯一缺口是「arm64 真机上的 PRoot/Android 行为」。
 
+## 3P. 第 11 轮：搜索框「底色溢出 + 宽度不够」与同一类「内层控件逃出容器」（2026-11-20）
+
+用户现场（设置 → 高级 截图，红框）：左侧栏搜索框的灰底**溢出到胶囊边框外**、宽度也不够。
+
+### 3P.1 根因（两条规则叠加，都是"毯式"覆盖）
+
+1. `unslop-v2.css` 有一条「设置里**所有**输入框都染成 raised 底」：
+   `[data-ui="v2"] .settings-panel :is(…, input[type="text"], …) { background: var(--ui-surface-raised); border-radius; }`
+   特异度 **(0,3,1)**，压过了 `.settings-side-search .sp-search-input`（0,2,0）里的 `background: transparent`。
+   搜索框是「**胶囊里嵌裸输入框**」的形态 ⇒ 输入框自己的底/圆角/高度一旦生效，就盖在胶囊边框上。
+2. 该输入框被撑到 **38px**，而胶囊只有 **30px** ⇒ 上下各溢出 4px；再叠上底色，就是截图里的「灰块越过边框」。
+3. 宽度观感「不够」也是同一件事：内层块比胶囊窄、又偏右（图标+间距之外的部分被底色填成一条），视觉上像两截。
+
+### 3P.2 修法
+
+- 那条毯式规则排除 chrome-less 输入框：`input[type="text"]:not(.sp-search-input)`；
+- 胶囊与裸输入框的分工写死：`.settings-side-search { overflow: hidden }`；
+  `.settings-side-search .sp-search-input { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }`。
+
+### 3P.3 顺藤摸瓜：新增 R9 判据，再抓出 4 类同源问题
+
+在布局审计（`tools/ui-audit/layout-audit.mjs`）里新增 **R9「子元素从父容器溢出」**：
+父容器有边框/底色、`overflow: visible`、子元素是**静态定位**却比父容器大 >1.5px ⇒ 记违规。
+
+三档宽度跑 41 个场景，R9 抓到 13 处，归并为 4 个根因（全部修掉）：
+
+| # | 位置 | 病（实测） | 修 |
+|---|---|---|---|
+| 1 | 设置 → **安全** 的三个模式卡片 `.sp-mode-btn` | 被「设置里所有按钮统一 28px 高」压成 28px，而卡片内容是标题+说明 ⇒ **说明文字溢出卡片 32~44px**（视觉上文字压在下一行上） | 按钮高度规则排除卡片类（`.sp-mode-btn` / `.skin-card` / `.lo-session-card` / `.lo-scene-option`），高度按内容走（实测 74px，说明回到卡片内） |
+| 2 | 设置 → **外观** 皮肤卡片 `.skin-card` | 同一条规则 ⇒ 预览图+名称+说明溢出 24px | 同上 |
+| 3 | 任务管理里的 `.lo-session-card` / `.lo-scene-option` | 同一条规则的另一处作用域（弹窗/任务中心）⇒ 会话卡片溢出 12px、场景缩略图溢出 33px | 同一排除列表（两处毯式规则都加） |
+| 4 | 技能/智能体工具栏「＋ 新建」`.agent-new-btn` | v2 把 `.market-skill-link-btn` 统一成 **28×28 正方形**（本意是纯图标按钮），但这个是**带文字**的 ⇒ 内容 36px 塞进 28px，图标向左溢出 4px | 正方形规则排除 `.agent-new-btn`；带文字按钮 `width: auto; padding: 0 var(--space-4); gap` |
+| 5 | 设置 → **记忆体检管理器** | 统计×2 + 提示×3 + 待批准条 + 批次区 加起来比弹窗高，而列表区是 `flex:1` ⇒ **高度被压成 0**（列表整块不可见，内容从容器溢出） | 管理器 `overflow-y: auto`；列表区 `flex: 0 0 auto; height: clamp(300px, 46vh, 560px)` |
+
+（第 5 条是"内容溢出"的另一面：不是子元素盖到外面，而是被压成 0；R9 的兄弟判据把它抓出来。）
+
+### 3P.4 防回归（源码判据，全部变异自证）
+
+`src/test/layout-regressions.test.ts` 新增 4 条：
+
+- **LAYOUT-9**：毯式输入框规则必须 `:not(.sp-search-input)`；侧栏搜索输入框必须 `background: transparent` + `height: 100%`；胶囊必须 `overflow: hidden`。
+  *变异*：把 `:not(.sp-search-input)` 删掉 ⇒ 红。
+- **LAYOUT-10**：**两处**按钮高度规则（设置面板 / 弹窗+任务中心）都必须排除四类卡片。
+  *变异*：删掉设置面板那条的排除列表 ⇒ 红。
+- **LAYOUT-11**：正方形图标规则必须排除 `.agent-new-btn`，带文字按钮必须 `width: auto`。
+- **LAYOUT-12**：记忆管理器必须可纵向滚动；列表区必须有 `height: clamp(` 且不许再 `flex: 1`（防止又压成 0）。
+
+### 3P.5 读数
+
+- 布局审计 **41 场景 × 1100/1280/1600 三档宽度**：R1/R2/R3/R4/R5/R6/R9 **全部为 0**；
+- 修后截图：`settings-search-after.png`（单层胶囊，底色不再越界）、`security-mode-after.png`（模式卡片 74px，说明在卡内）；
+- `scan-ui` **error 0 / warn 0**（过程中引入过一次 `css-class-duplicate`：我先把新规则追加成第二条 `.memory-manager`，已改为并入原规则 —— 这条门禁正好抓住了"补丁式追加"的毛病）；
+- 全量测试 **10325 passed / 18 skipped / 992 files**；`tsc` 0；CSS 契约快照按有意改动更新（5+/2−）。
+
+### 3P.6 这类问题的通用教训（写在这里，避免下次再犯）
+
+1. **"毯式"覆盖（`[data-ui=v2] .settings-panel :is(input, button…)`）必须显式列出例外**：
+   搜索框、卡片按钮这类"非标准控件"一旦被统一尺寸/底色命中，表现就是"颜色溢出/宽度不够/文字被压"。
+2. 写控件样式时**先决定谁负责画外壳**：胶囊负责底/边框/圆角，内层只负责文字与光标；
+   内层一旦也画底，就会在圆角处露出第二层。
+3. **高度要"按内容"还是"统一"必须落到语义类名上**：卡片有 `.sp-mode-btn` / `.skin-card` 之类的名字，
+   毯式规则就用 `:not()` 把它们排掉；不要指望"暂时没被扫到"。
+4. 新补丁**并进已有规则**，不要追加同名顶格规则（scan-ui 的 `css-class-duplicate` 会红）。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。
