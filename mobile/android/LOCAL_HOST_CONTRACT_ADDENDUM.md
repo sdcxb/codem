@@ -176,3 +176,67 @@ APK 核对（`flutter build apk --debug --target-platform android-x64`，250.9 M
 7. **NDK 环境**：本机 SDK 的 NDK 28.2 曾被裁剪成空壳（只有 `source.properties`），已用 sdkmanager
    重装完整 r28c；`flutter build apk` 因此恢复可用。新机器上若报 CMake「CMAKE_C_COMPILER not set」，
    优先检查 NDK 是否完整（`ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe`）。
+
+## 9. arm64 宿主构建与验证（第 10 轮，2026-11-20）
+
+第 8 节第 1 条说「arm64 需要重新 stage 再构建」，本轮把它**真的做完了**：
+
+### 9.1 交叉编译链（一次性）
+
+| 组件 | 版本/位置 | 用途 |
+|---|---|---|
+| Rust target | `aarch64-unknown-linux-gnu`（`rustup target add`） | 产物要在 **arm64 Ubuntu rootfs** 里跑（glibc） |
+| zig | **0.13.0**，解压在 `C:\dev\zig-dl\zig-windows-x86_64-0.13.0`（zip 的 sha256 与官方 index.json 逐字一致） | 当交叉链接器：自带 glibc 的 crt/libc 桩，Windows 上不需要另装 aarch64 sysroot |
+| cargo-zigbuild | **0.24.1**（`cargo install cargo-zigbuild --locked`） | 把 `--target` 交给 zig |
+
+### 9.2 构建（可复跑）
+
+```powershell
+# 1) codem-db（aarch64 Linux）—— 新脚本会自检产物是 ELF64/AArch64 且解释器为 /lib/ld-linux-aarch64.so.1
+npm run db:build:arm64        # = node tools/mobile/build-db-arm64.mjs（内部 cargo zigbuild，CARGO_TARGET_DIR=.linux-target）
+
+# 2) 组装 stage（proot/node/rootfs/共享库 都是现成的 arm64 资产）
+node android-shell/build.mjs --abi arm64
+node mobile/android/tools/stage-local-host.mjs --abi arm64
+
+# 3) Flutter 出包（release + split-per-abi）
+cd mobile; flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+产物：`mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`（**117 MB**）。
+实测确认（读 zip + 解压后读 ELF 头）：
+
+| 条目 | 机器 | 解释器 |
+|---|---|---|
+| `lib/arm64-v8a/libapp.so` | AArch64 | — |
+| `lib/arm64-v8a/libflutter.so` | AArch64 | — |
+| `lib/arm64-v8a/libproot.so` | AArch64 | `/system/bin/linker64`（Android bionic） |
+| `lib/arm64-v8a/libproot_loader.so` | AArch64 | 静态 EXEC |
+| `lib/arm64-v8a/libcodem_db.so` | AArch64 | `/lib/ld-linux-aarch64.so.1`（rootfs 内） |
+| `lib/arm64-v8a/libnode.so` | AArch64 | `/lib/ld-linux-aarch64.so.1` |
+| `assets/rootfs.tar`（101.8 MB 解压后） | arm64 Ubuntu 24.04 | — |
+| `assets/abi.txt` | `arm64` | — |
+
+### 9.3 运行时验证（不需要真机的那部分）
+
+`android-shell/verify-arm64.sh` 在 **linux/arm64 容器**（Docker + QEMU binfmt）里跑真 arm64 指令：
+
+```powershell
+docker run --rm --platform linux/arm64 -v C:\mimo-gui:/work -w /work ubuntu:24.04 bash /work/android-shell/verify-arm64.sh
+```
+
+结果：`ARM64_QEMU_RESULT=PASS`
+
+- `NODE_OK`：arm64 node v22.14.0 起来；
+- `APKDB_OK` / `LINUXDB_OK`：APK 里的 `libcodem_db.so` 与交叉编译的 `codem-db-cli` 都能执行；
+- `HOST_OK`（两个 db 各一次）：`host.hello` → `session.create` → `session.list` 全部成功（真实 RPC，而非只看进程活着）；
+- 另外单独验证过 `codem-db init/health/counts`：59 张表、fts5 可用、WAL 模式、`ready:true`。
+
+### 9.4 仍未验证（只有真机能做）
+
+1. **PRoot 本体**：它是 Android bionic 链接（`/system/bin/linker64`），容器里没有 bionic ⇒ 容器无法执行；
+   本轮只核对了它的 ELF/解释器与依赖（libtalloc / libandroid-shmem 都是 AArch64 且随包）；
+2. **Android 沙箱/exec 策略**、WebView、厂商保活：需要 arm64 真机或 arm64 系统镜像（x86_64 宿主上 emulator 明确拒绝 arm64 镜像）。
+
+⚠️ `stage-local-host.mjs` **一次只放一个 ABI**（换 ABI 会清空目标目录）。本轮验证完后已恢复 x86_64 stage（模拟器可继续用）；
+要再出 arm64 包，重跑 9.2 的第 2 步即可。仓库里附带的 arm64 产物留档在 `.preview-shot/arm64/app-arm64-v8a-release.apk`（不进 git）。

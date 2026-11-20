@@ -104,7 +104,8 @@
     "typecheck:ui": "tsc -p packages/ui/tsconfig.json",
     "host:spike:guidance": "node packages/host/scripts/spike-guidance.mjs",
     "android:spike:real": "node android-shell/spike-real-model.mjs",
-    "audit:layout": "node tools/ui-audit/layout-audit.mjs"
+    "audit:layout": "node tools/ui-audit/layout-audit.mjs",
+    "db:build:arm64": "node tools/mobile/build-db-arm64.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

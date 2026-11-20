@@ -1039,6 +1039,66 @@ LAYOUT-1 + LAYOUT-2 同时红；还原后 7/7 绿。
 截图：`layout-audit/shots/dialog-plugins.png`（修前可见徽标折行），修后同一场景 0 违规。
 场景总数 37 → **41**，三档宽度（1100/1280/1600）复跑：R1/R2/R4 与 R3/R5/R6 **全为 0**。
 
+## 3O. 第 10 轮：arm64 交叉编译链 + arm64 宿主包（把「仍未做」的最后一条做掉）（2026-11-20）
+
+§3M 的结论是「arm64 包能构建，但 `jniLibs` 只有 x86_64 宿主二进制 ⇒ 真机上的本机 Host 不可用；
+要补 aarch64 的 proot/node/codem_db」。本轮把它补齐并**在 arm64 上真的跑起来**（QEMU 容器内）。
+
+### 3O.1 交叉编译链（本次安装）
+
+| 组件 | 版本 | 说明 |
+|---|---|---|
+| rust target | `aarch64-unknown-linux-gnu` | 产物在 arm64 Ubuntu rootfs 里跑（glibc） |
+| **zig** | **0.13.0**（`C:\dev\zig-dl\zig-windows-x86_64-0.13.0`） | 当交叉链接器；zip 的 sha256 与官方 `index.json` 逐字一致 |
+| **cargo-zigbuild** | **0.24.1** | 把 `--target` 交给 zig；Windows 上不需要 aarch64 sysroot |
+
+为什么用 zig 而不是 `gcc-aarch64-linux-gnu`：本机没有 WSL 发行版，Windows 上也没有 aarch64 sysroot；
+zig 自带 glibc 的 crt/libc 桩，一条命令就能产出可执行的 aarch64 ELF。
+
+### 3O.2 工具与产物（都在仓库里，可复跑）
+
+- 新增 [`tools/mobile/build-db-arm64.mjs`](tools/mobile/build-db-arm64.mjs) + `npm run db:build:arm64`：
+  内部 `cargo zigbuild --target aarch64-unknown-linux-gnu`，`CARGO_TARGET_DIR=.linux-target`，
+  **自检**产物是 ELF64/AArch64 且解释器为 `/lib/ld-linux-aarch64.so.1`（不是只看命令退出码）。
+- 组装：`node android-shell/build.mjs --abi arm64` → `node mobile/android/tools/stage-local-host.mjs --abi arm64`
+  → `flutter build apk --release --target-platform android-arm64 --split-per-abi`。
+- 产物：`app-arm64-v8a-release.apk`（**117 MB**），其中
+  `lib/arm64-v8a/`：`libapp.so`(8.4MB) / `libflutter.so`(157.7MB 解压) / `libnode.so`(112.1MB) /
+  `libcodem_db.so`(3.0MB) / `libproot.so` / `libproot_loader.so` —— **全部 AArch64**；
+  `assets/rootfs.tar` 101.8MB（arm64 Ubuntu 24.04）、`assets/abi.txt` = `arm64`。
+
+### 3O.3 运行时验证（真 arm64 指令，Docker + QEMU binfmt）
+
+`android-shell/verify-arm64.sh`（仓库里原有的脚本，本轮第一次真的跑通）：
+
+```
+docker run --rm --platform linux/arm64 -v C:\mimo-gui:/work -w /work \
+  ubuntu:24.04 bash /work/android-shell/verify-arm64.sh
+→ NODE_OK / APKDB_OK / LINUXDB_OK
+→ HOST_OK hostId=host-706b6462 session=host-… count=1（APK 里的 db）
+→ HOST_OK hostId=host-75786462 session=host-… count=1（交叉编译的 db）
+→ ARM64_QEMU_RESULT=PASS
+```
+
+- `HOST_OK` 走的是真实 RPC：`host.hello` → `session.create` → `session.list`，不是「进程活着」；
+- 另测 `codem-db init/health/counts`：59 张表、fts5、WAL、`ready:true`；
+- 即：**arm64 node + host.mjs + codem-db 三者真的能一起工作**，且 APK 里那份 `libcodem_db.so` 同样能跑。
+
+### 3O.4 边界（如实记）
+
+1. **PRoot 本体没在容器里跑**：它是 Android bionic 链接（`/system/bin/linker64`），容器没有 bionic；
+   只能核对 ELF/解释器与依赖（`libtalloc.so.2` / `libandroid-shmem.so` 都是 AArch64 且随包）；
+2. **Android 沙箱/exec 策略、WebView、厂商保活**仍需 arm64 真机（x86_64 宿主上的 emulator 明确拒绝 arm64 镜像：
+   `FATAL | Avd's CPU Architecture 'arm64' is not supported by the QEMU2 emulator on x86_64 host`）；
+3. `stage-local-host.mjs` **一次只放一个 ABI**：本轮验证完已恢复 x86_64 stage（模拟器工作流不受影响）；
+   arm64 产物留档 `.preview-shot/arm64/app-arm64-v8a-release.apk`（不进 git）。
+
+### 3O.5 文档
+
+- [`mobile/android/LOCAL_HOST_CONTRACT_ADDENDUM.md`](mobile/android/LOCAL_HOST_CONTRACT_ADDENDUM.md) 新增 §9：
+  工具链、可复跑命令、APK 逐项 ELF 表、验证结果、边界。
+- 至此 §3M 的第 3 条（arm64 只差宿主二进制）**已闭环**，剩余的唯一缺口是「arm64 真机上的 PRoot/Android 行为」。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。
