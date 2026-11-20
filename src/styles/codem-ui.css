@@ -2069,6 +2069,20 @@ body.resizing-columns * {
 .usage-chart-bar:is(:hover, :focus-visible) .usage-chart-bar-tooltip {
   opacity: 1;
 }
+/*
+ * 第 8 轮（1280 宽实测）：气泡是 `left:50% + translateX(-50%)` 的绝对定位，
+ * 最左/最右那根柱子的气泡会**越出卡片 36px** —— 卡片 `overflow:hidden` 把气泡裁掉，
+ * 同时 `scrollWidth` 被撑大（布局审计 R4：845>809）。两端改成对齐到柱子内侧。
+ */
+.usage-chart-bar:first-child .usage-chart-bar-tooltip {
+  left: 0;
+  transform: none;
+}
+.usage-chart-bar:last-child .usage-chart-bar-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
 .usage-chart-labels {
   display: flex;
   gap: var(--space-2);

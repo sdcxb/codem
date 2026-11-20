@@ -103,7 +103,8 @@
     "host:spike:diff": "node packages/host/scripts/spike-diff.mjs",
     "typecheck:ui": "tsc -p packages/ui/tsconfig.json",
     "host:spike:guidance": "node packages/host/scripts/spike-guidance.mjs",
-    "android:spike:real": "node android-shell/spike-real-model.mjs"
+    "android:spike:real": "node android-shell/spike-real-model.mjs",
+    "audit:layout": "node tools/ui-audit/layout-audit.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

@@ -938,6 +938,93 @@ aarch64 的 `codem_db`，放进 `jniLibs/arm64-v8a/`；本机没有这套交叉�
 - 新增探针：`_e2e-approval.mjs`、`_e2e-ipc-stats.mjs`、`_check-arm64-apk*.cjs`（都在 `.preview-shot/`，不进仓库）；
 - 结构化证据：`.preview-shot/unslop/e2e/{approval-e2e-result.json,ipc-stats.json,arm64-*-check.json}`。
 
+## 3N. 第 9 轮：排版事故的**系统性**排查与修复（挤压 / 竖排 / 静默裁切 / 文字间距）（2026-11-20）
+
+用户现场：任务管理 → 子智能体 的状态条被压成一列（`1/0/6/0/0` 竖排），并指出「大量页面存在
+要素挤压、换行与文字间距问题」，问「之前不是深度排查吗」。
+
+### 3N.1 为什么之前会漏（先说清原因，再说修法）
+
+之前的"深度排查"只有两层，**都不量排版**：
+
+| 层 | 它查什么 | 为什么漏掉这次的问题 |
+|---|---|---|
+| `tools/ui-audit/scan-ui.mjs` | 源码级 token / 颜色角色 / 样式字面量 | `grid-template-columns: repeat(auto-fill, minmax(48px, max-content))` 是**合法 CSS**，lint 无感 |
+| `.preview-shot/_crawl.mjs` | console 错误、死点击、空白浮层 | 挤压/竖排**不报错、不溢出控制台**，DOM 指纹甚至不变 |
+| 人工走查截图 | 1440/1600 宽的主界面 | 只在**特定宽度**暴露：状态条在 1179px 时被 `auto-fill` 拆成 **23 条 40px 窄列** |
+
+所以漏的不是"没查"，而是**没有几何判据**。这一轮补的就是这一层。
+
+### 3N.2 新增：运行时布局审计 `tools/ui-audit/layout-audit.mjs`
+
+CDP 驱动，导航 37 个场景（主界面 / 任务管理 8 个页签 + 子智能体两个子视图 / 5 个管理器 /
+设置 24 个页面），用 `getBoundingClientRect` + `getComputedStyle` 量真实排版：
+
+| 判据 | 抓什么 |
+|---|---|
+| R1 | `grid` 轨道 ≥5 而子元素 ≤4 ⇒ `auto-fill` 把一行拆成很多空列（本次的元凶形态） |
+| R2 | `flex-direction: row` 的容器里子项**同 x 不同 y** ⇒ 本该横排的被挤成竖排 |
+| R3 | 短标签（≤20 字、块级）被折成 ≥2 行 |
+| R4 | `overflow:hidden` 且内容超出 ⇒ 静默裁切（已排除省略号/line-clamp/内层滚动容器） |
+| R5 | 极窄/极矮但有文字的盒子（阈值已按实测定过） |
+| R6 | 字距/行距离群（`letter-spacing` 比例、多行 `line-height < 1.15`） |
+| profile | 每页的文字间距画像（字号 × letter-spacing、字号 × 行高比），用于跨页比较 |
+
+用法：`npm run audit:layout`（默认 9224 / 1600×900），`--width=1100` / `--shots=true` / `--only=settings`。
+产物在 `.preview-shot/unslop/layout-audit/`（不进仓库）。
+
+### 3N.3 查出来并修掉的 6 个根因（每个都有前后读数）
+
+| # | 位置 | 病 | 修 |
+|---|---|---|---|
+| 1 | `.lo-task__bar`（任务管理状态条，**用户截图那一处**） | `repeat(auto-fill, minmax(48px, max-content))` ⇒ 1179px 宽时 23 条轨道、每个子项独占一列；高度 108px、计数竖排 | 改 `display:flex; flex-wrap:nowrap`；`.lo-task__meta` 不换行、超宽横向滚动；时钟 `margin-left:auto`。修后：**一行 45px**，计数横排 |
+| 2 | `.sp-slider-row`（设置 → 宠物 的「宠物大小 40%」） | 被误并进 `.kg-legend` 的 grid 选择器组（多行逗号组），滑块行变成 8 条 96px 轨道 ⇒ 标签/数值折行 | 从该组移除，保留它自己的 `display:flex; space-between` |
+| 3 | `.lo-align`（子智能体 → 设置 的对齐预览） | 同一 `auto-fill` 形状：1280 宽实测 **6 条轨道 / 2 个子项**，220px 预览塞进 48px 列 | 改 flex-wrap |
+| 4 | `.memory-item-header/key/badges`（记忆管理器） | 1280 宽时徽标组把标题挤到 ~100px，**13 条标题折成两行**；徽标自己竖排 3 行 | 标题 `flex:1; min-width:0; ellipsis; nowrap`，徽标组 `flex:0 0 auto; nowrap` |
+| 5 | `.mc-entry-content`（设置 → 记忆体检） | `max-height:4em; overflow:hidden` **静默切掉正文**，没有任何"还有下文"的提示 | 两行 `-webkit-line-clamp`（有省略号），展开态还原 |
+| 6 | `.usage-chart-bar-tooltip`（设置 → 用量统计） | 首/末柱的气泡绝对定位越出卡片 36px，被 `overflow:hidden` 裁掉（`scrollWidth 845 > 809`） | 首柱 `left:0`、末柱 `right:0`，不再居中溢出 |
+
+### 3N.4 文字间距：量化结论
+
+对 37 个场景收集了「字号 × letter-spacing / 字号 × 行高比」画像：
+
+- **letter-spacing 全部是 `0px`**（没有页面在正文字距上乱来）；
+- 行高比集中在 **1.50**（11/12/13px 正文）与 **1.70**（14px），个别 1.20 只出现在**按钮/链接**（正常）；
+- 所以用户感知到的"文字间距问题"，在报告中这三处都能对应上**具体的挤压/裁切**：
+  状态条竖排（1）、滑块行折行（2）、记忆条目两行挤压 + 正文静默裁切（4、5）。
+  修完之后同一套画像保持不变（没有为了"看起来松"去动全局字距）。
+
+### 3N.5 防回归：源码判据 `src/test/layout-regressions.test.ts`（7 条）
+
+R1 那种形状在源码里"合法"，所以要把**根因形状**钉住：
+
+1. **LAYOUT-1**：全仓 CSS 里不许再出现 `grid-template-columns: repeat(auto-fill, … max-content)`
+   （允许清单：`.identity-emoji-grid` / `.bootstrap-emoji-grid` / `.lo-zone-occupants` —— 都是
+   "很多等宽小格子、允许换行"的语义，注释里写了理由）；
+2. LAYOUT-2：`.lo-task__bar` 必须 flex 单行；`.lo-task__meta` 必须 `nowrap`；
+3. LAYOUT-3：`.sp-slider-row` 不许再出现在 `.kg-legend` 的 grid 选择器组里；
+4. LAYOUT-4：记忆标题必须 `ellipsis + min-width:0`，徽标组必须 `nowrap`；
+5. LAYOUT-5：记忆体检正文必须 line-clamp，且不许再写死 `max-height:4em`；
+6. LAYOUT-6：用量图表首/末柱的气泡必须贴边；
+7. LAYOUT-7：审计工具必须在仓库里，且 `npm run audit:layout` 可直接跑。
+
+**变异自证**：把 `.sp-slider-row` 加回 grid 组 ⇒ LAYOUT-3 红；把 `.lo-task__bar` 改回 grid ⇒
+LAYOUT-1 + LAYOUT-2 同时红；还原后 7/7 绿。
+
+### 3N.6 读数
+
+| 宽度 | 场景数 | R1/R2/R4（硬性） | 结论 |
+|---|---|---|---|
+| 1100×760 | 37 | **0** | 通过 |
+| 1280×800 | 37 | **0** | 通过 |
+| 1600×900 | 37 | **0** | 通过 |
+
+（R3/R5/R6 的阈值按实测调过：行内代码跨行、`|`/`·` 分隔符、`1h` 这类计时都属正常，已排除并写进工具注释。）
+
+**为什么这次能保证"全面"**：不是再截几张图看，而是把「每个页面 × 三个宽度」都跑成可数判据；
+再加 7 条源码闸门，防止同类形状被写回来。仍有边界（如实记）：审计只覆盖**可导航到的页面**，
+弹窗里的二级状态、hover/focus 态、以及 900px 以下的窄窄屏还没跑。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

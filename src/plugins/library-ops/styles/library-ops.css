@@ -42,14 +42,23 @@
 .lo-icon { flex-shrink: 0; vertical-align: -0.15em; }
 
 .lo-task__bar {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content));
+  /*
+   * 单行状态条：**必须是 flex 一行**（第 8 轮真机截图修复）。
+   *
+   * 原来写的是 `grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content))`：
+   * `auto-fill` 会按可用宽度铺出**几十条窄列**，而每个子项只占一格 ⇒ 状态、计数、时钟、刷新
+   * 各占一列、列宽只有 40~50px；计数里的「图标+数字」再一换行，就变成截图里那种竖排的 1/0/6/0/0。
+   * 这类布局要的是「一行、按内容宽、最后一项靠右」，flex 才是对的工具。
+   */
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-4) var(--space-6);
   padding: var(--space-4) var(--space-6);
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-secondary);
   flex-shrink: 0;
+  overflow: hidden;
 }
 .lo-task__live {
   display: inline-flex;
@@ -70,15 +79,20 @@
 .lo-task__meta {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  /* 不换行：换行会把「图标+数字」压成竖排（真机截图就是这个形态）；空间不够时自己横向滚 */
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   gap: var(--space-2) var(--space-6);
   font-size: var(--fs-xs);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.lo-task__meta > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.lo-task__meta > span { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .lo-task__clock {
   margin-left: auto;
+  white-space: nowrap;
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -1516,8 +1530,18 @@
   background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
-.lo-align { display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content)); gap: var(--space-6); align-items: flex-start; }
+.lo-align {
+  /*
+   * 第 8 轮（1280 宽实测）：这里原来也是 `repeat(auto-fill, minmax(48px, max-content))` ——
+   * 量出来是「6 条轨道 / 2 个子项」，220px 的对齐预览被塞进 48px 列里。
+   * 两栏（预览 + 说明）该用 flex：窄了自动换行，宽了各占本来宽度。
+   * 判据：tools/ui-audit/layout-audit.mjs 的 R1。
+   */
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  align-items: flex-start;
+}
 .lo-align__preview {
   position: relative;
   flex: 0 0 auto;
