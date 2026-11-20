@@ -2713,7 +2713,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 {activeTab === "persona" && (
 <>
 {/* B2 Persona cards management (对标 EAC soul-md) */}
-<PersonaManager onClose={() => {}} />
+<PersonaManager onClose={() => setActiveTab("general")} />
 </>
 )}
 {activeTab === "computer" && (

@@ -117,6 +117,18 @@ vi.mock("../components/ToolManager", async () => {
       ),
   };
 });
+vi.mock("../components/PersonaManager", async () => {
+  const React = await import("react");
+  return {
+    PersonaManager: ({ onClose }: { onClose: () => void }) =>
+      React.createElement(
+        "div",
+        { "data-testid": "persona-manager-probe" },
+        React.createElement("button", { type: "button", onClick: onClose }, "关闭人设管理"),
+      ),
+  };
+});
+
 vi.mock("../components/AgentManager", async () => {
   const React = await import("react");
   return {
@@ -267,6 +279,23 @@ describe("A1 项目管理：失败不再静默、弹窗不再卡住", () => {
 
     const createBtn = screen.getByRole("button", { name: "创建项目" }) as HTMLButtonElement;
     await waitFor(() => expect(createBtn.disabled, "忙态必须解除，否则再也点不了").toBe(false));
+  });
+
+  it("A1-d 导入文件夹：loadProjectData 失败 ⇒ 留在弹窗并说出原因", async () => {
+    projectFilesMock.loadProjectInstructions.mockRejectedValueOnce(new Error("EACCES: 不可读"));
+    const onClose = vi.fn();
+    render(<ProjectManager onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /导入文件夹/ }));
+    fireEvent.change(screen.getByPlaceholderText("点击右边按钮选择文件夹"), {
+      target: { value: "C:\\work\\imported" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "导入" }));
+
+    const error = await screen.findByTestId("project-action-error");
+    expect(error.textContent).toContain("导入项目失败");
+    expect(error.textContent).toContain("EACCES");
+    expect(onClose, "失败还关弹窗 ⇒ 用户以为导入成功了").not.toHaveBeenCalled();
   });
 
   it("A1-b 打开失败：显示原因、不关闭面板", async () => {
@@ -497,6 +526,20 @@ describe("B7 设置内嵌面板的关闭按钮不是死键", () => {
 
     expect(screen.queryByTestId("agent-manager-probe"), "点 X 后智能体管理必须消失").toBeNull();
     expect(activeTabLabel(container)).toBe("通用");
+  });
+  it("B7-c 人设管理：点 X 回到「通用」（同 ToolManager/AgentManager 的口径）", async () => {
+    const { container } = render(createElement(SettingsPanel, { onClose: () => {} }));
+    await act(async () => {});
+
+    clickSidebar(container, "人设");
+    await act(async () => {});
+    expect(screen.getByTestId("persona-manager-probe"), "前置：人设页签要渲染 PersonaManager").toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭人设管理" }));
+    await act(async () => {});
+
+    expect(screen.queryByTestId("persona-manager-probe"), "点 X 后人设管理必须消失").toBeNull();
+    expect(activeTabLabel(container), "必须回到设置列表（通用），而不是原地不动").toBe("通用");
   });
 });
 

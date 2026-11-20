@@ -196,10 +196,16 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
   const handleImport = async () => {
     if (!newPath.trim()) return;
-    const name = newPath.split("\\").pop() || "导入项目";
-    const project = createProject(name, newPath, "导入的项目");
-    await loadProjectData(newPath);
-    onClose();
+    setActionError("");
+    try {
+      const name = newPath.split("\\").pop() || "导入项目";
+      createProject(name, newPath, "导入的项目");
+      await loadProjectData(newPath);
+      onClose();
+    } catch (err) {
+      /* 与创建/打开同一条纪律：失败必须留在弹窗里说出来，不能静默关闭 */
+      setActionError(`导入项目失败：${err instanceof Error ? err.message : String(err)}。请检查路径是否存在且可读。`);
+    }
   };
 
   const handleClone = async () => {
