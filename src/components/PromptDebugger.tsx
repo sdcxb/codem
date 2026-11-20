@@ -233,7 +233,7 @@ export function PromptDebugger() {
               >
                 <span style={{ fontSize: 'var(--fs-xs)' }}>{expanded ? "▼" : "▶"}</span>
                 <span>{s.title || `Section ${s.index + 1}`}</span>
-                <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                   ~{Math.ceil(s.content.length / 4)} tokens
                 </span>
               </div>

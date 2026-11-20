@@ -303,9 +303,13 @@
 .lo-card--status,
 .lo-card--sessions,
 .lo-card--activity { max-height: 320px; }
+/*
+ * 第 12 轮（运行时审计 R4）：800×600（窗口最小尺寸）下「活跃时段」卡片内容比 320px 高，
+ * 这里是 overflow:hidden ⇒ 底部数据被静默裁掉。改成纵向可滚（统计卡片本来就允许滚动）。
+ */
 .lo-card--status .lo-card__body,
 .lo-card--sessions .lo-card__body,
-.lo-card--activity .lo-card__body { flex: 1; min-height: 0; overflow: hidden; }
+.lo-card--activity .lo-card__body { flex: 1; min-height: 0; overflow-y: auto; }
 .lo-card__count {
   padding: 0 var(--space-4);
   border-radius: var(--radius-full, 999px);
@@ -438,6 +442,7 @@
 }
 .lo-section-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-4);
   margin: var(--space-5) 0 var(--space-3);
@@ -447,7 +452,7 @@
   letter-spacing: 0.02em;
 }
 .lo-section-title:first-child { margin-top: 0; }
-.lo-section-title__hint { margin-left: auto; color: var(--text-muted); font-weight: 400; text-transform: none; }
+.lo-section-title__hint { margin-left: auto; color: var(--text-muted); font-weight: 400; text-transform: none; white-space: nowrap; }
 .lo-note { margin: var(--space-3) 0 0; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.6; }
 .lo-warn { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-4); margin-top: var(--space-4); font-size: var(--fs-xs); color: var(--text-secondary); }
 .lo-link-btn {
@@ -1377,7 +1382,12 @@
 }
 .lo-chip:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .lo-chip.is-active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); }
-.lo-settings__actions { margin-top: var(--space-6); display: flex; gap: var(--space-4); }
+/*
+ * 第 12 轮（运行时审计 R3 @900 宽）：两个按钮并排时各自被压到 ~110px，
+ * 「手动对位编辑器」这种 7 字标签折成两行。按钮文字一律不折，放不下就让整行换行。
+ */
+.lo-settings__actions { margin-top: var(--space-6); display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.lo-settings__actions > .lo-btn { white-space: nowrap; }
 
 /* ===== 场景图片卡 ===== */
 .lo-scene-current {

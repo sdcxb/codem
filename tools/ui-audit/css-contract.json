@@ -1178,7 +1178,6 @@
     "display": "flex",
     "font-size": "var(--fs-xs)",
     "font-weight": "700",
-    "letter-spacing": "0.5px",
     "padding": "var(--space-2) var(--space-4) var(--space-3)",
     "text-transform": "uppercase"
   },
@@ -7653,6 +7652,7 @@
   "market-skill-card-footer": {
     "align-items": "center",
     "display": "flex",
+    "flex-wrap": "wrap",
     "gap": "var(--space-4)",
     "justify-content": "space-between",
     "margin-top": "auto"
@@ -7726,6 +7726,14 @@
     "display": "flex",
     "gap": "var(--space-3)",
     "min-width": "0"
+  },
+  "market-skill-meta--note": {
+    "-webkit-box-orient": "vertical",
+    "-webkit-line-clamp": "2",
+    "display": "-webkit-box",
+    "flex": "1",
+    "line-clamp": "2",
+    "overflow": "hidden"
   },
   "market-skill-name": {
     "color": "var(--text-primary)",
@@ -11025,7 +11033,6 @@
     "font-size": "var(--fs-xs)",
     "font-weight": "var(--weight-medium)",
     "gap": "var(--space-2)",
-    "letter-spacing": "0.5px",
     "margin": "0 0 var(--space-2) 0",
     "text-transform": "uppercase"
   },
@@ -17472,9 +17479,14 @@
     "transition": "var(--transition-color)"
   },
   "skin-card-desc": {
+    "-webkit-box-orient": "vertical",
+    "-webkit-line-clamp": "2",
     "color": "var(--text-secondary, #8b949e)",
+    "display": "-webkit-box",
     "font-size": "var(--fs-xs)",
+    "line-clamp": "2",
     "line-height": "var(--lh-compact)",
+    "overflow": "hidden",
     "text-align": "center"
   },
   "skin-card-name": {

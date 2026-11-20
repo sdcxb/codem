@@ -21,7 +21,18 @@
  * - **R4 裁切**：`overflow: hidden/clip` 且 `scrollWidth > clientWidth + 1` 且有文字。
  * - **R5 过窄/过矮**：`clientWidth < 14` 或 `clientHeight < 12` 但有可见文字。
  * - **R6 文字间距离群**：`letter-spacing` 非 `normal` 且 |px| 与字号比例异常；
- *   `line-height < 1.15 × font-size` 的多行文本（中文行距过紧）。
+ *   `line-height < 1.15 × font-size` 的多行文本（中文行距过紧）。 * - **R9 子元素溢出父容器**：父容器有边框/底色、`overflow:visible`、静态子元素超出 >1.5px
+ *   （第 11 轮：搜索框底色越出胶囊、卡片被压扁都是这一类）。
+ * - **R10 hover 改变布局**：悬停后元素自身 offset 尺寸或同父兄弟位置变化（只许改颜色/阴影）。
+ * - **R11 焦点环被裁**：`:focus-visible` 的外扩环超出最近的 `overflow:hidden` 祖先。
+ * - **R12 浮层超出视口**：绝对/固定定位的菜单/气泡/弹窗越过窗口边缘 >2px。
+ *
+ * ## 状态覆盖（第 12 轮）
+ *
+ * 每个场景除了静态页，还会：① 逐个点开二级页签；② 悬停主内容区控件（R10）；
+ * ③ 连按 Tab 走键盘焦点（R11）；④ 管理器/任务中心点开第一张卡（详情态）；
+ * ⑤ 三个浮层场景（模型菜单 / 斜杠命令 / 会话右键）。
+ * 开关：`--no-substates` / `--no-hover` / `--no-focus` / `--no-detail`，限量：`--hover-max` / `--focus-max`。
  *
  * ## 用法（需要一个已开 CDP 的开发实例 + 已在 1420 上服务的 dist）
  *
@@ -46,6 +57,13 @@ for (const a of process.argv.slice(2)) {
 const PORT = Number(args.get("port") ?? 9224);
 const URL_BASE = args.get("url") ?? "http://localhost:1420/";
 const ONLY = args.get("only") ?? "";
+/* 状态覆盖（第 11 轮补齐）：--no-<x> 可关掉某一类，默认全开 */
+const SUBSTATES = args.get("no-substates") !== "true";
+const HOVER = args.get("no-hover") !== "true";
+const FOCUS = args.get("no-focus") !== "true";
+const DETAIL = args.get("no-detail") !== "true";
+const HOVER_MAX = Number(args.get("hover-max") ?? 8);
+const FOCUS_MAX = Number(args.get("focus-max") ?? 12);
 const MAX_SCENES = Number(args.get("max-scenes") ?? 0);
 const VERBOSE = args.get("verbose") === "true";
 /* 是否给每个场景存一张截图（人工复核用；默认关，产物在 layout-audit/shots/） */
@@ -139,12 +157,37 @@ window.__layoutAudit = function () {
     var r = el.getBoundingClientRect();
     var t = text(el);
 
-    /* R1 网格碎片化：很多空轨道，子元素只占少数几格 */
+    /*
+     * R1 网格碎片化：很多空轨道，子元素只占少数几格。
+     *
+     * ⚠️ 只看「轨道数 ≥5 且子元素 ≤4」会误报 auto-fit 的 minmax(110px, 1fr)：
+     * auto-fit 会把**空轨道折叠成 0 宽**，computed 里仍列出 7 条，但子元素是铺满的。
+     * 真问题（本次的 auto-fill）特征是「尾部留出大片空白」，所以再加一条：
+     * 子元素右边界与容器右边界的距离 > 容器宽度 25%。
+     */
     if (cs.display.indexOf("grid") === 0) {
       var tracks = (cs.gridTemplateColumns || "").split(" ").filter(function (s) { return s && s !== "none"; });
       var kids = Array.prototype.slice.call(el.children).filter(visible);
       if (tracks.length >= 5 && kids.length >= 1 && kids.length <= 4) {
-        push("R1", el, "grid " + tracks.length + " tracks / " + kids.length + " children", { tracks: tracks.length, kids: kids.length });
+        var er = el.getBoundingClientRect();
+        var maxRight = 0;
+        for (var ki = 0; ki < kids.length; ki++) {
+          var kr = kids[ki].getBoundingClientRect();
+          if (kr.right > maxRight) maxRight = kr.right;
+        }
+        var trailing = er.right - maxRight;
+        /* 卡片网格（子元素自带边框/底色且轨道够宽）是「稀疏但正确」，不算碎片化：
+           真 bug 的子元素是裸文本（无边框），轨道只有 40~50px。 */
+        var cardLike = kids.every(function (k) {
+          var kcs = getComputedStyle(k);
+          return (parseFloat(kcs.borderTopWidth) || 0) > 0 || (kcs.backgroundColor && kcs.backgroundColor !== "rgba(0, 0, 0, 0)");
+        });
+        var trackPx = tracks.map(function (t) { return parseFloat(t) || 0; });
+        var avgTrack = trackPx.reduce(function (a, b) { return a + b; }, 0) / Math.max(1, trackPx.length);
+        if (cardLike && avgTrack >= 100) return;
+        if (trailing > er.width * 0.25) {
+          push("R1", el, "grid " + tracks.length + " tracks / " + kids.length + " children, trailing " + Math.round(trailing) + "px", { tracks: tracks.length, kids: kids.length, trailing: Math.round(trailing) });
+        }
       }
     }
 
@@ -177,7 +220,8 @@ window.__layoutAudit = function () {
     }
     leafText = leafText.replace(/\s+/g, " ").trim();
     /* 行内元素（inline-term / 行内代码）跨行是正常的排版，不算"短标签断行" */
-    if (cs.display !== "inline" && !hasElementKid && leafText.length > 0 && leafText.length <= 20 && cs.whiteSpace === "normal") {
+    var clamped = (cs.webkitLineClamp && cs.webkitLineClamp !== "none") || (cs.lineClamp && cs.lineClamp !== "none");
+    if (!clamped && cs.display !== "inline" && !hasElementKid && leafText.length > 0 && leafText.length <= 20 && cs.whiteSpace === "normal") {
       var lines = lineCount(el);
       if (lines >= 2 && r.height > 20 && r.width < 260) {
         push("R3", el, "short text wrapped into " + lines + " lines", { lines: lines, chars: leafText.length });
@@ -201,7 +245,20 @@ window.__layoutAudit = function () {
     })(el);
     var intentionalClamp = cs.textOverflow === "ellipsis" || cs.webkitLineClamp !== "none" || cs.getPropertyValue("-webkit-line-clamp") !== "none";
     var scrollable = cs.overflowX === "auto" || cs.overflowX === "scroll" || cs.overflowY === "auto" || cs.overflowY === "scroll";
+    /* 屏读专用类（视觉上就该藏起来，不是“文本被切”） */
+    var isSrOnly = (el.className && String(el.className).indexOf("sr-only") >= 0) || !!(el.closest && el.closest(".sr-only"));
+    if (isSrOnly) return;
     if (!innerScroller && !intentionalClamp && !scrollable && (cs.overflowX === "hidden" || cs.overflowX === "clip" || cs.overflowY === "hidden" || cs.overflowY === "clip") && t.length > 0) {
+      /* 画布/缩放内容：transform: scale() 不改变 scrollHeight，但视觉上没有溢出 —— 跳过 */
+      var scaledInside = false;
+      for (var ci4 = 0; ci4 < el.children.length && !scaledInside; ci4++) {
+        var ccs4 = getComputedStyle(el.children[ci4]);
+        /* 绝对定位 + transform 的子层 = 画布/平移视口（如场景图），容器裁切是**设计**，不是文本被切 */
+        if (ccs4.transform && ccs4.transform !== "none" && (ccs4.position === "absolute" || ccs4.position === "fixed")) {
+          scaledInside = true;
+        }
+      }
+      if (scaledInside) return;
       /* 差值 ≤6px 多半是滚动条/小数取整，不算裁切 */
       if (el.scrollWidth > el.clientWidth + 6 || el.scrollHeight > el.clientHeight + 6) {
         push("R4", el, "clipped (" + el.scrollWidth + ">" + el.clientWidth + ")", { sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight });
@@ -210,6 +267,7 @@ window.__layoutAudit = function () {
 
     /* R5 过窄/过矮 */
     if (leafText.length >= 3 && !hasElementKid) {
+      if (el.className && String(el.className).indexOf("sr-only") >= 0) return;
       if ((el.clientWidth > 0 && el.clientWidth < 9) || (el.clientHeight > 0 && el.clientHeight < 9)) {
         push("R5", el, "undersized box " + el.clientWidth + "x" + el.clientHeight, { w: el.clientWidth, h: el.clientHeight });
       }
@@ -254,6 +312,19 @@ window.__layoutAudit = function () {
         if (over > 1.5) { escaped++; if (!worst || over > worst.over) worst = { over: Math.round(over), kid: (kid2.tagName || "").toLowerCase() + "." + (String(kid2.className || "").trim().split(/\s+/)[0] || "") }; }
       }
       if (escaped > 0) push("R9", el, escaped + " child overflow, max " + worst.over + "px (" + worst.kid + ")", worst);
+    /* R12：浮层/菜单/气泡超出视口（贴边弹层最容易踩：气泡被窗口裁掉一半） */
+    (function () {
+      var pos12 = cs.position;
+      if (pos12 !== "absolute" && pos12 !== "fixed") return;
+      if (cs.visibility === "hidden" || parseFloat(cs.opacity || "1") === 0) return;
+      var hint12 = String(el.className || "") + " " + String(el.getAttribute("role") || "");
+      if (!/menu|popover|dropdown|tooltip|dialog|popup|overlay|panel/i.test(hint12)) return;
+      var r12 = el.getBoundingClientRect();
+      if (r12.width < 8 || r12.height < 8) return;
+      var overX = Math.max(0 - r12.left, r12.right - window.innerWidth);
+      var overY = Math.max(0 - r12.top, r12.bottom - window.innerHeight);
+      if (overX > 2 || overY > 2) push("R12", el, "popover escapes viewport by " + Math.round(Math.max(overX, overY)) + "px", { x: Math.round(r12.left), y: Math.round(r12.top), w: Math.round(r12.width), h: Math.round(r12.height) });
+    })();
     })();
 
     /* R8：两端对齐（中文两端对齐会造成字距忽大忽小） */
@@ -355,6 +426,9 @@ const SCENES = [
   })),
   { name: "taskcenter-subagents-scene", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }], after: 1400 },
   { name: "taskcenter-subagents-settings", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }, { label: "设置", mode: "exact", container: ".lo-task" }], after: 1200 },
+  { name: "menu-model", special: "model-menu", steps: [], after: 300 },
+  { name: "menu-slash", special: "slash-menu", steps: [], after: 300 },
+  { name: "menu-session", special: "session-menu", steps: [], after: 300 },
   { name: "dialog-plugins", steps: [{ label: "插件管理", mode: "contains" }], after: 1400 },
   { name: "dialog-search", steps: [{ label: "搜索", mode: "exact" }], after: 1000 },
   { name: "menu-file", steps: [{ label: "文件", mode: "exact" }], after: 800 },
@@ -401,8 +475,139 @@ async function clickLabel(ctx, label, mode, container) {
   return ctx.evalJs(expr);
 }
 
+async function evalJs(ctx, src) { return ctx.evalJs(src); }
+
 async function measure(ctx) {
   return ctx.evalJs("window.__layoutAudit()");
+}
+
+/* ------------------------------------------------------------------ *
+ * 状态探测（第 11 轮补齐「hover / focus / 二级页签」三种未覆盖状态）
+ * ------------------------------------------------------------------ */
+
+/** 收集当前页面上可见的「二级页签」候选，并打上稳定的探针 id。 */
+async function collectSubstates(ctx) {
+  return ctx.evalJs('(function () {' +
+    'var sel = \'[role="tab"], .settings-subnav-pill, .sp-tab, .usage-tab, .manager-tab, .task-center-tab, .skill-manager-tabs button, [class*="subnav"] > button, [class*="tabs"] > button\';' +
+    'var roots = [document.querySelector("main"), document.querySelector(".settings-content"), document.querySelector(".modal-editor"), document.querySelector(".task-center-panel"), document.querySelector(".app-content")].filter(Boolean);' +
+    'if (!roots.length) roots = [document];' +
+    'var nodes = [];' +
+    'for (var ri = 0; ri < roots.length; ri++) nodes = nodes.concat(Array.prototype.slice.call(roots[ri].querySelectorAll(sel)));' +
+    'nodes = nodes.filter(function (n) { return !n.closest(".sidebar") && !n.closest(".titlebar") && !n.closest(".right-sidebar"); });' +
+    'var seen = {}; var out = [];' +
+    'for (var i = 0; i < nodes.length; i++) {' +
+    '  var el = nodes[i];' +
+    '  var r = el.getBoundingClientRect();' +
+    '  if (r.width < 8 || r.height < 8) continue;' +
+    '  var cs = getComputedStyle(el);' +
+    '  if (cs.visibility === "hidden" || cs.display === "none") continue;' +
+    '  var label = (el.innerText || el.getAttribute("aria-label") || el.title || "").replace(/\\s+/g, " ").trim();' +
+    '  if (!label || seen[label]) continue;' +
+    '  seen[label] = 1;' +
+    '  el.setAttribute("data-lo-sub", String(out.length));' +
+    '  out.push({ id: out.length, label: label.slice(0, 24) });' +
+    '  if (out.length >= 14) break;' +
+    '}' +
+    'return out;' +
+  '})()');
+}
+
+/** 点击某个二级页签（按探针 id，避免重名/滚动定位问题）。 */
+async function clickSubstate(ctx, id) {
+  return ctx.evalJs('(function () {' +
+    'var el = document.querySelector(\'[data-lo-sub="' + id + '"]\');' +
+    'if (!el) return false; el.click(); return true;' +
+  '})()');
+}
+
+/** 记录元素与其兄弟的「布局尺寸」，用于 hover 前后对比（transform 不改变 offset，故不会误报）。 */
+async function hoverSnapshot(ctx, id) {
+  return ctx.evalJs('(function () {' +
+    'var el = document.querySelector(\'[data-lo-hover="' + id + '"]\');' +
+    'if (!el) return null;' +
+    'var r = el.getBoundingClientRect(); var p = el.parentElement;' +
+    'var sibs = p ? Array.prototype.slice.call(p.children).map(function (k, idx) {' +
+    '  var b = k.getBoundingClientRect(); var kcs = getComputedStyle(k);' +
+    '  var key = k.getAttribute("data-lo-sib");' +
+    '  if (!key) { key = "s" + idx; k.setAttribute("data-lo-sib", key); }' +
+    '  return { k: key, abs: kcs.position === "absolute" || kcs.position === "fixed", x: Math.round(b.x), y: Math.round(b.y) };' +
+    '}) : [];' +
+    'return { w: Math.round(r.width), h: Math.round(r.height), ow: el.offsetWidth, oh: el.offsetHeight, parentH: p ? p.offsetHeight : 0, sibs: sibs };' +
+  '})()');
+}
+
+/** hover 后复量，返回布局是否变化（R10：hover 不许改变布局，只许改颜色/阴影）。 */
+async function hoverDelta(ctx, id, before) {
+  const after = await hoverSnapshot(ctx, id);
+  if (!after || !before) return null;
+  const issues = [];
+  if (Math.abs(after.ow - before.ow) > 1 || Math.abs(after.oh - before.oh) > 1) {
+    issues.push('element ' + before.ow + 'x' + before.oh + ' -> ' + after.ow + 'x' + after.oh);
+  }
+  /* 按稳定 key 比较（hover 时可能挂出 tooltip/浮层，按 HTMLCollection 下标会整体后移 => 假位移） */
+  const afterByKey = new Map(after.sibs.map((x) => [x.k, x]));
+  for (const a of before.sibs) {
+    const b = afterByKey.get(a.k);
+    if (!b || a.abs || b.abs) continue;
+    if (Math.abs(a.x - b.x) > 1 || Math.abs(a.y - b.y) > 1) { issues.push('sibling ' + a.k + ' moved (' + a.x + ',' + a.y + ')->(' + b.x + ',' + b.y + ')'); break; }
+  }
+  if (issues.length) return issues.join('; ');
+  return null;
+}
+
+/** 键盘 Tab 之后读当前焦点元素：焦点环是否被 overflow:hidden 的祖先裁掉。 */
+async function focusRingInfo(ctx) {
+  return ctx.evalJs('(function () {' +
+    'var el = document.activeElement;' +
+    'if (!el || el === document.body || el === document.documentElement) return null;' +
+    'var cs = getComputedStyle(el);' +
+    'var ow = parseFloat(cs.outlineWidth) || 0;' +
+    'var oo = parseFloat(cs.outlineOffset) || 0;' +
+    'if ((ow === 0 || cs.outlineStyle === "none") && cs.boxShadow === "none") return { hasRing: false };' +
+    'if (cs.outlineStyle === "none") return { hasRing: false, inset: cs.boxShadow !== "none" };' +
+    'var r = el.getBoundingClientRect();' +
+    'var ring = { l: r.left - ow - oo, t: r.top - ow - oo, r: r.right + ow + oo, b: r.bottom + ow + oo };' +
+    'var a = el.parentElement;' +
+    'while (a && a !== document.body) {' +
+    '  var acs = getComputedStyle(a);' +
+    '  var hidden = acs.overflow === "hidden" || acs.overflowX === "hidden" || acs.overflowY === "hidden";' +
+    '  if (hidden) {' +
+    '    var ar = a.getBoundingClientRect();' +
+    '    if (ring.l < ar.left - 0.5 || ring.t < ar.top - 0.5 || ring.r > ar.right + 0.5 || ring.b > ar.bottom + 0.5) {' +
+    '      return { hasRing: true, clipped: true, by: String(a.className).slice(0, 40), ring: ring, box: { l: Math.round(ar.left), t: Math.round(ar.top), r: Math.round(ar.right), b: Math.round(ar.bottom) } };' +
+    '    }' +
+    '  }' +
+    '  a = a.parentElement;' +
+    '}' +
+    'return { hasRing: true, clipped: false, outline: cs.outline, text: (el.innerText || el.getAttribute("aria-label") || "").slice(0, 24) };' +
+  '})()');
+}
+
+/** 收集 hover 探针候选（按钮/卡片/链接，去重、限量）。 */
+async function collectHoverTargets(ctx, limit) {
+  return ctx.evalJs('(function (limit) {' +
+    'var sel = \'button, [role="button"], a, .settings-sidebar-item, .skin-card, .sp-mode-btn, .lo-session-card, .lo-scene-option, .market-skill-card, .setting-group\';' +
+    'var roots = [document.querySelector(".settings-content"), document.querySelector("main"), document.querySelector(".modal-editor"), document.querySelector(".task-center-panel"), document.querySelector(".app-content")].filter(Boolean);' +
+    'if (!roots.length) roots = [document];' +
+    'var nodes = [];' +
+    'for (var ri = 0; ri < roots.length; ri++) nodes = nodes.concat(Array.prototype.slice.call(roots[ri].querySelectorAll(sel)));' +
+    'nodes = nodes.filter(function (n) { return !n.closest(".sidebar") && !n.closest(".titlebar") && !n.closest(".right-sidebar"); });' +
+    'var seen = {}; var out = [];' +
+    'for (var i = 0; i < nodes.length; i++) {' +
+    '  var el = nodes[i];' +
+    '  var r = el.getBoundingClientRect();' +
+    '  if (r.width < 12 || r.height < 12 || r.top < 0 || r.top > window.innerHeight - 8) continue;' +
+    '  var cs = getComputedStyle(el);' +
+    '  if (cs.visibility === "hidden" || cs.pointerEvents === "none") continue;' +
+    '  var key = (el.className || "").toString().slice(0, 40) + "|" + (el.innerText || el.getAttribute("aria-label") || "").slice(0, 16);' +
+    '  if (seen[key]) continue;' +
+    '  seen[key] = 1;' +
+    '  el.setAttribute("data-lo-hover", String(out.length));' +
+    '  out.push({ id: out.length, label: (el.innerText || el.getAttribute("aria-label") || el.tagName || "").replace(/\\s+/g, " ").trim().slice(0, 20), ident: (el.tagName || "").toLowerCase() + "." + String(el.className || "").split(" ")[0], x: r.left + r.width / 2, y: r.top + r.height / 2 });' +
+    '  if (out.length >= limit) break;' +
+    '}' +
+    'return out;' +
+  '})(' + JSON.stringify(limit) + ')');
 }
 
 /* ------------------------------------------------------------------ *
@@ -462,6 +667,23 @@ for (const scene of scenes) {
     continue;
   }
   await sleep(scene.after ?? 800);
+  /* 浮层场景：需要“打开某个菜单”的动作（不是按文字点按钮） */
+  if (scene.special === "model-menu") {
+    await evalJs(ctx, `(function () { var b = document.querySelector(".model-selector-inline"); if (b) b.click(); return !!b; })()`);
+    await sleep(700);
+  } else if (scene.special === "slash-menu") {
+    await evalJs(ctx, `(function () { var t = document.querySelector(".message-input"); if (t) { t.focus(); return true; } return false; })()`);
+    await sleep(200);
+    await ctx.send("Input.insertText", { text: "/" });
+    await sleep(700);
+  } else if (scene.special === "session-menu") {
+    const pt = await evalJs(ctx, `(function () { var el = document.querySelector(".sidebar-session"); if (!el) return null; var r = el.getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + r.height / 2) }; })()`);
+    if (pt) {
+      await ctx.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pt.x, y: pt.y, button: "right", buttons: 2, clickCount: 1 });
+      await ctx.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pt.x, y: pt.y, button: "right", buttons: 0, clickCount: 1 });
+      await sleep(700);
+    }
+  }
 
   /* 可选截图：便于人工复核"看起来挤"的页面 */
   async function snap(name) {
@@ -477,6 +699,8 @@ for (const scene of scenes) {
   }
 
   const record = async (name) => {
+    /* 页面可能刚被外部重建/导航打断（dist 换了 hash）——先确保测量函数在，再量 */
+    await ensureMeasure();
     const violations = (await measure(ctx)) ?? [];
     const profile = (await ctx.evalJs("window.__layoutProfile()")) ?? null;
     results.push({ scene: name, navOk: true, steps: stepResults, violations, profile });
@@ -491,6 +715,101 @@ for (const scene of scenes) {
     await snap(name.replace(/[^\p{L}\p{N}_-]+/gu, "_"));
   };
 
+
+/*
+ * 状态探测：子页签 → hover 位移 → Tab 焦点环。
+ * 每种状态都单独记一条结果，报告里能看出是「哪个页签 / 哪个控件」出的问题。
+ */
+/**
+ * 详情/二级面板：点开列表里的第一张卡，量「详情态」。
+ * 之前只量列表态，详情里的字段行/操作条从来没进过判据。
+ */
+async function probeDetail(sceneName, record, stepResults) {
+  const clicked = await ctx.evalJs('(function () {' +
+    'var sel = ".market-skill-card, .mcp-server-row, .memory-item, .notebook-card, .agent-card, .skill-card, .plugin-card, .lo-session-card";' +
+    'var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));' +
+    'for (var i = 0; i < nodes.length; i++) {' +
+    '  var el = nodes[i]; var r = el.getBoundingClientRect();' +
+    '  if (r.width < 60 || r.height < 24) continue;' +
+    '  if (r.top < 0 || r.top > window.innerHeight) continue;' +
+    '  el.click();' +
+    '  return { cls: String(el.className).slice(0, 40), text: (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 16) };' +
+    '}' +
+    'return null;' +
+  '})()');
+  if (!clicked) return;
+  await sleep(900);
+  await record(sceneName + '::detail');
+}
+
+async function probeStates(sceneName, record, stepResults) {
+  if (SUBSTATES) {
+    const tabs = (await collectSubstates(ctx)) ?? [];
+    if (VERBOSE) console.log('   sub-tabs=' + tabs.length);
+    for (const tab of tabs) {
+      const ok = await clickSubstate(ctx, tab.id);
+      if (!ok) continue;
+      await sleep(800);
+      await record(sceneName + '::tab:' + tab.label);
+    }
+  }
+  if (HOVER) {
+    await sleep(300); // 等页面稳定，避免把“刚挂载”的位移记成 hover 位移
+    const targets = (await collectHoverTargets(ctx, HOVER_MAX)) ?? [];
+    if (VERBOSE) console.log('   hover targets=' + targets.length);
+    const bad = [];
+    for (const t of targets) {
+      let before = await hoverSnapshot(ctx, t.id);
+      const again = await hoverSnapshot(ctx, t.id);
+      if (JSON.stringify(before) !== JSON.stringify(again)) { await sleep(250); before = await hoverSnapshot(ctx, t.id); }
+      await ctx.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(t.x), y: Math.round(t.y) });
+      await sleep(120);
+      const delta = await hoverDelta(ctx, t.id, before);
+      await ctx.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+      if (delta) {
+        /* 复现一次再记：hover 恰好撞上挂载/动画时会误报（实测：tooltip / 列表挂载） */
+        await sleep(200);
+        const before2 = await hoverSnapshot(ctx, t.id);
+        await ctx.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(t.x), y: Math.round(t.y) });
+        await sleep(150);
+        const delta2 = await hoverDelta(ctx, t.id, before2);
+        await ctx.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+        if (delta2) {
+          bad.push({ rule: 'R10', selector: sceneName + ' :: ' + t.label + ' [' + t.ident + ']', detail: 'hover 改变布局：' + delta + ' / 复现：' + delta2, text: t.label });
+        }
+      }
+    }
+    if (bad.length) {
+      results.push({ scene: sceneName + '::hover', navOk: true, steps: stepResults, violations: bad, profile: null });
+      const counts = {};
+      for (const v of bad) counts[v.rule] = (counts[v.rule] ?? 0) + 1;
+      console.log((sceneName + '::hover').padEnd(34), JSON.stringify(counts));
+      if (VERBOSE) for (const v of bad) console.log('   ' + v.rule + ' ' + v.selector + ' — ' + v.detail);
+    }
+  }
+  if (FOCUS) {
+    const bad = [];
+    let checked = 0;
+    for (let i = 0; i < FOCUS_MAX; i++) {
+      await ctx.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      await ctx.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      await sleep(80);
+      const info = await focusRingInfo(ctx);
+      if (info) checked++;
+      if (info && info.clipped) {
+        bad.push({ rule: 'R11', selector: sceneName + ' :: focus', detail: '焦点环被 ' + info.by + ' 裁掉（ring ' + JSON.stringify(info.ring) + ' vs box ' + JSON.stringify(info.box) + '）', text: info.by });
+      }
+    }
+    if (VERBOSE) console.log('   focus checked=' + checked);
+    if (bad.length) {
+      results.push({ scene: sceneName + '::focus', navOk: true, steps: stepResults, violations: bad, profile: null });
+      const counts = {};
+      for (const v of bad) counts[v.rule] = (counts[v.rule] ?? 0) + 1;
+      console.log((sceneName + '::focus').padEnd(34), JSON.stringify(counts));
+      if (VERBOSE) for (const v of bad) console.log('   ' + v.rule + ' ' + v.selector + ' — ' + v.detail);
+    }
+  }
+}
   if (scene.each) {
     const labels = await ctx.evalJs(`(function () {
       var box = document.querySelector(${JSON.stringify(scene.each.container)});
@@ -504,9 +823,13 @@ for (const scene of scenes) {
       if (!r?.ok) continue;
       await sleep(1100);
       await record(`${scene.name}:${label}`);
+      await probeStates(`${scene.name}:${label}`, record, stepResults);
+      if (DETAIL && /^(manager-|taskcenter-)/.test(scene.name)) await probeDetail(`${scene.name}:${label}`, record, stepResults);
     }
   } else {
     await record(scene.name);
+    await probeStates(scene.name, record, stepResults);
+    if (DETAIL && /^(manager-|taskcenter-)/.test(scene.name)) await probeDetail(scene.name, record, stepResults);
   }
 }
 

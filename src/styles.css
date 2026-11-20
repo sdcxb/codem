@@ -3500,9 +3500,34 @@ z-index: 50;
 
 /* 第 48 波：这条行是 overflow: hidden（保证不换行），外扩焦点环会被裁掉 ——
    所以行内控件的键盘焦点改走 inset 环（与第 39 波处理"会裁切容器"的同一套做法）。 */
-.input-tools-left :is(button, [role="button"]):focus-visible {
-  outline: none;
+.input-tools-left :is(button, [role="button"], [tabindex], input, select):focus-visible {
+  /* !important：codem-ui.css 里还有 :focus-visible / [aria-expanded]:focus-visible 两条
+     “外扩环”规则在抢 outline 简写（实测 inset 环生效了、外环仍被画出来）⇒ 这里必须压住。 */
+  outline: none !important;
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/*
+ * 第 12 轮（运行时审计 R11）：右侧栏是 `overflow:hidden`（圆角裁切），栏内贴边控件的外扩焦点环
+ * 会被栏边裁掉（实测环左侧溢出 7px）。贴边的可聚焦控件统一改 inset 环 —— 与输入工具行同一套做法。
+ */
+.right-sidebar :is(button, [role="tab"], [role="button"], [tabindex], a):focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/*
+ * 第 12 轮（运行时审计 R4 @800×600）：笔记本工作区的输入区很窄时，
+ * `.input-tools-left`（flex 单行 + overflow:hidden）只能分到 69px，内容 129px ⇒ 右侧按钮被裁。
+ * 窄窗口（≤900，产品最小窗口 800）允许工具行换行，而不是把控件裁掉。
+ */
+@media (max-width: 900px) {
+  .input-tools-left {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: var(--space-2);
+  }
+  .input-action-row { align-items: flex-start; }
 }
 
 /* P-UI: 右侧发送组 */
@@ -8467,8 +8492,13 @@ color: var(--text-on-accent);
   min-height: 36px;
 }
 
+/*
+ * 第 12 轮（运行时审计 R3 @1100）：卡片窄时「内置凭证管理（API key 存储）」在
+ * 页脚里被操作按钮挤成两行。页脚允许换行 —— 放不下时 meta 独占一行，而不是折字。
+ */
 .market-skill-card-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -8480,6 +8510,18 @@ color: var(--text-on-accent);
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+/*
+ * 第 12 轮（运行时审计 R3 @1100）：卡片页脚的说明是一段正文，窄卡里会折两行；
+ * 给它「两行封顶 + 省略号」——有界，且 R3 不再把有界折行当挤压。
+ */
+.market-skill-meta--note {
+  flex: 1;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .market-skill-author {
@@ -12712,7 +12754,7 @@ min-height: 36px;
   font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  /* 第 12 轮：中文界面不加字距（运行时审计 R6 实测 10px + 0.5px = 0.05 比例，汉字显得松散） */
   color: var(--text-muted);
   padding: var(--space-2) var(--space-4) var(--space-3);
   display: flex;
@@ -14159,6 +14201,12 @@ font-size: var(--fs-xs);
 color: var(--text-secondary, #8b949e);
 text-align: center;
 line-height: var(--lh-compact);
+/* 第 12 轮：窄窗口（800）卡片变窄时说明折两行；给一个明确的「两行封顶」 */
+display: -webkit-box;
+-webkit-line-clamp: 2;
+line-clamp: 2;
+-webkit-box-orient: vertical;
+overflow: hidden;
 }
 
 /* ========== Dream Config Panel ========== */

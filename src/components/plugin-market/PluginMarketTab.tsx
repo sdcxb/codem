@@ -206,7 +206,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
 
       {/* 外部本地运行时（非 dsh 生态）：zvec-grep 语义检索 — 一键安装/离线导入/索引管理 */}
       <div style={{ padding: '6px 12px 2px', flexShrink: 0 }}>
-        <div style={{ fontSize: 'var(--fs-2xs,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--fs-2xs,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: zh ? 0 : 0.5, marginBottom: 6 }}>
           {zh ? '本地语义检索（可选增强）' : 'Local semantic search (optional)'}
         </div>
         <ZvecGrepMarketCard />
@@ -263,7 +263,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
                 </div>
               )}
               <div className="market-skill-card-footer">
-                <div className="market-skill-meta" style={{ flex: 1 }} title={entry.note}>
+                <div className="market-skill-meta market-skill-meta--note" title={entry.note}>
                   {entry.note.length > 120 ? `${entry.note.slice(0, 120)}…` : entry.note}
                 </div>
                 {installable ? (

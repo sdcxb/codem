@@ -187,6 +187,76 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     expect(content, "列表区不许再靠 flex:1 抢高度").toContain("flex: 0 0 auto");
   });
 
+  it("LAYOUT-13: 会裁切的容器里，焦点环必须走 inset（不许外扩被裁）", () => {
+    const css = readCss("src/styles.css");
+    const row = blockOf(css, '.input-tools-left :is(button, [role="button"], [tabindex], input, select):focus-visible {');
+    expect(row, "输入工具行的焦点环规则不见了").toBeTruthy();
+    expect(row, "外扩环会被 overflow:hidden 的行裁掉 ⇒ 必须 outline:none（并用 !important 压住全局环）").toContain("outline: none !important");
+    expect(row).toContain("inset 0 0 0 var(--focus-ring-width)");
+    const side = blockOf(css, '.right-sidebar :is(button, [role="tab"], [role="button"], [tabindex], a):focus-visible {');
+    expect(side, "右侧栏贴边控件的焦点环规则不见了").toBeTruthy();
+    expect(side).toContain("outline: none !important");
+    expect(side).toContain("inset 0 0 0 var(--focus-ring-width)");
+  });
+
+  it("LAYOUT-14: 皮肤卡说明最多两行（窄窗口折行必须有界）", () => {
+    const desc = blockOf(readCss("src/styles.css"), ".skin-card-desc {");
+    expect(desc).toBeTruthy();
+    expect(desc).toContain("-webkit-line-clamp: 2");
+    expect(desc).toContain("line-clamp: 2");
+  });
+
+  it("LAYOUT-15: 任务中心统计卡正文超出时要滚动，不许静默裁切", () => {
+    const css = readCss("src/plugins/library-ops/styles/library-ops.css");
+    const body = /\n\.lo-card--status \.lo-card__body,\r?\n\.lo-card--sessions \.lo-card__body,\r?\n\.lo-card--activity \.lo-card__body \{([^}]*)\}/.exec(css);
+    expect(body, "找不到三张统计卡的 body 规则").toBeTruthy();
+    expect(body![1], "800×600 实测内容比 320px 高，hidden 会裁掉底部").toContain("overflow-y: auto");
+    expect(body![1]).not.toContain("overflow: hidden");
+  });
+
+  it("LAYOUT-16: 审计工具必须带状态覆盖（子页签 / hover / focus / 浮层）", () => {
+    const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
+    for (const rule of ["R9", "R12"]) {
+      expect(tool, `布局审计缺少 ${rule}`).toContain(`push("${rule}"`);
+    }
+    for (const rule of ["R10", "R11"]) {
+      expect(tool, `布局审计缺少 ${rule}`).toContain(`rule: '${rule}'`);
+    }
+    for (const flag of ["SUBSTATES", "HOVER", "FOCUS"]) {
+      expect(tool, `状态覆盖开关 ${flag} 不见了`).toContain(`const ${flag} =`);
+    }
+    expect(tool, "二级页签探测").toContain("collectSubstates");
+    expect(tool, "焦点环裁剪探测").toContain("focusRingInfo");
+  });
+
+  it("LAYOUT-17: 插件市场卡片的说明两行封顶（窄卡不折成三行）", () => {
+    const note = blockOf(readCss("src/styles.css"), ".market-skill-meta--note {");
+    expect(note, "缺 .market-skill-meta--note 规则").toBeTruthy();
+    expect(note).toContain("-webkit-line-clamp: 2");
+    expect(note).toContain("line-clamp: 2");
+    const footer = blockOf(readCss("src/styles.css"), ".market-skill-card-footer {");
+    expect(footer, "页脚必须允许换行（否则 meta 被按钮挤成两行）").toContain("flex-wrap: wrap");
+  });
+
+  it("LAYOUT-18: 任务中心设置区：操作按钮与小节标题不许折字", () => {
+    const css = readCss("src/plugins/library-ops/styles/library-ops.css");
+    const actions = blockOf(css, ".lo-settings__actions {");
+    expect(actions, "缺 .lo-settings__actions").toBeTruthy();
+    expect(actions).toContain("flex-wrap: wrap");
+    expect(css, "操作按钮文字必须不折").toMatch(/\.lo-settings__actions > \.lo-btn \{ white-space: nowrap; \}/);
+    const title = blockOf(css, ".lo-section-title {");
+    expect(title).toContain("flex-wrap: wrap");
+    const hint = blockOf(css, ".lo-section-title__hint {");
+    expect(hint).toContain("white-space: nowrap");
+  });
+
+  it("LAYOUT-19: 中文小节标题不许带西文大写字距", () => {
+    const nb = readCss("src/styles/notebook-workspace.css");
+    const label = blockOf(nb, ".nb-section-label {");
+    expect(label, "缺 .nb-section-label").toBeTruthy();
+    expect(label, "中文小节标签不该有 letter-spacing（10px + 0.5px 会显得松散）").not.toContain("letter-spacing");
+  });
+
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {
     const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
     for (const rule of ["R1", "R2", "R3", "R4"]) {

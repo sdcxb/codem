@@ -765,7 +765,6 @@
   font-weight: var(--weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
   margin: 0 0 var(--space-2) 0;
 }
 
