@@ -2476,18 +2476,6 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       }
     }
 
-    // D2: Initialize process-level sandbox ACL guard
-    try {
-      const { initDefaultSandbox, getSandboxGuard } = await import("../sandbox/sandbox-acl");
-      if (!getSandboxGuard()) {
-        initDefaultSandbox(cwd);
-        console.log(`[AgenticLoop.run] Sandbox ACL initialized for workspace: ${cwd}`);
-      }
-    } catch (sandboxErr) {
-      // Non-critical — sandbox is defense-in-depth
-      console.warn("[AgenticLoop.run] Sandbox init failed:", sandboxErr);
-    }
-
     /**
      * 上一轮遗留的引导消息（mid-turn steering）：**不许静默丢弃**。
      *

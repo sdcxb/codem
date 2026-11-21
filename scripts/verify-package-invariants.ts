@@ -19,6 +19,7 @@
  *   1 — 有检查失败
  */
 
+import fs from "node:fs";
 import { checkPackageInvariants } from "../src/core/llm/event-system-strict";
 
 // ========== Package Definitions ==========
@@ -27,8 +28,10 @@ interface PackageDef {
   name: string;
   /** 主入口文件 */
   entry: string;
-  /** 预期导出的符号 */
+  /** 预期导出的**运行时值**（可 import 检查） */
   expectedExports: string[];
+  /** 预期导出的**类型**（interface/type 运行时不存在，只能查源码文本） */
+  expectedTypeExports?: string[];
   /** 预期 re-export 的来源模块 */
   reExports?: Array<{ from: string; symbols: string[] }>;
 }
@@ -48,15 +51,11 @@ const PACKAGES: PackageDef[] = [
       // R3 re-exports
       "assertNever",
       "getTypedEventBus",
-      "registerOutputContract",
-      "validateToolOutput",
+      // registerOutputContract / validateToolOutput 已随 output-contract 退役（全仓零调用）
       "trackRequestHeader",
       "checkVisibleRecordedInvariant",
       "generatePostmortem",
       "loadLayeredInstructions",
-      // D2 re-exports
-      "SandboxGuard",
-      "initDefaultSandbox",
     ],
   },
   {
@@ -66,7 +65,6 @@ const PACKAGES: PackageDef[] = [
       "EventLog",
       "getEventLog",
       "EventProjection",
-      "deriveMessagesFromEvents",
       "MessageStorage",
     ],
   },
@@ -76,16 +74,16 @@ const PACKAGES: PackageDef[] = [
     expectedExports: [
       "AgentRegistry",
       "getAgentRegistry",
-      "AgentDefinition",
     ],
+    expectedTypeExports: ["AgentDefinition"],
   },
   {
     name: "core/prompt",
     entry: "src/core/prompt/prompt.ts",
     expectedExports: [
       "buildSystemPrompt",
-      "SystemPromptConfig",
     ],
+    expectedTypeExports: ["SystemPromptConfig"],
   },
 ];
 
@@ -118,6 +116,20 @@ async function checkPackage(pkg: PackageDef): Promise<CheckResult> {
       passed: missingExports.length === 0,
       detail: missingExports.length > 0 ? `Missing: ${missingExports.join(", ")}` : `All ${pkg.expectedExports.length} exports present`,
     });
+
+    // Check 2b: 类型导出（interface/type）无法在运行时 import 检查，改查入口源码文本
+    if (pkg.expectedTypeExports?.length) {
+      const entrySource = fs.readFileSync(pkg.entry, "utf8");
+      const missingTypes = pkg.expectedTypeExports.filter((name) => {
+        const re = new RegExp(`export\\s+(?:interface|type)\\s+${name}\\b`);
+        return !re.test(entrySource);
+      });
+      checks.push({
+        name: "type-exports-present",
+        passed: missingTypes.length === 0,
+        detail: missingTypes.length ? `Missing: ${missingTypes.join(", ")}` : "all present",
+      });
+    }
   } catch (err: any) {
     // Can't import — likely running outside of bundled context
     checks.push({

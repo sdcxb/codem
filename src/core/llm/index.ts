@@ -168,8 +168,6 @@ export { recordSessionFeedback, putMessageFeedback } from "./feedback";
 export { loadLayeredInstructions, loadLayeredInstructionsSync, clearProjectInstructionsCache } from "../prompt/instruction-layers";
 export type { InstructionLayer, InstructionEntry, LayeredInstructions } from "../prompt/instruction-layers";
 // D2: Process-level sandbox ACL — re-export
-export { SandboxGuard, initSandboxGuard, initDefaultSandbox, getSandboxGuard, createDefaultPolicy, createStrictPolicy } from "../sandbox/sandbox-acl";
-export type { SandboxPolicy, SandboxCheckResult } from "../sandbox/sandbox-acl";
 // D4: Test layers — re-export
 export { shouldRunLayer, shouldUpdateSnapshots, isE2EMode, getSnapshotManager, createE2EProvider, e2eRequest } from "./test-layers";
 export type { TestLayer, SnapshotEntry, TestLayerResult } from "./test-layers";

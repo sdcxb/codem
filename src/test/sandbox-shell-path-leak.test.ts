@@ -199,3 +199,65 @@ describe("沙箱：shell 命令里的工作区外路径", () => {
     expect(handlerCalls, "变量展开发生在运行期，文本层判不了 ⇒ 放行（边界）").toBe(1);
   });
 });
+
+/**
+ * 补记（ACL 清理）：`sandbox-acl` 里那套从没被生产消费的 `checkPath`
+ * （工作区内允许 / 工作区外与 `~/.ssh` 拒绝）已随 ACL 实现一并删除。
+ * 同一件事的**真实**判据在管线这一层，所以这里把原来 ACL 单测覆盖的
+ * 「越界读被拒 / 工作区内放行」搬到 `read` 工具的真管线上，
+ * 并保留"沙箱关闭时不许误拒"的反向对照。
+ */
+describe("沙箱：文件工具（read）的工作区边界（ACL 删除后的等价覆盖）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    removeSetting("codem-sandbox-enabled");
+  });
+
+  async function runRead(path: string) {
+    handlerCalls = 0;
+    const r = await getToolPipeline().execute("read", { path }, ctx(), async () => {
+      handlerCalls++;
+      return {
+        id: "call-read",
+        name: "read",
+        input: { path },
+        output: "SHOULD-NOT-RUN",
+        status: "completed" as const,
+        // `read` 声明了 outputSchema ⇒ 必须给结构化 value（否则契约层会把成功改写成 error）
+        value: { path, content: "SHOULD-NOT-RUN" },
+      };
+    });
+    return r.result;
+  }
+
+  it("READ-BOUND-1: 工作区外的读（含用户凭证目录）⇒ 拒绝，且一个字节都没读", async () => {
+    sandbox(true);
+    for (const path of [
+      "C:\\Users\\me\\.ssh\\id_rsa",
+      "C:\\Users\\me\\.aws\\credentials",
+      "/etc/passwd",
+      // 前缀相似但**不在**工作区里：按路径段判定，不能拿 `workspace-evil` 当工作区
+      "C:\\eval\\workspace-evil\\secret.txt",
+    ]) {
+      const res = await runRead(path);
+      expect(String(res.output), `${path} 应当被沙箱拒绝`).toMatch(/Sandbox/);
+      expect(String(res.output), "读操作被拒时文案必须说 Read from，而不是 Write to").toMatch(/Read from/);
+      expect(String(res.output), `${path} 被拒时不许回显内容`).not.toContain("SHOULD-NOT-RUN");
+      expect(handlerCalls, `${path} 拦下时不许执行 —— 否则内容已经读出来了`).toBe(0);
+    }
+  });
+
+  it("READ-BOUND-2: 工作区内的读 ⇒ 放行（不能把好调用也拦了）", async () => {
+    sandbox(true);
+    const res = await runRead(`${WS}\\src\\a.ts`);
+    expect(handlerCalls, "工作区内的读必须真的执行").toBe(1);
+    expect((res.value as { content?: string })?.content).toBe("SHOULD-NOT-RUN");
+  });
+
+  it("READ-BOUND-3: 沙箱**关闭**时（默认）工作区外的读照旧放行 —— 不给普通用户加隐形墙", async () => {
+    sandbox(false);
+    const res = await runRead("C:\\Users\\me\\.ssh\\id_rsa");
+    expect(handlerCalls, "关闭时越界读必须真的执行").toBe(1);
+    expect((res.value as { content?: string })?.content).toBe("SHOULD-NOT-RUN");
+  });
+});

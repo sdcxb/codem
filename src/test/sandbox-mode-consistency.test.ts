@@ -508,14 +508,16 @@ describe("SB-ONE-1：「沙箱是否启用」只有一处实现（同一规则�
         // 注释里的键名引用是允许的（解释历史），所以先排掉整行注释
         const isComment = /^\s*(\/\/|\*|\/\*)/.test(line);
         if (readsKey && !isComment) {
-          readers.push(`${relative(REPO, file).split(sep).join("/")}:${i + 1}`);
+          readers.push(relative(REPO, file).split(sep).join("/"));
         }
       });
     }
     expect(
       readers,
       `「沙箱是否启用」必须只有一处读设置的实现，实际读到：${JSON.stringify(readers)}`,
-    ).toEqual(["src/core/sandbox/sandbox-acl.ts:58"]);
+    ).toEqual(["src/core/sandbox/sandbox-acl.ts"]);
+    // 只钉文件、不钉行号：文件头注释调整不应让判据变红
+    expect(readers).toHaveLength(1);
   });
 
   /**

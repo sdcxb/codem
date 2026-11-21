@@ -281,7 +281,20 @@ describe("FT-WIRE：文件树只有一份实现", () => {
       // git status 二次刷新会短暂置 loading：必须等它结束再快照，否则采到 "正在加载..." 窗口（FT-WIRE-3 偶发红）
       expect(first.container.querySelector(".empty-hint")).toBeNull();
     });
-    const desktopHtml = first.container.querySelector(".file-explorer")!.outerHTML;
+    /*
+     * 全量并行时 FileExplorer 的第二次刷新（refreshKey / onFileChangesTracked）可能在
+     * waitFor 通过之后才落地，于是快照采到「加载中」那一帧 —— 这是 FT-WIRE-3 偶发红的根因。
+     * 判据要的是**稳定态 DOM**：连续两次采样一致才快照（最多等 2.5s）。
+     */
+    const exploreEl = first.container.querySelector(".file-explorer")!;
+    let desktopHtml = "";
+    let previous = "";
+    for (let i = 0; i < 50; i++) {
+      desktopHtml = exploreEl.outerHTML;
+      if (i > 0 && desktopHtml === previous) break;
+      previous = desktopHtml;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     cleanup();
 
     const entries: FileTreeEntry[] = sortEntries([

@@ -83,12 +83,6 @@
   when: platform == 'win32'
   inject: [shell]
 
-# 平台条件：Bash 仅非 Windows
-- id: bash-sandbox
-  name: '@codem/bash-sandbox'
-  when: platform != 'win32'
-  inject: [shell, sandbox]
-
 # `@codem/shell-ops`（Windows）：把 `bash` 工具的执行器从 Windows PowerShell 5.1 换成真 bash，
 # 并在**执行之前**拒绝点名 `powershell` 的命令（找不到 bash 时大声失败、不回退）。
 #
@@ -105,20 +99,7 @@
 - id: dsh-compat
   name: '@codem/dsh-compat'
 
-# 平台条件：pwsh-sandbox 仅 Windows
-- id: pwsh-sandbox
-  name: '@codem/pwsh-sandbox'
-  when: platform == 'win32'
-  inject: [shell, sandbox]
-
-# ===== 沙箱 / 安全 =====
-- id: sandbox-local
-  name: '@codem/sandbox-local'
-
-- id: sandbox-policy
-  name: '@codem/sandbox-policy'
-  inject: [sandbox]
-
+# ===== 子进程 / 安全 =====
 - id: subprocess
   name: '@codem/subprocess'
 
@@ -603,18 +584,9 @@
   name: '@codem/subprocess-local'
   inject: [subprocess]
 
-# ===== 沙箱扩展 =====
-- id: sandbox-windows-acl
-  name: '@codem/sandbox-windows-acl'
-  when: platform == 'win32'
-  inject: [sandbox]
-
+# ===== 文件观察 / 终端上下文 =====
 - id: fs-observation-policy
   name: '@codem/fs-observation-policy'
-
-- id: fs-sandbox
-  name: '@codem/fs-sandbox'
-  inject: [fs, sandbox]
 
 - id: tmux-context
   name: '@codem/tmux-context'

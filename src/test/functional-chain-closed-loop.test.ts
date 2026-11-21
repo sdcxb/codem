@@ -6,7 +6,7 @@
  * 2. compaction-control: crash repair → EventLog → projection
  * 3. feedback: record → list → EventLog trace
  * 4. postmortem: events → generate → report includes events
- * 5. sandbox-acl: path check → block → reason
+ * 5. tool-pipeline sandbox: path check → block → reason
  * 6. instruction-layers: session instructions → buildSystemPrompt → prompt contains
  * 7. dynamic-plugin-tools: define → inspect → run → stop → undefine
  * 8. token-tracker: record actual → projected → shouldMicroCompact
@@ -15,7 +15,9 @@
  * 11. request-header: track → change detected → history
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
+import { initDefaultPipeline, getToolPipeline } from "../core/llm/tool-pipeline";
+import { createDefaultToolRegistry } from "../core/llm/tools";
 
 // Mock database
 const mockDb = {
@@ -63,6 +65,17 @@ vi.mock("../core/storage/settings", () => ({
   isSettingsMirrorReady: vi.fn(() => true),
 
   setSettingJSON: vi.fn(),
+  removeSetting: vi.fn(),
+  // tool-pipeline 的传递依赖（memory / retriever / sandbox-acl）会具名导入这些
+  MEMORY_DOMAIN_NOT_WARMED: "not-warmed",
+  MEMORY_DOMAIN_NO_PORT: "no-port",
+  loadMemoryChecked: vi.fn(async () => null),
+  readMemoryFresh: vi.fn(async () => null),
+  saveMemoryConfirmed: vi.fn(),
+  writeMemoryConfirmed: vi.fn(),
+  setSettingConfirmed: vi.fn(),
+  patchMemoryMirror: vi.fn(),
+  mergeDefaults: vi.fn((a, b) => ({ ...a, ...b })),
 }));
 
 describe("功能触发→调用→执行闭环测试", () => {
@@ -162,22 +175,73 @@ describe("功能触发→调用→执行闭环测试", () => {
     });
   });
 
-  // ========== Chain 5: Sandbox ACL → block → reason ==========
+  // ========== Chain 5: tool-pipeline sandbox → deny → reason ==========
+  //
+  // 原来这里测的是 `sandbox-acl` 的 `SandboxGuard.checkPath`（一份**从未被生产代码消费**的
+  // ACL 策略实现，已删除）。真实拦截在 `tool-pipeline` 的 `SandboxGuard` 里，所以这一段
+  // 改成**真实管线**断言：同一组"工作区外/工作区内"路径，结论必须相反。
+  describe("Chain 5: tool-pipeline sandbox path → block → reason", () => {
+    const WS = "C:\\workspace";
+    const registry = createDefaultToolRegistry();
+    let handlerCalls = 0;
 
-  describe("Chain 5: Sandbox ACL path → block → reason", () => {
-    it("SSH 路径访问 → 被阻止 → 原因包含 blocked", async () => {
-      const { SandboxGuard, createDefaultPolicy } = await import("../core/sandbox/sandbox-acl");
-      const guard = new SandboxGuard(createDefaultPolicy("/workspace"));
-      const result = guard.checkPath("~/.ssh/id_rsa", "read");
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain("blocked");
+    beforeAll(async () => {
+      await initDefaultPipeline({
+        isPlanMode: () => false,
+        isSandboxEnabled: () => true,
+        isPathWithinWorkspace: (p: string, cwd: string) => {
+          const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+          const t = norm(p);
+          const c = norm(cwd);
+          return t === c || t.startsWith(`${c}/`);
+        },
+        contractOf: (n: string) => registry.getContract(n),
+        rawContractOf: (n: string) => registry.getRawContract(n),
+        toolDefOf: (n: string) => registry.get(n),
+        checkPermission: async () => ({ allowed: true }),
+      });
     });
 
-    it("工作区内文件 → 允许", async () => {
-      const { SandboxGuard, createDefaultPolicy } = await import("../core/sandbox/sandbox-acl");
-      const guard = new SandboxGuard(createDefaultPolicy("/workspace"));
-      const result = guard.checkPath("/workspace/src/file.ts", "read");
-      expect(result.allowed).toBe(true);
+    /** 驱动真管线；被拒时 handler 一次都不该被调用 */
+    async function runRead(path: string) {
+      handlerCalls = 0;
+      const { result } = await getToolPipeline().execute(
+        "read",
+        { path },
+        {
+          sessionId: "sess-chain5",
+          messageId: "m-chain5",
+          cwd: WS,
+          messages: [],
+          abort: new AbortController().signal,
+        } as never,
+        async () => {
+          handlerCalls++;
+          return {
+            id: "call-chain5",
+            name: "read",
+            input: { path },
+            output: "SHOULD-NOT-RUN",
+            status: "completed" as const,
+            // `read` 声明了 outputSchema ⇒ 必须给结构化 value（否则契约层会把成功改写成 error）
+            value: { path, content: "SHOULD-NOT-RUN" },
+          };
+        },
+      );
+      return result;
+    }
+
+    it("工作区外路径（~/.ssh 的真实形态）→ 被拦截 → 原因说明是沙箱", async () => {
+      const result = await runRead("C:/Users/x/.ssh/id_rsa");
+      expect(result.status).toBe("error");
+      expect(String(result.output)).toMatch(/outside the workspace/i);
+      expect(handlerCalls, "被拒的调用不许真的执行").toBe(0);
+    });
+
+    it("工作区内文件 → 允许（反向对照，不能把好调用也拦了）", async () => {
+      const result = await runRead(`${WS}\\src\\file.ts`);
+      expect(result.status).toBe("completed");
+      expect(handlerCalls, "工作区内的调用必须照旧执行").toBe(1);
     });
   });
 

@@ -84,12 +84,6 @@ plugins:
     priority: 0
     hot: true
 
-  - name: "@codem/sandbox-local"
-    provides: ["sandbox"]
-    inject: []
-    priority: 0
-    hot: true
-
   - name: "@codem/web-search"
     provides: ["web"]
     inject: []

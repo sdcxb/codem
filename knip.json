@@ -99,5 +99,5 @@
     "png-to-ico",
     "sharp"
   ],
-  "ignoreBinaries": ["tasklist"]
+  "ignoreBinaries": ["tasklist", "rustup"]
 }

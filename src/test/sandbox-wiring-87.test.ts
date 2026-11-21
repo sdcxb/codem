@@ -17,8 +17,6 @@ import {
   SANDBOX_SETTING_KEY,
   isSandboxAclEnabled,
   setSandboxAclEnabled,
-  SandboxGuard,
-  createDefaultPolicy,
 } from "../core/sandbox/sandbox-acl";
 import { initDefaultPipeline, getToolPipeline } from "../core/llm/tool-pipeline";
 
@@ -103,13 +101,7 @@ describe("沙箱开关真的接线（第 87 波）", () => {
     expect(inside.result.status).toBe("completed");
   });
 
-  it("SBW-5: 沙箱策略本体仍能拦住受保护路径（回归）", () => {
-    // 注意：`sandbox-acl.SandboxGuard`（策略 ACL，构造参数是 policy）与
-    // `tool-pipeline.SandboxGuard`（管线守卫，构造参数是 isEnabled 回调）是两个类，
-    // 这里测的是策略 ACL 那一侧。
-    const guard = new SandboxGuard(createDefaultPolicy("C:/workspace"));
-    expect(guard.checkPath("C:/workspace/.env", "write").allowed).toBe(false);
-    expect(guard.checkPath("C:/workspace/src/a.ts", "write").allowed).toBe(true);
-    expect(createDefaultPolicy("C:/workspace").blockedPaths.length).toBeGreaterThan(0);
-  });
+  // 注：原 SBW-5 测的是 `sandbox-acl` 的 ACL 策略（`SandboxGuard.checkPath` +
+  // `createDefaultPolicy`）。那套实现从未接进生产管线，已删除；真实拦截改由
+  // 本文件的 SBW-4（写）与 `sandbox-shell-path-leak.test.ts` 的 READ-BOUND-*（读）覆盖。
 });

@@ -6,6 +6,9 @@
  * 维护入口搬到了 `./maintenance`（它本来一行都不跑，见那里的说明）。
  */
 export { runDatabaseMaintenance } from "./maintenance";
+// 事件日志/投影的对外入口（verify-package-invariants 的 public API 面）
+export { EventLog, getEventLog } from "./event-log";
+export { EventProjection } from "./event-projection";
 export * as ProjectStorage from "./project";
 export * as SessionStorage from "./session";
 export * as MessageStorage from "./message";

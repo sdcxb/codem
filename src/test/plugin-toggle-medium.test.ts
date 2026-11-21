@@ -397,6 +397,24 @@ describe("PLUGIN-MEDIUM：写入方唯一（源码级，防回归）", () => {
     expect(rawSetting(STAMP_KEY), "时戳也要落").toBeDefined();
   });
 
+  it("PLUGIN-MEDIUM-RETIRED-1: 启动对账清理已退役插件 id，并四份写回", async () => {
+    const { saveDisabledPlugins, reconcileDisabledPluginsAtBoot } = await import("../core/session/preferences");
+    await installPort();
+    saveDisabledPlugins(["@codem/ui-game", "@codem/sandbox-policy", "@codem/sandbox-local"]);
+    const state = reconcileDisabledPluginsAtBoot();
+    expect(state.list, "退役 id 必须被剪掉，其余用户选择保留").toEqual(["@codem/ui-game"]);
+    expect(dbList(), "DB 权威介质也要剪（否则下次开关又把垃圾写回）").toEqual(["@codem/ui-game"]);
+    expect(mirrorList(), "镜像与 DB 保持一致").toEqual(["@codem/ui-game"]);
+  });
+
+  it("PLUGIN-MEDIUM-RETIRED-2: 非退役的未知 id 不许被误删（降级/动态插件的合法选择）", async () => {
+    const { saveDisabledPlugins, reconcileDisabledPluginsAtBoot } = await import("../core/session/preferences");
+    await installPort();
+    saveDisabledPlugins(["@codem/ui-game", "@vendor/some-removed-plugin"]);
+    const state = reconcileDisabledPluginsAtBoot();
+    expect(state.list, "只清显式退役名单，不做「未知即清」的通用过滤").toEqual(["@codem/ui-game", "@vendor/some-removed-plugin"]);
+  });
+
   it("PLUGIN-MEDIUM-11: App 启动路径走对账（不是直接读 DB）", () => {
     const code = readCode("src/App.tsx");
     expect(code, "启动必须调对账函数").toContain("reconcileDisabledPluginsAtBoot");

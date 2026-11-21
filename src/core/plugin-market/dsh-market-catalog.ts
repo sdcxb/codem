@@ -32,8 +32,8 @@ export interface DshMarketEntry {
   note: string
 }
 
-/** 内置市场目录（50 条真实官方能力/工具包——包名与 harness packages 全量核对；
- *  bundled 37 / adaptable 9 / unsupported 4；bundled 锚一对一唯一，见 DM-4）。 */
+/** 内置市场目录（48 条真实官方能力/工具包——包名与 harness packages 全量核对；
+ *  bundled 34 / adaptable 9 / unsupported 4；bundled 锚一对一唯一，见 DM-4）。 */
 export const DSH_MARKET_CATALOG: DshMarketEntry[] = [
   // ===== bundled：Codem 已内置等价能力 =====
   { dshName: '@deepseek-ai/dsh-llm', dshDesc: 'LLM 服务定义与调用能力（chat/stream/usage）', category: 'capability', status: 'bundled', codemAnchor: '@codem/llm', note: 'Codem 内置 LLM 引擎，安装即启用对应内置服务插件' },
@@ -55,9 +55,6 @@ export const DSH_MARKET_CATALOG: DshMarketEntry[] = [
   { dshName: '@deepseek-ai/dsh-token-meter', dshDesc: 'Token 计量/上下文压力估算', category: 'infra', status: 'bundled', codemAnchor: '@codem/token-meter', note: '内置 TokenTracker（窗口感知压力/预算）' },
   { dshName: '@deepseek-ai/dsh-lsp', dshDesc: 'LSP 语言服务器能力（definition/references）', category: 'capability', status: 'bundled', codemAnchor: '@codem/lsp', note: '内置 LSP 服务（工具内注册 lsp 调用）' },
   { dshName: '@deepseek-ai/dsh-plan-mode', dshDesc: 'Plan Mode（计划审批后执行）', category: 'infra', status: 'bundled', codemAnchor: '@codem/plan-mode', note: '内置 Plan mode（exit_plan_mode 工具）' },
-  { dshName: '@deepseek-ai/dsh-sandbox-local', dshDesc: '本地沙箱能力', category: 'infra', status: 'bundled', codemAnchor: '@codem/sandbox-local', note: '内置路径级沙箱' },
-  { dshName: '@deepseek-ai/dsh-sandbox-policy', dshDesc: '沙箱策略（工作区放行规则）', category: 'infra', status: 'bundled', codemAnchor: '@codem/sandbox-policy', note: '内置沙箱策略服务' },
-  { dshName: '@deepseek-ai/dsh-fs-sandbox', dshDesc: '沙箱虚拟文件系统', category: 'infra', status: 'bundled', codemAnchor: '@codem/fs-sandbox', note: '内置 fs-sandbox' },
   { dshName: '@deepseek-ai/dsh-schedule', dshDesc: '定时提醒/调度能力', category: 'infra', status: 'bundled', codemAnchor: '@codem/schedule', note: '内置 schedule（提醒工具）' },
   { dshName: '@deepseek-ai/dsh-settings-file', dshDesc: '设置文件 provider（持久化用户设置）', category: 'infra', status: 'bundled', codemAnchor: '@codem/settings', note: '内置设置（SQLite settings 表）' },
   { dshName: '@deepseek-ai/dsh-session-persistence-sqlite', dshDesc: '会话 SQLite 持久化', category: 'infra', status: 'bundled', codemAnchor: '@codem/session-persistence-sqlite', note: '内置 sql.js 会话持久化' },

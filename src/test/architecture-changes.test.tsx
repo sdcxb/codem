@@ -185,7 +185,6 @@ describe('架构变更: service-types 类型声明', () => {
     expect(code).toContain('AgentRegistryService')
     expect(code).toContain('CredentialsService')
     expect(code).toContain('GuardService')
-    expect(code).toContain('SandboxService')
     expect(code).toContain('HooksService')
     expect(code).toContain('AutomationService')
     expect(code).toContain('SlotsService')
@@ -245,13 +244,6 @@ describe('架构变更: Guard 循环依赖修复', () => {
 // 8. Provider inject 声明对齐
 // ============================================================
 describe('架构变更: Provider inject 对齐', () => {
-  it('sandbox-local inject shell', async () => {
-    const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/provider/plugin-registry-provider.ts', 'utf8')
-    const line = code.match(/name: '@codem\/sandbox-local'[^}]+}/s)?.[0]
-    expect(line).toContain("inject: ['shell']")
-  })
-
   it('schedule inject inbox', async () => {
     const src = await vi.importActual('fs')
     const code = src.readFileSync('src/core/provider/plugin-registry-provider.ts', 'utf8')

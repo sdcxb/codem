@@ -24,7 +24,6 @@ import { themeProvider } from '../provider/theme-provider'
 // Capability Providers
 import { fsProvider } from '../provider/fs-provider'
 import { shellProvider } from '../provider/shell-provider'
-import { sandboxProvider } from '../provider/sandbox-provider'
 import { webProvider } from '../provider/web-provider'
 import { compactionProvider } from '../provider/compaction-provider'
 import { hooksProvider } from '../provider/hooks-provider'
@@ -100,10 +99,8 @@ import { sessionCheckpointProvider } from '../provider/session-checkpoint-provid
 
 // P1-7.6: Shell/终端插件
 import { pwshLocalProvider } from '../provider/pwsh-local-provider'
-import { bashSandboxProvider } from '../provider/bash-sandbox-provider'
 
 // P1-7.7: 沙箱/安全插件
-import { sandboxPolicyProvider } from '../provider/sandbox-policy-provider'
 import { subprocessProvider } from '../provider/subprocess-provider'
 
 // P1-7.8: 子 Agent 插件
@@ -198,14 +195,11 @@ import { sessionTelemetryOtelProvider } from '../provider/session-telemetry-otel
 import { sessionTitleFirstPromptLlmProvider } from '../provider/session-title-first-prompt-llm-provider'
 import { sessionTitleAllPromptsLlmProvider } from '../provider/session-title-all-prompts-llm-provider'
 import { sessionCheckpointPolicyProvider } from '../provider/session-checkpoint-policy-provider'
-import { pwshSandboxProvider } from '../provider/pwsh-sandbox-provider'
 import { toolBashPersistentProvider } from '../provider/tool-bash-persistent-provider'
 import { tmuxContextProvider } from '../provider/tmux-context-provider'
 import { fsObservationPolicyProvider } from '../provider/fs-observation-policy-provider'
-import { fsSandboxProvider } from '../provider/fs-sandbox-provider'
 import { toolFsSearchProvider } from '../provider/tool-fs-search-provider'
 import { toolStrReplaceEditorProvider } from '../provider/tool-str-replace-editor-provider'
-import { sandboxWindowsAclProvider } from '../provider/sandbox-windows-acl-provider'
 import { e2bProvider } from '../provider/e2b-provider'
 import { fsE2bProvider } from '../provider/fs-e2b-provider'
 import { subprocessE2bProvider } from '../provider/subprocess-e2b-provider'
@@ -283,7 +277,6 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   // Capability Providers
   registerBuiltinPlugin('@codem/fs-local', { provides: ['fs'], inject: [], priority: 0, hot: true }, () => fsProvider)
   registerBuiltinPlugin('@codem/shell-local', { provides: ['shell'], inject: [], priority: 0, hot: true }, () => shellProvider)
-  registerBuiltinPlugin('@codem/sandbox-local', { provides: ['sandbox'], inject: [], priority: 0, hot: true }, () => sandboxProvider)
   registerBuiltinPlugin('@codem/web-search', { provides: ['web'], inject: [], priority: 0, hot: true }, () => webProvider)
   registerBuiltinPlugin('@codem/compaction', { provides: ['compaction'], inject: [], priority: 0, hot: true }, () => compactionProvider)
   registerBuiltinPlugin('@codem/hooks', { provides: ['hooks'], inject: [], priority: 0, hot: true }, () => hooksProvider)
@@ -371,10 +364,8 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
 
   // P1-7.6: Shell/终端插件
   registerBuiltinPlugin('@codem/pwsh-local', { provides: ['pwshLocal'], inject: ['shell'], priority: 0, hot: true }, () => pwshLocalProvider)
-  registerBuiltinPlugin('@codem/bash-sandbox', { provides: ['bashSandbox'], inject: ['shell', 'sandbox'], priority: 0, hot: true }, () => bashSandboxProvider)
 
   // P1-7.7: 沙箱/安全插件
-  registerBuiltinPlugin('@codem/sandbox-policy', { provides: ['sandboxPolicy'], inject: ['sandbox'], priority: 0, hot: true }, () => sandboxPolicyProvider)
   registerBuiltinPlugin('@codem/subprocess', { provides: ['subprocess'], inject: [], priority: 0, hot: true }, () => subprocessProvider)
 
   // P1-7.8: 子 Agent 插件
@@ -458,14 +449,11 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/session-title-first-prompt-llm', { provides: ['sessionTitleFirstPrompt'], inject: ['llm', 'session'], priority: 0, hot: true }, () => sessionTitleFirstPromptLlmProvider)
   registerBuiltinPlugin('@codem/session-title-all-prompts-llm', { provides: ['sessionTitleAllPrompts'], inject: ['llm', 'session'], priority: 0, hot: true }, () => sessionTitleAllPromptsLlmProvider)
   registerBuiltinPlugin('@codem/session-checkpoint-policy', { provides: ['sessionCheckpointPolicy'], inject: ['sessionCheckpoint'], priority: 0, hot: true }, () => sessionCheckpointPolicyProvider)
-  registerBuiltinPlugin('@codem/pwsh-sandbox', { provides: ['pwshSandbox'], inject: ['shell', 'sandbox'], priority: 0, hot: true }, () => pwshSandboxProvider)
   registerBuiltinPlugin('@codem/tool-bash-persistent', { provides: ['toolBashPersistent'], inject: ['shell'], priority: 0, hot: true }, () => toolBashPersistentProvider)
   registerBuiltinPlugin('@codem/tmux-context', { provides: ['tmuxContext'], inject: ['shell'], priority: 0, hot: true }, () => tmuxContextProvider)
   registerBuiltinPlugin('@codem/fs-observation-policy', { provides: ['fsObservationPolicy'], inject: [], priority: 0, hot: true }, () => fsObservationPolicyProvider)
-  registerBuiltinPlugin('@codem/fs-sandbox', { provides: ['fsSandbox'], inject: ['fs', 'sandbox'], priority: 0, hot: true }, () => fsSandboxProvider)
   registerBuiltinPlugin('@codem/tool-fs-search', { provides: ['toolFsSearch'], inject: ['fs', 'tools'], priority: 0, hot: true }, () => toolFsSearchProvider)
   registerBuiltinPlugin('@codem/tool-str-replace-editor', { provides: ['toolStrReplaceEditor'], inject: ['fs', 'tools'], priority: 0, hot: true }, () => toolStrReplaceEditorProvider)
-  registerBuiltinPlugin('@codem/sandbox-windows-acl', { provides: ['sandboxWindowsAcl'], inject: ['sandbox'], priority: 0, hot: true }, () => sandboxWindowsAclProvider)
   registerBuiltinPlugin('@codem/e2b', { provides: ['e2b'], inject: [], priority: 0, hot: true }, () => e2bProvider)
   registerBuiltinPlugin('@codem/fs-e2b', { provides: ['fsE2b'], inject: ['e2b'], priority: 0, hot: true }, () => fsE2bProvider)
   registerBuiltinPlugin('@codem/subprocess-e2b', { provides: ['subprocessE2b'], inject: ['e2b', 'subprocess'], priority: 0, hot: true }, () => subprocessE2bProvider)

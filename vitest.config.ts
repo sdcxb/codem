@@ -87,12 +87,13 @@ export default defineConfig({
          * 原来只有"源码形状"判据（实测行覆盖 7.14%，低于按文件地板 14%），本轮补了 6 条行为判据
          * （`src/test/code-runtime-provider.test.ts`）⇒ 该文件 100%。
          */
-        lines: 63,
-        functions: 55,
-        branches: 53,
-        statements: 60,
+        /* 第 16 轮：实测全局 72.31 / 64.62 / 60.68 / 69.34，按棘轮上调（减 1pp）。 */
+        lines: 71,
+        functions: 63,
+        branches: 59,
+        statements: 68,
         "src/core/storage/**": { lines: 83, functions: 84, branches: 70, statements: 81 },
-        "src/core/llm/**": { lines: 72, functions: 73, branches: 62, statements: 71 },
+        "src/core/llm/**": { lines: 75, functions: 74, branches: 63, statements: 73 },
         "src/core/session/**": { lines: 78, functions: 80, branches: 60, statements: 77 },
         "src/core/diagnostics/**": { lines: 96, functions: 93, branches: 74, statements: 95 },
         perFile: false,

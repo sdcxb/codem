@@ -138,7 +138,7 @@ src\
 |---|---:|---|---|
 | `settings/` | 4 | 分层设置、UI 偏好、自定义 provider、导出脱敏 | `settings.ts`、`ui-preferences.ts`、`custom-provider.ts` |
 | `permission/` | 5 | 三档安全模式、审批 broker、bash 命令分析、权限规则 | `permission.ts`、`security-mode.ts`、`approval-broker.ts`、`bash-analyzer.ts` |
-| `sandbox/` | 1 | 沙箱 ACL：工作区/允许目录判定 | `sandbox-acl.ts` |
+| `sandbox/` | 1 | 沙箱开关 / 允许目录判定（进程内 ACL 已删） | `sandbox-acl.ts` |
 | `auth/` | 2 | MiMo 账号登录/凭据 | `mimo.ts` |
 | `config/` | 1 | 分层配置加载（global/project/local） | `loader.ts` |
 

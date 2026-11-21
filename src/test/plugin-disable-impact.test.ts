@@ -5,9 +5,8 @@
  * 1. Cordis 插件关闭后，其注册的工具不再可用
  * 2. Provider 关闭后，相关功能优雅降级
  * 3. 动态插件 undefine 后，工具从注册表中移除
- * 4. Sandbox 策略切换时，已有连接不受影响
- * 5. 事件总线 listener 注销后不再接收事件
- * 6. Agent MessageQueue 清理后不再有残留消息
+ * 4. 事件总线 listener 注销后不再接收事件
+ * 5. Agent MessageQueue 清理后不再有残留消息
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -185,29 +184,6 @@ describe("插件禁用/关闭影响测试", () => {
       // 再次 consume — 应为空
       const empty = AgentMessageQueue.consume("primary");
       expect(empty.length).toBe(0);
-    });
-  });
-
-  describe("Sandbox 策略切换", () => {
-    it("从 default 切换到 strict — 更多命令被阻止", async () => {
-      const { SandboxGuard, createDefaultPolicy, createStrictPolicy } = await import("../core/sandbox/sandbox-acl");
-      const defaultGuard = new SandboxGuard(createDefaultPolicy("/workspace"));
-      const strictGuard = new SandboxGuard(createStrictPolicy("/workspace"));
-
-      // apt install 在 default 下允许，在 strict 下被阻止
-      expect(defaultGuard.checkCommand("apt install foo").allowed).toBe(true);
-      expect(strictGuard.checkCommand("apt install foo").allowed).toBe(false);
-
-      // pip install 在 default 下允许，在 strict 下被阻止
-      expect(defaultGuard.checkCommand("pip install foo").allowed).toBe(true);
-      expect(strictGuard.checkCommand("pip install foo").allowed).toBe(false);
-    });
-
-    it("strict 策略阻止网络命令", async () => {
-      const { SandboxGuard, createStrictPolicy } = await import("../core/sandbox/sandbox-acl");
-      const guard = new SandboxGuard(createStrictPolicy("/workspace"));
-      expect(guard.checkCommand("curl https://example.com").allowed).toBe(false);
-      expect(guard.checkCommand("wget https://example.com").allowed).toBe(false);
     });
   });
 

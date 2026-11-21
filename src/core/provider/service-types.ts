@@ -79,14 +79,6 @@ interface GuardService {
 }
 
 // ============================================================
-//  Sandbox
-// ============================================================
-interface SandboxService {
-  _active: boolean
-  execute(code: string, timeout?: number): Promise<{ stdout: string; stderr: string; exitCode: number }>
-}
-
-// ============================================================
 //  Hooks
 // ============================================================
 interface HooksService {
@@ -192,7 +184,6 @@ declare module '../cordis/src/context' {
     agentRegistry?: AgentRegistryService
     credentials?: CredentialsService
     guard?: GuardService
-    sandbox: SandboxService
     hooks: HooksService
     automation: AutomationService
     // slots 声明由 src/core/slots/index.ts 中的 SlotsService class 提供

@@ -245,7 +245,7 @@
 | 写入覆盖 Diff 审查 | 工具卡 | `onWriteConfirm`、`InlineDiffReview` | 稳定 |
 | Bash 危险命令分析 | 自动 | `bash-analyzer.ts` | 稳定 |
 | 受保护路径 | 自动 | `.git/.env/node_modules` | 稳定 |
-| 沙箱 ACL（工作区/允许目录） | 设置 → 安全 | `sandbox-acl.ts`、`SandboxAllowPrompt` | 可用（默认关） |
+| 沙箱开关 / 允许目录 | 设置 → 安全 | `sandbox-acl.ts`、`SandboxAllowPrompt` | 可用（默认关） |
 | 凭据封存（DPAPI `dsh1:`） | 自动 | `secret.rs`、`secret-store.ts` | 稳定 |
 | 凭据状态/重新填写提示 | 设置 → 安全 | `PersistFailureBanner` | 稳定 |
 | 导出脱敏 | 设置/记忆 | `credential-shapes.ts` | 稳定 |

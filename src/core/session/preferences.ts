@@ -73,6 +73,23 @@ const DISABLED_PLUGINS_LS_STAMP_KEY = "codem:disabled-plugins-at";
  */
 export const DEFAULT_DISABLED_PLUGINS: readonly string[] = ["@codem/ui-game"];
 
+/**
+ * 已退役的内置插件 id（第 16 轮：6 个从未被消费的沙箱插件）。
+ *
+ * 用户旧版本可能把它们写进禁用列表；插件本身已删除，状态会变成永久垃圾：
+ * 插件管理器只按注册表建卡片（界面上看不到），但下一次任何开关都会把旧 id
+ * 原样写回 DB。启动对账时用这份**显式**名单剪掉；不用"凡未知 id 一律清掉"的通用过滤
+ * （降级/动态插件的未知 id 可能是合法的用户选择）。
+ */
+const RETIRED_DISABLED_PLUGIN_IDS: readonly string[] = [
+  "@codem/sandbox-local",
+  "@codem/sandbox-policy",
+  "@codem/bash-sandbox",
+  "@codem/pwsh-sandbox",
+  "@codem/fs-sandbox",
+  "@codem/sandbox-windows-acl",
+];
+
 // ========== D-22：插件开关的介质统一 ==========
 
 /** 读 localStorage 镜像；键不存在返回 `null`（**不是**空数组 —— "没设置过"与"显式清空"必须分得开） */
@@ -236,7 +253,7 @@ export interface DisabledPluginsReconcileResult extends DisabledPluginsState {
   diverged: boolean;
 }
 
-export function reconcileDisabledPluginsAtBoot(): DisabledPluginsReconcileResult {
+function reconcileDisabledPluginsAtBootImpl(): DisabledPluginsReconcileResult {
   const fromDbRaw = getSettingJSON<unknown>(DISABLED_PLUGINS_KEY, null);
   const dbList = Array.isArray(fromDbRaw) ? fromDbRaw.map((v) => String(v)) : null;
   const mirror = readDisabledPluginsMirror();
@@ -311,6 +328,25 @@ export function reconcileDisabledPluginsAtBoot(): DisabledPluginsReconcileResult
     `镜像=${JSON.stringify(mirror)}（戳 ${mirrorStamp ?? "无"}）。按 DB 为准（DB 权威），已回写镜像`,
   );
   return { list: dbList, migrated: false, seeded: false, adoptedFromMirror: false, diverged: true };
+}
+
+/**
+ * 启动对账 + **退役插件 id 剪枝**。
+ *
+ * 剪枝必须在所有分支之后统一做一次（无分歧 / 镜像胜 / DB 胜都会返回 list），
+ * 并且只对**显式退役名单**生效 —— 见 RETIRED_DISABLED_PLUGIN_IDS 的说明。
+ * 发生剪枝时用 saveDisabledPlugins 一次写完 DB + 戳 + 镜像 + 戳，保持四份一致。
+ */
+export function reconcileDisabledPluginsAtBoot(): DisabledPluginsReconcileResult {
+  const result = reconcileDisabledPluginsAtBootImpl();
+  const retired = result.list.filter((id) => RETIRED_DISABLED_PLUGIN_IDS.includes(id));
+  if (retired.length === 0) return result;
+  const pruned = result.list.filter((id) => !RETIRED_DISABLED_PLUGIN_IDS.includes(id));
+  saveDisabledPlugins(pruned);
+  console.log(
+    `[preferences] 已从禁用列表清理退役插件 id（共 ${retired.length} 个）：${retired.join(", ")}`,
+  );
+  return { ...result, list: pruned };
 }
 
 /**

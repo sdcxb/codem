@@ -75,7 +75,7 @@
 | 8 | 多智能体 | 子代理（后台、可继续）、跨会话委派/交接、Agent Teams、Squad 模板 | 可用；真实模型并发稳定性未证明 |
 | 9 | 项目工作台 | 协调者、thread、worktree、`project_report`、gate 重验、Overview、审批、项目记忆/指令、PR/CI 只读 | 可用（MVP）；真实模型 3 并发未证明 |
 | 10 | Git / 工作树 / CI-CD | Git 面板、分支、worktree 创建/合并/冲突选边、回合级文件变更、Actions 只读/重跑 | 可用；合并冲突无逐文件 UI |
-| 11 | 安全与权限 | 三档安全模式（ask/auto/full）、审批、受保护路径、沙箱 ACL、DSH 风格 `dsh1:` 凭据封存、导出脱敏 | 可用；命令执行与写文件是两套边界 |
+| 11 | 安全与权限 | 三档安全模式（ask/auto/full）、审批、受保护路径、沙箱模式（工作区/允许目录）、DSH 风格 `dsh1:` 凭据封存、导出脱敏 | 可用；命令执行与写文件是两套边界 |
 | 12 | 连接与远程 | **桌面远程网关**（PC 远程唯一入口：6 位配对码、共享 UI、只读/可写由能力表决定）、**Android 本机模式**（手机自己的 Host/数据/项目、本机模型 Keystore 加密）、Agents Anywhere（AA 账号）、微信 ClawBot（iLink）、Computer Use、浏览器自动化；旧 LAN 扫码配对与桌面 Host sidecar 已删除 | 可用但环境依赖强 |
 | 13 | UI/UX 与个性化 | 三皮肤（default/hub/dream）、23 个设置分区、命令面板、@提及、/命令、Diff、图片画廊、边缘渐隐、提示音、桌面宠物 | 稳定 |
 | 14 | 内容生产 | PPT 生成/编辑/放映、PDF/DOCX/XLSX/图片/视频查看、Mermaid/KaTeX/Shiki 渲染 | 可用 |

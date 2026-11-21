@@ -1437,11 +1437,97 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 
 ### 3T.5 仍未覆盖 / 明确不做
 
-1. `sandbox-acl.blockedCommands` 与 `sandbox-policy-provider` 的两份清单**没有生产调用者**（死清单）——已记录，未删（删除属于另一类结构改动）；
+1. `sandbox-acl.blockedCommands` 与 `sandbox-policy-provider` 的两份清单**没有生产调用者**（死清单）——第 15 轮已记录；第 16 轮已连同 6 个从未装配消费的沙箱插件一起删除；
 2. `run_code` 的 `sdk.bash` 对危险命令**任何模式都拒绝**（没有审批通道），这是既有设计，未改成「full 放行」；
 3. `terminal_send` 只分析 `submit=true` 的整行文本；分多次输入拼出的危险命令（先 `rm -r` 再回车）无法从单条文本识别；
 4. 审批弹窗的真实模型场景只覆盖「危险 bash」与「覆盖写」两类；工具重试/取消后的审批收口只做了单元级验证；
 5. 取消后**立刻**重发的窗口在真人手速下更宽，但自动化只在 1280 宽度、单会话验证过。
+
+## 3U. 第 16 轮：删掉「从未被消费」的沙箱骨架 + 服务级可达性门禁（2026-11-21）
+
+起因是第 15 轮结论里的一句「`sandbox-acl.blockedCommands` 与 `sandbox-policy-provider`
+没有生产调用者」。追下去发现这不是「开发了功能后来废弃」，而是**插件化迁移时批量生成的
+能力骨架，从第一天起就没有消费方**。
+
+### 3U.1 取证：它们是怎么活下来的
+
+| 时间/提交 | 事件 |
+|---|---|
+| `1800c627` v0.99.0 | 5 层工具管线落地，真实沙箱在 `tool-pipeline` 的 `SandboxGuard`（按工具契约 + 工作区路径） |
+| `ef4bb9f2` v1.0.0 / `588b0c90` v1.3.0 | Cordis 插件化：把能力拆成 `src/core/provider/*`，沙箱拆成 6 个插件，只声明 `provides/inject` |
+| `4bf486d0` v1.1.0 | `agentic-loop` 加了 `D2: Initialize process-level sandbox ACL guard` —— **只初始化、打日志、从不查询** |
+| `3862b51d` v1.5.1 | YAML 声明式装配把 6 个插件写进 `config/codem.base.yml` ⇒ 启动时真的 apply、服务真的 provide，仍然零读取 |
+| `e4a921f7` v1.9.7 | 插件市场把 3 条 dsh 沙箱包映射到内置插件，给了它**产品可见性** |
+
+假信号有五层：① 文件级可达性门禁只看 import（provider 被注册表/YAML 引用 ⇒ 绿）；
+② 单测直接 `new SandboxGuard()` 测 ACL 自己；③ 启动日志「Sandbox ACL initialized」；
+④ `@ts-nocheck` + `ctx: any` 掩盖没有消费方；⑤ 市场目录/文档服务列表把它写成既有能力。
+
+全仓测算（删除前）：195 个 `ctx.provide` 服务里只有 57 个有真实读取方；沙箱 6 个服务
+（sandbox / sandboxPolicy / bashSandbox / fsSandbox / pwshSandbox / sandboxWindowsAcl）
+读取方全部为 0（`sandbox` 的两个读取方本身也无人读，且 `exec` 签名对不上 ⇒ 从未执行过）。
+
+### 3U.2 删除（A 路线）
+
+- **保留**：`sandbox-acl.ts` 的开关判定（`isSandboxAclEnabled`，含 fail-open 处理）、
+  允许目录（`getSandboxAllowedDirs` / `isWithinAllowedDirs` / `add` / `remove` / `normalize`）、
+  路径规范化；这些被设置页、`SandboxAllowPrompt`、`tools` / `file-api` / `tool-pipeline` /
+  `desktop-engine` / `handoff-sandbox` 真实使用。
+- **删除**：`SandboxPolicy` / `SandboxCheckResult` / `createDefaultPolicy` / `createStrictPolicy` /
+  `SandboxGuard`（ACL 类）/ `initSandboxGuard` / `initDefaultSandbox` / `getSandboxGuard` /
+  `sandboxGlobToRegex` / 17 条 `blockedCommands` / 环境变量过滤；
+  6 个 provider 文件；`builtin-registry` 6 条注册 + import；`config/codem.base.yml` 6 块；
+  `plugin-registry-provider` 6 条目录元数据；`dsh-market-catalog` 3 条锚；`codem.yml` 1 条；
+  `agentic-loop` 的死初始化；`core/llm/index.ts` 的 re-export；`service-types` 的 `SandboxService`。
+- 测试：删除 8 个 ACL 内部文件/用例组；把「工作区外拒绝 / 工作区内放行」改写成
+  **真实管线**断言（`READ-BOUND-1..3` + `functional-chain` Chain 5），并做变异自证
+  （把管线守卫改成恒放行 → 新用例红）。
+- `scripts/verify-package-invariants.ts`：区分运行时值与类型导出；退役
+  `registerOutputContract` / `validateToolOutput` / `deriveMessagesFromEvents`；
+  `core/storage` 门面补 `EventLog` / `getEventLog` / `EventProjection`。26/26 通过。
+
+### 3U.3 用户状态迁移
+
+旧版本的禁用列表里可能留着 6 个已删插件 id：界面会静默忽略（不炸），但用户下一次点开关
+会把垃圾原样写回。`reconcileDisabledPluginsAtBoot` 增加**显式退役名单剪枝**
+（`RETIRED_DISABLED_PLUGIN_IDS`），剪枝时用 `saveDisabledPlugins` 一次写完 DB + 戳 + 镜像 + 戳；
+不做「未知即清」的通用过滤（降级/动态插件的合法未知 id 要保留）。
+
+### 3U.4 新增门禁（防复发）
+
+1. `tools/audit/scan-unconsumed-services.mjs` + `unconsumed-services-baseline.json`：
+   扫 `ctx.provide('x')` 与 `get('x')` / `ctx.x`；**新增**「provide 了没人读」的服务 ⇒ 红；
+   存量 133 个 dead service 进基线（历史债，显式登记）。`inject:` 不算消费，注册表/市场/测试不算消费方。
+   接入 `npm run audit`。
+2. `retired-sandbox-plugins.test.ts`：退役插件在「注册表 / 装配 YAML / 插件目录 / 市场目录 /
+   `codem.yml`」五处都不许回潮，provider 文件必须物理删除，服务不许回到 dead 基线。
+3. `unconsumed-services-gate.test.ts`：扫描器纯函数契约（有 get ⇒ 不算 dead；注册表/inject 不算消费）
+   + 基线覆盖当前全仓。
+
+### 3U.5 验证
+
+- 全量：**995 文件 / 10371 通过 / 18 skipped / 0 失败**；
+- `tsc` 0；`knip` 棘轮 46/30/10、binaries 0（把 `rustup` 登记为合法外部工具）；
+- 覆盖率：全局 72.31 / 69.34 / 64.62 / 60.68，按棘轮上调阈值；
+  `coverage-per-file --check` 通过（删掉 4 个已不存在文件的地板，其余地板不降）；
+- `audit:docs`、上报点 314=314=314、可达性、fail-open 21 处、语法门禁全部通过；
+- 真实模型行为未改（本轮不动权限/取消链路）；残留的 `sandbox` 服务与插件条目已从
+  运行时和产品目录同时消失。
+**顺带修掉的两处判据缺陷**（都是本轮全量跑出来的，不是绕过去）：
+- coverage-per-file-baseline.json 删掉 4 个已不存在文件的地板后 _count 没同步，
+  COV-FILE-2 按精确数对账 ⇒ 红；改为写入真实条数（321），判据本身保留「表非空/非全 0」。
+- FT-WIRE-3 在并行满载时会在第二次文件树刷新落地前采快照（偶发红）；
+  改成「连续两次采样一致才快照」，并保留逐字相等的严格断言。
+
+### 3U.6 边界（如实记）
+
+1. 服务级基线里仍有 **133 个**「provide 无 get」的历史服务（本轮只清沙箱族，不假装全清）；
+   新门禁只保证「不再新增」。
+2. 插件总数 208 → 202、市场目录 50 → 48；插件管理器/市场计数无精确断言，但截图与旧文档会失真。
+3. ACL 里的 `.env` 读拦截、环境变量过滤**没有**在真实管线里重建 —— 它们从未生效过；
+   若产品需要，应作为独立能力设计（写侧 `.env` 仍由权限规则 deny）。
+4. `sandbox-mode-consistency` 的「唯一读点」判据不再钉行号（改钉文件 + 唯一性）。
+5. `docs:sync` 的测试计数基线仍停在 966 个文件；发版前需刷新（非阻塞警告）。
 
 ## 4. Batch 1A 的实现细节（留档）
 

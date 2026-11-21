@@ -22,7 +22,7 @@
  * 2026-09 服务名对齐矩阵（对 harness packages 全量插件 inject 服务名 78 项
  * 与 Codem provides 203 项逐项比对后的结论，作为后续审计基准）：
  *   - **核心 seam 同名直通**（dsh 能力/工具插件的主要依赖，Codem 同名提供）：
- *     fs / shell / tools / llm / session / credentials / sandboxPolicy / slots /
+ *     fs / shell / tools / llm / session / credentials / slots /
  *     subprocess / commands / compaction / systemPrompt / userQuestions / web /
  *     dynamicCordisRunner / subagent（=dsh subagents 单数）…；
  *   - **复数/命名差异经别名承接**：sessions→session（+事件日志）、
