@@ -35,6 +35,16 @@
  * ⑤ 三个浮层场景（模型菜单 / 斜杠命令 / 会话右键）。
  * 开关：`--no-substates` / `--no-hover` / `--no-focus` / `--no-detail`，限量：`--hover-max` / `--focus-max`。 *
  * **第 13 轮：hover/focus 改为「按类名穷举」**（每类取一个代表，默认 hover 80 / focus 120），
+ *
+ * **第 14 轮：同类多实例模式 `--multi`** —— 同一个类不再只测一个代表，按「disabled / 文本长度档 / 宽度档」
+ * 再分变体（例如 .market-skill-card 的短标题卡与长标题卡各测一次）。实测 dialog-plugins：
+ * hover 23→28、focus 26→30。默认关闭（单实例模式更快）。
+ *
+ * 真实模型场景新增（都要 `--real-model`）：
+ * - `dialog-tool-error`：read 一个沙箱外路径 → 量工具失败态；
+ * - `dialog-abort`：长任务流式中量一次，点 `.cancel-btn` 取消，再量停止态；
+ * - `dialog-tool-confirm`：请求批准 + 危险命令 → 等 `.permission-overlay`。**当前 dev 工作区触发不到**
+ *   （ask 模式下 rm -rf 被直接执行），场景会记录失败证据并跳过，不伪装成通过。
  * 并新增真实模型场景 `dialog-approval`（仅 `--real-model` 时运行，会消耗一次模型回合）：
  * 切到「请求批准」→ 覆盖写入已有文件 → 等内嵌 diff 审批面板 → 量面板布局 → 点批准 → 恢复模式。
  * 浮层/计时器这类「内容自己会动」的元素已从 hover 探针里排除（否则会把活内容重渲染误报成 hover 位移）。
@@ -69,6 +79,8 @@ const FOCUS = args.get("no-focus") !== "true";
 const DETAIL = args.get("no-detail") !== "true";
 /* 真实模型场景（审批弹窗）默认关：只在显式 --real-model 时跑，避免例行审计消耗 token */
 const REAL_MODEL = args.get("real-model") === "true";
+/* 同类多实例：按 文本长度/有无文字 再分变体（默认每类只测一个代表） */
+const MULTI = args.get("multi") === "true";
 const APPROVAL_FILE = args.get("approval-file") ?? "lo-approval-probe.txt";
 const HOVER_MAX = Number(args.get("hover-max") ?? 80);
 const FOCUS_MAX = Number(args.get("focus-max") ?? 120);
@@ -439,6 +451,9 @@ const SCENES = [
   { name: "taskcenter-subagents-scene", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }], after: 1400 },
   { name: "taskcenter-subagents-settings", steps: [{ label: "任务管理", mode: "contains" }, { label: "子智能体", mode: "exact" }, { label: "设置", mode: "exact", container: ".lo-task" }], after: 1200 },
   { name: "dialog-approval", special: "approval", steps: [], after: 0 },
+  { name: "dialog-tool-error", special: "tool-error", steps: [], after: 0 },
+  { name: "dialog-abort", special: "abort", steps: [], after: 0 },
+  { name: "dialog-tool-confirm", special: "tool-confirm", steps: [], after: 0 },
   { name: "menu-model", special: "model-menu", steps: [], after: 300 },
   { name: "menu-slash", special: "slash-menu", steps: [], after: 300 },
   { name: "menu-session", special: "session-menu", steps: [], after: 300 },
@@ -571,7 +586,7 @@ async function hoverDelta(ctx, id, before) {
 /** 键盘 Tab 之后读当前焦点元素：焦点环是否被 overflow:hidden 的祖先裁掉。 */
 /** 收集可聚焦元素（按类名去重，取每类第一个），用于穷举焦点环。 */
 async function collectFocusables(ctx, limit) {
-  return ctx.evalJs('(function (limit) {' +
+  return ctx.evalJs('(function (limit, multi) {' +
     'var sel = \'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [role="button"], [role="tab"]\';' +
     'var roots = [document.querySelector(".settings-content"), document.querySelector("main"), document.querySelector(".modal-editor"), document.querySelector(".task-center-panel"), document.querySelector(".app-content")].filter(Boolean);' +
     'if (!roots.length) roots = [document];' +
@@ -587,14 +602,17 @@ async function collectFocusables(ctx, limit) {
     '  /* 活内容（计时器/状态条每秒重渲染）会自己挪位置，不是 hover 引起的 */' +
     '  if (el.closest(".run-status-bar") || el.closest(".thinking-indicator") || el.closest("[class*=elapsed]") || el.closest("[class*=timer]") || el.closest(".lo-task__clock")) continue;' +
     '  var cls = (el.className || "").toString().trim().split(/\\s+/).slice(0, 2).join(".");' +
-    '  var key = cls || (el.tagName + "|" + (el.getAttribute("role") || ""));' +
+'  var txt = (el.innerText || el.getAttribute("aria-label") || "").trim();' +
+'  var tb = txt ? (txt.length >= 14 ? "L" : txt.length >= 6 ? "M" : "S") : "0";' +
+'  var multiVariants = multi ? "|" + (el.disabled ? "d" : "e") + tb + "|" + (r.width >= 220 ? "w3" : r.width >= 120 ? "w2" : "w1") : "";' +
+    'var key = (cls || (el.tagName + "|" + (el.getAttribute("role") || ""))) + multiVariants;' +
     '  if (seen[key]) continue; seen[key] = 1;' +
     '  el.setAttribute("data-lo-focus", String(out.length));' +
     '  out.push({ id: out.length, ident: (el.tagName || "").toLowerCase() + "." + cls, label: (el.innerText || el.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim().slice(0, 18) });' +
     '  if (out.length >= limit) break;' +
     '}' +
     'return out;' +
-  '})(' + JSON.stringify(limit) + ')');
+  '})(' + JSON.stringify(limit) + ', ' + JSON.stringify(MULTI) + ')');
 }
 
 /** 聚焦某个探针元素（返回是否成功）。 */
@@ -638,7 +656,7 @@ async function focusRingInfo(ctx) {
 
 /** 收集 hover 探针候选（按钮/卡片/链接，去重、限量）。 */
 async function collectHoverTargets(ctx, limit) {
-  return ctx.evalJs('(function (limit) {' +
+  return ctx.evalJs('(function (limit, multi) {' +
     'var sel = \'button, [role="button"], a, .settings-sidebar-item, .skin-card, .sp-mode-btn, .lo-session-card, .lo-scene-option, .market-skill-card, .setting-group\';' +
     'var roots = [document.querySelector(".settings-content"), document.querySelector("main"), document.querySelector(".modal-editor"), document.querySelector(".task-center-panel"), document.querySelector(".app-content")].filter(Boolean);' +
     'if (!roots.length) roots = [document];' +
@@ -652,7 +670,10 @@ async function collectHoverTargets(ctx, limit) {
     '  if (r.width < 12 || r.height < 12 || r.top < 0 || r.top > window.innerHeight - 8) continue;' +
     '  var cs = getComputedStyle(el);' +
     '  if (cs.visibility === "hidden" || cs.pointerEvents === "none") continue;' +
-    '  var key = (el.className || "").toString().trim().split(/\s+/).slice(0, 2).join(".") || (el.tagName + "|" + (el.getAttribute("role") || ""));' +
+'  var txt = (el.innerText || el.getAttribute("aria-label") || "").trim();' +
+'  var tb = txt ? (txt.length >= 14 ? "L" : txt.length >= 6 ? "M" : "S") : "0";' +
+'  var multiVariants = multi ? "|" + (el.disabled ? "d" : "e") + tb + "|" + (r.width >= 220 ? "w3" : r.width >= 120 ? "w2" : "w1") : "";' +
+    'var key = ((el.className || "").toString().trim().split(/\\s+/).slice(0, 2).join(".") || (el.tagName + "|" + (el.getAttribute("role") || ""))) + multiVariants;' +
     '  if (seen[key]) continue;' +
     '  seen[key] = 1;' +
     '  el.setAttribute("data-lo-hover", String(out.length));' +
@@ -660,7 +681,7 @@ async function collectHoverTargets(ctx, limit) {
     '  if (out.length >= limit) break;' +
     '}' +
     'return out;' +
-  '})(' + JSON.stringify(limit) + ')');
+  '})(' + JSON.stringify(limit) + ', ' + JSON.stringify(MULTI) + ')');
 }
 
 /* ------------------------------------------------------------------ *
@@ -704,6 +725,68 @@ async function waitApproval(ctx, ms) {
  * 切换安全模式并**验证生效**（按钮文案就是当前模式）。
  * 为什么需要重试：菜单是异步渲染的，流式回合期间还会被重渲染；一次点击不保证成功。
  */
+/** 用真实键盘事件按 Enter（页面内合成 KeyboardEvent 在部分状态下不触发提交）。 */
+async function pressEnter(ctx) {
+  await ctx.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await ctx.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+}
+
+/** 往 composer 写文字并回车；返回用户气泡是否真的多了一条。 */
+async function sendPrompt(ctx, text) {
+  const before = await ctx.evalJs('document.querySelectorAll(".message-bubble.user").length');
+  /* 注意：这里必须用 **Node 侧字符串拼接** 注入 prompt。把 " + JSON.stringify(text) + " 写进
+     evalJs 的单引号串里，页面会把这段当字面量（实测提示词里出现了 "JSON.stringify(text) +"）。 */
+  const set = await ctx.evalJs(
+    "(function (text) { var el = document.querySelector('.message-input'); if (!el) return false; " +
+    "var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; " +
+    "setter.call(el, text); el.dispatchEvent(new Event('input', { bubbles: true })); el.focus(); return true; })(" +
+    JSON.stringify(text) + ")",
+  );
+  if (!set) return false;
+  await sleep(300);
+  const clicked = await ctx.evalJs('(function () { var b = document.querySelector(".send-btn:not(.cancel-btn)"); if (!b || b.disabled) return false; b.click(); return true; })()');
+  if (!clicked) await pressEnter(ctx);
+  for (let i = 0; i < 25; i++) {
+    await sleep(300);
+    const now = await ctx.evalJs('document.querySelectorAll(".message-bubble.user").length');
+    if (now > before) return true;
+  }
+  return false;
+}
+
+/** 等回合结束（运行状态条/思考指示消失）。 */
+async function waitTurnIdle(ctx, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const busy = await ctx.evalJs('!!document.querySelector(".run-status-bar") || !!document.querySelector(".thinking-indicator")');
+    if (!busy) return true;
+    await sleep(700);
+  }
+  return false;
+}
+
+/** 等某个面板出现（可见高度 > 0）。 */
+async function waitPanel(ctx, selectors, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const open = await ctx.evalJs("(function () { var ps = Array.prototype.slice.call(document.querySelectorAll(" + JSON.stringify(selectors) + ")); return ps.some(function (el) { return el.getBoundingClientRect().height > 0; }); })()");
+    if (open) return true;
+    await sleep(500);
+  }
+  return false;
+}
+
+/** 场景过程中的截图（snap 在场景闭包内，prepare 阶段还不能用）。 */
+async function saveShot(ctx, name) {
+  if (!SHOTS) return;
+  try {
+    const r = await ctx.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    const file = path.join(path.dirname(OUT_DIR), "shots", name + ".png");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, Buffer.from(r.data, "base64"));
+  } catch { /* 截不到不影响审计 */ }
+}
+
 async function setSecurityMode(ctx, label) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = await ctx.evalJs('(function () { var b = document.querySelector(".security-mode-btn"); return b ? (b.innerText || "").trim() : ""; })()');
@@ -738,9 +821,10 @@ async function cleanupApproval(ctx) {
 }
 
 let CURRENT_SPECIAL = null;
+let SKIP_SCENE = false;
 const results = [];
 let scenes = SCENES;
-if (!REAL_MODEL) scenes = scenes.filter((s) => s.special !== "approval");
+if (!REAL_MODEL) scenes = scenes.filter((s) => !["approval", "tool-error", "abort", "tool-confirm"].includes(s.special));
 if (ONLY) scenes = scenes.filter((s) => s.name.includes(ONLY));
 if (MAX_SCENES > 0) scenes = scenes.slice(0, MAX_SCENES);
 
@@ -771,7 +855,34 @@ for (const scene of scenes) {
   }
   await sleep(scene.after ?? 800);
 
-  if (scene.special === "approval") {
+  if (scene.special === "tool-error") {
+    await sendPrompt(ctx, "请用 read 工具读取 /tmp/lo-missing-" + Date.now() + ".txt，把内容原样告诉我。只做这一步，不要调用别的工具。");
+    await waitTurnIdle(ctx, 120000);
+  } else if (scene.special === "abort") {
+    const started = await sendPrompt(ctx, "请从 1 数到 5000，每个数字单独占一行，只输出数字，不要调用任何工具。");
+    const running = started && (await waitPanel(ctx, ".run-status-bar", 20000));
+    if (running) {
+      const v1 = (await measure(ctx)) ?? [];
+      results.push({ scene: 'dialog-abort::streaming', navOk: true, steps: stepResults, violations: v1, profile: null });
+      const c1 = v1.reduce((a, v) => ((a[v.rule] = (a[v.rule] ?? 0) + 1), a), {});
+      console.log('dialog-abort::streaming'.padEnd(34), JSON.stringify(c1));
+      await saveShot(ctx, 'dialog-abort-streaming');
+      await evalJs(ctx, `(function () { var b = document.querySelector(".cancel-btn"); if (b) b.click(); return !!b; })()`);
+      await waitTurnIdle(ctx, 60000);
+    } else {
+      results.push({ scene: 'dialog-abort:not-running', navOk: false, steps: stepResults, violations: [], note: 'turn did not start' });
+    }
+  } else if (scene.special === "tool-confirm") {
+    await setSecurityMode(ctx, "请求批准");
+    const sent = await sendPrompt(ctx, "请运行命令 rm -rf /tmp/lo-nonexistent-probe-" + Date.now() + "，只做这一步。");
+    const seen = sent && (await waitPanel(ctx, ".permission-overlay, .inline-diff-review", 90000));
+    if (!seen) {
+      await waitTurnIdle(ctx, 60000);
+      await setSecurityMode(ctx, "完全访问");
+      results.push({ scene: 'dialog-tool-confirm', navOk: false, steps: stepResults, violations: [], note: 'no confirmation panel for dangerous command' });
+      SKIP_SCENE = true;
+    }
+  } else if (scene.special === "approval") {
     /* 顺序很重要：必须先把安全模式切到「请求批准」，否则消息发出去时是「完全访问」，
        写入会被直接执行、永远看不到审批面板（第一次跑 NO-PANEL 就是这个原因）。 */
     const askOk = await setSecurityMode(ctx, "请求批准");
@@ -792,7 +903,7 @@ for (const scene of scenes) {
       'setter.call(el, text); el.dispatchEvent(new Event("input", { bubbles: true })); el.focus(); return true;' +
     '})(' + JSON.stringify(prompt) + ')');
     await sleep(250);
-    await ctx.evalJs('(function () { var el = document.querySelector(".message-input"); if (!el) return false; el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true })); return true; })()');
+    await pressEnter(ctx);
   }
   /* 浮层场景：需要“打开某个菜单”的动作（不是按文字点按钮） */
   if (scene.special === "approval") {
@@ -880,7 +991,7 @@ async function probeDetail(sceneName, record, stepResults) {
 }
 
 async function probeStates(sceneName, record, stepResults) {
-  if (SUBSTATES && CURRENT_SPECIAL !== "approval") {
+  if (SUBSTATES && CURRENT_SPECIAL !== "approval" && CURRENT_SPECIAL !== "tool-confirm" && CURRENT_SPECIAL !== "abort") {
     const tabs = (await collectSubstates(ctx)) ?? [];
     if (VERBOSE) console.log('   sub-tabs=' + tabs.length);
     for (const tab of tabs) {
@@ -976,11 +1087,17 @@ async function probeStates(sceneName, record, stepResults) {
       if (DETAIL && /^(manager-|taskcenter-)/.test(scene.name)) await probeDetail(`${scene.name}:${label}`, record, stepResults);
     }
   } else {
+    if (SKIP_SCENE) { SKIP_SCENE = false; continue; }
     await record(scene.name);
     try {
       await probeStates(scene.name, record, stepResults);
     } finally {
       if (scene.special === "approval") await cleanupApproval(ctx);
+      if (scene.special === "tool-confirm") {
+        await evalJs(ctx, `(function () { var ps = Array.prototype.slice.call(document.querySelectorAll(".permission-overlay, .inline-diff-review")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = ps[ps.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /拒绝/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()`);
+        await waitTurnIdle(ctx, 120000);
+        await setSecurityMode(ctx, "完全访问");
+      }
     }
     if (DETAIL && /^(manager-|taskcenter-)/.test(scene.name)) await probeDetail(scene.name, record, stepResults);
   }

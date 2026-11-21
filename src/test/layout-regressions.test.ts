@@ -331,6 +331,24 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     }
   });
 
+  it("LAYOUT-24: 审计工具支持「同类多实例」模式（按文本长度/disabled 再分变体）", () => {
+    const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
+    expect(tool, "缺 --multi 开关").toContain("const MULTI =");
+    expect(tool, "hover/focus 的 key 必须带变体").toContain("multiVariants");
+    expect(tool, "收集器必须把 multi 传进页面").toContain("JSON.stringify(MULTI)");
+    expect(tool, "变体必须考虑 disabled、文本长度档与宽度档").toMatch(/txt\.length >= 14[\s\S]{0,160}\(el\.disabled \? "d" : "e"\)[\s\S]{0,200}r\.width >= 220/);
+  });
+
+  it("LAYOUT-25: 真实模型场景必须覆盖 审批 / 工具错误 / 取消（工具确认失败要留证据）", () => {
+    const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
+    for (const name of ["dialog-tool-error", "dialog-abort", "dialog-tool-confirm"]) {
+      expect(tool, `缺场景 ${name}`).toContain(`name: "${name}"`);
+    }
+    expect(tool, "取消场景必须点 .cancel-btn").toContain(".cancel-btn");
+    expect(tool, "工具确认失败要记录证据而不是静默跳过").toContain("no confirmation panel for dangerous command");
+    expect(tool, "真实场景必须用真实键盘/发送按钮，不能只靠合成事件").toContain("send-btn:not(.cancel-btn)");
+  });
+
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {
     const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
     for (const rule of ["R1", "R2", "R3", "R4"]) {
