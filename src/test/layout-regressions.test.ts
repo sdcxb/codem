@@ -349,6 +349,14 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
     expect(tool, "真实场景必须用真实键盘/发送按钮，不能只靠合成事件").toContain("send-btn:not(.cancel-btn)");
   });
 
+  it("LAYOUT-26: 审计必须覆盖新版审批面板（.decision-tray）与取消后重发", () => {
+    const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
+    expect(tool, "新版审批面板是 .decision-tray，场景必须认它").toContain(".decision-tray");
+    expect(tool, "缺 dialog-abort-resend 场景").toContain('name: "dialog-abort-resend"');
+    expect(tool, "重发场景必须点 .cancel-btn 后立即再发").toMatch(/\.cancel-btn[\s\S]{0,400}sendPrompt/);
+    expect(tool, "工具确认失败要留证据").toContain("no confirmation panel for dangerous command");
+  });
+
   it("LAYOUT-7: 运行时布局审计工具必须在仓库里（否则这一类问题只能靠肉眼）", () => {
     const tool = readFileSync(join(ROOT, "tools/ui-audit/layout-audit.mjs"), "utf8");
     for (const rule of ["R1", "R2", "R3", "R4"]) {

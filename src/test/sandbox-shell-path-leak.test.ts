@@ -127,6 +127,28 @@ describe("沙箱：shell 命令里的工作区外路径", () => {
     }
   });
 
+  /**
+   * 第 15 轮：POSIX 绝对路径。
+   *
+   * 真机实测：`rm -rf /tmp/x` 在 Windows 上**绕过了沙箱**（只抽盘符/UNC/`..`），
+   * 而同一路径的 `read` 被拒 —— 同一个沙箱两套口径。
+   */
+  it("SHLEAK-3c: 命令里的 POSIX 绝对路径（/tmp、/etc）⇒ 拒绝", async () => {
+    sandbox(true);
+    for (const command of ["rm -rf /tmp/codem-probe", "cat /etc/passwd", "ls /home/other/repo"]) {
+      const res = await runBash({ command });
+      expect(String(res.output), `${command} 应当被沙箱拒绝`).toMatch(/Sandbox/);
+      expect(handlerCalls, `${command} 拦下时不许执行`).toBe(0);
+    }
+  });
+
+  it("SHLEAK-3d: Windows 开关参数（/s、/q）不能被当成 POSIX 路径误拦", async () => {
+    sandbox(true);
+    const res = await runBash({ command: `rd /s /q ${WS}\\dist` });
+    expect(handlerCalls, "工作区内的 rd /s /q 应当放行到执行层（危险性由权限层判）").toBe(1);
+    expect(res.output).toBe("SHOULD-NOT-RUN");
+  });
+
   it("SHLEAK-4: `workdir` 指到工作区外 ⇒ 拒绝（bash 支持换目录执行，等于绕过命令文本检查）", async () => {
     sandbox(true);
     const res = await runBash({ command: "git status", workdir: "C:\\mimo-gui" });

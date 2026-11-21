@@ -1974,6 +1974,9 @@ const mimoSessionRef = useRef<string | null>(null);
   const messagesSessionRef = useRef<string | null>(null);
   /** Tracks which session is currently streaming — for parallel message isolation */
   const streamingSessionIdRef = useRef<string | null>(null);
+  /* 第 15 轮：回合序号。取消后 2s/2.5s 的延迟定时器只能清自己那一轮的状态，
+     否则会误清新的回合（取消后立刻重发时用户能看见「第X步」被清空）。 */
+  const turnTokenRef = useRef(0);
   
 // Streaming buffer - batch text updates to reduce re-renders
 // Keyed by sessionId for parallel isolation — each session has its own buffer
@@ -3980,7 +3983,7 @@ if (!session) {
   // ========== Guidance (mid-turn steering) ==========
   // Send a guidance message to the currently running agentic loop.
   // The message is enqueued and will be consumed at the next iteration boundary.
-  const handleSendGuidance = useCallback((message: string, attachments?: MessageAttachment[]) => {
+  const handleSendGuidance = useCallback(async (message: string, attachments?: MessageAttachment[]) => {
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
@@ -3991,7 +3994,27 @@ if (!session) {
      * （`onSendGuidance(msg)`），模型永远看不到 —— 真机报"模型说没看到图片"。
      * 现在附件进队列 → 消费时落库 → `messagesToLLMMessages` 从落库附件转 image block。
      */
+    /* 第 15 轮：取消后立刻再发时，activeSessions 可能还没重渲染 ⇒ 消息被分流到 guidance，
+       若此时已没有在跑的回合，队列永远不会被消费（气泡被清、文本丢失）。
+       这里兜底成普通发送，保证「发出去的消息一定有一个回合接管」。 */
+    if (!isSessionExecuting(session.id)) {
+      handleSendRef.current?.(message, attachments);
+      return;
+    }
+    /* 取消后的窗口：UI 的 activeSessions 已清、但引擎锁还没释放（毫秒级）。
+       这时不能入 guidance（已取消的回合不会消费它），等锁释放后当普通发送。 */
+    if (!useAppStore.getState().activeSessions.has(session.id)) {
+      for (let i = 0; i < 100 && isSessionExecuting(session.id); i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      handleSendRef.current?.(message, attachments);
+      return;
+    }
     const item = engine.sendGuidance(session.id, message, attachments);
+    if (!item) {
+      handleSendRef.current?.(message, attachments);
+      return;
+    }
     if (item) {
       // Add to guidance messages in the store for UI display (id matches the queue item)
       addGuidanceMessage({
@@ -4002,8 +4025,6 @@ if (!session) {
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
       console.log(`[Guidance] Sent to session ${session.id}: "${message.substring(0, 80)}...", attachments=${attachments?.length ?? 0}`);
-    } else {
-      console.warn(`[Guidance] Failed to send — no active loop for session ${session.id}`);
     }
   }, [addGuidanceMessage]);
 
@@ -4248,6 +4269,15 @@ if (!session) {
       if (isViewingSession()) updateToolCall(messageId, toolId, update);
     };
 
+    /* 取消后立刻重发：旧回合的 finally 可能还在释放会话锁（毫秒级），
+       这里短暂等一下，避免把刚取消的回合误判成「已有一轮在跑」而把消息吞掉。 */
+    /* 取消后立刻重发：旧回合 finally 还在释放会话锁时，不能把消息判成“忙”。
+       这里等最多 10s（正常取消是毫秒级；真后台回合超时后仍会给出明确错误）。 */
+    if (isSessionExecuting(session.id)) {
+      for (let i = 0; i < 100 && isSessionExecuting(session.id); i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
     if (isSessionExecuting(session.id)) {
       console.warn(`[runAgenticLoop] 会话 ${session.id} 已在执行中 —— 前台回合被拒绝（同一会话不并发）`);
       safeAddMessage({
@@ -4463,6 +4493,7 @@ streamingSessionIdRef.current = session.id;
      * `finally` 看不见它（块作用域），所以不要在那里读。
      */
     let lastEvent: any = undefined;
+    const turnToken = ++turnTokenRef.current;
     try {
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
@@ -5166,11 +5197,15 @@ if (watchdogTimer) clearInterval(watchdogTimer);
 flushStreamBuffer(session.id);
 flushReasoningBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
-      setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
+      setTimeout(() => {
+        if (turnTokenRef.current !== turnToken) return; /* 已开始新一轮：别清新的进度 */
+        useAppStore.getState().setStepProgress(null);
+      }, 2000);
       // 大肥鱼式状态卡：回合结束（非完成态如取消/错误）后延迟归位。
       // P2：归位应清"任何仍停留的过程态"（含英文 thinking/working、工具阶段
       // searching/editing/executing/verifying 等），保留结束态（完成/错误）给上层呈现。
       setTimeout(() => {
+        if (turnTokenRef.current !== turnToken) return; /* 同上：跨回合误清宠物卡 */
         const st = usePetStore.getState();
         const KEEP_END = new Set(["任务完成", "done", "遇到问题", "error"]);
         if (st.card && !KEEP_END.has(st.card.phase || "")) {
@@ -5533,6 +5568,31 @@ controller.abort();
 abortControllersRef.current.clear();
 engineRef.current?.abort();
 }
+    /**
+     * 第 15 轮（取消后立刻重发的竞态）：
+     * - 只 setStreaming(false) 是**空操作**（store 里 isStreaming = activeSessions.size > 0），
+     *   于是界面仍算"流式中"，下一条消息会被 ChatPanel 分流成 guidance 并被静默清掉；
+     * - 取消时挂起的审批 Promise 也必须落地，否则工具/回合会一直等。
+     */
+    if (currentSession) {
+      useAppStore.getState().setSessionActive(currentSession.id, false);
+      setPendingPermissions((prev) => {
+        const entry = prev.get(currentSession.id);
+        if (!entry) return prev;
+        try { entry.resolve({ requestId: entry.request.id, action: "deny", reason: "cancelled" }); } catch { /* ignore */ }
+        const next = new Map(prev);
+        next.delete(currentSession.id);
+        return next;
+      });
+      setPendingWriteConfirms((prev) => {
+        const entry = prev.get(currentSession.id);
+        if (!entry) return prev;
+        try { entry.resolve({ action: "reject" }); } catch { /* ignore */ }
+        const next = new Map(prev);
+        next.delete(currentSession.id);
+        return next;
+      });
+    }
     // Note: Sub-agents continue running when main task is paused
     // Only global pause should freeze everything
     setStreaming(false);

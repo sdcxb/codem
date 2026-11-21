@@ -43,8 +43,9 @@
  * 真实模型场景新增（都要 `--real-model`）：
  * - `dialog-tool-error`：read 一个沙箱外路径 → 量工具失败态；
  * - `dialog-abort`：长任务流式中量一次，点 `.cancel-btn` 取消，再量停止态；
- * - `dialog-tool-confirm`：请求批准 + 危险命令 → 等 `.permission-overlay`。**当前 dev 工作区触发不到**
- *   （ask 模式下 rm -rf 被直接执行），场景会记录失败证据并跳过，不伪装成通过。
+ * - `dialog-tool-confirm`：请求批准 + 危险命令 → 等审批面板（新版 `.decision-tray`）。
+ *   第 15 轮修好「bash 危险命令清单为空 + build 通配 allow 短路」后已能真实触发。
+ * - `dialog-abort-resend`：长任务流式中取消 → **不等空闲**立刻再发一条 → 断言起了新回合。
  * 并新增真实模型场景 `dialog-approval`（仅 `--real-model` 时运行，会消耗一次模型回合）：
  * 切到「请求批准」→ 覆盖写入已有文件 → 等内嵌 diff 审批面板 → 量面板布局 → 点批准 → 恢复模式。
  * 浮层/计时器这类「内容自己会动」的元素已从 hover 探针里排除（否则会把活内容重渲染误报成 hover 位移）。
@@ -453,6 +454,7 @@ const SCENES = [
   { name: "dialog-approval", special: "approval", steps: [], after: 0 },
   { name: "dialog-tool-error", special: "tool-error", steps: [], after: 0 },
   { name: "dialog-abort", special: "abort", steps: [], after: 0 },
+  { name: "dialog-abort-resend", special: "abort-resend", steps: [], after: 0 },
   { name: "dialog-tool-confirm", special: "tool-confirm", steps: [], after: 0 },
   { name: "menu-model", special: "model-menu", steps: [], after: 300 },
   { name: "menu-slash", special: "slash-menu", steps: [], after: 300 },
@@ -714,7 +716,7 @@ await ensureMeasure();
 async function waitApproval(ctx, ms) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    const open = await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")); return panels.some(function (el) { return el.getBoundingClientRect().height > 0; }); })()');
+    const open = await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay, .decision-tray")); return panels.some(function (el) { return el.getBoundingClientRect().height > 0; }); })()');
     if (open) return true;
     await sleep(600);
   }
@@ -806,11 +808,11 @@ async function setSecurityMode(ctx, label) {
  */
 async function cleanupApproval(ctx) {
   /* 先批准（若面板还开着），再等回合结束——流式期间菜单会被重渲染，切换容易失败 */
-  await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
+  await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay, .decision-tray")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
   /* 等回合真正结束：本轮实测「停止按钮」并不存在（控制按钮在别处），
      可靠信号是运行状态条 .run-status-bar；期间若又弹出审批（同一回合的第二次写入）就继续批准。 */
   for (let i = 0; i < 150; i++) {
-    await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
+    await ctx.evalJs('(function () { var panels = Array.prototype.slice.call(document.querySelectorAll(".inline-diff-review, .permission-overlay, .decision-tray")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = panels[panels.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /批准/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
     const busy = await ctx.evalJs('!!document.querySelector(".run-status-bar") || !!document.querySelector(".thinking-indicator")');
     if (!busy) break;
     await sleep(1000);
@@ -824,7 +826,7 @@ let CURRENT_SPECIAL = null;
 let SKIP_SCENE = false;
 const results = [];
 let scenes = SCENES;
-if (!REAL_MODEL) scenes = scenes.filter((s) => !["approval", "tool-error", "abort", "tool-confirm"].includes(s.special));
+if (!REAL_MODEL) scenes = scenes.filter((s) => !["approval", "tool-error", "abort", "abort-resend", "tool-confirm"].includes(s.special));
 if (ONLY) scenes = scenes.filter((s) => s.name.includes(ONLY));
 if (MAX_SCENES > 0) scenes = scenes.slice(0, MAX_SCENES);
 
@@ -858,6 +860,31 @@ for (const scene of scenes) {
   if (scene.special === "tool-error") {
     await sendPrompt(ctx, "请用 read 工具读取 /tmp/lo-missing-" + Date.now() + ".txt，把内容原样告诉我。只做这一步，不要调用别的工具。");
     await waitTurnIdle(ctx, 120000);
+  } else if (scene.special === "abort-resend") {
+    const before = await ctx.evalJs('document.querySelectorAll(".message-bubble.user").length');
+    const started = await sendPrompt(ctx, "请从 1 数到 5000，每个数字单独占一行，只输出数字，不要调用任何工具。");
+    const running = started && (await waitPanel(ctx, ".run-status-bar", 20000));
+    if (running) {
+      await ctx.evalJs(`(function () { var b = document.querySelector(".cancel-btn"); if (b) b.click(); return !!b; })()`);
+      /* 关键：**不等空闲**，紧接着发第二条（真人手速也在这个窗口内） */
+      const resent = await sendPrompt(ctx, "请只回复 OK 两个字母。");
+      let secondTurn = false;
+      for (let i = 0; i < 40; i++) {
+        await sleep(500);
+        const busy = await ctx.evalJs('!!document.querySelector(".run-status-bar") || !!document.querySelector(".thinking-indicator")');
+        if (busy) secondTurn = true;
+        if (secondTurn && !busy) break;
+      }
+      const users = await ctx.evalJs('document.querySelectorAll(".message-bubble.user").length');
+      if (!resent || users < before + 2 || !secondTurn) {
+        results.push({ scene: "dialog-abort-resend", navOk: false, steps: stepResults, violations: [], note: "resend did not start a new turn (resent=" + resent + ", users=" + users + ", secondTurn=" + secondTurn + ")" });
+        SKIP_SCENE = true;
+      }
+      await waitTurnIdle(ctx, 120000);
+    } else {
+      results.push({ scene: "dialog-abort-resend", navOk: false, steps: stepResults, violations: [], note: "turn did not start" });
+      SKIP_SCENE = true;
+    }
   } else if (scene.special === "abort") {
     const started = await sendPrompt(ctx, "请从 1 数到 5000，每个数字单独占一行，只输出数字，不要调用任何工具。");
     const running = started && (await waitPanel(ctx, ".run-status-bar", 20000));
@@ -875,7 +902,7 @@ for (const scene of scenes) {
   } else if (scene.special === "tool-confirm") {
     await setSecurityMode(ctx, "请求批准");
     const sent = await sendPrompt(ctx, "请运行命令 rm -rf /tmp/lo-nonexistent-probe-" + Date.now() + "，只做这一步。");
-    const seen = sent && (await waitPanel(ctx, ".permission-overlay, .inline-diff-review", 90000));
+    const seen = sent && (await waitPanel(ctx, ".decision-tray, .permission-overlay, .inline-diff-review", 90000));
     if (!seen) {
       await waitTurnIdle(ctx, 60000);
       await setSecurityMode(ctx, "完全访问");
@@ -1094,7 +1121,13 @@ async function probeStates(sceneName, record, stepResults) {
     } finally {
       if (scene.special === "approval") await cleanupApproval(ctx);
       if (scene.special === "tool-confirm") {
-        await evalJs(ctx, `(function () { var ps = Array.prototype.slice.call(document.querySelectorAll(".permission-overlay, .inline-diff-review")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); var p = ps[ps.length - 1]; if (!p) return false; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /拒绝/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()`);
+        /* 新版审批是 .decision-tray；按钮文案是「确认拒绝」（点「拒绝」只是展开）。
+           模型被拒后可能再试一次，所以循环拒绝直到没有面板。 */
+        for (let i = 0; i < 5; i++) {
+          const clicked = await ctx.evalJs('(function () { var ps = Array.prototype.slice.call(document.querySelectorAll(".decision-tray, .permission-overlay, .inline-diff-review")).filter(function (el) { return el.getBoundingClientRect().height > 0; }); if (!ps.length) return false; var p = ps[ps.length - 1]; var b = Array.prototype.slice.call(p.querySelectorAll("button")).find(function (x) { return /确认拒绝|拒绝/.test(x.textContent || ""); }); if (b) b.click(); return !!b; })()');
+          if (!clicked) break;
+          await sleep(1200);
+        }
         await waitTurnIdle(ctx, 120000);
         await setSecurityMode(ctx, "完全访问");
       }

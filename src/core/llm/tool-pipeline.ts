@@ -723,6 +723,12 @@ export function findOutOfWorkspacePath(
       candidates.push(m.replace(/^[^\w]*/, "").replace(/[.,;:]+$/, ""));
     }
     for (const m of text.match(/\\\\[^\s"'`;|&)<>,]+/g) ?? []) candidates.push(m);
+    /* 第 15 轮：**POSIX 绝对路径**（/tmp、/etc/passwd、/dev/sda…）。
+     * 旧实现只抽盘符/UNC/`..`，于是 `rm -rf /tmp/x` 在 Windows 上既绕过沙箱、
+     * 又在 ask 模式被直接执行；而 `read /tmp/x` 因为走 args.path 被拒 —— 同一个沙箱两套口径。 */
+    for (const m of text.match(/(?:^|[\s"'=])(\/(?:tmp|etc|home|usr|var|dev|proc|sys|root|opt|mnt|media|srv|bin|sbin|lib|boot)\b[^\s;|&<>,"']*)/g) ?? []) {
+      candidates.push(m.replace(/^[^\/]*/, "").replace(/[.,;:]+$/, ""));
+    }
     // 3) 含 `..` 的相对路径。
     //
     // ⚠️ **裸 `..` 也算候选**（真机实测抓到的漏洞）：第一版要求 token 里带 `/` 或 `\` 才当路径，

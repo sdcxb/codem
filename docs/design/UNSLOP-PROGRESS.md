@@ -1382,6 +1382,67 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 3. 失败重试没有独立弹窗 UI，工具错误态由 `dialog-tool-error` 覆盖；
 4. 取消只测了「停止后回到空闲」，没有测“取消后立刻再发一条”的竞态。
 
+## 3T. 第 15 轮：安全闸门修复 + 取消后重发竞态（2026-11-21）
+
+上一轮留了两条边界：「工具确认弹窗在 dev 工作区触发不到」「取消后立刻重发的竞态没测」。
+按用户要求，这一轮不绕过去：先把触发不到的原因查清（三个只读子智能体并行调查），
+再修根因、补场景、逐条做变异自证。
+
+### 3T.1 为什么「请求批准」对 rm -rf 不弹窗（根因，两条同时成立）
+
+| # | 根因 | 证据（修前） |
+|---|---|---|
+| 1 | `bash-analyzer.ts` 的 Unix 危险清单**只有注入/外联**类，没有任何删除命令 | `analyzeBashCommand("rm -rf /tmp/x")` → `write`；`evaluateWithBashAnalysis` 原样返回 `allow` |
+| 2 | `PermissionEvaluator.evaluate()` 先问 agent registry，build agent 是 `{tool:"*", action:"allow"}` ⇒ 默认 6 条 bash 安全规则（rm -rf→ask、sudo→ask…）**是死代码** | 无 mock 时 `evaluate("bash","rm -rf /tmp/x","build")` → `allow`；仓库自己的测试注释也写着「规则表整体成了死代码」 |
+| 3 | 沙箱只从命令文本抽盘符/UNC/`..`，**不抽 POSIX 绝对路径** | `read /tmp/x` 被拒（走 args.path），`rm -rf /tmp/x` 却放行 |
+| 4 | 分析器抛错时 agentic-loop 只 `warn`，继续用 `allow` | fail-open；`isAutoApprovable` / `tool-gates` 都是 fail-closed |
+| 5 | `terminal_send` 往 PTY 打字**没有审批通道**，也不做危险分析 | 模型可绕过 bash 权限层直接 `rm -rf` |
+| 6 | 「始终允许」的记忆支持**通配**匹配；危险命令升级被它短路 | 一条 `rm -rf *` 的会话记忆能放行 `rm -rf /` |
+
+另一个事实：审批面板早就改成了 `.decision-tray`（旧 `.permission-overlay` 是历史外壳）——
+上一轮场景选不到它，也是「触发不到」的一部分原因。
+
+### 3T.2 修法（每条都有判据）
+
+| 修复 | 做法 |
+|---|---|
+| 危险命令识别 | 新增**按命令段分类**（`;` / `&&` / `||` / `|` / 换行），只在**命令位置**匹配；覆盖递归/强制删除（rm、del/rd、find -delete、rimraf、shred…）、git 数据丢失（clean -f、push --force、reset --hard、checkout .、branch -D、stash drop）、提权/关机/杀进程、Windows 磁盘/注册表/服务/账号命令、`> /dev/sdX`、fork bomb、PowerShell cmdlet（含 `powershell/pwsh -Command` 外壳与大小写混写） |
+| 规则不再被 agent 短路 | `evaluate()` 改成「规则表与 agent 权限合并取最严格」：**deny > ask > allow**；硬拒绝（.git/.env/node_modules）优先于「始终允许」 |
+| 危险命令只认精确放行 | 新增 `getExactAlwaysAllow()`；分析器升级危险命令时只认**命令原文完全一致**的会话记忆，通配条目不抑制升级 |
+| 分析器失败 fail-closed | 抛错时把 `rawAction` 升级为 `ask`（与 tool-gates 一致） |
+| 沙箱补 POSIX 路径 | 从命令文本抽取 `/tmp`、`/etc/...`、`/dev/...` 等；`/s`、`/q` 这类开关不误判 |
+| 终端工具 | `terminal_send` 在 ask/auto 下复用 `refuseDangerousCommand`（无审批通道 ⇒ 直接拒绝并告诉模型改用 bash）；full 模式放行 |
+| 场景选择器 | 审计认 `.decision-tray`（同时兼容旧 `.permission-overlay` / `.inline-diff-review`） |
+
+### 3T.3 取消后立刻重发（真实竞态，已修）
+
+调查结论：`handleCancel` 只调 `setStreaming(false)`，而 store 的 `isStreaming = activeSessions.size > 0`
+⇒ 取消瞬间仍算「流式中」，`ChatPanel` 把下一条消息分流成 guidance；已取消的回合不会消费 guidance，
+气泡被 `clearGuidanceMessages()` 清掉、文本只留在内存队列 → **消息发出去就没了**。
+
+| 修复 | 说明 |
+|---|---|
+| 取消即清忙碌态 | `setSessionActive(id, false)` + `setStreaming(false)`；同时把挂起的审批/覆盖写确认 resolve 掉（deny/cancel），避免 Promise 永久悬挂 |
+| guidance 兜底 | 没有在跑的回合 → 走普通发送；取消窗口（activeSessions 已清、引擎锁未释放）→ 等锁释放后普通发送；`sendGuidance` 返回 null 也兜底 |
+| 忙锁等待 | 前台回合启动时若会话仍在执行，等最多 10s（正常取消是毫秒级），不再把刚取消的回合误判成「已有一轮在跑」 |
+| 跨回合定时器 | 回合序号 `turnTokenRef` 守卫 2s 进度清理 / 2.5s 宠物卡归位，避免旧回合的定时器清新回合的状态 |
+
+### 3T.4 验证
+
+- 真实模型 `dialog-tool-confirm`：`.decision-tray` 真实出现并完成布局测量（0 违规），跑完恢复「完全访问」、无残留面板；
+- 真实模型 `dialog-abort-resend`：取消后**不等空闲**立刻再发 → 连跑 2 次都起了新回合（navOk: true）；
+- 新增判据：`DANGER-15`（19+ 条破坏性命令、复合命令、PS 外壳、误报锚定、规则不被短路、精确放行）、`CANCEL-15`（取消清态/审批收口/guidance 兜底/定时器守卫/忙锁等待）、`SHLEAK-3c/3d`（POSIX 路径、开关参数不误拦）、`LAYOUT-26`（审计认 `.decision-tray` 与重发场景）；
+- 变异自证：删掉 rm 规则 → 5 条红；把 evaluator 的 ask/allow 顺序换回旧写法 → 红；删 `setSessionActive(false)` → CANCEL-15 红；还原后全绿；
+- 全量 **10388 passed / 18 skipped / 994 files**；`tsc` 0；`scan-ui` 0/0；上报点 314=314=314。
+
+### 3T.5 仍未覆盖 / 明确不做
+
+1. `sandbox-acl.blockedCommands` 与 `sandbox-policy-provider` 的两份清单**没有生产调用者**（死清单）——已记录，未删（删除属于另一类结构改动）；
+2. `run_code` 的 `sdk.bash` 对危险命令**任何模式都拒绝**（没有审批通道），这是既有设计，未改成「full 放行」；
+3. `terminal_send` 只分析 `submit=true` 的整行文本；分多次输入拼出的危险命令（先 `rm -r` 再回车）无法从单条文本识别；
+4. 审批弹窗的真实模型场景只覆盖「危险 bash」与「覆盖写」两类；工具重试/取消后的审批收口只做了单元级验证；
+5. 取消后**立刻**重发的窗口在真人手速下更宽，但自动化只在 1280 宽度、单会话验证过。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

@@ -80,6 +80,14 @@ const DANGEROUS_PATTERNS: Array<{ regex: RegExp; description: string }> = [
 
   // iptables flush — can disable firewall
   { regex: /\biptables\s+.*-F\b/i, description: "iptables flush — can disable firewall rules" },
+
+  /* ===== 第 15 轮：破坏性文件/系统操作（与 PowerShell 清单对齐） =====
+   *
+   * 为什么补这一组：bash 侧原来只有「注入/外联」类模式，一个删除命令都没有 ——
+   * rm -rf /tmp/x 被判成 write，在「请求批准」模式下直接执行、连弹窗都不出现。
+   * PowerShell 侧一直有 Remove-Item -Recurse/-Force，这是跨平台的不对称缺口。
+   */
+  { regex: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, description: "fork bomb" },
 ];
 
 /**
@@ -169,6 +177,83 @@ const WRITE_PATTERNS: RegExp[] = [
   /^curl\b(?!.*\|\s*(bash|sh))/i,
 ];
 
+// ========== 第 15 轮：按命令段分类 ==========
+
+/**
+ * 把复合命令按 ; && || | 换行 切成段，逐段判断破坏性。
+ *
+ * 为什么必须分段：旧实现只看「第一个命令词」（`command.split("|")[0]`），于是
+ * `echo hi; Remove-Item -Recurse -Force C:\\x` 会被判 readonly（首词 echo），
+ * `find . -delete` 甚至命中 READONLY_PATTERNS。分段后取「最严重」的那一段。
+ */
+function splitCommandSegments(command: string): string[] {
+  return command
+    .split(/;|&&|\|\||\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+/** 去掉段首的提权/包装前缀，返回真正的命令文本（用于命令位置匹配）。 */
+function stripSegmentPrefix(seg: string): string {
+  return seg.replace(/^(?:sudo|doas|command|env|time|nohup)\s+/i, "").trim();
+}
+
+/**
+ * 单段破坏性判断：**只在命令位置匹配**（避免 `grep "rm -rf"`、`git log --grep=shutdown` 误报）。
+ * 返回 null = 不是破坏性命令。
+ */
+function classifyDestructiveSegment(seg: string): string | null {
+  const raw = seg.trim();
+  const rawFirst = (raw.split(/\s+/)[0] || "").toLowerCase();
+  /* 提权前缀本身就算破坏性（剥掉之后就只剩 ls 了，不能让它变安全） */
+  if (["sudo", "su", "doas"].includes(rawFirst)) return "提权执行（sudo/su）";
+  const s = stripSegmentPrefix(seg);
+  const first = (s.split(/\s+/)[0] || "").toLowerCase();
+  const rest = s.slice(first.length).trim();
+  const has = (re: RegExp) => re.test(s);
+
+  // 设备写入（任意位置，目标明确）
+  if (/>\s*\/dev\/(?:sd|nvme|hd|vd|mmcblk)/i.test(s)) return "直接写块设备（> /dev/sdX）";
+  // 删除/清理
+  if (first === "rm" && (/(?:^|\s)-(?:[A-Za-z]*[rRf][A-Za-z]*)\b/.test(rest) || /--(?:recursive|force)\b/i.test(rest))) {
+    return "递归/强制删除（rm -r/-f）";
+  }
+  if (["del", "erase", "rd", "rmdir"].includes(first)) return "删除命令（Windows del/rd）";
+  if (first === "find" && /\s-delete\b/i.test(rest)) return "find -delete — 批量删除文件";
+  if (["shred", "wipe", "srm", "rimraf"].includes(first)) return "不可恢复删除/目录删除";
+  if (first === "truncate" && /-s\s*0\b/.test(rest)) return "truncate -s 0 — 清零文件";
+  // git 数据丢失类
+  if (first === "git") {
+    const sub = (rest.split(/\s+/)[0] || "").toLowerCase();
+    if (sub === "clean" && /(?:^|\s)-[a-z]*f[a-z]*\b/i.test(rest)) return "git clean -f — 删除未跟踪文件";
+    if (sub === "push" && /(?:--force\b|\s-f\b)/i.test(rest)) return "git push --force — 覆盖远端历史";
+    if (sub === "reset" && /--hard\b/i.test(rest)) return "git reset --hard — 丢弃工作区改动";
+    if (["checkout", "restore"].includes(sub) && /(?:^|\s)(?:\.|--\s+\.)$/.test(rest.trim())) return "git checkout/restore . — 丢弃全部改动";
+    if (sub === "branch" && /(?:^|\s)-D\b/.test(rest)) return "git branch -D — 强制删除分支";
+    if (sub === "stash" && /\b(?:drop|clear)\b/i.test(rest)) return "git stash drop/clear — 丢弃暂存";
+  }
+  // 权限/提权/关机
+  if (["chmod", "chown"].includes(first)) return "修改权限/属主（chmod/chown）";
+  if (["sudo", "su"].includes(first)) return "提权执行（sudo/su）";
+  if (["shutdown", "reboot", "halt", "poweroff"].includes(first)) return "关机/重启";
+  // 进程
+  if (first === "kill" && /(?:^|\s)-(?:9|KILL)\b/i.test(rest)) return "kill -9 — 强制杀进程";
+  if (["killall", "pkill"].includes(first)) return "批量杀进程（killall/pkill）";
+  // Windows 磁盘/系统/账号
+  if (["format", "diskpart", "bcdedit", "vssadmin", "icacls", "takeown", "cipher"].includes(first)) return "Windows 磁盘/系统修改命令";
+  if (["wmic"].includes(first) && /\bdelete\b/i.test(rest)) return "wmic 删除操作";
+  if (first === "sc" && /\bdelete\b/i.test(rest)) return "sc delete — 删除服务";
+  if (first === "reg" && /\bdelete\b/i.test(rest)) return "reg delete — 删除注册表项";
+  if (first === "net" && /\buser\b/i.test(rest)) return "net user — 账号修改";
+  // PowerShell cmdlet（可能在 wrapper 后面，也可能大小写混写）
+  if (/\bRemove-Item\b[\s\S]*-(?:Recurse|Force)\b/i.test(s)) return "Remove-Item -Recurse/-Force — 递归/强制删除";
+  if (/\b(?:Invoke-Expression|iex)\b/i.test(s)) return "Invoke-Expression — 执行动态拼接的代码";
+  if (/\b(?:Format-Volume|Clear-Disk|Initialize-Disk)\b/i.test(s)) return "磁盘格式化/初始化";
+  if (/\bSet-ExecutionPolicy\b/i.test(s)) return "修改执行策略（降低安全限制）";
+  if (/\b(?:Stop-Computer|Restart-Computer)\b/i.test(s)) return "关机/重启";
+  return null;
+}
+
 // ========== Core Analysis ==========
 
 /**
@@ -199,6 +284,16 @@ function isPowerShellCommand(command: string): boolean {
  * @returns Classification result with detected patterns
  */
 export function analyzeBashCommand(command: string): BashAnalysisResult {
+  /* 第 15 轮：先按段判破坏性命令（复合命令/命令位置锚定），再走原来的注入模式与只读/写分类 */
+  const segmentDangers: string[] = [];
+  for (const seg of splitCommandSegments(command)) {
+    const hit = classifyDestructiveSegment(seg);
+    if (hit) segmentDangers.push(hit);
+  }
+  if (segmentDangers.length > 0) {
+    return { classification: "dangerous", dangerousPatterns: Array.from(new Set(segmentDangers)), isPowerShell: isPowerShellCommand(command) };
+  }
+
   /**
    * PowerShell 命令**不再跳过分析**（第 83 波审计修正）。
    *

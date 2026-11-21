@@ -554,6 +554,16 @@ export function createTerminalSendTool(): ToolDef {
       const text = args.text as string;
       const submit = args.submit !== false;
 
+      /*
+       * 第 15 轮：终端工具**没有审批通道**，模型可以绕过 bash 的权限层直接往 PTY 里打
+       * `rm -rf`。这里复用 run_code 的 fail-closed 闸门：危险命令在 ask/auto 下直接拒绝，
+       * 并告诉模型「用 bash 工具发，那里会问用户」；full 模式（用户显式放弃审批）才放行。
+       */
+      if (submit && ctx?.securityMode !== "full") {
+        const { refuseDangerousCommand } = await import("../tool-gates");
+        const refusal = refuseDangerousCommand(text, ctx?.securityMode, 0, "terminal_send");
+        if (refusal) return { title: "terminal_send", output: refusal, isError: true };
+      }
       if (args.run_in_background === true) {
         const jobId = await getTerminalManager().sendBackground(id, text, submit, ctx?.sessionId ?? "");
         /**

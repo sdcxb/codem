@@ -1940,26 +1940,25 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
       const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : undefined;
       let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource, "build", sessionId);
 
-      /**
-       * ★ 权限语义兑现：`evaluate()` 返回的 `allow` **分不清**"用户点过『始终允许』"与
-       * "build agent 本来就全放行"，而下面的 bash 升级必须只覆盖后者 ——
-       * 用户明确放行过的命令再问一遍，那个按钮就等于没接线。所以这里显式查一次记忆。
-       */
-      const grantedAlways = resource
-        ? permissionManager.getEvaluator().getAlwaysAllow(toolName, resource, sessionId)
-        : undefined;
-
       // Bash deep security analysis — detect dangerous patterns
       if (toolName === "bash" && typeof args.command === "string") {
         try {
           const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
           const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
-          if (bashResult.action === "ask" && rawAction === "allow" && grantedAlways !== "allow") {
+          /* 危险命令只认**原文精确**的「始终允许」；通配记忆不抑制升级。 */
+          const grantedExact = resource
+            ? permissionManager.getEvaluator().getExactAlwaysAllow(toolName, resource, sessionId)
+            : undefined;
+          if (bashResult.action === "ask" && rawAction === "allow" && grantedExact !== "allow") {
             console.log(`[Pipeline] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
             rawAction = "ask";
           }
         } catch (bashErr: any) {
-          console.warn(`[Pipeline] Bash analyzer error (non-blocking): ${bashErr.message}`);
+          /* 第 15 轮：分析器抛错时**按 ask 处理**（fail-closed）。
+             原来只 warn 然后继续用 rawAction（通常是 allow）⇒ 分析器一坏，
+             危险命令就静默放行；isAutoApprovable / tool-gates 都是 fail-closed，这里对齐。 */
+          console.warn(`[Pipeline] Bash analyzer error, escalating to "ask" (fail-closed): ${bashErr.message}`);
+          rawAction = "ask";
         }
       }
 

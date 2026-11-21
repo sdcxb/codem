@@ -214,6 +214,19 @@ export class PermissionEvaluator {
   }
 
   /**
+   * 只认**完全一致**的「始终允许」条目（不匹配通配）。
+   *
+   * 用途：危险命令的升级判断。getAlwaysAllow 允许通配条目（自定义规则 / 旧测试依赖），
+   * 但一条 rm -rf * 的通配记忆会连 rm -rf / 一起放行 —— 危险命令只认用户对
+   * **这一条命令原文**的显式放行。
+   */
+  getExactAlwaysAllow(tool: string, resource: string, sessionId?: string): PermissionAction | undefined {
+    const hit = this.alwaysAllow.find(
+      (e) => e.tool === tool && e.resource === resource && (e.sessionId === undefined || e.sessionId === sessionId),
+    );
+    return hit?.action;
+  }
+  /**
    * Evaluate permission for a tool call.
    *
    * @param sessionId 会话范围：与 `setAlwaysAllow` 的会话记忆对账（不传 = 只看进程级记忆）。
@@ -224,30 +237,41 @@ export class PermissionEvaluator {
     agentId: string = "build",
     sessionId?: string,
   ): PermissionAction {
-    // Check "always allow" first
-    if (resource) {
-      const always = this.getAlwaysAllow(tool, resource, sessionId);
-      if (always) return always;
-    }
+    const agentAction = getAgentRegistry().evaluatePermission(agentId, tool, resource);
 
-    // Check agent permissions
-    const agentRegistry = getAgentRegistry();
-    const agentAction = agentRegistry.evaluatePermission(agentId, tool, resource);
-    if (agentAction !== "ask") return agentAction;
-
-    // Check custom rules (last-match-wins)
-    let result: PermissionAction = "ask";
+    /**
+     * 第 15 轮：规则表与 agent 权限**合并取最严格**（deny > ask > allow），而不是
+     * 「agent 说 allow 就直接返回」。
+     *
+     * 旧实现的 bug（实测）：build agent 的通配规则是 `{tool:"*", action:"allow"}`，
+     * 而 agentic-loop 固定用 agentId="build" ⇒ `evaluate()` 对任何工具都先返回 allow，
+     * 下面整张默认安全规则表（bash rm -rf → ask、write .git → deny）**永远走不到**。
+     * 后果是「请求批准」模式对 bash 完全放行，连 rm -rf 都不问（ask 比 auto 还宽）。
+     */
+    let ruleAction: PermissionAction | null = null;
     for (const rule of this.rules) {
       if (this.matchPattern(tool, rule.tool)) {
         if (!rule.resource || (resource && this.matchPattern(resource, rule.resource))) {
-          result = rule.action;
+          ruleAction = rule.action;
         }
       }
     }
 
-    return result;
-  }
+    // 硬拒绝最高：受保护路径（S2）不能被 agent 通配 allow 或「始终允许」盖过
+    if (ruleAction === "deny" || agentAction === "deny") return "deny";
 
+    // 会话级「始终允许」：用户显式点过的精确 (tool, resource)，只覆盖 ask/allow
+    if (resource) {
+      const always = this.getAlwaysAllow(tool, resource, sessionId);
+      if (always === "allow") return "allow";
+      if (always === "deny") return "deny";
+    }
+
+    // 危险确认必须压过 agent 的通配 allow
+    if (ruleAction === "ask") return "ask";
+    if (agentAction !== "ask") return agentAction;
+    return ruleAction ?? "ask";
+  }
   /** Check if a tool is allowed without asking */
   isAllowed(tool: string, resource?: string, agentId?: string, sessionId?: string): boolean {
     const action = this.evaluate(tool, resource, agentId, sessionId);
