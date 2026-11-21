@@ -27,6 +27,7 @@ import baseYml from "../config/codem.base.yml?raw";
 // @ts-ignore — Vite ?raw import
 import desktopYml from "../config/codem.desktop.yml?raw";
 import { setActiveContext } from "./core/consumer";
+import { pushSecretEnvPolicy } from "./core/security/secret-env";
 import { SlotBridge, SlotListBridge } from "./core/slots/SlotBridge";
 
 // 全局 Cordis Context（App 生命周期内唯一）
@@ -175,11 +176,14 @@ async function getCordisContext(): Promise<Context> {
   console.log('[Cordis] setActiveContext done');
 
   try {
-    // 加载 dsh 兼容适配层（使 dsh 插件可以在 Codem 运行时中加载）
-    console.log('[Cordis] loading dsh-compat...');
-    const { dshCompatPlugin } = await import("./core/dsh-compat/index.ts");
-    ctx.plugin(dshCompatPlugin as any);
-    console.log('[Cordis] dsh-compat loaded');
+    /**
+     * 第 17 轮：dsh-compat 只由 YAML 装配一次。
+     *
+     * 原来这里又直接 ctx.plugin 了一次，而 config/codem.base.yml:99 已经装配它；
+     * 同一插件第二个 fiber 的 provide 会抛 "service ... has been registered" 并被
+     * Cordis 吞成 FAILED（UI 仍显示正常），disable 也只能卸载 YAML 那个 fiber。
+     * 双加载判据见 src/test/plugin-single-load.test.ts。
+     */
 
     // === P6: 接入 PluginLoader + UI 插件 ===
     console.log('[Cordis] loading PluginLoader...');
@@ -696,6 +700,10 @@ setGlobalCwd(currentProject?.path || "");
   // 在 App 挂载时创建全局 Context，加载桥接插件和 Slot Registry。
   // 所有核心服务通过 ctx.provide() 注册后，插件可以通过 ctx.get() 消费。
   const [cordisReady, setCordisReady] = useState(false);
+  useEffect(() => {
+    if (cordisReady) void pushSecretEnvPolicy();
+  }, [cordisReady]);
+
   useEffect(() => {
     getCordisContext().then(() => {
       // LLMEngine 和 MiMoAuth 已在 getCordisContext 内部注册为 Cordis 服务。

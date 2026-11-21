@@ -244,12 +244,12 @@ describe("TAURI-ARITY：命令签名与 Rust 侧调用点必须同步", () => {
     expect(checkedCalls, "至少要检查到 3 处 Rust 侧调用（否则这条判据是空跑）").toBeGreaterThanOrEqual(3);
   });
 
-  it("TAURI-ARITY-2：`execute_command` 这条真缺陷被点名守着（6 形参 / 3 处用例都按 6 参调）", () => {
+  it("TAURI-ARITY-2：`execute_command` 这条真缺陷被点名守着（7 形参 / 3 处用例都按 7 参调）", () => {
     const def = defs.find((d) => d.name === "execute_command");
     expect(def, "前提：`execute_command` 必须是 `#[tauri::command]`").toBeTruthy();
-    expect(def!.params, "它是 6 参（command/cwd/timeout_ms/shell/bash_path/session_id）").toBe(6);
+    expect(def!.params, "它是 7 参（command/cwd/timeout_ms/shell/bash_path/session_id/allow_secret_env）").toBe(7);
     const sites = callSites(clean, def!);
     expect(sites.length, "lib.rs 里那三条用例必须都被看到").toBeGreaterThanOrEqual(3);
-    expect(sites.map((s) => s.args), "每一处都必须传满 6 个实参").toEqual(sites.map(() => 6));
+    expect(sites.map((s) => s.args), "每一处都必须传满 7 个实参").toEqual(sites.map(() => 7));
   });
 });

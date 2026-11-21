@@ -51,10 +51,11 @@ describe("RSP-16：退役沙箱插件不许回潮", () => {
     }
   });
 
-  it("对应服务已从「provide 无 get」基线里消失", () => {
-    const baseline = JSON.parse(read("tools/audit/unconsumed-services-baseline.json")) as {
-      services: Record<string, unknown>;
+  it("对应服务已从 provider 审计清单里彻底消失", () => {
+    const audit = JSON.parse(read("src/core/provider/provider-audit.json")) as {
+      entries: Array<{ provides: string[] }>;
     };
+    const provided = new Set(audit.entries.flatMap((e) => e.provides));
     for (const svc of [
       "sandbox",
       "sandboxPolicy",
@@ -63,7 +64,7 @@ describe("RSP-16：退役沙箱插件不许回潮", () => {
       "pwshSandbox",
       "sandboxWindowsAcl",
     ]) {
-      expect(baseline.services, `基线仍把 ${svc} 当作存量死服务`).not.toHaveProperty(svc);
+      expect(provided.has(svc), `${svc} 又被提供（审计清单里出现）`).toBe(false);
     }
   });
 });

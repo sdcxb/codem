@@ -12,6 +12,7 @@ import { getSetting } from "../storage/settings";
 // ★ 误拒修复：「沙箱是否启用」的唯一实现在 `sandbox-acl.ts`（与 `file-api` 的读写判定共用）——
 // 这里不再自己读设置（同一规则不许两份）。
 import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "../sandbox/sandbox-acl";
+import { filterSensitiveGlobFiles, filterSensitiveGrepMatches, isSensitiveReadPath } from "../security/sensitive-read";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
 import { findAmbiguousLiteral, replaceLiteral, suggestEditCandidates } from "./edit-matchers";
@@ -1494,7 +1495,7 @@ export function createReadFileTool(): ToolDef {
         if (typeof window !== "undefined" && (window as any).__TAURI__) {
           try {
             const { readFileLines } = await import("../file-api");
-            const result = await readFileLines(path, offset, limit, MAX_CHARS);
+            const result = await readFileLines(path, offset, limit, MAX_CHARS, { allowSensitive: true });
             output = result.text;
             /**
              * 第 181 波（T-3）：**精确**的丢弃计数；第 183 波把它做成**结构化诊断**。
@@ -2318,6 +2319,13 @@ export function createGlobTool(): ToolDef {
       try {
         console.log("[glob tool] executing:", { pattern, searchPath, ctxCwd: ctx.cwd, limit, offset });
         const res = await globSearch(pattern, searchPath, { limit, offset });
+        const visible = filterSensitiveGlobFiles(res.files, ctx.cwd);
+        res.files = visible.files;
+        res.returned = visible.files.length;
+        if (visible.skipped > 0) {
+          const note = `已隐藏 ${visible.skipped} 个敏感文件（.env/凭据/私钥/.git 等）`;
+          res.hint = res.hint ? `${res.hint}；${note}` : note;
+        }
         console.log("[glob tool] returned:", res.returned, "truncated:", res.truncated);
 
         // 模型侧只内联有界的一段（完整列表走 spill，见 GLOB_INLINE_MAX）
@@ -2443,11 +2451,20 @@ export function createGrepTool(): ToolDef {
       const include = args.include as string | undefined;
 
       try {
-        const results = await grepSearch(pattern, searchPath, include);
+        const raw = await grepSearch(pattern, searchPath, include);
+        const filtered = filterSensitiveGrepMatches(
+          raw,
+          ctx.cwd,
+          isSensitiveReadPath(searchPath, ctx.cwd) ? searchPath : undefined,
+        );
+        const results = filtered.matches;
+        const skippedNote = filtered.skipped > 0
+          ? `\n[已跳过 ${filtered.skipped} 个敏感文件：.env/凭据/私钥等，内容不会发送给模型]`
+          : "";
         return {
           title: `grep: ${pattern}`,
           value: { matches: results, count: results.length, pattern },
-          output: results.join("\n") || "No matches found", isError: false,
+          output: (results.join("\n") || "No matches found") + skippedNote, isError: false,
         };
       } catch (error: any) {
         // 第 97 波：内容型工具的失败必须显式声明（它同样声明了 outputSchema）

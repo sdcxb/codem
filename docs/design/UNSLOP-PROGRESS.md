@@ -1529,6 +1529,65 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 4. `sandbox-mode-consistency` 的「唯一读点」判据不再钉行号（改钉文件 + 唯一性）。
 5. `docs:sync` 的测试计数基线仍停在 966 个文件；发版前需刷新（非阻塞警告）。
 
+### 3V. 第 17 轮：插件审计 / 敏感读 / 子进程环境（一次做完）
+
+### 3V.1 修订了 3U 的两条结论
+
+- 3U.6 说「ACL 里的 .env 读拦截、环境变量过滤没有在真实管线里重建」——本轮重建了：
+  读侧规则表复用 Host 的 `packages/host/src/sensitive-paths.ts`（唯一来源，不新造第二套
+  `.env` 正则），执行点覆盖 read/grep/glob/lsp/bash/terminal/run_code/workflow/
+  read_attachment/MCP 资源/自动注入/读缓存；子进程环境在 Rust 侧按共享 JSON allowlist 剥离。
+- 3U.3 的 133 条「provide 无 get」基线**已删除**。基线不是删代码的替代品：本轮改为
+  `src/core/provider/provider-audit.json` 的**四分类**（registration/service/inject-dependency/
+  wrapper/dynamic），每个 provide 必须有 kind；wrapper 在注册表里必须是 `core: true`
+  （UI 不再出现可关但关了没用的假开关）。旧扫描器/基线/门测试文件已删除。
+
+### 3V.2 关键证据（评审抓到的、会翻车的点）
+
+1. Cordis `ctx.provide` 按值存、同名**硬抛**（`cordis/src/reflect.ts:288-291`）；
+   dsh-compat 原来在 YAML 与 `App.tsx` **双加载**，第二个 fiber 的 provide 必抛并变 FAILED，
+   而 disable 只能卸载 YAML fiber。已删除 App 直连，补 `plugin-single-load.test.ts`。
+2. 34 个市场 bundled 锚里 20 个的 provider 在旧「死服务」基线内；7 个 LLM provider 的真实
+   副作用是 `llm.registerProvider`，7 个 UI 插件是 `slots.register`，另有 17 组 inject-only
+   依赖（guard/commands/sessionCheckpoint/hostClient/skill…）。所以**按「没人 get」删插件**
+   会砍功能/启动 PENDING；本轮只做分类与 core 收口，不删这些插件。
+3. 读主路径是 `readFileLines`（`tools.ts:1497`），不是 `readFile`；full 短路在
+   `agentic-loop.ts:1928`，auto 的 `isAutoApprovable` 对非 bash 恒 true；旧 S2 规则
+   `**/.env` 在 Windows 路径上基本不命中（`matchPattern` 的 `^.*.*/`）。因此策略放在
+   代码（`security/sensitive-read.ts`）+ 工具体 + 权限层，而不是只加规则表。
+4. 隐藏泄漏面：`task-keyword-search` 每回合自动 grep 全仓并以 `[源码命中]` 注入上下文
+   （`agentic-loop.ts:2975 → task-keyword-search.ts:521/533/450`）、读缓存同回合二次读、
+   `run_code/workflow` 的 `sdk.bash` 文本、`read_attachment` 任意 `target.path`、
+   `read_mcp_resource` 的 URI。均已加对应判定/过滤。
+5. 子进程 env 有 4 个生产面：`execute_command`、`spawn_pty`、`mcp_stdio_connect`、OFM node；
+   `CommandBuilder` 种子 = 进程 env + 注册表 Environment，且清空 env 不回填 PATH 会让
+   `cmd.exe` 按 cwd 相对解析（工作区投毒执行）。已改为 allowlist + 绝对 shell 路径；
+   MCP 调用方显式 env 在策略之后覆盖（用户凭据保留）。
+
+### 3V.3 判据
+
+- `provider-audit.test.ts`（19 条）：清单漂移、注释里的 provide 不算、`getCtxService` 算消费、
+  inject-only 分类、市场锚不判 wrapper、每个 wrapper 在注册表里 `core: true`。
+- `plugin-single-load.test.ts`：dsh-compat 只由 YAML 装配一次。
+- `sensitive-read-policy.test.ts` / `sensitive-read-enforcement.test.ts`：Windows 绝对/相对路径、
+  `.env.example` 放行、git/ssh/私钥/云凭据、shell 读写 11+ 写法、file-api 默认拒绝、
+  grep/glob 过滤与计数。
+- `secret-env-policy.test.ts`：默认不继承、密钥名剥/工具链名留、代理 userinfo 剥。
+- Rust：`secret_env` 18 条（含真子进程）、`ofm` 3 条、`execute_command` 6 条；3 次变异自证。
+- 反例：沙箱关闭 ≠ 敏感文件可读（`run-code-sdk-sandbox-read` T2-G 已改成两条相反断言）。
+
+### 3V.4 边界（如实记）
+
+1. `classifySensitivePath` 是**工作区相对路径**词法判定；符号链接/junction、8.3 短名、ADS
+   未做 realpath，属于残余绕过面（Rust 侧 `read_file` 仍只做工作区判定）。
+2. 非 file:// 的 MCP 资源 URI 无法从名字判断内容是否敏感（由 server 自理）；只在 file/绝对
+   路径形态拦截。
+3. env allowlist 默认剥离会改变「子进程能看见宿主环境」的行为；设置面板提供整份继承的
+   逃生开关（默认关），不提供自定义名单（避免第五套分类）。
+4. 插件数量未减少：78 个 wrapper 仍保留（功能多走模块单例），只是 `core: true` 不可关闭；
+   旧 133 条基线删除，但「无 get」的服务仍有一部分作为 plugin-api 存在——这是如实分类，
+   不是宣称它们都被删除。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

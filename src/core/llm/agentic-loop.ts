@@ -138,6 +138,11 @@ import { currentSegmentInfo } from "../storage/thread-history";
 import { takeSaveStats } from "../storage/persist-stats";
 import { getTelemetry } from "../telemetry/telemetry";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
+import {
+  classifySensitiveRead,
+  detectSensitiveShellAccess,
+  isSensitiveReadPath,
+} from "../security/sensitive-read";
 import { FileChangeTracker } from "../environment/file-change-tracker";
 import { TranscriptCache } from "../storage/transcript-cache";
 import { tryAutoCommit } from "../environment/git-commit-service";
@@ -1925,13 +1930,67 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
       // - Security mode evaluation
       // - User permission request dialog (onPermissionRequest)
       const secMode = this.config.securityMode || "ask";
+      const workspace = typeof ctx?.cwd === "string" ? ctx.cwd : undefined;
+      const resource = typeof args.path === "string" ? args.path
+        : typeof args.command === "string" ? args.command
+        : typeof args.file === "string" ? args.file
+        : typeof args.text === "string" ? args.text
+        : typeof args.uri === "string" ? args.uri
+        : undefined;
+
+      /**
+       * 第 17 轮：工作区内敏感文件（.env / .git/config / 私钥 / 云凭据）。
+       *
+       * 必须在 full 短路**之前**算：full 下读允许，但**写/删敏感文件仍然硬拒绝**
+       * （与 write/edit 工具体的 .env 硬拒绝同一口径；bash 重定向/Set-Content 也要挡住）。
+       * 读侧只对「工作区内或无法判定」的路径生效：工作区外的路径交给沙箱，
+       * 保持原有 "outside the workspace" 的拒绝语义（现有判据依赖它）。
+       */
+      const looksAbsolute = (v: string) => /^[A-Za-z]:[\\/]|^\\\\|^\//.test(v);
+      const outsideWorkspace = (v: string) => {
+        if (!workspace || !looksAbsolute(v)) return false;
+        const n = (x: string) => x.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        return !(n(v) === n(workspace) || n(v).startsWith(n(workspace) + "/"));
+      };
+      const shellText = (toolName === "bash" && typeof args.command === "string")
+        ? args.command
+        : (toolName === "terminal_send" && typeof args.text === "string")
+          ? args.text
+          : "";
+      const shellAccess = shellText
+        ? detectSensitiveShellAccess(shellText, workspace, workspace)
+        : { reads: [] as string[], writes: [] as string[] };
+      const shellWrites = shellAccess.writes.filter((v) => !outsideWorkspace(v));
+      const shellReads = shellAccess.reads.filter((v) => !outsideWorkspace(v));
+
+      const readTool = ["read", "grep", "glob", "lsp", "read_attachment"].includes(toolName);
+      const readPath = readTool && typeof args.path === "string" ? args.path
+        : readTool && typeof args.file === "string" ? args.file
+        : readTool && typeof args.target === "object" && args.target && typeof (args.target as any).path === "string"
+          ? (args.target as any).path as string
+          : undefined;
+      const readVerdict = readPath && !outsideWorkspace(readPath)
+        ? classifySensitiveRead(readPath, workspace)
+        : null;
+      const sensitiveRead = Boolean(readVerdict && readVerdict.action !== "allow") || shellReads.length > 0;
+      const sensitiveHardDeny = Boolean(readVerdict && readVerdict.action === "deny") || shellWrites.length > 0;
+
+      if (sensitiveHardDeny) {
+        const detail = shellWrites.length
+          ? `shell 命令会修改/删除敏感文件：${shellWrites.join(", ")}`
+          : `${readPath}（${readVerdict?.label ?? "敏感路径"}）`;
+        return {
+          allowed: false,
+          denyMessage:
+            `Sensitive path is protected: ${detail}. ` +
+            `写/删 .env、.git、私钥与云凭据一律拒绝（任何安全模式）；请在应用外手动修改。`,
+        };
+      }
+
       if (secMode === "full" || !this.config.enablePermissions) {
         return { allowed: true };
       }
 
-      const resource = typeof args.path === "string" ? args.path
-        : typeof args.command === "string" ? args.command
-        : undefined;
       const permissionManager = this.getPermissionManager();
       /**
        * 「始终允许」是**会话级**记忆（`PermissionEvaluator.setAlwaysAllow` 的第 4 个参数），
@@ -1939,6 +1998,11 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
        */
       const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : undefined;
       let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource, "build", sessionId);
+      /* 受保护路径的硬拒绝即使 full 也生效；这里在 evaluator 之后、危险命令升级之前收口。 */
+      if (rawAction === "deny") {
+        return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
+      }
+      if (sensitiveRead) rawAction = "ask";
 
       // Bash deep security analysis — detect dangerous patterns
       if (toolName === "bash" && typeof args.command === "string") {
@@ -1962,7 +2026,9 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
         }
       }
 
-      const action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
+      let action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
+      /* auto 模式的 isAutoApprovable 对非 bash 恒 true；敏感读必须压过它 */
+      if (sensitiveRead && action === "allow") action = "ask";
 
       /**
        * 审批结果的**唯一处置点**：回调式与事件式共用同一条判定，
@@ -1974,7 +2040,7 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
           return { allowed: false, denyMessage: describeUserDenial(toolName, result.reason) };
         }
         // 「始终允许」的唯一消费点：只记本会话 + 精确 (tool, resource)（通配/跨会话会盖过 S2 硬 deny）
-        if (result.action === "allow" && result.alwaysAllow === true && resource && sessionId) {
+        if (!sensitiveRead && result.action === "allow" && result.alwaysAllow === true && resource && sessionId) {
           permissionManager.getEvaluator().setAlwaysAllow(toolName, resource, "allow", sessionId);
         }
         return { allowed: true };

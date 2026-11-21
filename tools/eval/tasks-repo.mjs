@@ -303,6 +303,10 @@ export const TASKS = [
     revertPaths: ["src/core/llm/index.ts"],
     testFiles: ["src/test/usage-non-completion.test.ts"],
     relatedTests: ["src/test/usage-normalize.test.ts", "src/test/dsh-d6-usage-accounting.test.ts"],
+    /** 同一族：被中止/守卫杀掉的轮次不能记为成功用量；bug 状态下该回归本身为红，题面修复后转绿。 */
+    relatedRedAtBaseline: {
+      "src/test/dsh-d6-usage-accounting.test.ts": "同一族（非完成轮次的用量口径）：题面修 usage 记录后该回归转绿",
+    },
     buggyCommit: "30ed631",
   },
 ];

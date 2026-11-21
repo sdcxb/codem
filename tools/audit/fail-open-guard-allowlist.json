@@ -106,6 +106,11 @@
       "site": "src/core/memory/auto-consolidation.ts::isAutoConsolidationEnabled",
       "direction": "conservative",
       "reason": "25 §P2 自动整合开关（默认关）的读取：配置读不到 ⇒ 当作关（return false），后果是这一轮**不排任何自动整合批次**、不动用户记忆；下一回合会再读。方向是安全侧（宁可不动，也不在配置未知时替用户归档），与 C-18 那类「失败⇒放行」相反。"
+    },
+    {
+      "site": "src/core/security/secret-env.ts::isSecretEnvInheritEnabled",
+      "direction": "conservative",
+      "reason": "子进程环境开关读取失败 ⇒ 返回 false（=剥离，不继承）。失败方向更严格：宁可让工具链缺变量，也不把宿主密钥放进子进程；不是「安全检查失败却放行」。"
     }
   ]
 }

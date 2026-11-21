@@ -46,6 +46,7 @@ import type { ToolContext } from "../core/llm/tools";
 const WS = "C:/ws";
 const SECRET_PATH = "C:/Users/x/.ssh/id_rsa";
 const SECRET_BODY = "-----BEGIN OPENSSH PRIVATE KEY-----SUPER-SECRET";
+const OUTSIDE_PLAIN = "C:/elsewhere/plain.txt";
 
 let invokes: Array<{ command: string; args?: Record<string, unknown> }> = [];
 
@@ -180,7 +181,7 @@ describe("R1-4：读侧沙箱（lsp / seam / canonicalize）", () => {
     // lsp：越界 `file` 在关闭时是**合法**读，且底层读必须真的发生
     installTauriMock();
     const lspOff = await createLSPTool().execute(
-      { operation: "hover", file: SECRET_PATH, line: 1, column: 1 },
+      { operation: "hover", file: OUTSIDE_PLAIN, line: 1, column: 1 },
       lspCtx(),
     );
     expect(String(lspOff.output), `关闭时越界 lsp 不许被误拒（实际：${lspOff.output}）`).not.toMatch(
@@ -191,14 +192,14 @@ describe("R1-4：读侧沙箱（lsp / seam / canonicalize）", () => {
     // seam provider
     installTauriMock();
     await expect(
-      new LocalFileSystemProvider().readFile(SECRET_PATH, WS),
+      new LocalFileSystemProvider().readFile(OUTSIDE_PLAIN, WS),
       "关闭时越界 seam 读不许被误拒",
     ).resolves.toBe(SECRET_BODY);
 
     // file-api 本体（RS-3 的那条路径，关闭时不再 canonicalize 拦）
     installTauriMock();
     await expect(
-      readFile(SECRET_PATH, { workspace: WS }),
+      readFile(OUTSIDE_PLAIN, { workspace: WS }),
       "关闭时越界 readFile 不许被误拒",
     ).resolves.toBe(SECRET_BODY);
 

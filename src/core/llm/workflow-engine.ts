@@ -39,6 +39,11 @@ import {
   refuseDangerousCommand,
   refuseProtectedPathWrite,
 } from "./tool-gates";
+import {
+  detectSensitiveShellAccess,
+  filterSensitiveGlobFiles,
+  isSensitiveReadPath,
+} from "../security/sensitive-read";
 
 // ========== Workflow SDK ==========
 
@@ -190,6 +195,13 @@ console.log(JSON.stringify(results, null, 2));
           // `refuseDangerousCommand` 注释（ToolContext 里没有审批通道）。
           const refusal = refuseDangerousCommand(command, ctx.securityMode, 60_000, "workflow");
           if (refusal) throw new Error(refusal);
+          const shellSensitive = detectSensitiveShellAccess(command, ctx.cwd, ctx.cwd);
+          if (shellSensitive.writes.length > 0) {
+            throw new Error(`受保护文件禁止在 workflow 里写/删：${shellSensitive.writes.join(", ")}。`);
+          }
+          if (shellSensitive.reads.length > 0 && ctx.securityMode !== "full") {
+            throw new Error(`敏感文件（${shellSensitive.reads.join(", ")}）不能在 workflow 里静默读取；请改用 read 工具。`);
+          }
           const { executeCommand } = await import("../file-api");
           // FIX: 有界超时（默认 60s），避免工作流内命令挂 600s
           const result = await executeCommand(command, ctx.cwd, 60_000);
@@ -199,7 +211,7 @@ console.log(JSON.stringify(results, null, 2));
           // ★ 第 185 波（T2）：与 run_code 的 sdk.read 同一个读侧沙箱判定
           // （`ctx.cwd` 是工作区；不传就等于不检查，见 `file-api.ts` 的 assertWithinWorkspace）。
           const { readFile } = await import("../file-api");
-          return await readFile(path, { workspace: ctx.cwd });
+          return await readFile(path, { workspace: ctx.cwd, allowSensitive: ctx.securityMode === "full" });
         },
         async write(path, content) {
           // 受保护路径（.git/ .env node_modules/ …）：`write` 工具在建任何东西之前就拒绝。
@@ -221,11 +233,15 @@ console.log(JSON.stringify(results, null, 2));
          */
         async glob(pattern, path, opts) {
           const { globSearch } = await import("../file-api");
-          return await globSearch(pattern, path || ctx.cwd, {
+          const res = await globSearch(pattern, path || ctx.cwd, {
             workspace: ctx.cwd,
             limit: opts?.limit,
             offset: opts?.offset,
           });
+          const visible = filterSensitiveGlobFiles(res.files, ctx.cwd);
+          res.files = visible.files;
+          res.returned = visible.files.length;
+          return res;
         },
       };
 

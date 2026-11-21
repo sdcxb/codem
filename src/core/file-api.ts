@@ -23,6 +23,7 @@
  * 判据见 `src/test/sandbox-mode-consistency.test.ts`（SB-OFF-1/2、SB-ON-1/2、SB-ONE-1）。
  */
 import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "./sandbox/sandbox-acl";
+import { classifySensitiveRead } from "./security/sensitive-read";
 
 /**
  * 文件层传输（FileTransport）：显式注入点。
@@ -185,12 +186,30 @@ async function assertWithinWorkspace(
   );
 }
 
-export async function readFile(path: string, options?: { workspace?: string }): Promise<string> {
+/** 敏感读的统一拒绝（工具体/无审批通道的 SDK 调用都会撞到它） */
+export function assertSensitiveReadAllowed(path: string, allowSensitive?: boolean): void {
+  if (allowSensitive) return;
+  const v = classifySensitiveRead(path);
+  if (v && v.action !== "allow") {
+    throw new Error(
+      `SENSITIVE_READ: 敏感文件（${v.label}）：${path}。` +
+        `读取需要主会话批准；请改用 read 工具（那里会弹审批），或在安全模式 full 下显式读取。`,
+    );
+  }
+}
+
+export async function readFile(
+  path: string,
+  options?: { workspace?: string; allowSensitive?: boolean },
+): Promise<string> {
   // ★ 第 185 波（T2）：读侧沙箱。原来是裸 IPC —— `sdk.read` 因此是整条链上
   // 唯一没有工作区判定的文件读入口。
   // 相对路径先按工作区解析：**检查与读取必须是同一个路径**（见 resolveAgainstWorkspace）。
   const target = resolveAgainstWorkspace(path, options?.workspace);
+  /* 先判沙箱边界：工作区外保持原有 "outside the workspace" 语义；再判敏感。
+     工作区内/沙箱关闭时才由敏感策略接手。 */
   await assertWithinWorkspace("Read from", target, options?.workspace);
+  assertSensitiveReadAllowed(target, options?.allowSensitive);
   return tauriInvoke("read_file", { path: target });
 }
 
@@ -241,10 +260,11 @@ export async function readTextWindow(
    * 分窗读取是"读同一个文件的另一条路"：只堵整读、不堵分窗，等于把同一个绕过口
    * 留在隔壁（真实的调用方会先试分窗、失败再退回整读 —— 见 `task-keyword-search.ts`）。
    */
-  options?: { workspace?: string },
+  options?: { workspace?: string; allowSensitive?: boolean },
 ): Promise<TextWindow> {
   const target = resolveAgainstWorkspace(path, options?.workspace);
   await assertWithinWorkspace("Read from", target, options?.workspace);
+  assertSensitiveReadAllowed(target, options?.allowSensitive);
   return tauriInvoke("read_text_window", { path: target, offset, maxBytes });
 }
 
@@ -284,8 +304,11 @@ export async function readFileLines(
   offset?: number,
   limit?: number,
   maxChars?: number,
+  options?: { workspace?: string; allowSensitive?: boolean },
 ): Promise<ReadFileLinesResult> {
-  return tauriInvoke("read_file_lines", { path, offset, limit, maxChars });
+  const target = resolveAgainstWorkspace(path, options?.workspace);
+  assertSensitiveReadAllowed(target, options?.allowSensitive);
+  return tauriInvoke("read_file_lines", { path: target, offset, limit, maxChars });
 }
 
 /**

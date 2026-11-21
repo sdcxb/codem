@@ -14,6 +14,7 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
+import { detectSensitiveShellAccess } from "../../security/sensitive-read";
 import {
   noteBackgroundJobCompletion,
   PREVIEW_MAX_CHARS,
@@ -553,6 +554,15 @@ export function createTerminalSendTool(): ToolDef {
       const id = args.sessionId as string;
       const text = args.text as string;
       const submit = args.submit !== false;
+      /* 终端没有审批通道：敏感文件的写/删直接拒绝；读由权限层按文本弹审批。 */
+      const sensitive = detectSensitiveShellAccess(text, ctx?.cwd, ctx?.cwd);
+      if (sensitive.writes.length > 0) {
+        return {
+          title: "terminal_send",
+          output: `受保护文件禁止在终端里写/删：${sensitive.writes.join(", ")}。请在应用外手动修改。`,
+          isError: true,
+        };
+      }
 
       /*
        * 第 15 轮：终端工具**没有审批通道**，模型可以绕过 bash 的权限层直接往 PTY 里打

@@ -35,6 +35,11 @@ mod phone;
 // 引擎本体在 src-tauri/codem-db（独立 crate，可被 CLI 与 vitest 契约测试直接驱动）。
 mod secret;
 use crate::secret::{secret_backend_available, secret_seal, secret_unseal};
+// ========== 子进程环境密钥剥离（Part C）==========
+// 宿主环境里的 API key / token 不许跟着 `execute_command` / `spawn_pty` / `mcp_stdio_connect` /
+// OFM 插件进程进到子进程里（之前是**原样继承**）。策略默认剥离、Rust 侧兜底，
+// 规则唯一来源 `src/core/security/secret-env-patterns.json`（细节见 secret_env.rs 头注释）。
+mod secret_env;
 /// 「免费模型插件」（dsh-our-free-model 的 standalone 本地服务）的独立进程生命周期。
 mod ofm;
 mod storage;
@@ -64,25 +69,97 @@ struct PtyOutputEvent {
     data: String,
 }
 
+// ========== 系统 shell 的绝对路径 ==========
+//
+// 为什么不再用裸名 `cmd.exe` / `powershell`：裸名要靠 CreateProcess 的**搜索路径**解析，
+// 而我们刚把子进程环境收窄成 allowlist（PATH 由我们自己回填）。一旦回填出的 PATH 有问题，
+// 裸名会连带把"连终端都开不了"变成新的故障面；绝对路径没有这个依赖。
+// 取不到 SystemRoot 时才退回裸名（此时 PATH 里通常仍有系统目录）。
+
+fn system32_exe(rel: &[&str]) -> Option<std::path::PathBuf> {
+    let root = std::env::var_os("SystemRoot")
+        .or_else(|| std::env::var_os("windir"))
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_dir())
+        .or_else(|| {
+            let p = std::path::PathBuf::from(r"C:\Windows");
+            p.is_dir().then_some(p)
+        })?;
+    let mut p = root.join("System32");
+    for seg in rel {
+        p.push(seg);
+    }
+    p.is_file().then_some(p)
+}
+
+/// `%SystemRoot%\System32\cmd.exe`（取不到 ⇒ `cmd.exe`）。
+fn windows_cmd_exe() -> std::ffi::OsString {
+    system32_exe(&["cmd.exe"])
+        .map(Into::into)
+        .unwrap_or_else(|| "cmd.exe".into())
+}
+
+/// `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`（取不到 ⇒ `powershell`）。
+fn windows_powershell_exe() -> std::ffi::OsString {
+    system32_exe(&["WindowsPowerShell", "v1.0", "powershell.exe"])
+        .map(Into::into)
+        .unwrap_or_else(|| "powershell".into())
+}
+
+/// 交互终端的 shell（**绝对路径**优先）。
+fn pty_shell_exe() -> std::ffi::OsString {
+    #[cfg(windows)]
+    {
+        windows_cmd_exe()
+    }
+    #[cfg(not(windows))]
+    {
+        let from_env = std::env::var_os("SHELL").map(|s| s.to_string_lossy().to_string());
+        if let Some(s) = from_env.filter(|s| std::path::Path::new(s).is_absolute()) {
+            return s.into();
+        }
+        for cand in ["/bin/zsh", "/bin/bash", "/bin/sh"] {
+            if std::path::Path::new(cand).exists() {
+                return cand.into();
+            }
+        }
+        "/bin/sh".into()
+    }
+}
+
+/// 纯函数：终端该用什么 shell、带什么环境（可测：`get_argv()[0]` / `get_env`）。
+///
+/// `inherit` 来自调用方参数或全局策略（[`secret_env::resolve_inherit`]）；
+/// `false` 时先 `env_clear()` 再按 allowlist 回填，`true` 时保持完整继承。
+fn build_pty_command(cwd: &str, inherit: bool) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(pty_shell_exe());
+    cmd.cwd(cwd);
+    secret_env::child_env_plan(inherit, None).apply_pty(&mut cmd);
+    cmd
+}
+
+/// 设置"子进程是否继承本进程的完整环境"（默认 `false` = 只传 allowlist）。
+///
+/// 这是**逃生门**：用户机器上有极特殊的工具链时可以在设置里显式打开。
+/// 返回写入后的有效值（前端可直接用来回显开关状态）。
 #[tauri::command]
-fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<String, String> {
+fn set_secret_env_policy(inherit: bool) -> bool {
+    secret_env::set_policy_inherit(inherit);
+    secret_env::policy_inherit()
+}
+
+#[tauri::command]
+fn spawn_pty(
+    cwd: String,
+    app: AppHandle,
+    state: State<'_, PtyMap>,
+    // 可选：本次会话是否继承完整环境（None ⇒ 用全局策略）。旧调用不传 ⇒ 默认剥离。
+    allow_secret_env: Option<bool>,
+) -> Result<String, String> {
     let id = format!("pty-{}", uuid::Uuid::new_v4());
     let pty_system = native_pty_system();
 
-    // Use shell appropriate for platform
-    #[cfg(windows)]
-    let mut cmd = CommandBuilder::new("cmd.exe");
-    #[cfg(not(windows))]
-    let mut cmd = CommandBuilder::new(std::env::var("SHELL").unwrap_or_else(|_| {
-        if std::path::Path::new("/bin/zsh").exists() {
-            "/bin/zsh".to_string()
-        } else if std::path::Path::new("/bin/bash").exists() {
-            "/bin/bash".to_string()
-        } else {
-            "/bin/sh".to_string()
-        }
-    }));
-    cmd.cwd(cwd.clone());
+    let cmd = build_pty_command(&cwd, secret_env::resolve_inherit(allow_secret_env));
 
     let pair = pty_system
         .openpty(PtySize {
@@ -2284,6 +2361,9 @@ async fn execute_command(
     bash_path: Option<String>,
     // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。
     session_id: Option<String>,
+    // 本次调用是否继承宿主的完整环境：None ⇒ 用全局策略（默认剥离）；Some(true) ⇒ 逃生门。
+    // Tauri v2 按 camelCase 取键 ⇒ 前端传 `allowSecretEnv`。旧调用不传 ⇒ None ⇒ 默认剥离。
+    allow_secret_env: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| {
         std::env::current_dir()
@@ -2324,7 +2404,8 @@ async fn execute_command(
         c
     } else {
         // Always use PowerShell for consistent UTF-8 handling
-        let mut cmd = std::process::Command::new("powershell");
+        // 绝对路径（见 `windows_powershell_exe`）：子进程 PATH 由我们自己回填，裸名不再可靠。
+        let mut cmd = std::process::Command::new(windows_powershell_exe());
         // Strip powershell prefix if present
         let ps_body = if command.starts_with("powershell ") {
             command.strip_prefix("powershell ").unwrap_or(&command)
@@ -2368,6 +2449,13 @@ async fn execute_command(
         // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
         cmd
     }; // ← 结束 bash/PowerShell 分支
+
+    // ===== 子进程环境（Part C）：默认 strip，只回填 allowlist =====
+    //
+    // 顺序很重要：**先**清空/回填（apply_std 内部先 env_clear），**再**加下面那三件
+    // Python 编码变量 —— 反过来会被 env_clear 抹掉。
+    // `allow_secret_env`：None ⇒ 全局策略（默认剥离）；Some(true) ⇒ 本次完整继承（逃生门）。
+    secret_env::child_env_plan(secret_env::resolve_inherit(allow_secret_env), None).apply_std(&mut cmd);
 
     // 两个 shell 共用：Python 编码三件套（bash 下同样有效）
     cmd.env("PYTHONIOENCODING", "utf-8");
@@ -3421,7 +3509,8 @@ async fn mcp_stdio_connect(
     let mut cmd = if let Some(w) = &wrapper_guard {
         // Windows CreateProcess 不能直接执行 .cmd/.bat ⇒ 用 cmd.exe 包装**wrapper**。
         // （codegraph 官方发布是 bin/codegraph.cmd，MCP 连接指向其绝对路径。）
-        let mut c = tokio::process::Command::new("cmd.exe");
+        // 绝对路径：子进程 PATH 已收窄成 allowlist，裸名 `cmd.exe` 不再可靠。
+        let mut c = tokio::process::Command::new(windows_cmd_exe());
         c.arg("/d").arg("/s").arg("/c");
         let path = w.0.display().to_string();
         #[cfg(target_os = "windows")]
@@ -3451,6 +3540,11 @@ async fn mcp_stdio_connect(
         }
         c
     };
+    // ===== 子进程环境（Part C）：默认 strip，只回填 allowlist =====
+    // MCP 服务器是**第三方代码**，最没有理由拿到宿主的 API key。
+    // ⚠️ 调用方显式配置的 env（下面的循环）必须在**这之后**写入 —— 那是用户自己填的
+    // MCP 凭据，后写覆盖前写，顺序就是"用户显式 > 继承的 allowlist"。
+    secret_env::child_env_plan(secret_env::policy_inherit(), None).apply_tokio(&mut cmd);
     if let Some(env) = &env {
         for (k, v) in env {
             cmd.env(k, v);
@@ -4871,6 +4965,8 @@ pub fn run() {
             secret_backend_available,
     secret_seal,
     secret_unseal,
+    // 子进程环境剥离策略开关（Part C，默认 false=strip）
+    set_secret_env_policy,
     native_material,
     send_message,
             get_providers,
@@ -6723,9 +6819,17 @@ mod harden_185_tests {
     #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn r3_execute_command_still_works_and_marks_truncation() {
-        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000), None, None, None)
-            .await
-            .expect("普通命令必须成功");
+        let ok = execute_command(
+            "Write-Output 'hello-185'".to_string(),
+            None,
+            Some(30_000),
+            None,
+            None,
+            None,
+            None, // allow_secret_env: None ⇒ 全局策略（默认剥离）
+        )
+        .await
+        .expect("普通命令必须成功");
         assert_eq!(ok["stdout"].as_str().unwrap().trim(), "hello-185");
         assert_eq!(ok["exitCode"].as_i64(), Some(0));
 
@@ -6737,6 +6841,7 @@ mod harden_185_tests {
             None,
             None,
             None,
+            None, // allow_secret_env: None ⇒ 全局策略（默认剥离）
         )
         .await
         .expect("大量输出的命令也必须成功返回");
@@ -6765,6 +6870,7 @@ mod harden_185_tests {
             None,
             None,
             None,
+            None, // allow_secret_env: None ⇒ 全局策略（默认剥离）
         )
         .await
         .expect("stdin 为 null 时读 stdin 的命令必须立刻结束，而不是被超时杀掉");
@@ -6807,6 +6913,7 @@ mod harden_185_tests {
             None,
             None,
             None,
+            None, // allow_secret_env: None ⇒ 全局策略（默认剥离）
         )
         .await
         .expect_err("超时必须返回错误");
@@ -8288,5 +8395,221 @@ mod harden_185_tests {
         );
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+// ==================== Part C：子进程环境密钥剥离 ====================
+//
+// 策略与规则表的单测在 `secret_env.rs`；这里只钉**接进真实执行路径**的那几处：
+// `execute_command`（真 PowerShell 子进程）与 `build_pty_command`（真 CommandBuilder）。
+// 纪律：判据必须**在实现被改坏时变红** —— 所以每条都断言"输出里到底有没有那个值"，
+// 而不是"函数返回了 Ok"。
+#[cfg(test)]
+mod secret_env_tests {
+    use super::*;
+
+    const FAKE: &str = "CODEM_TEST_FAKE_TOKEN";
+
+    fn text(v: &serde_json::Value, key: &str) -> String {
+        v.get(key)
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    }
+
+    /// 判据 C-1：默认（strip）下，宿主令牌**看不见**，且输出形状证明命令真的跑了。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn execute_command_strips_host_secret_by_default() {
+        std::env::set_var(FAKE, "leak-me");
+        let res = execute_command(
+            format!("Write-Output \"[$env:{FAKE}]\""),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(false),
+        )
+        .await
+        .expect("Write-Output 必须能跑（PATH 还在）");
+
+        let stdout = text(&res, "stdout");
+        assert!(
+            !stdout.contains("leak-me"),
+            "宿主令牌被继承进子进程了：stdout={stdout:?} stderr={:?}",
+            text(&res, "stderr")
+        );
+        assert_eq!(
+            stdout, "[]",
+            "命令必须真的跑出形状（否则「没看见 leak-me」可能只是命令没跑）：{:?}",
+            res
+        );
+    }
+
+    /// 判据 C-2：PATH / USERPROFILE 仍然可用（收窄环境不许把工具跑不起来当成功）。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn execute_command_keeps_path_and_userprofile() {
+        let res = execute_command(
+            "Write-Output \"P=$env:PATH\"; Write-Output \"U=$env:USERPROFILE\"".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(false),
+        )
+        .await
+        .expect("查环境变量必须能跑");
+
+        let stdout = text(&res, "stdout");
+        let line = |prefix: &str| {
+            stdout
+                .lines()
+                .map(|l| l.trim())
+                .find(|l| l.starts_with(prefix))
+                .map(|l| l[prefix.len()..].to_string())
+                .unwrap_or_default()
+        };
+        assert!(!line("P=").is_empty(), "子进程 PATH 不能是空的：stdout={stdout:?}");
+        assert!(
+            !line("U=").is_empty(),
+            "子进程 USERPROFILE 不能是空的：stdout={stdout:?}"
+        );
+    }
+
+    /// 判据 C-3：`allow_secret_env = Some(true)`（逃生门 / 旧行为）时令牌**必须**可见。
+    /// 这一条同时是 C-1 的对照：C-1 红了而 C-3 绿，说明是策略在起作用、不是命令没跑。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn execute_command_inherit_mode_sees_host_secret() {
+        std::env::set_var(FAKE, "leak-me");
+        let res = execute_command(
+            format!("Write-Output \"[$env:{FAKE}]\""),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+        )
+        .await
+        .expect("inherit 模式也必须能跑");
+
+        assert_eq!(
+            text(&res, "stdout"),
+            "[leak-me]",
+            "继承模式下令牌应当可见（否则 C-1 证明不了任何事）"
+        );
+    }
+
+    /// 判据 C-4：剥离之后 `git` 仍然能用（最常见的真实用途：版本控制工具链）。
+    ///
+    /// 基线**不另起进程**（那会在 `NO-CONSOLE-1` 棘轮上多一个未打标的 spawn 点），
+    /// 而是用同一条命令的 `inherit` 模式当对照：两者只差"环境剥不剥"，
+    /// 于是「strip 与 inherit 的输出一致」正好证明剥离没把 git 弄坏。
+    /// 本机没装 git / 没配 `user.name` ⇒ 跳过并注明（环境相关，不许因此判红）。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn execute_command_keeps_git_working() {
+        let git = "git config --global user.name".to_string();
+        let baseline = execute_command(git.clone(), None, None, None, None, None, Some(true))
+            .await
+            .expect("inherit 模式必须能跑（这条路本来就不剥环境）");
+        if baseline.get("exitCode").and_then(|c| c.as_i64()) != Some(0) {
+            eprintln!(
+                "跳过 C-4：本机没有 git 或没有全局 user.name（{}）",
+                text(&baseline, "stderr")
+            );
+            return;
+        }
+
+        let res = execute_command(git, None, None, None, None, None, Some(false))
+            .await
+            .expect("git 探测命令必须能跑起来");
+
+        assert_eq!(
+            res.get("exitCode").and_then(|c| c.as_i64()),
+            Some(0),
+            "剥离环境之后 git 仍然必须能用（PATH 还在）：stderr={:?}",
+            text(&res, "stderr")
+        );
+        assert_eq!(
+            text(&res, "stdout"),
+            text(&baseline, "stdout"),
+            "剥离环境后 git 读到的配置必须和 inherit 模式一致（说明既没被剥坏、也不是「另一个 git」）"
+        );
+    }
+
+    /// 判据 C-5：PTY 的 shell 是**绝对路径**，且环境里没有宿主令牌。
+    #[test]
+    fn build_pty_command_strips_secret_env() {
+        std::env::set_var(FAKE, "leak-me");
+        let cwd = std::env::current_dir()
+            .expect("取不到 cwd")
+            .to_string_lossy()
+            .to_string();
+
+        let cmd = build_pty_command(&cwd, false);
+        let argv0 = cmd.get_argv()[0].to_string_lossy().to_string();
+        assert!(
+            std::path::Path::new(&argv0).is_absolute(),
+            "终端 shell 必须是绝对路径（裸名要靠 PATH 解析，而 PATH 是我们自己回填的）：{argv0}"
+        );
+        assert!(
+            cmd.get_env("PATH").is_some(),
+            "终端环境必须有 PATH，否则 cmd.exe 连内置命令都找不到"
+        );
+        assert!(
+            cmd.get_env(FAKE).is_none(),
+            "宿主令牌进了 PTY 环境 ⇒ 用户在终端里随手 echo 就泄漏了"
+        );
+
+        // 对照：inherit 时必须能看见（证明上面那条的"看不见"是策略造成的）
+        let inherited = build_pty_command(&cwd, true);
+        assert_eq!(
+            inherited
+                .get_env(FAKE)
+                .map(|v| v.to_string_lossy().to_string()),
+            Some("leak-me".to_string()),
+            "inherit 模式下应当继承宿主环境"
+        );
+    }
+
+    /// 判据 C-6：Windows 终端"跑得起来"的最低集合必须齐（PATH/PATHEXT/ComSpec/SystemRoot/USERPROFILE）。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn build_pty_command_has_windows_essentials() {
+        let cwd = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let cmd = build_pty_command(&cwd, false);
+        for name in ["PATH", "PATHEXT", "ComSpec", "SystemRoot", "USERPROFILE"] {
+            let v = cmd.get_env(name).map(|v| v.to_string_lossy().to_string());
+            assert!(
+                v.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false),
+                "终端环境缺少 {name}（值={v:?}）⇒ cmd.exe 会跑不起来"
+            );
+        }
+        let argv0 = cmd.get_argv()[0].to_string_lossy().to_string();
+        assert!(
+            argv0.to_ascii_lowercase().ends_with("cmd.exe"),
+            "Windows 终端必须是 cmd.exe：{argv0}"
+        );
+    }
+
+    /// 判据 C-7：旧调用（不传 `allowSecretEnv`）走 `resolve_inherit(None)` ⇒ 全局策略，
+    /// 而全局默认是**剥离**；全局被显式打开时 `None` 也必须跟着走（逃生门对旧调用同样有效）。
+    #[test]
+    fn default_policy_is_strip_and_legacy_calls_follow_it() {
+        assert!(!secret_env::DEFAULT_INHERIT, "全局默认必须是剥离（改继承 ⇒ 所有旧调用都泄漏整份环境）");
+        secret_env::set_policy_inherit(false);
+        assert!(!secret_env::resolve_inherit(None), "默认态下旧调用必须是剥离");
+        secret_env::set_policy_inherit(true);
+        assert!(
+            secret_env::resolve_inherit(None),
+            "全局打开之后旧调用必须跟着继承（否则逃生门对既有的工具调用无效）"
+        );
+        secret_env::set_policy_inherit(false); // 还原，避免影响同进程其它用例
     }
 }

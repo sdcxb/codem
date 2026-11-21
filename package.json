@@ -106,7 +106,7 @@
     "android:spike:real": "node android-shell/spike-real-model.mjs",
     "audit:layout": "node tools/ui-audit/layout-audit.mjs",
     "db:build:arm64": "node tools/mobile/build-db-arm64.mjs",
-    "audit:unconsumed-services": "node tools/audit/scan-unconsumed-services.mjs --check"
+    "audit:unconsumed-services": "node tools/audit/provider-audit.mjs --check"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

@@ -89,6 +89,7 @@ import {
   type DeepSeekWebConfig,
 } from "../core/llm/tools/deepseek-web";
 import { setSandboxAclEnabled, isSandboxAclEnabled, getSandboxAllowedDirs, removeSandboxAllowedDir } from "../core/sandbox/sandbox-acl";
+import { isSecretEnvInheritEnabled, setSecretEnvInheritEnabled, pushSecretEnvPolicy } from "../core/security/secret-env";
 import { showToast } from "./ToastNotification";
 import { useEdgeFade } from "./EdgeFade";
 import { useRovingFocus } from "../hooks/useRovingFocus";
@@ -317,6 +318,7 @@ export function SettingsPanel({
    * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
    */
   const [sandboxOn, setSandboxOn] = useState<boolean>(() => isSandboxAclEnabled());
+  const [inheritSecretEnv, setInheritSecretEnv] = useState<boolean>(() => isSecretEnvInheritEnabled());
   /** 沙箱允许目录（交接时一键加入的那些）—— 这里必须能**看到并移除**，否则"可撤销"是假的 */
   const [allowedDirs, setAllowedDirs] = useState<string[]>(() => getSandboxAllowedDirs());
   useEffect(() => {
@@ -2576,6 +2578,29 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               {lang === "zh"
                 ? "开启后，AI 助手只能在当前工作目录及其子目录中写入文件，防止意外修改项目外部文件。"
                 : "When enabled, the AI assistant can only write files within the current workspace directory and its subdirectories."}
+            </div>
+
+            <div className="setting-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={inheritSecretEnv}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setInheritSecretEnv(next);
+                    setSecretEnvInheritEnabled(next);
+                    void pushSecretEnvPolicy();
+                  }}
+                />
+                {lang === "zh"
+                  ? "允许子进程继承密钥环境变量（不推荐）"
+                  : "Let child processes inherit secret environment variables (not recommended)"}
+              </label>
+              <div className="sp-note sp-note--spaced">
+                {lang === "zh"
+                  ? "默认关闭：bash / 终端 / MCP / 后台任务启动的子进程拿不到 OPENAI_API_KEY、GITHUB_TOKEN 等密钥变量。开启后这些变量会整份继承；只在确实需要代理或私有构建时使用。"
+                  : "Off by default: child processes (bash / terminal / MCP / background jobs) do not see OPENAI_API_KEY, GITHUB_TOKEN, etc. Enable only when a proxy or private build genuinely needs them."}
+              </div>
             </div>
             {/*
               允许目录（2026-10-18）：交接正文里的绝对路径常在工作区外，提示条可以一键把这些目录加进来。

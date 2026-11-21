@@ -325,5 +325,3 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
     </div>
   )
 }
-
-export default PluginMarketTab

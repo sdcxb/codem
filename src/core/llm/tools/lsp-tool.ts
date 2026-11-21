@@ -19,6 +19,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 import { grepSearch, executeCommand } from "../../file-api";
+import { filterSensitiveGrepMatches } from "../../security/sensitive-read";
 
 // ========== Types ==========
 
@@ -121,9 +122,12 @@ async function findDefinition(
   const combinedPattern = patterns.join("|");
 
   try {
-    const results = await grepSearch(combinedPattern, searchPath, undefined, { workspace });
+    const rawResults = await grepSearch(combinedPattern, searchPath, undefined, { workspace });
+    const filtered = filterSensitiveGrepMatches(rawResults, workspace);
+    const results = filtered.matches;
+    const skippedNote = filtered.skipped > 0 ? `（已跳过 ${filtered.skipped} 个敏感文件）` : "";
     if (results.length === 0) {
-      return `No definition found for "${symbol}" in ${searchPath}`;
+      return `No definition found for "${symbol}" in ${searchPath}${skippedNote}`;
     }
     // Format results with file:line references
     const formatted = results.slice(0, 20).map(r => {
@@ -135,7 +139,7 @@ async function findDefinition(
       }
       return `  ${r}`;
     });
-    return `Definition of "${symbol}" (${results.length} match${results.length > 1 ? "es" : ""}):\n${formatted.join("\n")}`;
+    return `Definition of "${symbol}" (${results.length} match${results.length > 1 ? "es" : ""})${skippedNote}:\n${formatted.join("\n")}`;
   } catch (error: any) {
     return `Error searching for definition: ${error.message}`;
   }
@@ -153,9 +157,12 @@ async function findReferences(
   try {
     // Use word boundary matching for accurate reference finding
     const pattern = `\\b${escapeRegex(symbol)}\\b`;
-    const results = await grepSearch(pattern, searchPath, undefined, { workspace });
+    const rawResults = await grepSearch(pattern, searchPath, undefined, { workspace });
+    const filtered = filterSensitiveGrepMatches(rawResults, workspace);
+    const results = filtered.matches;
+    const skippedNote = filtered.skipped > 0 ? `（已跳过 ${filtered.skipped} 个敏感文件）` : "";
     if (results.length === 0) {
-      return `No references found for "${symbol}" in ${searchPath}`;
+      return `No references found for "${symbol}" in ${searchPath}${skippedNote}`;
     }
     const formatted = results.slice(0, 50).map(r => {
       const match = r.match(/^(.+?):(\d+):\s*(.*)$/);
@@ -166,7 +173,7 @@ async function findReferences(
       return `  ${r}`;
     });
     const truncated = results.length > 50 ? `\n... and ${results.length - 50} more` : "";
-    return `References to "${symbol}" (${results.length} total):\n${formatted.join("\n")}${truncated}`;
+    return `References to "${symbol}" (${results.length} total)${skippedNote}:\n${formatted.join("\n")}${truncated}`;
   } catch (error: any) {
     return `Error searching for references: ${error.message}`;
   }
@@ -343,7 +350,7 @@ export function createLSPTool(): ToolDef {
             if (!targetSymbol && line !== undefined && column !== undefined) {
               // Read the file and extract the symbol at the position
               const { readFile } = await import("../../file-api");
-              const content = await readFile(file, { workspace });
+              const content = await readFile(file, { workspace, allowSensitive: true });
               const lines = content.split("\n");
               const targetLine = lines[line - 1] || "";
               targetSymbol = getWordAtPosition(targetLine, column);
@@ -359,7 +366,7 @@ export function createLSPTool(): ToolDef {
             let targetSymbol = symbol;
             if (!targetSymbol && line !== undefined && column !== undefined) {
               const { readFile } = await import("../../file-api");
-              const content = await readFile(file, { workspace });
+              const content = await readFile(file, { workspace, allowSensitive: true });
               const lines = content.split("\n");
               const targetLine = lines[line - 1] || "";
               targetSymbol = getWordAtPosition(targetLine, column);
@@ -376,14 +383,14 @@ export function createLSPTool(): ToolDef {
               return { title: `lsp: hover`, output: "Error: line and column are required for hover operation", isError: true };
             }
             const { readFile } = await import("../../file-api");
-            const content = await readFile(file, { workspace });
+            const content = await readFile(file, { workspace, allowSensitive: true });
             const result = await getHover(file, line, column, content, workspace);
             return { title: `lsp: hover ${file}:${line}:${column}`, output: result, isError: false };
           }
 
           case "document_symbols": {
             const { readFile } = await import("../../file-api");
-            const content = await readFile(file, { workspace });
+            const content = await readFile(file, { workspace, allowSensitive: true });
             const result = extractDocumentSymbols(content, file);
             return { title: `lsp: symbols ${file}`, output: result, isError: false };
           }

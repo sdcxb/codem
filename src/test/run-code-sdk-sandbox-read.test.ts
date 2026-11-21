@@ -252,11 +252,18 @@ describe("第 185 波 T2：sdk 读侧的工作区沙箱", () => {
 
     // ① 越界读
     installTauriMock();
-    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.read(SECRET_PATH)) as never);
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.read("C:/elsewhere/plain.txt")) as never);
     const readOut = await createRunCodeTool().execute({ code: "await sdk.read(p)" }, ctx());
-    expect(readOut.output, "关闭时越界读不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(readOut.output, "关闭时越界读（非敏感）不许被误拒").not.toMatch(/outside the workspace/i);
     expect(readOut.output, "内容必须真的拿到").toContain("SUPER-SECRET");
     expect(invokes.some((i) => i.command === "read_file"), "底层读必须真的发生").toBe(true);
+
+    /* 新增边界：沙箱关闭 ≠ 敏感文件可读 —— 读保护独立于沙箱。 */
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.read(SECRET_PATH)) as never);
+    const secretOut = await createRunCodeTool().execute({ code: "await sdk.read(p)" }, ctx());
+    expect(secretOut.output, "沙箱关闭时敏感文件仍必须被拒绝").toMatch(/敏感文件/);
+    expect(secretOut.output, "敏感内容不许出现").not.toContain("SUPER-SECRET");
 
     // ② 越界 glob（搜索路径 + 含 `..` 的模式两条路都必须在关闭时放行）
     installTauriMock();

@@ -39,6 +39,7 @@ import {
   type SecurityMode,
 } from '../permission/security-mode.ts'
 import { getPermissionManager } from '../permission/permission.ts'
+import { classifySensitiveRead, detectSensitiveShellAccess } from '../security/sensitive-read'
 
 /** 合法的安全模式（真系统的词表，不是 `permission.ts::getSecurityModes` 那套历史词表） */
 const VALID_MODES: readonly SecurityMode[] = SECURITY_MODES.map((m) => m.mode)
@@ -65,7 +66,21 @@ export const permissionsProvider: Plugin = (ctx: any) => {
           ? args.path
           : typeof args?.command === 'string'
             ? args.command
-            : undefined
+            : typeof args?.file === 'string'
+              ? args.file
+              : typeof args?.text === 'string'
+                ? args.text
+                : undefined
+      const shellText = typeof args?.command === 'string'
+        ? args.command
+        : typeof args?.text === 'string' ? args.text : ''
+      const shellAccess = detectSensitiveShellAccess(shellText)
+      const readTool = ['read', 'grep', 'glob', 'lsp', 'read_attachment'].includes(toolName)
+      const readVerdict = readTool && resource ? classifySensitiveRead(resource) : null
+      if (readVerdict?.action === 'deny' || shellAccess.writes.length > 0) {
+        return { action: 'deny', allowed: false, reason: '受保护文件禁止读/写（.env/.git/私钥/云凭据）' }
+      }
+      const sensitiveAsk = readVerdict?.action === 'ask' || shellAccess.reads.length > 0
       const effective = (mode && VALID_MODES.includes(mode as SecurityMode)
         ? (mode as SecurityMode)
         : getGlobalSecurityMode()) as SecurityMode
@@ -78,7 +93,8 @@ export const permissionsProvider: Plugin = (ctx: any) => {
         return { action: 'ask', allowed: false, reason: `权限评估失败：${e instanceof Error ? e.message : String(e)}` }
       }
 
-      const action = evaluateWithSecurityMode(effective, toolName, resource, normal)
+      let action = evaluateWithSecurityMode(effective, toolName, resource, normal)
+      if (sensitiveAsk && effective !== 'full' && action === 'allow') action = 'ask'
       return {
         action,
         allowed: action === 'allow',

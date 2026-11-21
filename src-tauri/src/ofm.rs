@@ -335,6 +335,54 @@ pub async fn ofm_stage_node(bundled: String, data_dir: String) -> Result<String,
     Ok(strip_verbatim(target))
 }
 
+/// 纯函数：算出插件进程的完整命令行 + 环境（可测：`get_program` / `get_args` / `get_envs`）。
+///
+/// ## 环境（Part C）
+///
+/// 插件是**第三方代码**，没有任何理由拿到宿主的 `OPENAI_API_KEY` / `GITHUB_TOKEN`；
+/// 它跑起来只需要 PATH / TEMP / SystemRoot 这类东西（node 子进程还要 PATHEXT/ComSpec）。
+/// 所以这里和 `execute_command` / MCP 走**同一个**入口 —— `secret_env::child_env_plan`
+/// （`inherit=false` 时先 `env_clear()` 再按 allowlist 回填）。
+///
+/// `inherit` 由调用方传入全局策略（默认 `false` = 剥离）。抽成纯函数是为了让
+/// "argv 没变、环境被收窄"这件事有判据（`ofm::tests`），而不是只能靠读代码确认。
+fn build_node_command(
+    node_exe: &str,
+    script: &str,
+    data_dir: &str,
+    port: u16,
+    inherit: bool,
+) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(node_exe);
+    cmd.arg(script)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--data-dir")
+        .arg(data_dir)
+        .current_dir(
+            std::path::Path::new(script)
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .unwrap_or(std::path::Path::new(".")),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(false);
+
+    crate::secret_env::child_env_plan(inherit, None).apply_tokio(&mut cmd);
+
+    #[cfg(target_os = "windows")]
+    {
+        /* 让子进程不要闪一个黑框（tokio 的 Command 自带 `creation_flags`，不需要导 trait） */
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    cmd
+}
+
 /// 起服务。**端口由调用方决定**（渲染侧先探一个空闲端口再传进来）——
 /// 这样"服务在哪个端口"是确定的，不必去解析子进程的 stdout（那是最脆的一种做法）。
 #[tauri::command]
@@ -375,30 +423,13 @@ pub async fn ofm_start(
     clear_stale_lock(&data_dir);
     std::fs::create_dir_all(&data_dir).map_err(|e| format!("建数据目录失败：{e}"))?;
 
-    let mut cmd = tokio::process::Command::new(&node_exe);
-    cmd.arg(&script)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--data-dir")
-        .arg(&data_dir)
-        .current_dir(
-            std::path::Path::new(&script)
-                .parent()
-                .and_then(|p| p.parent())
-                .and_then(|p| p.parent())
-                .unwrap_or(std::path::Path::new(".")),
-        )
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(false);
-
-    #[cfg(target_os = "windows")]
-    {
-        /* 让子进程不要闪一个黑框（tokio 的 Command 自带 `creation_flags`，不需要导 trait） */
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    let mut cmd = build_node_command(
+        &node_exe,
+        &script,
+        &data_dir,
+        port,
+        crate::secret_env::policy_inherit(),
+    );
 
     let mut child = cmd.spawn().map_err(|e| format!("启动插件进程失败（{node_exe}）：{e}"))?;
     let pid = child.id();
@@ -546,5 +577,109 @@ pub fn shutdown_ofm(state: &OfmState) {
                下次启动还有 `clear_stale_lock`（按 pid 确认"锁的主人确实不在了"）兜底 ✓。
                这笔买卖很划算：**退出必须立刻响应**，而"有没有残留进程"本来就有第二道保障。 */
             .spawn();
+    }
+}
+
+// ========== 判据（Part C：插件进程不许继承宿主凭据）==========
+//
+// ⚠️ 覆盖边界要说清楚：`tokio::process::Command` 没有"读回 env_clear 状态"的 API
+// （`get_envs()` 只回显**显式**写过的键，`env_clear` 是内部标志位），所以这里能证的是
+// ①argv/工作目录逐字未变；②`build_node_command` **确实**把 allowlist 显式写进了子进程
+// （去掉 `apply_tokio` 这条立刻红）；③它写进去的正是 `secret_env::child_env_plan`
+// 在 strip 模式下算出的那一份（fake token 不在里面、PATH 在里面）。
+// `env_clear` 真的发生在子进程侧的端到端证明在 `secret_env::tests`
+// （`apply_tokio_really_clears_child_environment`，带"不清理就看得见"的对照组）。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FAKE: &str = "CODEM_TEST_FAKE_TOKEN";
+    const SCRIPT: &str = r"C:\data\extensions\our-free-model\packages\standalone\cli.mjs";
+    const DATA_DIR: &str = r"C:\data\extensions\our-free-model\data";
+
+    fn built(inherit: bool) -> tokio::process::Command {
+        build_node_command("C:\\node\\node.exe", SCRIPT, DATA_DIR, 5123, inherit)
+    }
+
+    /// argv / 工作目录是既有契约，env 改动不许顺手改掉它们。
+    #[test]
+    fn node_command_argv_and_cwd_unchanged() {
+        let cmd = built(false);
+        let std_cmd = cmd.as_std();
+
+        assert_eq!(
+            std_cmd.get_program().to_string_lossy(),
+            "C:\\node\\node.exe",
+            "解释器必须仍是调用方给的绝对路径"
+        );
+        let args: Vec<String> = std_cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                SCRIPT.to_string(),
+                "--port".to_string(),
+                "5123".to_string(),
+                "--data-dir".to_string(),
+                DATA_DIR.to_string(),
+            ],
+            "命令行契约变了 ⇒ 插件会起不来（上游入口参数是固定的）"
+        );
+        assert_eq!(
+            std_cmd
+                .get_current_dir()
+                .map(|p| p.to_string_lossy().to_string()),
+            Some(r"C:\data\extensions\our-free-model".to_string()),
+            "工作目录仍然是 <ext>/packages/standalone/cli.mjs 往上第三级"
+        );
+    }
+
+    /// 插件进程的环境必须是"allowlist 显式回填"，不许把宿主整份环境带过去。
+    #[test]
+    fn node_command_env_is_allowlisted_not_inherited() {
+        std::env::set_var(FAKE, "leak-me");
+
+        let cmd = built(false);
+        let explicit: Vec<String> = cmd
+            .as_std()
+            .get_envs()
+            .map(|(k, _)| k.to_string_lossy().to_string())
+            .collect();
+
+        // ① 确实显式写了环境（把 `apply_tokio` 删掉 ⇒ 这一条红）
+        assert!(
+            !explicit.is_empty(),
+            "插件进程必须显式回填 allowlist 环境；一条都没有说明 env 策略没接上"
+        );
+        // ② 写进去的就是 strip 计划（同一个函数算出来的那一份）
+        let plan = crate::secret_env::child_env_plan(false, None);
+        assert!(plan.clears(), "默认策略必须是剥离（先 env_clear 再回填）");
+        for (name, _) in plan.entries() {
+            let n = name.to_string_lossy().to_string();
+            assert!(
+                explicit.iter().any(|e| e.eq_ignore_ascii_case(&n)),
+                "白名单条目 {n} 没有写进插件进程（命令行的环境是空的？）"
+            );
+        }
+        // ③ 测试令牌既不在计划里、也不在显式写入里
+        assert!(
+            plan.get(FAKE).is_none(),
+            "宿主继承来的 {FAKE} 不许进插件进程"
+        );
+        assert!(
+            !explicit.iter().any(|e| e.eq_ignore_ascii_case(FAKE)),
+            "explicit env 里出现了 {FAKE} ⇒ 有人把整份环境搬过去了"
+        );
+        assert!(plan.get("PATH").is_some(), "PATH 必须保留，否则 node 起不来");
+    }
+
+    /// 逃生门：inherit 时不 env_clear（用户显式打开才允许）。
+    #[test]
+    fn node_command_honours_inherit_escape_hatch() {
+        let plan = crate::secret_env::child_env_plan(true, None);
+        assert!(!plan.clears());
+        assert!(plan.entries().is_empty());
     }
 }

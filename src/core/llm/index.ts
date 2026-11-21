@@ -12,6 +12,7 @@ import { syncMcpResourceTools } from "./tools/mcp-resources-sync";
 import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
+import { isSensitiveReadPath } from "../security/sensitive-read";
 import { ContextManager, getContextManager, type CompactionConfig } from "../context/context";
 import {
   MemoryService,
@@ -1051,6 +1052,8 @@ function readContextCompactionThreshold(): number {
          * 用户把滑块拉到 90% 时面板写「窗口 90%」、引擎仍按默认 0.8 触发（滑块是装饰）。
          */
         compactionThreshold: readContextCompactionThreshold(),
+        /* 敏感读不能命中读缓存：否则同一回合第二次 read .env 会绕过审批直接回内容。 */
+        bypassReadCacheFor: (p: string) => isSensitiveReadPath(p),
         // Pass through agent-level overrides (Phase 0 fields)
         reasoningEffort: agent?.reasoningEffort || resolved.reasoningEffort,
         collaborationMode: agent?.collaborationMode,

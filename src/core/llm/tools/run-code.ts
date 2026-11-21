@@ -39,6 +39,11 @@ import {
   refuseDangerousCommand,
   refuseProtectedPathWrite,
 } from "../tool-gates";
+import {
+  detectSensitiveShellAccess,
+  filterSensitiveGrepMatches,
+  isSensitiveReadPath,
+} from "../../security/sensitive-read";
 
 export { calculateContentSimilarity, OVERWRITE_SIMILARITY_THRESHOLD } from "../tool-gates";
 
@@ -262,6 +267,14 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           const cmdTimeout = Math.min(opts?.timeout_ms || 30_000, 120_000);
           const refusal = refuseDangerousCommand(command, ctx.securityMode, cmdTimeout);
           if (refusal) throw new Error(refusal);
+          /* 无审批通道：敏感文件的读/写在 run_code 里一律 fail-closed（full 才放行）。 */
+          const shellSensitive = detectSensitiveShellAccess(command, ctx.cwd, ctx.cwd);
+          if (shellSensitive.writes.length > 0) {
+            throw new Error(`受保护文件禁止在 run_code 里写/删：${shellSensitive.writes.join(", ")}。请在应用外手动修改。`);
+          }
+          if (shellSensitive.reads.length > 0 && ctx.securityMode !== "full") {
+            throw new Error(`敏感文件（${shellSensitive.reads.join(", ")}）不能在 run_code 里静默读取；请改用 read 工具，那里会弹审批。`);
+          }
           const { executeCommand } = await import("../../file-api");
           const result = await executeCommand(command, ctx.cwd, cmdTimeout);
           return {
@@ -281,7 +294,7 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
            * 所以"忘了传"就等于"没检查"）。
            */
           const { readFile } = await import("../../file-api");
-          return await readFile(path, { workspace: ctx.cwd });
+          return await readFile(path, { workspace: ctx.cwd, allowSensitive: ctx.securityMode === "full" });
         },
         async write(path: string, content: string) {
           // 受保护路径（.git/ .env node_modules/ …）：`write` 工具在建任何东西之前就拒绝
@@ -309,9 +322,19 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
         async grep(pattern: string, opts?: { path?: string; glob?: string }) {
           const { grepSearch } = await import("../../file-api");
           // ★ 第 185 波（T2）：同上（`pattern` 是正则，只判搜索路径）
-          const results = await grepSearch(pattern, opts?.path || ctx.cwd, opts?.glob, {
+          const searchPath = opts?.path || ctx.cwd;
+          if (isSensitiveReadPath(searchPath, ctx.cwd) && ctx.securityMode !== "full") {
+            throw new Error(`敏感文件（${searchPath}）不能在 run_code 里静默 grep；请改用 grep 工具，那里会弹审批。`);
+          }
+          const rawResults = await grepSearch(pattern, searchPath, opts?.glob, {
             workspace: ctx.cwd,
           });
+          const filtered = filterSensitiveGrepMatches(
+            rawResults,
+            ctx.cwd,
+            isSensitiveReadPath(searchPath, ctx.cwd) ? searchPath : undefined,
+          );
+          const results = filtered.matches;
           /**
            * ★ 第 184 波（G5）：**这里原来把结果整个映射错了**。
            *

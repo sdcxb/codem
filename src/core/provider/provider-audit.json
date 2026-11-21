@@ -1,0 +1,4172 @@
+{
+  "_doc": "Provider 分类审计清单。由 tools/audit/provider-audit.mjs 生成；勿手改：改完代码后跑 node tools/audit/provider-audit.mjs --write 重建，node tools/audit/provider-audit.mjs --check 校验漂移。",
+  "version": 1,
+  "entries": [
+    {
+      "plugin": "@codem/acp",
+      "file": "src/core/provider/acp-provider.ts",
+      "provides": [
+        "acp"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/subagent-acp"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide acp 无消费方，但被 1 个插件 inject（@codem/subagent-acp），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/agent",
+      "file": "src/core/provider/agent-provider.ts",
+      "provides": [
+        "agentManager"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "reg.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：reg.register；provide-unused：agentManager（无消费方、无 inject，可评估下线该 provide）；core"
+    },
+    {
+      "plugin": "@codem/agent-default-model",
+      "file": "src/core/provider/agent-default-model-provider.ts",
+      "provides": [
+        "agentDefaultModel"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/agent-engine",
+      "file": "src/core/provider/agent-engine-provider.ts",
+      "provides": [
+        "agentEngine"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/agent-loop-provider.ts:get",
+        "src/core/provider/subagent-fork-in-process-provider.ts:get",
+        "src/core/provider/system-prompt-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent-loop"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide agentEngine 有 3 处消费方，保留；另有 1 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/agent-instructions",
+      "file": "src/core/provider/agent-instructions-provider.ts",
+      "provides": [
+        "agentInstructions"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/system-prompt-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/system-prompt"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-agent-instructions"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide agentInstructions 有 1 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/agent-loop",
+      "file": "src/core/provider/agent-loop-provider.ts",
+      "provides": [
+        "agentLoop"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide agentLoop 有 1 处消费方，保留；core"
+    },
+    {
+      "plugin": "@codem/agent-registry",
+      "file": "src/core/provider/agent-registry-provider.ts",
+      "provides": [
+        "agentRegistry"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:_getOrFallback",
+        "src/core/provider/agent-provider.ts:get",
+        "src/core/provider/subagent-fork-in-process-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide agentRegistry 有 3 处消费方，保留；另有 1 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/agent-teams",
+      "file": "src/core/provider/agent-teams-provider.ts",
+      "provides": [
+        "agentTeams"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/agent-tool-presentation",
+      "file": "src/core/provider/agent-tool-presentation-provider.ts",
+      "provides": [
+        "agentToolPresentation"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/api-gateway",
+      "file": "src/core/provider/api-gateway-provider.ts",
+      "provides": [
+        "apiGateway"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/api-remotes",
+      "file": "src/core/provider/api-remotes-provider.ts",
+      "provides": [
+        "apiRemotes"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/app-bootstrap",
+      "file": "src/App.tsx",
+      "provides": [
+        "llmEngine"
+      ],
+      "kind": "registration",
+      "consumers": [
+        "src/core/provider/agent-engine-provider.ts:get",
+        "src/core/provider/agent-registry-provider.ts:get",
+        "src/core/provider/cost-tracker-provider.ts:get",
+        "src/core/provider/llm-provider.ts:get",
+        "src/core/provider/llm-retry-provider.ts:get",
+        "src/core/provider/mcp-provider.ts:get",
+        "src/core/provider/memory-provider.ts:get",
+        "src/core/provider/model-profile-provider.ts:get",
+        "src/core/provider/permission-provider.ts:get",
+        "src/core/provider/recovery-provider.ts:get",
+        "src/core/provider/retry-provider.ts:get",
+        "src/core/provider/settings-provider.ts:get",
+        "src/core/provider/skill-provider.ts:get",
+        "src/core/provider/tool-render-provider.ts:get",
+        "src/core/provider/tools-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent-engine",
+        "@codem/agent-registry",
+        "@codem/cost-tracker",
+        "@codem/llm",
+        "@codem/llm-retry",
+        "@codem/mcp",
+        "@codem/memory",
+        "@codem/model-profile",
+        "@codem/permission",
+        "@codem/recovery",
+        "@codem/retry",
+        "@codem/settings",
+        "@codem/skill",
+        "@codem/subagent",
+        "@codem/tool-render",
+        "@codem/tools"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [
+        "ctx.plugin",
+        "setInterval"
+      ],
+      "switchable": false,
+      "reason": "App.tsx 启动装配中的 ctx.provide（不是插件，也不在 registry/YAML 里）；有副作用：ctx.plugin、setInterval；provide-consumed：llmEngine"
+    },
+    {
+      "plugin": "@codem/approval",
+      "file": "src/core/provider/approval-provider.ts",
+      "provides": [
+        "approval"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/user-approval"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide approval 无消费方，但被 1 个插件 inject（@codem/user-approval），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/atomic-write",
+      "file": "src/core/provider/atomic-write-provider.ts",
+      "provides": [
+        "atomicWrite"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/attachments",
+      "file": "src/core/provider/attachments-provider.ts",
+      "provides": [
+        "attachments"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-attachment-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide attachments 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/automation",
+      "file": "src/core/provider/automation-provider.ts",
+      "provides": [
+        "automation"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/tool-jobs-provider.ts:get",
+        "src/core/provider/ui-jobs-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/acp",
+        "@codem/tool-jobs"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide automation 有 2 处消费方，保留；另有 2 个插件 inject"
+    },
+    {
+      "plugin": "@codem/bundle",
+      "file": "src/core/provider/bundle-provider.ts",
+      "provides": [
+        "bundle"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-settings-plugin-inventory-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide bundle 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/cli",
+      "file": "src/core/provider/cli-provider.ts",
+      "provides": [
+        "cli"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "cli.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：cli.register；provide-unused：cli（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/code-runtime",
+      "file": "src/core/provider/code-runtime-provider.ts",
+      "provides": [
+        "codeRuntime"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/code-runtime-worker-thread"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide codeRuntime 无消费方，但被 1 个插件 inject（@codem/code-runtime-worker-thread），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/code-runtime-worker-thread",
+      "file": "src/core/provider/code-runtime-worker-thread-provider.ts",
+      "provides": [
+        "codeRuntimeWorkerThread"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/command-compact",
+      "file": "src/core/provider/command-compact-provider.ts",
+      "provides": [
+        "commandCompact"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/command-feedback",
+      "file": "src/core/provider/command-feedback-provider.ts",
+      "provides": [
+        "commandFeedback"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/command-goal",
+      "file": "src/core/provider/command-goal-provider.ts",
+      "provides": [
+        "commandGoal"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/commands",
+      "file": "src/core/provider/commands-provider.ts",
+      "provides": [
+        "commands"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/command-compact",
+        "@codem/command-goal"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-commands"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide commands 无消费方，但被 2 个插件 inject（@codem/command-compact、@codem/command-goal），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/compaction",
+      "file": "src/core/provider/compaction-provider.ts",
+      "provides": [
+        "compaction"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/command-compact",
+        "@codem/compaction-basic",
+        "@codem/compaction-tool-result-pruner"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-compaction"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide compaction 有 1 处消费方，保留；另有 3 个插件 inject"
+    },
+    {
+      "plugin": "@codem/compaction-basic",
+      "file": "src/core/provider/compaction-basic-provider.ts",
+      "provides": [
+        "compactionBasic"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide compactionBasic 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/compaction-tool-result-pruner",
+      "file": "src/core/provider/compaction-tool-result-pruner-provider.ts",
+      "provides": [
+        "compactionToolResultPruner"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-compaction-tool-result-pruner"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-compaction-tool-result-pruner（bundled 等价插件，保留）；provide-unused：compactionToolResultPruner（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/computer-use",
+      "file": "src/core/provider/computer-use-provider.ts",
+      "provides": [
+        "computerUse"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/context-info",
+      "file": "src/core/provider/context-info-provider.ts",
+      "provides": [
+        "contextInfo"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/cordis-client-runner",
+      "file": "src/core/provider/cordis-client-runner-provider.ts",
+      "provides": [
+        "cordisClientRunner"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/cordis-host-runner",
+      "file": "src/core/provider/cordis-host-runner-provider.ts",
+      "provides": [
+        "cordisHostRunner"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/cost-tracker",
+      "file": "src/core/provider/cost-tracker-provider.ts",
+      "provides": [
+        "costTracker"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get",
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide costTracker 有 2 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/credentials",
+      "file": "src/core/provider/credentials-provider.ts",
+      "provides": [
+        "credentials"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-credentials"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide credentials 有 1 处消费方，保留；core"
+    },
+    {
+      "plugin": "@codem/dsh-compat",
+      "file": "src/core/dsh-compat/index.ts",
+      "provides": [
+        "dshCredentials",
+        "dshEvents",
+        "dshFs",
+        "dshLlm",
+        "dshSessions",
+        "dshShell",
+        "dshTools"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "ctx.on"
+      ],
+      "switchable": false,
+      "reason": "有副作用：ctx.on；provide-unused：dshCredentials、dshEvents、dshFs、dshLlm、dshSessions、dshShell、dshTools（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/dynamic-runner",
+      "file": "src/core/provider/dynamic-runner-provider.ts",
+      "provides": [
+        "dynamicCordisRunner"
+      ],
+      "kind": "dynamic",
+      "consumers": [
+        "src/core/llm/dynamic-plugin-tools.ts:get",
+        "src/core/ui-plugins/ui-cordis/index.tsx:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "运行期动态 provide（无界名：descriptor.name），按规则不进静态服务清单；静态 provide dynamicCordisRunner 照常统计"
+    },
+    {
+      "plugin": "@codem/e2b",
+      "file": "src/core/provider/e2b-provider.ts",
+      "provides": [
+        "e2b"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/fs-e2b-provider.ts:get",
+        "src/core/provider/subprocess-e2b-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/fs-e2b",
+        "@codem/subprocess-e2b"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide e2b 有 2 处消费方，保留；另有 2 个插件 inject"
+    },
+    {
+      "plugin": "@codem/event-log",
+      "file": "src/core/provider/event-log-provider.ts",
+      "provides": [
+        "eventLog"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide eventLog 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/file-change-tracker",
+      "file": "src/core/provider/file-change-tracker-provider.ts",
+      "provides": [
+        "fileChangeTracker"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide fileChangeTracker 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/fs-e2b",
+      "file": "src/core/provider/fs-e2b-provider.ts",
+      "provides": [
+        "fsE2b"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/fs-local",
+      "file": "src/core/provider/fs-provider.ts",
+      "provides": [
+        "fs"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/llm/tools.ts:get",
+        "src/core/provider/tool-str-replace-editor-provider.ts:get",
+        "src/core/provider/ui-workspace-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/atomic-write",
+        "@codem/skill-filesystem",
+        "@codem/tool-fs-search",
+        "@codem/tool-str-replace-editor"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-fs"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide fs 有 4 处消费方，保留；另有 4 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/fs-observation-policy",
+      "file": "src/core/provider/fs-observation-policy-provider.ts",
+      "provides": [
+        "fsObservationPolicy"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-fs-observation-policy"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-fs-observation-policy（bundled 等价插件，保留）；provide-unused：fsObservationPolicy（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/goal-round-driver",
+      "file": "src/core/provider/goal-round-driver-provider.ts",
+      "provides": [
+        "goalRoundDriver"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-goal-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-goal"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide goalRoundDriver 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/guard",
+      "file": "src/core/provider/guard-provider.ts",
+      "provides": [
+        "guard"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/invariants-guard",
+        "@codem/repeat-tool-reminder",
+        "@codem/timeout-guard"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide guard 无消费方，但被 3 个插件 inject（@codem/invariants-guard、@codem/repeat-tool-reminder、@codem/timeout-guard），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/hooks",
+      "file": "src/core/provider/hooks-provider.ts",
+      "provides": [
+        "hooks"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "manager.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：manager.register；provide-unused：hooks（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/host",
+      "file": "src/core/provider/host-provider.ts",
+      "provides": [
+        "host"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/cordis-host-runner"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide host 无消费方，但被 1 个插件 inject（@codem/cordis-host-runner），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/host-apiproxy",
+      "file": "src/core/provider/host-apiproxy-provider.ts",
+      "provides": [
+        "hostApiproxy"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/host-client",
+      "file": "src/core/provider/host-client-provider.ts",
+      "provides": [
+        "hostClient",
+        "pluginInstaller"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/host-plugin-inventory",
+        "@codem/host-webserver",
+        "@codem/sdk-protocol"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide hostClient、pluginInstaller 无消费方，但被 3 个插件 inject（@codem/host-plugin-inventory、@codem/host-webserver、@codem/sdk-protocol），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/host-frontend-static",
+      "file": "src/core/provider/host-frontend-static-provider.ts",
+      "provides": [
+        "hostFrontendStatic"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/host-plugin-inventory",
+      "file": "src/core/provider/host-plugin-inventory-provider.ts",
+      "provides": [
+        "hostPluginInventory"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "inventory.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：inventory.register；provide-unused：hostPluginInventory（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/host-webserver",
+      "file": "src/core/provider/host-webserver-provider.ts",
+      "provides": [
+        "hostWebserver"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/host-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/api-gateway",
+        "@codem/host",
+        "@codem/host-apiproxy",
+        "@codem/host-frontend-static"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide hostWebserver 有 1 处消费方，保留；另有 4 个插件 inject"
+    },
+    {
+      "plugin": "@codem/i18n",
+      "file": "src/core/provider/i18n-provider.ts",
+      "provides": [
+        "i18n"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/tools.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide i18n 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/identity",
+      "file": "src/core/provider/identity-provider.ts",
+      "provides": [
+        "identity"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/inbox",
+      "file": "src/core/provider/inbox-provider.ts",
+      "provides": [
+        "inbox"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/schedule-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/schedule"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide inbox 有 1 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/invariants-guard",
+      "file": "src/core/provider/invariants-guard-provider.ts",
+      "provides": [
+        "invariantsGuard"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "guard.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：guard.register；provide-unused：invariantsGuard（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/issue",
+      "file": "src/core/provider/issue-provider.ts",
+      "provides": [
+        "issue"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/llm",
+      "file": "src/core/provider/llm-provider.ts",
+      "provides": [
+        "llm"
+      ],
+      "kind": "registration",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/consumer/index.ts:getServiceAsync",
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/provider/cli-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/llm-claude-provider.ts:get",
+        "src/core/provider/llm-deepseek-provider.ts:get",
+        "src/core/provider/llm-gemini-provider.ts:get",
+        "src/core/provider/llm-mimo-provider.ts:get",
+        "src/core/provider/llm-ollama-provider.ts:get",
+        "src/core/provider/llm-openai-provider.ts:get",
+        "src/core/provider/llm-pi-ai-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get",
+        "src/core/provider/session-title-all-prompts-llm-provider.ts:get",
+        "src/core/provider/session-title-llm-provider.ts:get",
+        "src/core/provider/subagent-claude-code-provider.ts:get",
+        "src/core/provider/subagent-codex-provider.ts:get",
+        "src/core/provider/subagent-spawn-in-process-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent-loop",
+        "@codem/llm-claude",
+        "@codem/llm-deepseek",
+        "@codem/llm-gemini",
+        "@codem/llm-mimo",
+        "@codem/llm-ollama",
+        "@codem/llm-openai",
+        "@codem/llm-pi-ai",
+        "@codem/llm-retry",
+        "@codem/session-title-all-prompts-llm",
+        "@codem/session-title-first-prompt-llm",
+        "@codem/session-title-llm",
+        "@codem/subagent-claude-code",
+        "@codem/subagent-codex"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-llm"
+      ],
+      "sideEffects": [
+        "registry.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：registry.register；provide-consumed：llm；core"
+    },
+    {
+      "plugin": "@codem/llm-claude",
+      "file": "src/core/provider/llm-claude-provider.ts",
+      "provides": [
+        "llmClaude"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmClaude（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-deepseek",
+      "file": "src/core/provider/llm-deepseek-provider.ts",
+      "provides": [
+        "llmDeepseek"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-llm-deepseek"
+      ],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmDeepseek（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-gemini",
+      "file": "src/core/provider/llm-gemini-provider.ts",
+      "provides": [
+        "llmGemini"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmGemini（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-mimo",
+      "file": "src/core/provider/llm-mimo-provider.ts",
+      "provides": [
+        "llmMimo"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmMimo（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-ollama",
+      "file": "src/core/provider/llm-ollama-provider.ts",
+      "provides": [
+        "llmOllama"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmOllama（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-openai",
+      "file": "src/core/provider/llm-openai-provider.ts",
+      "provides": [
+        "llmOpenAI"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmOpenAI（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-pi-ai",
+      "file": "src/core/provider/llm-pi-ai-provider.ts",
+      "provides": [
+        "llmPiAi"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "llm.registerProvider"
+      ],
+      "switchable": false,
+      "reason": "有副作用：llm.registerProvider；provide-unused：llmPiAi（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/llm-retry",
+      "file": "src/core/provider/llm-retry-provider.ts",
+      "provides": [
+        "llmRetry"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-llm-retry"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide llmRetry 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/lsp",
+      "file": "src/core/provider/lsp-provider.ts",
+      "provides": [
+        "lsp"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/lsp-stdio"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-lsp"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide lsp 无消费方，但被 1 个插件 inject（@codem/lsp-stdio），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/lsp-stdio",
+      "file": "src/core/provider/lsp-stdio-provider.ts",
+      "provides": [
+        "lspStdio"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/mcp",
+      "file": "src/core/provider/mcp-provider.ts",
+      "provides": [
+        "mcp"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-mcp-client"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide mcp 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/memory",
+      "file": "src/core/provider/memory-provider.ts",
+      "provides": [
+        "memory"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide memory 有 2 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/message-storage",
+      "file": "src/core/provider/message-storage-provider.ts",
+      "provides": [
+        "messageStorage"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide messageStorage 有 1 处消费方，保留；core"
+    },
+    {
+      "plugin": "@codem/mimo-auth",
+      "file": "src/core/provider/mimo-auth-provider.ts",
+      "provides": [
+        "mimoAuth"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/App.tsx:getCtxService"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide mimoAuth 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/model-profile",
+      "file": "src/core/provider/model-profile-provider.ts",
+      "provides": [
+        "modelProfile"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/App.tsx:getCtxService",
+        "src/core/llm/index.ts:_getOrFallback",
+        "src/core/provider/ui-model-selection-provider.ts:get",
+        "src/core/provider/ui-settings-models-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent-default-model",
+        "@codem/ui-model-selection"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide modelProfile 有 4 处消费方，保留；另有 2 个插件 inject"
+    },
+    {
+      "plugin": "@codem/notebook",
+      "file": "src/core/provider/notebook-provider.ts",
+      "provides": [
+        "notebook"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/permission",
+      "file": "src/core/provider/permission-provider.ts",
+      "provides": [
+        "permission"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/llm/agentic-loop.ts:get",
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [
+        "@codem/ui-permission-presets"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide permission 有 3 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/permissions",
+      "file": "src/core/provider/permissions-provider.ts",
+      "provides": [
+        "permissions"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/persona",
+      "file": "src/core/provider/persona-provider.ts",
+      "provides": [
+        "persona"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-persona"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide persona 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/plan-mode",
+      "file": "src/core/provider/plan-mode-provider.ts",
+      "provides": [
+        "planMode"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-plan-mode"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-plan-mode（bundled 等价插件，保留）；provide-unused：planMode（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/plans",
+      "file": "src/core/provider/plans-provider.ts",
+      "provides": [
+        "plans"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-plan-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/plan-mode"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide plans 有 1 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/plugin-registry",
+      "file": "src/core/provider/plugin-registry-provider.ts",
+      "provides": [
+        "pluginRegistry"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/components/PluginManager.tsx:get",
+        "src/core/provider/cli-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get",
+        "src/core/provider/ui-cordis-provider.ts:get",
+        "src/core/provider/ui-settings-plugin-inventory-provider.ts:get",
+        "src/core/provider/ui-settings-plugins-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/cli"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide pluginRegistry 有 7 处消费方，保留；另有 1 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/preset",
+      "file": "src/core/provider/preset-provider.ts",
+      "provides": [
+        "preset"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/pwsh-local",
+      "file": "src/core/provider/pwsh-local-provider.ts",
+      "provides": [
+        "pwshLocal"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/recovery",
+      "file": "src/core/provider/recovery-provider.ts",
+      "provides": [
+        "recovery"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide recovery 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/remote-client",
+      "file": "src/core/provider/remote-client-provider.ts",
+      "provides": [
+        "client"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/repeat-tool-reminder",
+      "file": "src/core/provider/repeat-tool-reminder-provider.ts",
+      "provides": [
+        "repeatToolReminder"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/guard-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-repeat-tool-reminder"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide repeatToolReminder 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/retry",
+      "file": "src/core/provider/retry-provider.ts",
+      "provides": [
+        "retry"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get",
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide retry 有 2 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/schedule",
+      "file": "src/core/provider/schedule-provider.ts",
+      "provides": [
+        "schedule"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-schedule"
+      ],
+      "sideEffects": [
+        "setInterval"
+      ],
+      "switchable": false,
+      "reason": "有副作用：setInterval；provide-unused：schedule（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/scope",
+      "file": "src/core/provider/scope-provider.ts",
+      "provides": [
+        "scope"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/sdk-client",
+      "file": "src/core/provider/sdk-client-provider.ts",
+      "provides": [
+        "sdkClient"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/cordis-client-runner"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide sdkClient 无消费方，但被 1 个插件 inject（@codem/cordis-client-runner），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/sdk-protocol",
+      "file": "src/core/provider/sdk-protocol-provider.ts",
+      "provides": [
+        "sdkProtocol"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/api-remotes-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-client-provider.ts:get",
+        "src/core/provider/subagent-dsh-sdk-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/api-remotes",
+        "@codem/remote-client",
+        "@codem/sdk-client",
+        "@codem/subagent-dsh-sdk"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide sdkProtocol 有 4 处消费方，保留；另有 4 个插件 inject"
+    },
+    {
+      "plugin": "@codem/security-mode",
+      "file": "src/core/provider/security-mode-provider.ts",
+      "provides": [
+        "securityMode"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/tool-gates.ts:ctx-prop",
+        "src/core/llm/tools.ts:ctx-prop",
+        "src/core/llm/tools/mcp-resources-tool.ts:ctx-prop",
+        "src/core/llm/tools/read-attachment.ts:ctx-prop",
+        "src/core/llm/tools/run-code.ts:ctx-prop",
+        "src/core/llm/workflow-engine.ts:ctx-prop"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide securityMode 有 6 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/session",
+      "file": "src/core/provider/session-provider.ts",
+      "provides": [
+        "session"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/provider/cli-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get",
+        "src/core/provider/session-log-export-provider.ts:get",
+        "src/core/provider/session-query-sqlite-provider.ts:get",
+        "src/core/provider/session-title-all-prompts-llm-provider.ts:get",
+        "src/core/provider/session-title-first-prompt-llm-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/cli",
+        "@codem/session-checkpoint",
+        "@codem/session-log-export",
+        "@codem/session-persistence-jsonl",
+        "@codem/session-persistence-sqlite",
+        "@codem/session-projection",
+        "@codem/session-query-sqlite",
+        "@codem/session-recovery",
+        "@codem/session-reference",
+        "@codem/session-stats",
+        "@codem/session-title-all-prompts-llm",
+        "@codem/session-title-first-prompt-llm",
+        "@codem/session-title-llm"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide session 有 9 处消费方，保留；另有 13 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/session-checkpoint",
+      "file": "src/core/provider/session-checkpoint-provider.ts",
+      "provides": [
+        "sessionCheckpoint"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/session-checkpoint-policy"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide sessionCheckpoint 无消费方，但被 1 个插件 inject（@codem/session-checkpoint-policy），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/session-checkpoint-policy",
+      "file": "src/core/provider/session-checkpoint-policy-provider.ts",
+      "provides": [
+        "sessionCheckpointPolicy"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-log-export",
+      "file": "src/core/provider/session-log-export-provider.ts",
+      "provides": [
+        "sessionLogExport"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session-log-export"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-session-log-export（bundled 等价插件，保留）；provide-unused：sessionLogExport（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/session-persistence-jsonl",
+      "file": "src/core/provider/session-persistence-jsonl-provider.ts",
+      "provides": [
+        "sessionPersistenceJSONL"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-persistence-sqlite",
+      "file": "src/core/provider/session-persistence-sqlite-provider.ts",
+      "provides": [
+        "sessionPersistence"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session-persistence-sqlite"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-session-persistence-sqlite（bundled 等价插件，保留）；provide-unused：sessionPersistence（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/session-projection",
+      "file": "src/core/provider/session-projection-provider.ts",
+      "provides": [
+        "sessionProjection"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/session-projection-cache"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide sessionProjection 无消费方，但被 1 个插件 inject（@codem/session-projection-cache），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/session-projection-cache",
+      "file": "src/core/provider/session-projection-cache-provider.ts",
+      "provides": [
+        "sessionProjectionCache"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-query-sqlite",
+      "file": "src/core/provider/session-query-sqlite-provider.ts",
+      "provides": [
+        "sessionQuerySqlite"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session-query-sqlite"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-session-query-sqlite（bundled 等价插件，保留）；provide-unused：sessionQuerySqlite（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/session-recovery",
+      "file": "src/core/provider/session-recovery-provider.ts",
+      "provides": [
+        "sessionRecovery"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "ctx.on"
+      ],
+      "switchable": false,
+      "reason": "有副作用：ctx.on；provide-unused：sessionRecovery（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/session-reference",
+      "file": "src/core/provider/session-reference-provider.ts",
+      "provides": [
+        "sessionReference"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-stats",
+      "file": "src/core/provider/session-stats-provider.ts",
+      "provides": [
+        "sessionStats"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-telemetry-otel",
+      "file": "src/core/provider/session-telemetry-otel-provider.ts",
+      "provides": [
+        "sessionTelemetryOtel"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session-telemetry-otel"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-session-telemetry-otel（bundled 等价插件，保留）；provide-unused：sessionTelemetryOtel（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/session-title-all-prompts-llm",
+      "file": "src/core/provider/session-title-all-prompts-llm-provider.ts",
+      "provides": [
+        "sessionTitleAllPrompts"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-title-first-prompt-llm",
+      "file": "src/core/provider/session-title-first-prompt-llm-provider.ts",
+      "provides": [
+        "sessionTitleFirstPrompt"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/session-title-llm",
+      "file": "src/core/provider/session-title-llm-provider.ts",
+      "provides": [
+        "sessionTitleLLM"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-session-title-llm"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-session-title-llm（bundled 等价插件，保留）；provide-unused：sessionTitleLLM（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/settings",
+      "file": "src/core/provider/settings-provider.ts",
+      "provides": [
+        "settings"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/dsh-compat/index.ts:get",
+        "src/core/llm/index.ts:_getOrFallback",
+        "src/core/llm/tools.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get",
+        "src/core/provider/ui-settings-general-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/context-info"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-settings-file"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide settings 有 8 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/shell-local",
+      "file": "src/core/provider/shell-provider.ts",
+      "provides": [
+        "shell"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/llm/tools.ts:get",
+        "src/core/provider/tmux-context-provider.ts:get",
+        "src/core/provider/tool-bash-persistent-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/pwsh-local",
+        "@codem/tmux-context",
+        "@codem/tool-bash-persistent"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-shell"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide shell 有 4 处消费方，保留；另有 3 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/shell-ops",
+      "file": "src/plugins/shell-ops/provider.ts",
+      "provides": [
+        "shellOps"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/tools.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide shellOps 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/skill",
+      "file": "src/core/provider/skill-provider.ts",
+      "provides": [
+        "skill"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [
+        "@codem/commands",
+        "@codem/skill-badge",
+        "@codem/skill-filesystem"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide skill 有 1 处消费方，保留；另有 3 个插件 inject"
+    },
+    {
+      "plugin": "@codem/skill-badge",
+      "file": "src/core/provider/skill-badge-provider.ts",
+      "provides": [
+        "skillBadge"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/skill-filesystem",
+      "file": "src/core/provider/skill-filesystem-provider.ts",
+      "provides": [
+        "skillFilesystem"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/slots",
+      "file": "src/core/slots/index.ts",
+      "provides": [
+        "slots"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-deliverables-provider.ts:get",
+        "src/core/provider/ui-goal-provider.ts:get",
+        "src/core/provider/ui-jobs-provider.ts:get",
+        "src/core/provider/ui-library-ops-provider.ts:get",
+        "src/core/provider/ui-model-selection-provider.ts:get",
+        "src/core/provider/ui-permission-presets-provider.ts:get",
+        "src/core/provider/ui-plan-provider.ts:get",
+        "src/core/provider/ui-slots-provider.ts:get",
+        "src/core/provider/ui-trajectory-provider.ts:get",
+        "src/core/slots/SlotBridge.tsx:get",
+        "src/core/slots/declare-slots.ts:get",
+        "src/core/ui-plugins/ui-conversation/index.ts:get",
+        "src/core/ui-plugins/ui-cordis/index.tsx:get",
+        "src/core/ui-plugins/ui-market/index.ts:get",
+        "src/core/ui-plugins/ui-misc/index.ts:get",
+        "src/core/ui-plugins/ui-panels/index.ts:get",
+        "src/core/ui-plugins/ui-settings/index.ts:get",
+        "src/core/ui-plugins/ui-sidebar/index.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/ui-attachment",
+        "@codem/ui-conversation",
+        "@codem/ui-cordis",
+        "@codem/ui-goal",
+        "@codem/ui-jobs",
+        "@codem/ui-layout",
+        "@codem/ui-library-ops",
+        "@codem/ui-market",
+        "@codem/ui-misc",
+        "@codem/ui-plan",
+        "@codem/ui-settings",
+        "@codem/ui-settings-general",
+        "@codem/ui-settings-models",
+        "@codem/ui-settings-plugin-inventory",
+        "@codem/ui-settings-plugins",
+        "@codem/ui-sidebar",
+        "@codem/ui-slots",
+        "@codem/ui-subagent",
+        "@codem/ui-tool",
+        "@codem/ui-user-questions",
+        "@codem/ui-workflow-run",
+        "@codem/ui-workspace"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "SlotsService 通过 super(ctx, 'slots') 自注册（App.tsx 直接 ctx.plugin 装配；YAML 里已注释）；无副作用；provide slots 有 18 处消费方，保留；另有 22 个插件 inject"
+    },
+    {
+      "plugin": "@codem/spill",
+      "file": "src/core/provider/spill-provider.ts",
+      "provides": [
+        "spill"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/spill-local",
+        "@codem/spill-policy"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide spill 无消费方，但被 2 个插件 inject（@codem/spill-local、@codem/spill-policy），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/spill-local",
+      "file": "src/core/provider/spill-local-provider.ts",
+      "provides": [
+        "spillLocal"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/spill-policy",
+      "file": "src/core/provider/spill-policy-provider.ts",
+      "provides": [
+        "spillPolicy"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/squad",
+      "file": "src/core/provider/squad-provider.ts",
+      "provides": [
+        "squad"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/squad-manager",
+      "file": "src/core/provider/squad-provider.ts",
+      "provides": [
+        "squadManager"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/storage",
+      "file": "src/core/provider/storage-provider.ts",
+      "provides": [
+        "storage"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/cli-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/storage-domain",
+        "@codem/storage-json"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide storage 有 3 处消费方，保留；另有 2 个插件 inject；core"
+    },
+    {
+      "plugin": "@codem/storage-domain",
+      "file": "src/core/provider/storage-domain-provider.ts",
+      "provides": [
+        "storageDomain"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/storage-json",
+      "file": "src/core/provider/storage-json-provider.ts",
+      "provides": [
+        "storageJson"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/store",
+      "file": "src/core/provider/store-provider.ts",
+      "provides": [
+        "appStore",
+        "projectStore"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-workspace-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide appStore、projectStore 有 1 处消费方，保留；core"
+    },
+    {
+      "plugin": "@codem/streaming-executor",
+      "file": "src/core/provider/streaming-executor-provider.ts",
+      "provides": [
+        "streamingExecutor"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent",
+      "file": "src/core/provider/subagent-provider.ts",
+      "provides": [
+        "subagent"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/subagent-acp-provider.ts:get",
+        "src/core/provider/subagent-claude-code-provider.ts:get",
+        "src/core/provider/subagent-codex-provider.ts:get",
+        "src/core/provider/subagent-dsh-sdk-provider.ts:get",
+        "src/core/provider/subagent-in-process-driver-provider.ts:get",
+        "src/core/provider/tool-subagent-report-provider.ts:get",
+        "src/core/provider/ui-subagent-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/subagent-acp",
+        "@codem/subagent-claude-code",
+        "@codem/subagent-codex",
+        "@codem/subagent-control",
+        "@codem/subagent-dsh-sdk",
+        "@codem/subagent-fork-in-process",
+        "@codem/subagent-in-process-driver",
+        "@codem/subagent-spawn-in-process",
+        "@codem/tool-subagent-report"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide subagent 有 7 处消费方，保留；另有 9 个插件 inject"
+    },
+    {
+      "plugin": "@codem/subagent-acp",
+      "file": "src/core/provider/subagent-acp-provider.ts",
+      "provides": [
+        "subagentAcp"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-claude-code",
+      "file": "src/core/provider/subagent-claude-code-provider.ts",
+      "provides": [
+        "subagentClaudeCode"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-codex",
+      "file": "src/core/provider/subagent-codex-provider.ts",
+      "provides": [
+        "subagentCodex"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-control",
+      "file": "src/core/provider/tool-subagent-control-provider.ts",
+      "provides": [
+        "subagentControl"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "manager.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：manager.register；provide-unused：subagentControl（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/subagent-dsh-sdk",
+      "file": "src/core/provider/subagent-dsh-sdk-provider.ts",
+      "provides": [
+        "subagentDshSdk"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-fork-in-process",
+      "file": "src/core/provider/subagent-fork-in-process-provider.ts",
+      "provides": [
+        "subagentForkInProcess"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-in-process-driver",
+      "file": "src/core/provider/subagent-in-process-driver-provider.ts",
+      "provides": [
+        "subagentInProcessDriver"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subagent-spawn-in-process",
+      "file": "src/core/provider/subagent-spawn-in-process-provider.ts",
+      "provides": [
+        "subagentSpawnInProcess"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subprocess",
+      "file": "src/core/provider/subprocess-provider.ts",
+      "provides": [
+        "subprocess"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/subprocess-e2b",
+        "@codem/subprocess-local"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide subprocess 无消费方，但被 2 个插件 inject（@codem/subprocess-e2b、@codem/subprocess-local），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/subprocess-e2b",
+      "file": "src/core/provider/subprocess-e2b-provider.ts",
+      "provides": [
+        "subprocessE2b"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/subprocess-local",
+      "file": "src/core/provider/subprocess-local-provider.ts",
+      "provides": [
+        "subprocessLocal"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/system-prompt",
+      "file": "src/core/provider/system-prompt-provider.ts",
+      "provides": [
+        "systemPrompt"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/index.ts:get",
+        "src/core/provider/time-context-provider.ts:get",
+        "src/core/provider/tools-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide systemPrompt 有 3 处消费方，保留；core"
+    },
+    {
+      "plugin": "@codem/telemetry",
+      "file": "src/core/provider/telemetry-provider.ts",
+      "provides": [
+        "telemetry"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get",
+        "src/core/provider/session-telemetry-otel-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/session-telemetry-otel"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide telemetry 有 2 处消费方，保留；另有 1 个插件 inject"
+    },
+    {
+      "plugin": "@codem/theme",
+      "file": "src/core/provider/theme-provider.ts",
+      "provides": [
+        "theme"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/time-context",
+      "file": "src/core/provider/time-context-provider.ts",
+      "provides": [
+        "timeContext"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-time-context"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-time-context（bundled 等价插件，保留）；provide-unused：timeContext（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/timeout-guard",
+      "file": "src/core/provider/timeout-guard-provider.ts",
+      "provides": [
+        "timeoutGuard"
+      ],
+      "kind": "inject-dependency",
+      "consumers": [],
+      "injectDependents": [
+        "@codem/tool-call-timeout-policy"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "provide timeoutGuard 无消费方，但被 1 个插件 inject（@codem/tool-call-timeout-policy），依赖就绪需要它"
+    },
+    {
+      "plugin": "@codem/tmux-context",
+      "file": "src/core/provider/tmux-context-provider.ts",
+      "provides": [
+        "tmuxContext"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/token-meter",
+      "file": "src/core/provider/token-meter-provider.ts",
+      "provides": [
+        "tokenMeter"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-token-meter"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-token-meter（bundled 等价插件，保留）；provide-unused：tokenMeter（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-bash-persistent",
+      "file": "src/core/provider/tool-bash-persistent-provider.ts",
+      "provides": [
+        "toolBashPersistent"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-bash"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-tool-bash（bundled 等价插件，保留）；provide-unused：toolBashPersistent（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-call-timeout-policy",
+      "file": "src/core/provider/tool-call-timeout-policy-provider.ts",
+      "provides": [
+        "toolCallTimeoutPolicy"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-call-timeout-policy"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-tool-call-timeout-policy（bundled 等价插件，保留）；provide-unused：toolCallTimeoutPolicy（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-fs-search",
+      "file": "src/core/provider/tool-fs-search-provider.ts",
+      "provides": [
+        "toolFsSearch"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-fs-search"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-tool-fs-search（bundled 等价插件，保留）；provide-unused：toolFsSearch（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-jobs",
+      "file": "src/core/provider/tool-jobs-provider.ts",
+      "provides": [
+        "toolJobs"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-jobs"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-tool-jobs（bundled 等价插件，保留）；provide-unused：toolJobs（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-ralph",
+      "file": "src/core/provider/tool-ralph-provider.ts",
+      "provides": [
+        "toolRalph"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/tool-render",
+      "file": "src/core/provider/tool-render-provider.ts",
+      "provides": [
+        "toolRender"
+      ],
+      "kind": "registration",
+      "consumers": [
+        "src/core/llm/index.ts:_getOrFallback"
+      ],
+      "injectDependents": [
+        "@codem/agent-tool-presentation"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [
+        "registry.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：registry.register；provide-consumed：toolRender"
+    },
+    {
+      "plugin": "@codem/tool-str-replace-editor",
+      "file": "src/core/provider/tool-str-replace-editor-provider.ts",
+      "provides": [
+        "toolStrReplaceEditor"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tool-str-replace-editor"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-tool-str-replace-editor（bundled 等价插件，保留）；provide-unused：toolStrReplaceEditor（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/tool-subagent-report",
+      "file": "src/core/provider/tool-subagent-report-provider.ts",
+      "provides": [
+        "toolSubagentReport"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/tools",
+      "file": "src/core/provider/tools-provider.ts",
+      "provides": [
+        "tools"
+      ],
+      "kind": "registration",
+      "consumers": [
+        "src/core/consumer/index.ts:get",
+        "src/core/consumer/index.ts:getServiceAsync",
+        "src/core/dsh-compat/index.ts:dsh-alias",
+        "src/core/provider/cli-provider.ts:get",
+        "src/core/provider/host-webserver-provider.ts:get",
+        "src/core/provider/sdk-protocol-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/agent-loop",
+        "@codem/cli",
+        "@codem/tool-fs-search",
+        "@codem/tool-jobs",
+        "@codem/tool-ralph",
+        "@codem/tool-str-replace-editor"
+      ],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-tools"
+      ],
+      "sideEffects": [
+        "registry.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：registry.register；provide-consumed：tools；core"
+    },
+    {
+      "plugin": "@codem/transcript-cache",
+      "file": "src/core/provider/transcript-cache-provider.ts",
+      "provides": [
+        "transcriptCache"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide transcriptCache 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/typert-generator",
+      "file": "src/core/provider/typert-generator-provider.ts",
+      "provides": [
+        "typertGenerator"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/typert-loader",
+      "file": "src/core/provider/typert-loader-provider.ts",
+      "provides": [
+        "typertLoader"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/typert-protocol",
+      "file": "src/core/provider/typert-protocol-provider.ts",
+      "provides": [
+        "typertProtocol"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/typert-registry",
+      "file": "src/core/provider/typert-registry-provider.ts",
+      "provides": [
+        "typertRegistry"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "registry.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：registry.register；provide-unused：typertRegistry（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-attachment",
+      "file": "src/core/provider/ui-attachment-provider.ts",
+      "provides": [
+        "uiAttachment"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-conversation",
+      "file": "src/core/ui-plugins/ui-conversation/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；注册表声明 UI 槽位 app.conversation"
+    },
+    {
+      "plugin": "@codem/ui-cordis",
+      "file": "src/core/provider/ui-cordis-provider.ts",
+      "provides": [
+        "uiCordis"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-deliverables",
+      "file": "src/core/provider/ui-deliverables-provider.ts",
+      "provides": [
+        "uiDeliverables"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "service.register",
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：service.register、slots.register；provide-unused：uiDeliverables（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-directory-picker",
+      "file": "src/core/provider/ui-directory-picker-provider.ts",
+      "provides": [
+        "uiDirectoryPicker"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-game",
+      "file": "src/core/provider/ui-game-provider.ts",
+      "provides": [],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；本插件不 provide 任何服务；core"
+    },
+    {
+      "plugin": "@codem/ui-goal",
+      "file": "src/core/provider/ui-goal-provider.ts",
+      "provides": [
+        "uiGoal"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiGoal（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-jobs",
+      "file": "src/core/provider/ui-jobs-provider.ts",
+      "provides": [
+        "uiJobs"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiJobs（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-layout",
+      "file": "src/core/provider/ui-layout-provider.ts",
+      "provides": [
+        "uiLayout"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-library-ops",
+      "file": "src/core/provider/ui-library-ops-provider.ts",
+      "provides": [
+        "uiLibraryOps"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiLibraryOps（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-market",
+      "file": "src/core/ui-plugins/ui-market/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；注册表声明 UI 槽位 app.mcp-manager、app.plugin-manager、app.skill-manager"
+    },
+    {
+      "plugin": "@codem/ui-message-feedback",
+      "file": "src/core/provider/ui-message-feedback-provider.ts",
+      "provides": [
+        "uiMessageFeedback"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-misc",
+      "file": "src/core/ui-plugins/ui-misc/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；注册表声明 UI 槽位 app.monitor、app.overlay"
+    },
+    {
+      "plugin": "@codem/ui-model-selection",
+      "file": "src/core/provider/ui-model-selection-provider.ts",
+      "provides": [
+        "uiModelSelection"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-permission-presets",
+      "file": "src/core/provider/ui-permission-presets-provider.ts",
+      "provides": [
+        "uiPermissionPresets"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiPermissionPresets（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-pet",
+      "file": "src/core/provider/ui-pet-provider.ts",
+      "provides": [
+        "pet"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/App.tsx:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide pet 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/ui-plan",
+      "file": "src/core/provider/ui-plan-provider.ts",
+      "provides": [
+        "uiPlan"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiPlan（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/ui-settings",
+      "file": "src/core/ui-plugins/ui-settings/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；注册表声明 UI 槽位 app.settings"
+    },
+    {
+      "plugin": "@codem/ui-settings-general",
+      "file": "src/core/provider/ui-settings-general-provider.ts",
+      "provides": [
+        "uiSettingsGeneral"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-settings-models",
+      "file": "src/core/provider/ui-settings-models-provider.ts",
+      "provides": [
+        "uiSettingsModels"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-settings-plugin-inventory",
+      "file": "src/core/provider/ui-settings-plugin-inventory-provider.ts",
+      "provides": [
+        "uiSettingsPluginInventory"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-settings-plugins",
+      "file": "src/core/provider/ui-settings-plugins-provider.ts",
+      "provides": [
+        "uiSettingsPlugins"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-sidebar",
+      "file": "src/core/ui-plugins/ui-sidebar/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；注册表声明 UI 槽位 app.sidebar"
+    },
+    {
+      "plugin": "@codem/ui-skin-default",
+      "file": "src/core/ui-plugins/ui-skin-default/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "dom-mutation"
+      ],
+      "switchable": false,
+      "reason": "有副作用：dom-mutation"
+    },
+    {
+      "plugin": "@codem/ui-skin-pet",
+      "file": "src/core/ui-plugins/ui-skin-pet/index.ts",
+      "provides": [],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；本插件不 provide 任何服务；core"
+    },
+    {
+      "plugin": "@codem/ui-slots",
+      "file": "src/core/provider/ui-slots-provider.ts",
+      "provides": [
+        "uiSlots"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：slots.register；provide-unused：uiSlots（无消费方、无 inject，可评估下线该 provide）；core"
+    },
+    {
+      "plugin": "@codem/ui-subagent",
+      "file": "src/core/provider/ui-subagent-provider.ts",
+      "provides": [
+        "uiSubagent"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-theme",
+      "file": "src/core/ui-plugins/ui-theme/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "dom-mutation"
+      ],
+      "switchable": false,
+      "reason": "有副作用：dom-mutation"
+    },
+    {
+      "plugin": "@codem/ui-tool",
+      "file": "src/core/ui-plugins/ui-tool/index.ts",
+      "provides": [],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "注册表声明 UI 槽位 conversation.details.tool"
+    },
+    {
+      "plugin": "@codem/ui-trajectory",
+      "file": "src/core/provider/ui-trajectory-provider.ts",
+      "provides": [
+        "uiTrajectory"
+      ],
+      "kind": "registration",
+      "consumers": [
+        "src/components/TrajectoryPanel.tsx:get",
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [
+        "setInterval",
+        "slots.register"
+      ],
+      "switchable": false,
+      "reason": "有副作用：setInterval、slots.register；provide-consumed：uiTrajectory"
+    },
+    {
+      "plugin": "@codem/ui-user-questions",
+      "file": "src/core/provider/ui-user-questions-provider.ts",
+      "provides": [
+        "uiUserQuestions"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-workflow-run",
+      "file": "src/core/provider/ui-workflow-run-provider.ts",
+      "provides": [
+        "uiWorkflowRun"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/ui-workspace",
+      "file": "src/core/provider/ui-workspace-provider.ts",
+      "provides": [
+        "uiWorkspace"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/user-approval",
+      "file": "src/core/provider/user-approval-provider.ts",
+      "provides": [
+        "userApproval"
+      ],
+      "kind": "registration",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [
+        "@deepseek-ai/dsh-user-approval"
+      ],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无代码副作用，但存在市场锚 @deepseek-ai/dsh-user-approval（bundled 等价插件，保留）；provide-unused：userApproval（无消费方、无 inject，可评估下线该 provide）"
+    },
+    {
+      "plugin": "@codem/user-questions",
+      "file": "src/core/provider/user-questions-provider.ts",
+      "provides": [
+        "userQuestions"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/ui-user-questions-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide userQuestions 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/vision-proxy",
+      "file": "src/core/provider/vision-proxy-provider.ts",
+      "provides": [
+        "visionProxy"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/llm/agentic-loop.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide visionProxy 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/web-fetch-http",
+      "file": "src/core/provider/web-fetch-http-provider.ts",
+      "provides": [
+        "webFetchHttp"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/web-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide webFetchHttp 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/web-search",
+      "file": "src/core/provider/web-provider.ts",
+      "provides": [
+        "web"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/web-search-exa-provider.ts:get",
+        "src/core/provider/web-search-perplexity-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/web-fetch-http",
+        "@codem/web-search-exa",
+        "@codem/web-search-mimo",
+        "@codem/web-search-perplexity"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide web 有 2 处消费方，保留；另有 4 个插件 inject"
+    },
+    {
+      "plugin": "@codem/web-search-exa",
+      "file": "src/core/provider/web-search-exa-provider.ts",
+      "provides": [
+        "webSearchExa"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/web-search-mimo",
+      "file": "src/core/provider/web-search-mimo-provider.ts",
+      "provides": [
+        "webSearchMimo"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/web-provider.ts:get"
+      ],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide webSearchMimo 有 1 处消费方，保留"
+    },
+    {
+      "plugin": "@codem/web-search-perplexity",
+      "file": "src/core/provider/web-search-perplexity-provider.ts",
+      "provides": [
+        "webSearchPerplexity"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/wechat-bridge",
+      "file": "src/core/provider/wechat-bridge-provider.ts",
+      "provides": [
+        "wechatBridge"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    },
+    {
+      "plugin": "@codem/workflow",
+      "file": "src/core/provider/workflow-provider.ts",
+      "provides": [
+        "workflow"
+      ],
+      "kind": "service",
+      "consumers": [
+        "src/core/provider/tool-ralph-provider.ts:get",
+        "src/core/provider/ui-workflow-run-provider.ts:get"
+      ],
+      "injectDependents": [
+        "@codem/tool-ralph",
+        "@codem/workflow-worker-thread"
+      ],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用；provide workflow 有 2 处消费方，保留；另有 2 个插件 inject"
+    },
+    {
+      "plugin": "@codem/workflow-worker-thread",
+      "file": "src/core/provider/workflow-worker-thread-provider.ts",
+      "provides": [
+        "workflowWorkerThread"
+      ],
+      "kind": "wrapper",
+      "consumers": [],
+      "injectDependents": [],
+      "marketAnchors": [],
+      "sideEffects": [],
+      "switchable": false,
+      "reason": "无副作用、无消费方、无插件 inject、无市场锚：纯包装/死代码候选（人工确认）；core"
+    }
+  ],
+  "duplicates": {},
+  "registryDrift": [],
+  "orphanMarketAnchors": [],
+  "summary": {
+    "total": 199,
+    "kinds": {
+      "registration": 53,
+      "service": 53,
+      "inject-dependency": 14,
+      "wrapper": 78,
+      "dynamic": 1
+    },
+    "wrappers": [
+      {
+        "plugin": "@codem/agent-default-model",
+        "file": "src/core/provider/agent-default-model-provider.ts",
+        "provides": [
+          "agentDefaultModel"
+        ]
+      },
+      {
+        "plugin": "@codem/agent-teams",
+        "file": "src/core/provider/agent-teams-provider.ts",
+        "provides": [
+          "agentTeams"
+        ]
+      },
+      {
+        "plugin": "@codem/agent-tool-presentation",
+        "file": "src/core/provider/agent-tool-presentation-provider.ts",
+        "provides": [
+          "agentToolPresentation"
+        ]
+      },
+      {
+        "plugin": "@codem/api-gateway",
+        "file": "src/core/provider/api-gateway-provider.ts",
+        "provides": [
+          "apiGateway"
+        ]
+      },
+      {
+        "plugin": "@codem/api-remotes",
+        "file": "src/core/provider/api-remotes-provider.ts",
+        "provides": [
+          "apiRemotes"
+        ]
+      },
+      {
+        "plugin": "@codem/atomic-write",
+        "file": "src/core/provider/atomic-write-provider.ts",
+        "provides": [
+          "atomicWrite"
+        ]
+      },
+      {
+        "plugin": "@codem/code-runtime-worker-thread",
+        "file": "src/core/provider/code-runtime-worker-thread-provider.ts",
+        "provides": [
+          "codeRuntimeWorkerThread"
+        ]
+      },
+      {
+        "plugin": "@codem/command-compact",
+        "file": "src/core/provider/command-compact-provider.ts",
+        "provides": [
+          "commandCompact"
+        ]
+      },
+      {
+        "plugin": "@codem/command-feedback",
+        "file": "src/core/provider/command-feedback-provider.ts",
+        "provides": [
+          "commandFeedback"
+        ]
+      },
+      {
+        "plugin": "@codem/command-goal",
+        "file": "src/core/provider/command-goal-provider.ts",
+        "provides": [
+          "commandGoal"
+        ]
+      },
+      {
+        "plugin": "@codem/computer-use",
+        "file": "src/core/provider/computer-use-provider.ts",
+        "provides": [
+          "computerUse"
+        ]
+      },
+      {
+        "plugin": "@codem/context-info",
+        "file": "src/core/provider/context-info-provider.ts",
+        "provides": [
+          "contextInfo"
+        ]
+      },
+      {
+        "plugin": "@codem/cordis-client-runner",
+        "file": "src/core/provider/cordis-client-runner-provider.ts",
+        "provides": [
+          "cordisClientRunner"
+        ]
+      },
+      {
+        "plugin": "@codem/cordis-host-runner",
+        "file": "src/core/provider/cordis-host-runner-provider.ts",
+        "provides": [
+          "cordisHostRunner"
+        ]
+      },
+      {
+        "plugin": "@codem/fs-e2b",
+        "file": "src/core/provider/fs-e2b-provider.ts",
+        "provides": [
+          "fsE2b"
+        ]
+      },
+      {
+        "plugin": "@codem/host-apiproxy",
+        "file": "src/core/provider/host-apiproxy-provider.ts",
+        "provides": [
+          "hostApiproxy"
+        ]
+      },
+      {
+        "plugin": "@codem/host-frontend-static",
+        "file": "src/core/provider/host-frontend-static-provider.ts",
+        "provides": [
+          "hostFrontendStatic"
+        ]
+      },
+      {
+        "plugin": "@codem/identity",
+        "file": "src/core/provider/identity-provider.ts",
+        "provides": [
+          "identity"
+        ]
+      },
+      {
+        "plugin": "@codem/issue",
+        "file": "src/core/provider/issue-provider.ts",
+        "provides": [
+          "issue"
+        ]
+      },
+      {
+        "plugin": "@codem/lsp-stdio",
+        "file": "src/core/provider/lsp-stdio-provider.ts",
+        "provides": [
+          "lspStdio"
+        ]
+      },
+      {
+        "plugin": "@codem/notebook",
+        "file": "src/core/provider/notebook-provider.ts",
+        "provides": [
+          "notebook"
+        ]
+      },
+      {
+        "plugin": "@codem/permissions",
+        "file": "src/core/provider/permissions-provider.ts",
+        "provides": [
+          "permissions"
+        ]
+      },
+      {
+        "plugin": "@codem/preset",
+        "file": "src/core/provider/preset-provider.ts",
+        "provides": [
+          "preset"
+        ]
+      },
+      {
+        "plugin": "@codem/pwsh-local",
+        "file": "src/core/provider/pwsh-local-provider.ts",
+        "provides": [
+          "pwshLocal"
+        ]
+      },
+      {
+        "plugin": "@codem/remote-client",
+        "file": "src/core/provider/remote-client-provider.ts",
+        "provides": [
+          "client"
+        ]
+      },
+      {
+        "plugin": "@codem/scope",
+        "file": "src/core/provider/scope-provider.ts",
+        "provides": [
+          "scope"
+        ]
+      },
+      {
+        "plugin": "@codem/session-checkpoint-policy",
+        "file": "src/core/provider/session-checkpoint-policy-provider.ts",
+        "provides": [
+          "sessionCheckpointPolicy"
+        ]
+      },
+      {
+        "plugin": "@codem/session-persistence-jsonl",
+        "file": "src/core/provider/session-persistence-jsonl-provider.ts",
+        "provides": [
+          "sessionPersistenceJSONL"
+        ]
+      },
+      {
+        "plugin": "@codem/session-projection-cache",
+        "file": "src/core/provider/session-projection-cache-provider.ts",
+        "provides": [
+          "sessionProjectionCache"
+        ]
+      },
+      {
+        "plugin": "@codem/session-reference",
+        "file": "src/core/provider/session-reference-provider.ts",
+        "provides": [
+          "sessionReference"
+        ]
+      },
+      {
+        "plugin": "@codem/session-stats",
+        "file": "src/core/provider/session-stats-provider.ts",
+        "provides": [
+          "sessionStats"
+        ]
+      },
+      {
+        "plugin": "@codem/session-title-all-prompts-llm",
+        "file": "src/core/provider/session-title-all-prompts-llm-provider.ts",
+        "provides": [
+          "sessionTitleAllPrompts"
+        ]
+      },
+      {
+        "plugin": "@codem/session-title-first-prompt-llm",
+        "file": "src/core/provider/session-title-first-prompt-llm-provider.ts",
+        "provides": [
+          "sessionTitleFirstPrompt"
+        ]
+      },
+      {
+        "plugin": "@codem/skill-badge",
+        "file": "src/core/provider/skill-badge-provider.ts",
+        "provides": [
+          "skillBadge"
+        ]
+      },
+      {
+        "plugin": "@codem/skill-filesystem",
+        "file": "src/core/provider/skill-filesystem-provider.ts",
+        "provides": [
+          "skillFilesystem"
+        ]
+      },
+      {
+        "plugin": "@codem/spill-local",
+        "file": "src/core/provider/spill-local-provider.ts",
+        "provides": [
+          "spillLocal"
+        ]
+      },
+      {
+        "plugin": "@codem/spill-policy",
+        "file": "src/core/provider/spill-policy-provider.ts",
+        "provides": [
+          "spillPolicy"
+        ]
+      },
+      {
+        "plugin": "@codem/squad",
+        "file": "src/core/provider/squad-provider.ts",
+        "provides": [
+          "squad"
+        ]
+      },
+      {
+        "plugin": "@codem/squad-manager",
+        "file": "src/core/provider/squad-provider.ts",
+        "provides": [
+          "squadManager"
+        ]
+      },
+      {
+        "plugin": "@codem/storage-domain",
+        "file": "src/core/provider/storage-domain-provider.ts",
+        "provides": [
+          "storageDomain"
+        ]
+      },
+      {
+        "plugin": "@codem/storage-json",
+        "file": "src/core/provider/storage-json-provider.ts",
+        "provides": [
+          "storageJson"
+        ]
+      },
+      {
+        "plugin": "@codem/streaming-executor",
+        "file": "src/core/provider/streaming-executor-provider.ts",
+        "provides": [
+          "streamingExecutor"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-acp",
+        "file": "src/core/provider/subagent-acp-provider.ts",
+        "provides": [
+          "subagentAcp"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-claude-code",
+        "file": "src/core/provider/subagent-claude-code-provider.ts",
+        "provides": [
+          "subagentClaudeCode"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-codex",
+        "file": "src/core/provider/subagent-codex-provider.ts",
+        "provides": [
+          "subagentCodex"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-dsh-sdk",
+        "file": "src/core/provider/subagent-dsh-sdk-provider.ts",
+        "provides": [
+          "subagentDshSdk"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-fork-in-process",
+        "file": "src/core/provider/subagent-fork-in-process-provider.ts",
+        "provides": [
+          "subagentForkInProcess"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-in-process-driver",
+        "file": "src/core/provider/subagent-in-process-driver-provider.ts",
+        "provides": [
+          "subagentInProcessDriver"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-spawn-in-process",
+        "file": "src/core/provider/subagent-spawn-in-process-provider.ts",
+        "provides": [
+          "subagentSpawnInProcess"
+        ]
+      },
+      {
+        "plugin": "@codem/subprocess-e2b",
+        "file": "src/core/provider/subprocess-e2b-provider.ts",
+        "provides": [
+          "subprocessE2b"
+        ]
+      },
+      {
+        "plugin": "@codem/subprocess-local",
+        "file": "src/core/provider/subprocess-local-provider.ts",
+        "provides": [
+          "subprocessLocal"
+        ]
+      },
+      {
+        "plugin": "@codem/theme",
+        "file": "src/core/provider/theme-provider.ts",
+        "provides": [
+          "theme"
+        ]
+      },
+      {
+        "plugin": "@codem/tmux-context",
+        "file": "src/core/provider/tmux-context-provider.ts",
+        "provides": [
+          "tmuxContext"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-ralph",
+        "file": "src/core/provider/tool-ralph-provider.ts",
+        "provides": [
+          "toolRalph"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-subagent-report",
+        "file": "src/core/provider/tool-subagent-report-provider.ts",
+        "provides": [
+          "toolSubagentReport"
+        ]
+      },
+      {
+        "plugin": "@codem/typert-generator",
+        "file": "src/core/provider/typert-generator-provider.ts",
+        "provides": [
+          "typertGenerator"
+        ]
+      },
+      {
+        "plugin": "@codem/typert-loader",
+        "file": "src/core/provider/typert-loader-provider.ts",
+        "provides": [
+          "typertLoader"
+        ]
+      },
+      {
+        "plugin": "@codem/typert-protocol",
+        "file": "src/core/provider/typert-protocol-provider.ts",
+        "provides": [
+          "typertProtocol"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-attachment",
+        "file": "src/core/provider/ui-attachment-provider.ts",
+        "provides": [
+          "uiAttachment"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-cordis",
+        "file": "src/core/provider/ui-cordis-provider.ts",
+        "provides": [
+          "uiCordis"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-directory-picker",
+        "file": "src/core/provider/ui-directory-picker-provider.ts",
+        "provides": [
+          "uiDirectoryPicker"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-game",
+        "file": "src/core/provider/ui-game-provider.ts",
+        "provides": []
+      },
+      {
+        "plugin": "@codem/ui-layout",
+        "file": "src/core/provider/ui-layout-provider.ts",
+        "provides": [
+          "uiLayout"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-message-feedback",
+        "file": "src/core/provider/ui-message-feedback-provider.ts",
+        "provides": [
+          "uiMessageFeedback"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-model-selection",
+        "file": "src/core/provider/ui-model-selection-provider.ts",
+        "provides": [
+          "uiModelSelection"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-settings-general",
+        "file": "src/core/provider/ui-settings-general-provider.ts",
+        "provides": [
+          "uiSettingsGeneral"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-settings-models",
+        "file": "src/core/provider/ui-settings-models-provider.ts",
+        "provides": [
+          "uiSettingsModels"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-settings-plugin-inventory",
+        "file": "src/core/provider/ui-settings-plugin-inventory-provider.ts",
+        "provides": [
+          "uiSettingsPluginInventory"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-settings-plugins",
+        "file": "src/core/provider/ui-settings-plugins-provider.ts",
+        "provides": [
+          "uiSettingsPlugins"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-skin-pet",
+        "file": "src/core/ui-plugins/ui-skin-pet/index.ts",
+        "provides": []
+      },
+      {
+        "plugin": "@codem/ui-subagent",
+        "file": "src/core/provider/ui-subagent-provider.ts",
+        "provides": [
+          "uiSubagent"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-user-questions",
+        "file": "src/core/provider/ui-user-questions-provider.ts",
+        "provides": [
+          "uiUserQuestions"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-workflow-run",
+        "file": "src/core/provider/ui-workflow-run-provider.ts",
+        "provides": [
+          "uiWorkflowRun"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-workspace",
+        "file": "src/core/provider/ui-workspace-provider.ts",
+        "provides": [
+          "uiWorkspace"
+        ]
+      },
+      {
+        "plugin": "@codem/web-search-exa",
+        "file": "src/core/provider/web-search-exa-provider.ts",
+        "provides": [
+          "webSearchExa"
+        ]
+      },
+      {
+        "plugin": "@codem/web-search-perplexity",
+        "file": "src/core/provider/web-search-perplexity-provider.ts",
+        "provides": [
+          "webSearchPerplexity"
+        ]
+      },
+      {
+        "plugin": "@codem/wechat-bridge",
+        "file": "src/core/provider/wechat-bridge-provider.ts",
+        "provides": [
+          "wechatBridge"
+        ]
+      },
+      {
+        "plugin": "@codem/workflow-worker-thread",
+        "file": "src/core/provider/workflow-worker-thread-provider.ts",
+        "provides": [
+          "workflowWorkerThread"
+        ]
+      }
+    ],
+    "unclassified": [
+      {
+        "plugin": "@codem/app-bootstrap",
+        "file": "src/App.tsx",
+        "provides": [
+          "llmEngine"
+        ]
+      },
+      {
+        "plugin": "@codem/slots",
+        "file": "src/core/slots/index.ts",
+        "provides": [
+          "slots"
+        ]
+      }
+    ],
+    "registrationProvideUnused": [
+      {
+        "plugin": "@codem/agent",
+        "provides": [
+          "agentManager"
+        ]
+      },
+      {
+        "plugin": "@codem/cli",
+        "provides": [
+          "cli"
+        ]
+      },
+      {
+        "plugin": "@codem/compaction-tool-result-pruner",
+        "provides": [
+          "compactionToolResultPruner"
+        ]
+      },
+      {
+        "plugin": "@codem/dsh-compat",
+        "provides": [
+          "dshCredentials",
+          "dshEvents",
+          "dshFs",
+          "dshLlm",
+          "dshSessions",
+          "dshShell",
+          "dshTools"
+        ]
+      },
+      {
+        "plugin": "@codem/fs-observation-policy",
+        "provides": [
+          "fsObservationPolicy"
+        ]
+      },
+      {
+        "plugin": "@codem/hooks",
+        "provides": [
+          "hooks"
+        ]
+      },
+      {
+        "plugin": "@codem/host-plugin-inventory",
+        "provides": [
+          "hostPluginInventory"
+        ]
+      },
+      {
+        "plugin": "@codem/invariants-guard",
+        "provides": [
+          "invariantsGuard"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-claude",
+        "provides": [
+          "llmClaude"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-deepseek",
+        "provides": [
+          "llmDeepseek"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-gemini",
+        "provides": [
+          "llmGemini"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-mimo",
+        "provides": [
+          "llmMimo"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-ollama",
+        "provides": [
+          "llmOllama"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-openai",
+        "provides": [
+          "llmOpenAI"
+        ]
+      },
+      {
+        "plugin": "@codem/llm-pi-ai",
+        "provides": [
+          "llmPiAi"
+        ]
+      },
+      {
+        "plugin": "@codem/plan-mode",
+        "provides": [
+          "planMode"
+        ]
+      },
+      {
+        "plugin": "@codem/schedule",
+        "provides": [
+          "schedule"
+        ]
+      },
+      {
+        "plugin": "@codem/session-log-export",
+        "provides": [
+          "sessionLogExport"
+        ]
+      },
+      {
+        "plugin": "@codem/session-persistence-sqlite",
+        "provides": [
+          "sessionPersistence"
+        ]
+      },
+      {
+        "plugin": "@codem/session-query-sqlite",
+        "provides": [
+          "sessionQuerySqlite"
+        ]
+      },
+      {
+        "plugin": "@codem/session-recovery",
+        "provides": [
+          "sessionRecovery"
+        ]
+      },
+      {
+        "plugin": "@codem/session-telemetry-otel",
+        "provides": [
+          "sessionTelemetryOtel"
+        ]
+      },
+      {
+        "plugin": "@codem/session-title-llm",
+        "provides": [
+          "sessionTitleLLM"
+        ]
+      },
+      {
+        "plugin": "@codem/subagent-control",
+        "provides": [
+          "subagentControl"
+        ]
+      },
+      {
+        "plugin": "@codem/time-context",
+        "provides": [
+          "timeContext"
+        ]
+      },
+      {
+        "plugin": "@codem/token-meter",
+        "provides": [
+          "tokenMeter"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-bash-persistent",
+        "provides": [
+          "toolBashPersistent"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-call-timeout-policy",
+        "provides": [
+          "toolCallTimeoutPolicy"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-fs-search",
+        "provides": [
+          "toolFsSearch"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-jobs",
+        "provides": [
+          "toolJobs"
+        ]
+      },
+      {
+        "plugin": "@codem/tool-str-replace-editor",
+        "provides": [
+          "toolStrReplaceEditor"
+        ]
+      },
+      {
+        "plugin": "@codem/typert-registry",
+        "provides": [
+          "typertRegistry"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-deliverables",
+        "provides": [
+          "uiDeliverables"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-goal",
+        "provides": [
+          "uiGoal"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-jobs",
+        "provides": [
+          "uiJobs"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-library-ops",
+        "provides": [
+          "uiLibraryOps"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-permission-presets",
+        "provides": [
+          "uiPermissionPresets"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-plan",
+        "provides": [
+          "uiPlan"
+        ]
+      },
+      {
+        "plugin": "@codem/ui-slots",
+        "provides": [
+          "uiSlots"
+        ]
+      },
+      {
+        "plugin": "@codem/user-approval",
+        "provides": [
+          "userApproval"
+        ]
+      }
+    ],
+    "dynamic": [
+      "@codem/dynamic-runner"
+    ],
+    "duplicates": 0,
+    "unresolvedPlugins": []
+  }
+}

@@ -14,6 +14,7 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
+import { isSensitiveReadPath } from "../../security/sensitive-read";
 import type { Attachment } from "../../types";
 import { useAppStore } from "../../../store";
 import { useProjectStore } from "../../store";
@@ -275,12 +276,24 @@ export function createReadAttachmentTool(): ToolDef {
         // 2. Only import readFileLines when we have a path to read
         let windowedFromDisk: string | null = null;
         if (diskPath) {
+          /* 附件按 id/name 取，权限层拿不到真实路径；在这里按最终路径判定。
+             ask/auto 无审批通道 ⇒ 拒绝并让模型用 read 工具（那里会弹审批）。 */
+          if (isSensitiveReadPath(diskPath, ctx.cwd) && ctx.securityMode !== "full") {
+            return {
+              title: `read_attachment: ${target.name}`,
+              output: `敏感文件（${target.name}）不能通过 read_attachment 静默读取；请改用 read 工具，那里会弹审批。`,
+              isError: true,
+            };
+          }
           try {
             const { readFileLines } = await import("../../file-api");
             // Convert character offset to approximate line offset (1 line ≈ 80 chars)
             const lineOffset = Math.max(1, Math.floor(offset / 80));
             const lineLimit = Math.max(1, Math.ceil(limit / 80));
-            const result = await readFileLines(diskPath, lineOffset, lineLimit, limit);
+            const result = await readFileLines(diskPath, lineOffset, lineLimit, limit, {
+              workspace: ctx.cwd,
+              allowSensitive: ctx.securityMode === "full",
+            });
             target.content = result.text;
             windowedFromDisk =
               `(磁盘按行读取的近似窗口：第 ${lineOffset}-${lineOffset + lineLimit - 1} 行，` +

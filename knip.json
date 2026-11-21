@@ -32,7 +32,6 @@
     "src/core/memory/index.ts",
     "src/core/permission/index.ts",
     "src/core/pet/index.ts",
-    "src/core/plugin-market/index.ts",
     "src/core/prompt/index.ts",
     "src/core/recovery/index.ts",
     "src/core/retry/index.ts",
