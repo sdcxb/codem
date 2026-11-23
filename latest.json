@@ -1,15 +1,15 @@
 {
-  "version": "1.18.14",
-  "notes": "Codem v1.18.14：Context OS 段式上下文、分层记忆与团队记忆、文档/Goal/多设备同步；修复显式换段被压缩抢先、切换草稿丢失与溢出劝退。",
-  "pub_date": "2026-11-10T11:09:11Z",
+  "version": "1.18.15",
+  "notes": "新版界面为默认；敏感文件读取需审批、子进程不再继承密钥；修复插件重复加载与假开关。",
+  "pub_date": "2026-11-23T02:34:59Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dRT29LdXQ1anZCQ1d5NXQ2czM3aWN5akhMOW5uai9QZnFqV3A3b3R0UnRIVnF3cEdJcStrUmQ1bnJndWp1bllSMno4YnBVM0Z3dXF0eWZnK252dlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzA4OTQ2CWZpbGU6Q29kZW1fMS4xOC4xNF94NjQtc2V0dXAuZXhlCmkyUm8zTEZUSHNZYW1Kd3JZb3prL2FRNEdvdmF1cjdHNTU4U1VkK1pZajZadHFwUGh0Z3I4QlFSMU90c1VzcFZjeE5nbng3RW54VWZWa3NMV2FvOENBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.14/Codem_1.18.14_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JySTUxUlVyTmtraGdocGV5NFNtVkI4eVFDT0VwYjlJWUp1UmcxRGRHOEsvdWJIb2FWOUJCVUlDQ25EZXkxaWhBTHNsemFlekNKNVR5QnJlYllpMXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NDAxMjcxCWZpbGU6Q29kZW1fMS4xOC4xNV94NjQtc2V0dXAuZXhlCjFDQko1VEJ4WFNNWUZSSFJ6L2lDd01Vdm5RaFpVank0TWF5bG5seGlJQ0phOFpGTFFpNjVsR2JZRldpSHZ0RDh4OU9NbVdiY3hBbzN5ekhKMjR4a0RRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.15/Codem_1.18.15_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dRT29LdXQ1anZCQ1d5NXQ2czM3aWN5akhMOW5uai9QZnFqV3A3b3R0UnRIVnF3cEdJcStrUmQ1bnJndWp1bllSMno4YnBVM0Z3dXF0eWZnK252dlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzA4OTQ2CWZpbGU6Q29kZW1fMS4xOC4xNF94NjQtc2V0dXAuZXhlCmkyUm8zTEZUSHNZYW1Kd3JZb3prL2FRNEdvdmF1cjdHNTU4U1VkK1pZajZadHFwUGh0Z3I4QlFSMU90c1VzcFZjeE5nbng3RW54VWZWa3NMV2FvOENBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.14/Codem_1.18.14_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JySTUxUlVyTmtraGdocGV5NFNtVkI4eVFDT0VwYjlJWUp1UmcxRGRHOEsvdWJIb2FWOUJCVUlDQ25EZXkxaWhBTHNsemFlekNKNVR5QnJlYllpMXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NDAxMjcxCWZpbGU6Q29kZW1fMS4xOC4xNV94NjQtc2V0dXAuZXhlCjFDQko1VEJ4WFNNWUZSSFJ6L2lDd01Vdm5RaFpVank0TWF5bG5seGlJQ0phOFpGTFFpNjVsR2JZRldpSHZ0RDh4OU9NbVdiY3hBbzN5ekhKMjR4a0RRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.15/Codem_1.18.15_x64-setup.exe"
     }
   }
 }
