@@ -12,7 +12,7 @@ import { getSetting } from "../storage/settings";
 // ★ 误拒修复：「沙箱是否启用」的唯一实现在 `sandbox-acl.ts`（与 `file-api` 的读写判定共用）——
 // 这里不再自己读设置（同一规则不许两份）。
 import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "../sandbox/sandbox-acl";
-import { filterSensitiveGlobFiles, filterSensitiveGrepMatches, isSensitiveReadPath } from "../security/sensitive-read";
+import { filterSensitiveGlobFiles, filterSensitiveGrepMatchesCanonical, isSensitiveReadPath } from "../security/sensitive-read";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
 import { findAmbiguousLiteral, replaceLiteral, suggestEditCandidates } from "./edit-matchers";
@@ -2452,7 +2452,7 @@ export function createGrepTool(): ToolDef {
 
       try {
         const raw = await grepSearch(pattern, searchPath, include);
-        const filtered = filterSensitiveGrepMatches(
+        const filtered = await filterSensitiveGrepMatchesCanonical(
           raw,
           ctx.cwd,
           isSensitiveReadPath(searchPath, ctx.cwd) ? searchPath : undefined,

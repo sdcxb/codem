@@ -26,7 +26,7 @@
  * 两条都**只陈述事实**：不写"你应该跑哪些""你漏了哪些"这类判断 ✓。
  */
 
-import { isSensitiveReadPath } from "../security/sensitive-read";
+import { filterSensitiveGrepMatchesCanonical } from "../security/sensitive-read";
 
 /** 目录项（与 `core/file-api.ts` 的 `listDirectory` 返回形状对齐） */
 export interface DirEntry {
@@ -525,12 +525,12 @@ export async function buildTaskSearchNotice(
       /** 够了就停：每个词一次 IPC，别把会话开头拖长 ✓（第 124 波） */
       if (found.filter((r) => !isTestFile(String(r))).length >= 8) break;
     }
+    const filteredFound = await filterSensitiveGrepMatchesCanonical(found, root);
     const seen = new Set<string>();
-    for (const row of found) {
+    for (const row of filteredFound.matches) {
       const file = fileFromGrepRow(String(row));
       if (!file || isTestFile(file)) continue;
       /* 自动注入的 [源码命中] 不经工具/权限：敏感文件不参与、不注入。 */
-      if (isSensitiveReadPath(file, root)) continue;
       const key = file;
       if (seen.has(key)) continue;
       seen.add(key);

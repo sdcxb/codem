@@ -10,6 +10,7 @@ import {
   detectSensitiveShellAccess,
   isSensitiveReadPath,
   normalizeSensitivePath,
+  isFileLikeResourceUri,
   sensitiveReadAction,
   toWorkspaceRelative,
 } from "../core/security/sensitive-read";
@@ -98,5 +99,16 @@ describe("SENS-17：verdict 形状", () => {
     expect(v?.action).toBe("ask");
     expect(classifySensitiveRead(".env.example", "C:/ws")).toBeNull();
     expect(classifySensitiveRead("src/a.ts", "C:/ws")).toBeNull();
+  });
+});
+
+describe("SENS-17 P1：MCP 资源 URI 的文件形态", () => {
+  it("file://、绝对路径、UNC 可判；memory://db:// 等未知 scheme 不可判", () => {
+    for (const uri of ["file:///C:/ws/.env", "/home/u/.env", "C:\\ws\\.env", "\\\\server\\share\\.env"]) {
+      expect(isFileLikeResourceUri(uri), uri).toBe(true);
+    }
+    for (const uri of ["memory://secret", "db://users", "resource://x", ""]) {
+      expect(isFileLikeResourceUri(uri), uri).toBe(false);
+    }
   });
 });

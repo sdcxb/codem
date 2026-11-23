@@ -19,7 +19,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 import { grepSearch, executeCommand } from "../../file-api";
-import { filterSensitiveGrepMatches } from "../../security/sensitive-read";
+import { filterSensitiveGrepMatchesCanonical } from "../../security/sensitive-read";
 
 // ========== Types ==========
 
@@ -123,7 +123,7 @@ async function findDefinition(
 
   try {
     const rawResults = await grepSearch(combinedPattern, searchPath, undefined, { workspace });
-    const filtered = filterSensitiveGrepMatches(rawResults, workspace);
+    const filtered = await filterSensitiveGrepMatchesCanonical(rawResults, workspace);
     const results = filtered.matches;
     const skippedNote = filtered.skipped > 0 ? `（已跳过 ${filtered.skipped} 个敏感文件）` : "";
     if (results.length === 0) {
@@ -158,7 +158,7 @@ async function findReferences(
     // Use word boundary matching for accurate reference finding
     const pattern = `\\b${escapeRegex(symbol)}\\b`;
     const rawResults = await grepSearch(pattern, searchPath, undefined, { workspace });
-    const filtered = filterSensitiveGrepMatches(rawResults, workspace);
+    const filtered = await filterSensitiveGrepMatchesCanonical(rawResults, workspace);
     const results = filtered.matches;
     const skippedNote = filtered.skipped > 0 ? `（已跳过 ${filtered.skipped} 个敏感文件）` : "";
     if (results.length === 0) {

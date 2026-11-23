@@ -2853,6 +2853,36 @@ async fn check_path_in_workspace(path: String, workspace: String) -> Result<bool
     Ok(path_within_workspace(&abs_path, &abs_workspace))
 }
 
+/// 第 17 轮 P0：把路径解析成**真实规范路径**（解析 symlink/junction、剥 \\?\、最近存在祖先）。
+///
+/// 读侧敏感判定必须基于这个结果：否则工作区里一个名字无害的链接（notes.txt -> .env）
+/// 能绕过按文件名的敏感规则。判定命令与写侧守卫共用 resolve_sandbox_path。
+#[tauri::command]
+async fn resolve_canonical_path(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        resolve_sandbox_path(std::path::Path::new(&path))
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("resolve_canonical_path join error: {e}"))?
+}
+
+/// 第 17 轮 P0：批量版本（grep 结果逐行走 IPC 会太慢；一次解析一页路径）。
+#[tauri::command]
+async fn resolve_canonical_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|p| {
+                resolve_sandbox_path(std::path::Path::new(&p))
+                    .map(|v| v.to_string_lossy().to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .await
+    .map_err(|e| format!("resolve_canonical_paths join error: {e}"))?
+}
+
 /// Get the current process's security context (for debugging sandbox issues).
 #[cfg(target_os = "windows")]
 #[tauri::command]
@@ -5063,6 +5093,8 @@ path_exists,
             close_browser_window,
             // P1-5: Sandbox commands
             check_path_in_workspace,
+            resolve_canonical_path,
+            resolve_canonical_paths,
             get_process_token_info,
             list_directory_sandboxed,
             // 微信 ClawBot 桥（iLink 传输层）
@@ -8611,5 +8643,65 @@ mod secret_env_tests {
             "全局打开之后旧调用必须跟着继承（否则逃生门对既有的工具调用无效）"
         );
         secret_env::set_policy_inherit(false); // 还原，避免影响同进程其它用例
+    }
+}
+
+#[cfg(test)]
+mod canonical_p0_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "codem-canon-{}-{}-{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    /// P0：工作区里的目录接合点（junction）指向区外时，解析结果必须是**目标真实路径**，
+    /// 而不是链接自己的字面路径。名字无害的链接不能骗过按文件名的敏感判定。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolve_canonical_path_follows_junction_to_target() {
+        let base = scratch("junction");
+        let ws = base.join("ws");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join(".env"), b"SECRET=1").unwrap();
+
+        let link = ws.join("notes");
+        let cmdline = format!("/c mklink /J \"{}\" \"{}\"", link.display(), outside.display());
+        let made = std::process::Command::new("cmd")
+            .arg(&cmdline)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !made {
+            eprintln!("[canonical-p0] 本环境无法创建 junction ⇒ 跳过");
+            let _ = std::fs::remove_dir_all(&base);
+            return;
+        }
+
+        let literal = link.join(".env");
+        let resolved = resolve_sandbox_path(&literal).unwrap();
+        let outside_resolved = resolve_sandbox_path(&outside.join(".env")).unwrap();
+        assert_eq!(
+            resolved, outside_resolved,
+            "解析结果必须是区外目标的真实路径，否则 notes/.env 能绕过敏感规则"
+        );
+        assert!(
+            !path_within_workspace(&resolved, &resolve_sandbox_path(&ws).unwrap()),
+            "接合点目标必须判越界"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

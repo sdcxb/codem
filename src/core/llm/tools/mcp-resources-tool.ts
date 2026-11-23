@@ -50,6 +50,7 @@
 import type { ToolContext, ToolDef, ToolExecuteResult } from "../tools";
 import { getMCPRegistry } from "../../mcp/mcp";
 import { isSensitiveReadPath } from "../../security/sensitive-read";
+import { canonicalizePathForSecurity } from "../../file-api";
 
 /** 文本类 MIME：`blob` 里装的其实就是文本 ⇒ 解码后内联（比给一条路径有用得多） */
 const TEXTUAL_MIME_RE =
@@ -373,7 +374,10 @@ export function createReadMcpResourceTool(): ToolDef {
       const fileUriPath = uri.startsWith("file://")
         ? decodeURIComponent(uri.slice("file://".length))
         : (/^[A-Za-z]:[\\/]/.test(uri) || uri.startsWith("/") ? uri : "");
-      if (fileUriPath && isSensitiveReadPath(fileUriPath, ctx.cwd) && ctx.securityMode !== "full") {
+      const canonicalFileUriPath = fileUriPath
+        ? await canonicalizePathForSecurity(fileUriPath, ctx.cwd)
+        : "";
+      if (canonicalFileUriPath && isSensitiveReadPath(canonicalFileUriPath, ctx.cwd) && ctx.securityMode !== "full") {
         return {
           title: `read_mcp_resource: ${uri}`,
           output: `敏感文件（${fileUriPath}）不能通过 MCP 资源静默读取；请改用 read 工具，那里会弹审批。`,

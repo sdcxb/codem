@@ -278,3 +278,55 @@ export function filterSensitiveGlobFiles(
   }
   return { files: kept, skipped };
 }
+
+/** MCP 资源 URI 是否是「可以按路径判定」的文件形态 */
+export function isFileLikeResourceUri(uri: string): boolean {
+  const u = String(uri ?? "").trim();
+  if (!u) return false;
+  if (u.startsWith("file://")) return true;
+  // Unix 绝对路径 / Windows 盘符 / UNC
+  return u.startsWith("/") || /^[A-Za-z]:[\\/]/.test(u) || u.startsWith("\\\\");
+}
+
+/**
+ * grep 结果的**真实路径**过滤（P0）。
+ *
+ * 这里不直接 import file-api（它被 95 个测试 mock，会让本模块变成 mock 依赖）；
+ * 运行时动态取 canonicalizePathsForSecurity，取不到（旧构建/测试）就退回词法过滤。
+ */
+export async function filterSensitiveGrepMatchesCanonical(
+  matches: readonly string[],
+  workspace?: string,
+  allowPath?: string,
+): Promise<{ matches: string[]; skipped: number }> {
+  let canonicalize: ((paths: string[], workspace?: string) => Promise<string[]>) | null = null;
+  try {
+    const api = await import("../file-api");
+    if (typeof api.canonicalizePathsForSecurity === "function") {
+      canonicalize = api.canonicalizePathsForSecurity;
+    }
+  } catch {
+    /* 没有 file-api（测试/旧构建）⇒ 词法过滤 */
+  }
+  if (!canonicalize) return filterSensitiveGrepMatches(matches, workspace, allowPath);
+
+  const paths = Array.from(new Set(matches.map((line) => grepLinePath(line)).filter((p): p is string => Boolean(p))));
+  const canonicalList = await canonicalize(paths, workspace);
+  const canonicalByPath = new Map(paths.map((p, i) => [p.toLowerCase(), canonicalList[i] ?? p]));
+  const allowRel = allowPath ? toWorkspaceRelative(allowPath, workspace).toLowerCase() : "";
+  const kept: string[] = [];
+  let skipped = 0;
+  for (const line of matches) {
+    const path = grepLinePath(line);
+    if (!path) { kept.push(line); continue; }
+    const canonical = canonicalByPath.get(path.toLowerCase()) ?? path;
+    const relCanonical = toWorkspaceRelative(canonical, workspace).toLowerCase();
+    const allowed = Boolean(allowRel && (relCanonical === allowRel || relCanonical.endsWith("/" + allowRel)));
+    if (!allowed && (isSensitiveReadPath(canonical, workspace) || isSensitiveReadPath(path, workspace))) {
+      skipped += 1;
+      continue;
+    }
+    kept.push(line);
+  }
+  return { matches: kept, skipped };
+}

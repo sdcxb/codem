@@ -186,10 +186,53 @@ async function assertWithinWorkspace(
   );
 }
 
+/**
+ * 第 17 轮 P0：把路径解析成真实规范路径（解析 symlink/junction；失败退回词法路径）。
+ *
+ * 敏感判定必须基于它：名字无害的链接（notes.txt -> .env）不能让按文件名的规则失效。
+ */
+export async function canonicalizePathForSecurity(path: string, workspace?: string): Promise<string> {
+  const target = resolveAgainstWorkspace(path, workspace);
+  if (isTauri()) {
+    try {
+      const resolved = await tauriInvoke("resolve_canonical_path", { path: target });
+      if (typeof resolved === "string" && resolved.trim()) return resolved;
+    } catch (error) {
+      /* 旧构建/测试宿主没有该命令 ⇒ 退回词法路径；不是放行。显式消费 error，
+         避免空 catch 被守卫绕过门禁判成「静默降级」。 */
+      void error;
+    }
+  }
+  return target;
+}
+
+/** 批量版：grep 一页结果一次 IPC，避免逐行调用 */
+export async function canonicalizePathsForSecurity(paths: string[], workspace?: string): Promise<string[]> {
+  const targets = paths.map((p) => resolveAgainstWorkspace(p, workspace));
+  if (isTauri() && targets.length > 0) {
+    try {
+      const resolved = await tauriInvoke("resolve_canonical_paths", { paths: targets });
+      if (Array.isArray(resolved) && resolved.length === targets.length && resolved.every((p) => typeof p === "string")) {
+        return resolved as string[];
+      }
+    } catch (error) {
+      /* 退回逐路径 canonicalize；同样显式消费 error。 */
+      void error;
+    }
+  }
+  return Promise.all(targets.map((p) => canonicalizePathForSecurity(p)));
+}
+
 /** 敏感读的统一拒绝（工具体/无审批通道的 SDK 调用都会撞到它） */
-export function assertSensitiveReadAllowed(path: string, allowSensitive?: boolean): void {
+export async function assertSensitiveReadAllowed(
+  path: string,
+  allowSensitive?: boolean,
+  workspace?: string,
+): Promise<void> {
   if (allowSensitive) return;
-  const v = classifySensitiveRead(path);
+  const canonical = await canonicalizePathForSecurity(path, workspace);
+  // 同时看规范路径与字面路径：链接目标敏感、或路径本身就叫 .env 都拒
+  const v = classifySensitiveRead(canonical) ?? classifySensitiveRead(path);
   if (v && v.action !== "allow") {
     throw new Error(
       `SENSITIVE_READ: 敏感文件（${v.label}）：${path}。` +
@@ -209,7 +252,7 @@ export async function readFile(
   /* 先判沙箱边界：工作区外保持原有 "outside the workspace" 语义；再判敏感。
      工作区内/沙箱关闭时才由敏感策略接手。 */
   await assertWithinWorkspace("Read from", target, options?.workspace);
-  assertSensitiveReadAllowed(target, options?.allowSensitive);
+  await assertSensitiveReadAllowed(target, options?.allowSensitive, options?.workspace);
   return tauriInvoke("read_file", { path: target });
 }
 
@@ -264,7 +307,7 @@ export async function readTextWindow(
 ): Promise<TextWindow> {
   const target = resolveAgainstWorkspace(path, options?.workspace);
   await assertWithinWorkspace("Read from", target, options?.workspace);
-  assertSensitiveReadAllowed(target, options?.allowSensitive);
+  await assertSensitiveReadAllowed(target, options?.allowSensitive, options?.workspace);
   return tauriInvoke("read_text_window", { path: target, offset, maxBytes });
 }
 
@@ -307,7 +350,7 @@ export async function readFileLines(
   options?: { workspace?: string; allowSensitive?: boolean },
 ): Promise<ReadFileLinesResult> {
   const target = resolveAgainstWorkspace(path, options?.workspace);
-  assertSensitiveReadAllowed(target, options?.allowSensitive);
+  await assertSensitiveReadAllowed(target, options?.allowSensitive, options?.workspace);
   return tauriInvoke("read_file_lines", { path: target, offset, limit, maxChars });
 }
 

@@ -39,7 +39,7 @@ import {
   type SecurityMode,
 } from '../permission/security-mode.ts'
 import { getPermissionManager } from '../permission/permission.ts'
-import { classifySensitiveRead, detectSensitiveShellAccess } from '../security/sensitive-read'
+import { classifySensitiveRead, detectSensitiveShellAccess, isFileLikeResourceUri } from '../security/sensitive-read'
 
 /** 合法的安全模式（真系统的词表，不是 `permission.ts::getSecurityModes` 那套历史词表） */
 const VALID_MODES: readonly SecurityMode[] = SECURITY_MODES.map((m) => m.mode)
@@ -80,7 +80,10 @@ export const permissionsProvider: Plugin = (ctx: any) => {
       if (readVerdict?.action === 'deny' || shellAccess.writes.length > 0) {
         return { action: 'deny', allowed: false, reason: '受保护文件禁止读/写（.env/.git/私钥/云凭据）' }
       }
-      const sensitiveAsk = readVerdict?.action === 'ask' || shellAccess.reads.length > 0
+      const mcpNonFileResource = toolName === 'read_mcp_resource'
+        && typeof args?.uri === 'string'
+        && !isFileLikeResourceUri(args.uri)
+      const sensitiveAsk = readVerdict?.action === 'ask' || shellAccess.reads.length > 0 || mcpNonFileResource
       const effective = (mode && VALID_MODES.includes(mode as SecurityMode)
         ? (mode as SecurityMode)
         : getGlobalSecurityMode()) as SecurityMode

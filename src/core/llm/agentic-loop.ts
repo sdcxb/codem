@@ -141,6 +141,7 @@ import { evaluateWithSecurityMode } from "../permission/security-mode";
 import {
   classifySensitiveRead,
   detectSensitiveShellAccess,
+  isFileLikeResourceUri,
   isSensitiveReadPath,
 } from "../security/sensitive-read";
 import { FileChangeTracker } from "../environment/file-change-tracker";
@@ -1969,10 +1970,24 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
         : readTool && typeof args.target === "object" && args.target && typeof (args.target as any).path === "string"
           ? (args.target as any).path as string
           : undefined;
-      const readVerdict = readPath && !outsideWorkspace(readPath)
-        ? classifySensitiveRead(readPath, workspace)
+      let resolvedReadPath = readPath;
+      if (readPath && readTool && !outsideWorkspace(readPath)) {
+        /* P0：按真实路径判敏感（符号链接/junction/8.3 展开），不要只看字面文件名。 */
+        try {
+          const { canonicalizePathForSecurity } = await import("../file-api");
+          resolvedReadPath = await canonicalizePathForSecurity(readPath, workspace);
+        } catch {
+          /* 旧构建/无 Tauri：退回词法路径（不是放行） */
+        }
+      }
+      const readVerdict = resolvedReadPath && !outsideWorkspace(resolvedReadPath)
+        ? classifySensitiveRead(resolvedReadPath, workspace)
         : null;
-      const sensitiveRead = Boolean(readVerdict && readVerdict.action !== "allow") || shellReads.length > 0;
+      /* P1：非 file:// 的 MCP 资源无法从 URI 判断内容 ⇒ ask/auto 首次读取必须审批；full 放行。 */
+      const mcpNonFileResource = toolName === "read_mcp_resource"
+        && typeof args.uri === "string"
+        && !isFileLikeResourceUri(args.uri);
+      const sensitiveRead = Boolean(readVerdict && readVerdict.action !== "allow") || shellReads.length > 0 || mcpNonFileResource;
       const sensitiveHardDeny = Boolean(readVerdict && readVerdict.action === "deny") || shellWrites.length > 0;
 
       if (sensitiveHardDeny) {

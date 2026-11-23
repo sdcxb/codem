@@ -6,7 +6,8 @@
  * grep/glob 过滤器会隐藏并计数。
  */
 import { describe, expect, it } from "vitest";
-import { assertSensitiveReadAllowed } from "../core/file-api";
+import { assertSensitiveReadAllowed, setFileInvoker } from "../core/file-api";
+import { filterSensitiveGrepMatchesCanonical } from "../core/security/sensitive-read";
 import {
   filterSensitiveGlobFiles,
   filterSensitiveGrepMatches,
@@ -49,11 +50,30 @@ describe("SENS-17：grep/glob 过滤器", () => {
 });
 
 describe("SENS-17：file-api 默认拒绝敏感读（SDK/内部调用没有审批通道）", () => {
-  it("默认拒绝 .env/.git/私钥；模板文件与显式 allowSensitive 放行", () => {
-    expect(() => assertSensitiveReadAllowed("C:/ws/.env")).toThrow(/SENSITIVE_READ/);
-    expect(() => assertSensitiveReadAllowed("C:/ws/.git/config")).toThrow(/SENSITIVE_READ/);
-    expect(() => assertSensitiveReadAllowed("C:/ws/certs/key.pem")).toThrow(/SENSITIVE_READ/);
-    expect(() => assertSensitiveReadAllowed("C:/ws/.env.example")).not.toThrow();
-    expect(() => assertSensitiveReadAllowed("C:/ws/.env", true)).not.toThrow();
+  it("默认拒绝 .env/.git/私钥；模板文件与显式 allowSensitive 放行", async () => {
+    await expect(assertSensitiveReadAllowed("C:/ws/.env")).rejects.toThrow(/SENSITIVE_READ/);
+    await expect(assertSensitiveReadAllowed("C:/ws/.git/config")).rejects.toThrow(/SENSITIVE_READ/);
+    await expect(assertSensitiveReadAllowed("C:/ws/certs/key.pem")).rejects.toThrow(/SENSITIVE_READ/);
+    await expect(assertSensitiveReadAllowed("C:/ws/.env.example")).resolves.toBeUndefined();
+    await expect(assertSensitiveReadAllowed("C:/ws/.env", true)).resolves.toBeUndefined();
+  });
+
+  it("P0：名字无害的符号链接/接合点按真实目标判敏感", async () => {
+    setFileInvoker({
+      invoke: async (command: string, args?: any) => {
+        if (command === "resolve_canonical_path") return "C:/ws/.env";
+        if (command === "resolve_canonical_paths") return args.paths.map(() => "C:/ws/.env");
+        if (command === "read_file") return "SECRET=1";
+        throw new Error("unexpected command " + command);
+      },
+    });
+    try {
+      await expect(assertSensitiveReadAllowed("C:/ws/notes.txt")).rejects.toThrow(/SENSITIVE_READ/);
+      const filtered = await filterSensitiveGrepMatchesCanonical(["C:/ws/notes.txt:1:SECRET=1"], "C:/ws");
+      expect(filtered.matches).toEqual([]);
+      expect(filtered.skipped).toBe(1);
+    } finally {
+      setFileInvoker(null);
+    }
   });
 });

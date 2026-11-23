@@ -41,7 +41,7 @@ import {
 } from "../tool-gates";
 import {
   detectSensitiveShellAccess,
-  filterSensitiveGrepMatches,
+  filterSensitiveGrepMatchesCanonical,
   isSensitiveReadPath,
 } from "../../security/sensitive-read";
 
@@ -329,7 +329,7 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           const rawResults = await grepSearch(pattern, searchPath, opts?.glob, {
             workspace: ctx.cwd,
           });
-          const filtered = filterSensitiveGrepMatches(
+          const filtered = await filterSensitiveGrepMatchesCanonical(
             rawResults,
             ctx.cwd,
             isSensitiveReadPath(searchPath, ctx.cwd) ? searchPath : undefined,
