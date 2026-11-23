@@ -55,7 +55,7 @@ import {
   Search, X, GitFork, RotateCcw, Check, AlertTriangle, Hammer, ClipboardList, Zap,
   Activity, Pencil, Paperclip, Clock, History,
 } from "lucide-react";
-import { HeaderOverflowMenu, type HeaderMenuItem } from "./chat/HeaderOverflowMenu";
+import { HeaderViewActions, type HeaderViewAction } from "./chat/HeaderViewActions";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
@@ -910,7 +910,7 @@ setStepTooltipLocked(false);
   /* 头部溢出菜单的项（Batch 1B）：每一项都保留迁移前那个按钮的**同一个 handler**，
      只是把入口从七个图标收成一个菜单；顺带让每项都有文字名（可访问性）。
      「现在哪个是开的」靠 aria-checked 表达，不再靠图标染色 + title。 */
-  const headerMenuItems: HeaderMenuItem[] = [
+  const headerMenuItems: HeaderViewAction[] = [
     {
       id: "history",
       label: lang === "zh" ? "完整历史" : "Full history",
@@ -1198,9 +1198,9 @@ setStepTooltipLocked(false);
             </div>
           )}
         </div>
-        <HeaderOverflowMenu
-          label={lang === "zh" ? "更多操作" : "More actions"}
-          menuLabel={lang === "zh" ? "视图与面板" : "Views and panels"}
+        {/* 高频视图开关常显为图标，不再收进「更多操作」菜单。 */}
+        <HeaderViewActions
+          label={lang === "zh" ? "视图与面板" : "Views and panels"}
           items={headerMenuItems}
         />
         <span className="header-spacer" />

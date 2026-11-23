@@ -511,72 +511,28 @@
 }
 
 /* 头部"更多"菜单（Batch 1B）：触发器与三项保持同一尺寸，菜单项是 30px 的行 + 勾选列。 */
-[data-ui="v2"] .chat-header-overflow {
-  position: relative;
+/* 第 18 轮：高频视图开关常显（原「更多操作 → 视图与面板」菜单的 7 项） */
+[data-ui="v2"] .chat-header-view-actions {
   display: inline-flex;
-}
-
-[data-ui="v2"] .chat-header-overflow-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 220px;
-  padding: var(--space-1);
-  z-index: var(--z-popover);
-}
-
-[data-ui="v2"] .chat-header-overflow-item {
-  display: grid;
-  grid-template-columns: 16px 1fr 16px;
   align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 30px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ui-text-secondary);
-  font: inherit;
-  font-size: var(--fs-sm);
-  text-align: left;
-  cursor: pointer;
+  gap: calc(var(--space-1) / 2);
+  margin-left: var(--space-1);
+  flex-shrink: 0;
 }
 
-[data-ui="v2"] .chat-header-overflow-item:is(:hover, :focus-visible) {
+[data-ui="v2"] .chat-header-action {
+  flex: 0 0 28px;
+  padding: 0;
+}
+
+[data-ui="v2"] .chat-header-action.active {
+  color: var(--ui-accent);
   background: var(--ui-surface-active);
-  color: var(--ui-text);
 }
 
-[data-ui="v2"] .chat-header-overflow-item:disabled {
+[data-ui="v2"] .chat-header-action:disabled {
   opacity: var(--opacity-disabled);
   cursor: default;
-}
-
-[data-ui="v2"] .chat-header-overflow-item.is-active {
-  color: var(--ui-text);
-}
-
-[data-ui="v2"] .chat-header-overflow-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ui-text-muted);
-}
-
-[data-ui="v2"] .chat-header-overflow-item.is-active .chat-header-overflow-icon {
-  color: var(--ui-accent);
-}
-
-[data-ui="v2"] .chat-header-overflow-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-ui="v2"] .chat-header-overflow-check {
-  font-family: var(--font-mono);
-  color: var(--ui-accent);
 }
 
 /* 任务完成的勾选图形由"状态点 + 文字"表达，图标本身是重复信息 */
@@ -2334,7 +2290,7 @@
 /* ③ 焦点可见：统一用 --focus-ring-color 画 2px 环 + 1px 内衬，
       不再依赖各组件自己的 outline（很多组件把 outline 设成 none 后没有替代）。
       只覆盖 v2 作用域，v1 的既有行为不动。 */
-[data-ui="v2"] :is(.titlebar-action-btn, .titlebar-btn, .app-menu-trigger, .chat-header-overflow-item, .settings-sidebar-item, .sidebar-nav-item, .sidebar-tool-item, .sidebar-rail-btn, .tc-tab, .settings-subnav-pill, .panel-sidebar-tab, .right-sidebar-tab):focus-visible {
+[data-ui="v2"] :is(.titlebar-action-btn, .titlebar-btn, .app-menu-trigger, .settings-sidebar-item, .sidebar-nav-item, .sidebar-tool-item, .sidebar-rail-btn, .tc-tab, .settings-subnav-pill, .panel-sidebar-tab, .right-sidebar-tab):focus-visible {
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 1px;
 }
