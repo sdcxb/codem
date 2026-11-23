@@ -90,6 +90,14 @@ describe("SENS-17：shell 文本识别", () => {
     expect(read("npm run test").reads).toEqual([]);
   });
 
+  it("动态构造（命令替换/内联脚本）出现受保护标记时按读处理", () => {
+    for (const cmd of ['cat $(echo .env)', 'python -c "open(\'.env\')"', 'node -e "require(\'fs\').readFileSync(\'.env\')"']) {
+      expect(read(cmd).reads.length, cmd).toBeGreaterThan(0);
+    }
+    expect(read("echo .env").reads).toEqual([]);
+    expect(read("git commit -m 'fix .env docs'").reads).toEqual([]);
+  });
+
   it("读与写同时存在时分别归类", () => {
     const a = read("type .env > copy.txt");
     expect(a.reads.length).toBeGreaterThan(0);

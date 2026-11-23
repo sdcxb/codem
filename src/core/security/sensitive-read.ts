@@ -243,6 +243,17 @@ export function detectSensitiveShellAccess(
     }
   }
 
+﻿  /**
+   * 动态构造的常见形态（命令替换、内联脚本）无法把路径当 token canonicalize：
+   * cat $(echo .env) / python -c "open('.env')" / node -e "...". 句子本身出现受保护
+   * 标记时按读处理让用户拍板（保守方向：宁可多问一次）。
+   */
+  if (reads.size === 0 && writes.size === 0) {
+    const dynamicShell = /\$\(|\x60|\b(?:python|node|perl|ruby|powershell|pwsh|bash|sh|cmd)\b/i.test(command);
+    const marker = /(?:^|[\\/'"\s])(?:\.env(?:\.[\w.-]+)?|\.ssh[\\/]|id_rsa|credentials\.json|\.aws[\\/]|\.git[\\/])/i.test(command);
+    if (dynamicShell && marker) reads.add("<dynamic shell command>");
+  }
+
   return { reads: [...reads], writes: [...writes] };
 }
 
@@ -298,8 +309,20 @@ export async function detectSensitiveShellAccessCanonical(
       for (const full of tokens) if (full.endsWith(":" + token)) sensitiveTokens.add(full);
     }
   });
-  if (sensitiveTokens.size === 0) return lexical;
-  return detectSensitiveShellAccess(command, workspace, cwd, (t) => sensitiveTokens.has(t));
+﻿  let result = sensitiveTokens.size === 0
+    ? lexical
+    : detectSensitiveShellAccess(command, workspace, cwd, (t) => sensitiveTokens.has(t));
+  /**
+   * 动态构造的常见形态（命令替换、内联脚本）无法把路径当 token canonicalize：
+   * cat $(echo .env) / python -c "open('.env')" / node -e "...". 句子本身出现受保护
+   * 标记且不是普通 echo 时，按读处理让用户拍板（保守方向：宁可多问一次）。
+   */
+  if (result.reads.length === 0 && result.writes.length === 0) {
+    const dynamicShell = /\$\(|\x60|\b(?:python|node|perl|ruby|powershell|pwsh|bash|sh|cmd)\b/i.test(command);
+    const marker = /(?:^|[\\/'"\s])(?:\.env(?:\.[\w.-]+)?|\.ssh[\\/]|id_rsa|credentials\.json|\.aws[\\/]|\.git[\\/])/i.test(command);
+    if (dynamicShell && marker) result = { reads: ["<dynamic shell command>"], writes: [] };
+  }
+  return result;
 }
 
 /** 从 grep 的 `path:line:content` 行里取路径（Windows 盘符冒号不算分隔） */
