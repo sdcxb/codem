@@ -8666,6 +8666,36 @@ mod canonical_p0_tests {
 
     /// P0：工作区里的目录接合点（junction）指向区外时，解析结果必须是**目标真实路径**，
     /// 而不是链接自己的字面路径。名字无害的链接不能骗过按文件名的敏感判定。
+    /// 8.3 短名：已存在的路径应被 canonicalize 展开成长名（读侧敏感判定不能看短名）。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn canonical_expands_existing_8_3_short_name() {
+        let base = scratch("short83");
+        let long_dir = base.join("a-very-long-directory-name-for-8-3-expansion");
+        std::fs::create_dir_all(&long_dir).unwrap();
+        std::fs::write(long_dir.join(".env"), b"SECRET=1").unwrap();
+
+        let out = std::process::Command::new("cmd")
+            .args(["/c", &format!("for %I in (\"{}\") do @echo %~sI", long_dir.display())])
+            .output()
+            .ok();
+        let Some(out) = out else {
+            let _ = std::fs::remove_dir_all(&base);
+            return;
+        };
+        let short = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if short.is_empty() || !short.contains("~") {
+            eprintln!("[canonical-p0] 本环境没有生成 8.3 短名 ⇒ 跳过");
+            let _ = std::fs::remove_dir_all(&base);
+            return;
+        }
+        let short_path = std::path::Path::new(&short).join(".env");
+        let resolved = resolve_sandbox_path(&short_path).unwrap();
+        let expected = resolve_sandbox_path(&long_dir.join(".env")).unwrap();
+        assert_eq!(resolved, expected, "8.3 短名必须解析到同一个长路径: {short}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn resolve_canonical_path_follows_junction_to_target() {

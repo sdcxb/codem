@@ -140,7 +140,7 @@ import { getTelemetry } from "../telemetry/telemetry";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
 import {
   classifySensitiveRead,
-  detectSensitiveShellAccess,
+  detectSensitiveShellAccessCanonical,
   isFileLikeResourceUri,
   isSensitiveReadPath,
 } from "../security/sensitive-read";
@@ -1959,7 +1959,7 @@ private pipelineHost(permissionQueue: PermissionEventQueue | null = null): ToolP
           ? args.text
           : "";
       const shellAccess = shellText
-        ? detectSensitiveShellAccess(shellText, workspace, workspace)
+        ? await detectSensitiveShellAccessCanonical(shellText, workspace, workspace)
         : { reads: [] as string[], writes: [] as string[] };
       const shellWrites = shellAccess.writes.filter((v) => !outsideWorkspace(v));
       const shellReads = shellAccess.reads.filter((v) => !outsideWorkspace(v));

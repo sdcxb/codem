@@ -1600,9 +1600,13 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
   这种名字无害的链接不会弹审批）。
 - grep 结果新增 `filterSensitiveGrepMatchesCanonical`：整页路径一次批量 canonicalize，
   再按真实路径过滤；grep/lsp/task-keyword-search/run_code 全部改走它。
+- shell 文本新增 `detectSensitiveShellAccessCanonical`：先批量解析命令 token 的真实路径，
+  再把「规范路径敏感」反馈给同步检测器；`cat notes.txt`（notes.txt -> .env）能识别为读。
+- Windows ADS（`file.txt:stream`）默认文件视图看不到内容，按敏感 ask 处理。
 - 判据：Rust `resolve_canonical_path_follows_junction_to_target`（真建 junction，解析到区外
-  目标且判越界）；JS mock `resolve_canonical_path` 的 `notes.txt -> .env` 被拒，
-  且 grep canonical 过滤计 1 个跳过。
+  目标且判越界）、`canonical_expands_existing_8_3_short_name`（真造 8.3 短名并断言展开）；
+  JS mock `resolve_canonical_path` 的 `notes.txt -> .env` 被拒、shell `cat notes.txt` 识别为读、
+  grep canonical 过滤计 1 个跳过。
 
 ### 3W.2 P1：非文件 MCP 资源
 
@@ -1617,9 +1621,11 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 1. shell 文本层 `cat notes.txt`（notes.txt 是链接到 .env）无法只靠参数 canonicalize 识别；
    它仍依赖沙箱在真实路径上的越界判定，以及敏感文件的**直接名字**检测。这是文本解析的边界，
    不是本次 realpath 能闭合的；要闭合只能把 shell 关进更小的能力沙箱。
-2. 8.3 短名由 `std::fs::canonicalize` 对**已存在**路径展开；不存在的新文件仍走词法祖先，
-   8.3 未展开属于残余（写侧守卫同口径）。
+2. 8.3 短名由 `std::fs::canonicalize` 对**已存在**路径展开（Rust 判据真造长目录、取
+   `%~sI` 短名、断言解析到同一长路径）；不存在的新文件没有可读内容，走词法祖先。
 3. 非文件 MCP 资源的审批是「按 URI 首次询问」，不是内容级 DLP；server 返回什么仍由 server 决定。
+4. Windows ADS（`file.txt:stream`）已按敏感 ask 处理（默认文件视图看不到内容）；
+   直读 token 的 symlink 已由 canonical shell 检测覆盖，但**脚本内部再拼路径**仍属文本解析边界。
 
 ## 4. Batch 1A 的实现细节（留档）
 

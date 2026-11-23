@@ -40,7 +40,7 @@ import {
   refuseProtectedPathWrite,
 } from "../tool-gates";
 import {
-  detectSensitiveShellAccess,
+  detectSensitiveShellAccessCanonical,
   filterSensitiveGrepMatchesCanonical,
   isSensitiveReadPath,
 } from "../../security/sensitive-read";
@@ -268,7 +268,7 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           const refusal = refuseDangerousCommand(command, ctx.securityMode, cmdTimeout);
           if (refusal) throw new Error(refusal);
           /* 无审批通道：敏感文件的读/写在 run_code 里一律 fail-closed（full 才放行）。 */
-          const shellSensitive = detectSensitiveShellAccess(command, ctx.cwd, ctx.cwd);
+          const shellSensitive = await detectSensitiveShellAccessCanonical(command, ctx.cwd, ctx.cwd);
           if (shellSensitive.writes.length > 0) {
             throw new Error(`受保护文件禁止在 run_code 里写/删：${shellSensitive.writes.join(", ")}。请在应用外手动修改。`);
           }

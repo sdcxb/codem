@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { assertSensitiveReadAllowed, setFileInvoker } from "../core/file-api";
-import { filterSensitiveGrepMatchesCanonical } from "../core/security/sensitive-read";
+import { detectSensitiveShellAccessCanonical, filterSensitiveGrepMatchesCanonical } from "../core/security/sensitive-read";
 import {
   filterSensitiveGlobFiles,
   filterSensitiveGrepMatches,
@@ -72,6 +72,28 @@ describe("SENS-17：file-api 默认拒绝敏感读（SDK/内部调用没有审�
       const filtered = await filterSensitiveGrepMatchesCanonical(["C:/ws/notes.txt:1:SECRET=1"], "C:/ws");
       expect(filtered.matches).toEqual([]);
       expect(filtered.skipped).toBe(1);
+    } finally {
+      setFileInvoker(null);
+    }
+  });
+});
+
+describe("SENS-17 P0：shell 文本按真实路径判敏感", () => {
+  it("cat notes.txt（notes.txt 链接 .env）必须识别为读；重定向识别为写", async () => {
+    setFileInvoker({
+      invoke: async (command: string, args?: any) => {
+        if (command === "resolve_canonical_paths") {
+          return args.paths.map((p: string) => (p.endsWith("notes.txt") ? "C:/ws/.env" : p));
+        }
+        if (command === "resolve_canonical_path") return "C:/ws/.env";
+        throw new Error("unexpected " + command);
+      },
+    });
+    try {
+      const read = await detectSensitiveShellAccessCanonical("cat notes.txt", "C:/ws", "C:/ws");
+      expect(read.reads.length, "链接目标敏感必须算读").toBeGreaterThan(0);
+      const write = await detectSensitiveShellAccessCanonical("echo x > notes.txt", "C:/ws", "C:/ws");
+      expect(write.writes.length, "链接目标敏感必须算写").toBeGreaterThan(0);
     } finally {
       setFileInvoker(null);
     }

@@ -54,12 +54,31 @@ export function toWorkspaceRelative(input: string, workspace?: string): string {
   return p.replace(/^\/+/, "");
 }
 
+/** Windows 备用数据流（ADS）：file.txt:stream / :$DATA —— 默认文件视图看不到，必须按敏感处理 */
+function hasAlternateDataStream(input: string): boolean {
+  const p = String(input ?? "").replace(/\\/g, "/");
+  const start = /^[A-Za-z]:\//.test(p) ? 2 : 0;
+  const idx = p.indexOf(":", start);
+  if (idx < 0) return false;
+  const rest = p.slice(idx + 1);
+  return rest.length > 0 && !rest.startsWith("/");
+}
+
 /**
  * 判定一个路径是否属于「读侧敏感」。
  *
  * @returns `null` = 普通/模板文件；否则返回 Host 规则表的 verdict
  */
 export function classifySensitiveRead(path: string, workspace?: string): SensitivePathVerdict | null {
+  if (hasAlternateDataStream(path)) {
+    return {
+      rule: "credential-file",
+      action: "ask",
+      label: "备用数据流",
+      reason: "Windows 备用数据流可能藏着默认文件视图看不到的内容",
+      risk: "high",
+    };
+  }
   const rel = toWorkspaceRelative(path, workspace);
   const base = rel.split("/").filter(Boolean).pop() ?? "";
   if (ENV_TEMPLATE_RE.test(base) || ENV_TEMPLATE_RE.test(rel)) return null;
@@ -144,12 +163,16 @@ export function detectSensitiveShellAccess(
   command: string,
   workspace?: string,
   cwd?: string,
+  isSensitiveToken?: (token: string) => boolean,
 ): SensitiveShellAccess {
   const reads = new Set<string>();
   const writes = new Set<string>();
   if (!command || !command.trim()) return { reads: [], writes: [] };
   const segments = command.split(/\r?\n|;|&&|\|\|/);
   const cwdBase = cwd ?? workspace;
+  /** 词法判定或调用方给的规范路径判定（P0：symlink 目标） */
+  const sensitive = (token: string): boolean =>
+    isSensitiveToken ? isSensitiveToken(token) : isSensitiveReadPath(token, cwdBase);
 
   for (const rawSeg of segments) {
     const seg = rawSeg.trim();
@@ -161,15 +184,15 @@ export function detectSensitiveShellAccess(
       const t = tokens[i];
       if (/^(\d?>|>>|1>|2>)$/.test(t) && tokens[i + 1]) {
         const target = stripQuotes(tokens[i + 1]);
-        if (isSensitiveReadPath(target, cwdBase)) writes.add(target);
+        if (sensitive(target)) writes.add(target);
       }
       if (/^>>?/.test(t) && t.length > 1) {
         const target = stripQuotes(t.replace(/^>>?/, ""));
-        if (isSensitiveReadPath(target, cwdBase)) writes.add(target);
+        if (sensitive(target)) writes.add(target);
       }
       if (/^of=/i.test(t)) {
         const target = stripQuotes(t.slice(3));
-        if (isSensitiveReadPath(target, cwdBase)) writes.add(target);
+        if (sensitive(target)) writes.add(target);
       }
     }
 
@@ -182,7 +205,7 @@ export function detectSensitiveShellAccess(
       for (const token of tokens.slice(1)) {
         const t = stripQuotes(token);
         if (!t || t.startsWith("-")) continue;
-        if (isSensitiveReadPath(t, cwdBase)) {
+        if (sensitive(t)) {
           if (isGitCheckout || /^(set-content|out-file|add-content|new-item|tee|tee-object|cp|copy|copy-item|mv|move|move-item|install|rsync|truncate|shred|rm|remove-item|del|sed|perl|dd)$/i.test(verbBase)) {
             writes.add(t);
           }
@@ -191,7 +214,7 @@ export function detectSensitiveShellAccess(
       if (/\bsed\b[^|]*\s-i\b/i.test(seg)) {
         for (const token of tokens.slice(1)) {
           const t = stripQuotes(token);
-          if (t && isSensitiveReadPath(t, cwdBase)) writes.add(t);
+          if (t && sensitive(t)) writes.add(t);
         }
       }
     }
@@ -203,7 +226,7 @@ export function detectSensitiveShellAccess(
         if (!t || t.startsWith("-") || /^of=/i.test(t)) continue;
         // 正则/转义 token（如 grep 的 \.env）不是路径；UNC（\\\\server）除外
         if (/^\\/.test(t) && !/^\\\\\\\\/.test(t)) continue;
-        if (!isSensitiveReadPath(t, cwdBase)) continue;
+        if (!sensitive(t)) continue;
         if (!writes.has(t)) reads.add(t);
       }
     }
@@ -215,7 +238,7 @@ export function detectSensitiveShellAccess(
         const idx = t.indexOf(":");
         if (idx < 0) continue;
         const candidate = t.slice(idx + 1);
-        if (isSensitiveReadPath(candidate, cwdBase)) reads.add(t);
+        if (sensitive(candidate)) reads.add(t);
       }
     }
   }
@@ -223,6 +246,61 @@ export function detectSensitiveShellAccess(
   return { reads: [...reads], writes: [...writes] };
 }
 
+
+﻿/**
+ * P0：shell 文本的规范路径版本。
+ *
+ * 同步检测器只认字面文件名；工作区里 notes.txt -> .env 这种链接会漏。
+ * 这里先把 token 批量解析成真实路径，再把「规范路径敏感」反馈给同步检测器；
+ * 无法解析（旧构建/测试）时退回词法检测（不是放行）。
+ */
+export async function detectSensitiveShellAccessCanonical(
+  command: string,
+  workspace?: string,
+  cwd?: string,
+): Promise<SensitiveShellAccess> {
+  const lexical = detectSensitiveShellAccess(command, workspace, cwd);
+  let canonicalize: ((paths: string[], workspace?: string) => Promise<string[]>) | null = null;
+  try {
+    const api = await import("../file-api");
+    if (typeof api.canonicalizePathsForSecurity === "function") canonicalize = api.canonicalizePathsForSecurity;
+  } catch {
+    /* 无 file-api ⇒ 退回词法结果 */
+  }
+  if (!canonicalize || !command.trim()) return lexical;
+
+  const cwdBase = cwd ?? workspace;
+  const tokens = new Set<string>();
+  for (const seg of command.split(/\r?\n|;|&&|\|\|/)) {
+    for (const raw of shellTokens(seg)) {
+      const t = stripQuotes(raw).replace(/^>>?/, "").replace(/^of=/i, "");
+      if (!t || t.startsWith("-") || /^(\d?>|>>|1>|2>|&&|\|\|)$/.test(t)) continue;
+      if (/^https?:\/\//i.test(t)) continue;
+      if (/^\\/.test(t) && !/^\\\\/.test(t)) continue;
+      tokens.add(t);
+      const colon = t.indexOf(":");
+      if (colon > 0) tokens.add(t.slice(colon + 1));
+    }
+  }
+  const list = [...tokens].slice(0, 500);
+  if (list.length === 0) return lexical;
+  let canonicalList: string[] = list;
+  try {
+    canonicalList = await canonicalize(list, cwdBase);
+  } catch {
+    return lexical;
+  }
+  const sensitiveTokens = new Set<string>();
+  list.forEach((token, i) => {
+    const canonical = canonicalList[i] ?? token;
+    if (isSensitiveReadPath(token, cwdBase) || isSensitiveReadPath(canonical, cwdBase)) {
+      sensitiveTokens.add(token);
+      for (const full of tokens) if (full.endsWith(":" + token)) sensitiveTokens.add(full);
+    }
+  });
+  if (sensitiveTokens.size === 0) return lexical;
+  return detectSensitiveShellAccess(command, workspace, cwd, (t) => sensitiveTokens.has(t));
+}
 
 /** 从 grep 的 `path:line:content` 行里取路径（Windows 盘符冒号不算分隔） */
 export function grepLinePath(line: string): string | null {

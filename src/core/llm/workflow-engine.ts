@@ -40,7 +40,7 @@ import {
   refuseProtectedPathWrite,
 } from "./tool-gates";
 import {
-  detectSensitiveShellAccess,
+  detectSensitiveShellAccessCanonical,
   filterSensitiveGlobFiles,
   isSensitiveReadPath,
 } from "../security/sensitive-read";
@@ -195,7 +195,7 @@ console.log(JSON.stringify(results, null, 2));
           // `refuseDangerousCommand` 注释（ToolContext 里没有审批通道）。
           const refusal = refuseDangerousCommand(command, ctx.securityMode, 60_000, "workflow");
           if (refusal) throw new Error(refusal);
-          const shellSensitive = detectSensitiveShellAccess(command, ctx.cwd, ctx.cwd);
+          const shellSensitive = await detectSensitiveShellAccessCanonical(command, ctx.cwd, ctx.cwd);
           if (shellSensitive.writes.length > 0) {
             throw new Error(`受保护文件禁止在 workflow 里写/删：${shellSensitive.writes.join(", ")}。`);
           }

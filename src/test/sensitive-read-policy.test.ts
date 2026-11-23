@@ -42,6 +42,13 @@ describe("SENS-17：路径归一化与模板放行", () => {
     }
   });
 
+  it("Windows ADS 备用数据流按敏感处理（默认视图看不到内容）", () => {
+    for (const p of ["C:\\ws\\notes.txt:secret", "notes.txt:$DATA"]) {
+      expect(isSensitiveReadPath(p, "C:/ws"), p).toBe(true);
+    }
+    expect(isSensitiveReadPath("C:\\ws\\notes.txt", "C:/ws")).toBe(false);
+  });
+
   it("应用内部目录 deny；用户附件 allow", () => {
     expect(sensitiveReadAction(".codem-snapshots/x.json", "C:/ws")).toBe("deny");
     expect(sensitiveReadAction(".codem-tool-results/x.json", "C:/ws")).toBe("deny");
