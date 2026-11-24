@@ -17,6 +17,7 @@ import {
   installRendererEvidence,
   parseRendererCrashRecord,
   formatRendererCrashMessage,
+  formatRendererCrashDetail,
   reportRendererCrashIfAny,
   __resetRendererEvidence,
   HEARTBEAT_INTERVAL_MS,
@@ -173,19 +174,37 @@ describe("渲染侧崩溃取证", () => {
     expect(ok!.module).toBeUndefined(); // 没给就是没给
   });
 
-  it("EV-9: 提示文本必须带上可转述的判据（kind / reason / exit_code）", () => {
-    const msg = formatRendererCrashMessage({
+  it("EV-9: 默认只给一行用户文案；技术判据进 detail，默认折叠", () => {
+    const record = {
       kind: "RENDER_PROCESS_EXITED(1)",
       reason: "OUT_OF_MEMORY(5)",
       exitCode: 5,
       module: "C:\\Windows\\System32\\onnxruntime.dll",
       memory: "host=77MB webview_total=416MB",
-    });
-    expect(msg).toContain("已自动重载恢复");
-    expect(msg).toContain("kind=RENDER_PROCESS_EXITED(1)");
-    expect(msg).toContain("reason=OUT_OF_MEMORY(5)");
-    expect(msg).toContain("exit_code=5");
-    expect(msg).toContain("onnxruntime.dll");
+    };
+    const msg = formatRendererCrashMessage(record);
+    expect(msg).toContain("已恢复");
+    expect(msg).not.toContain("kind=");
+    expect(msg.split("\n")).toHaveLength(1);
+    const detail = formatRendererCrashDetail(record);
+    expect(detail).toContain("kind=RENDER_PROCESS_EXITED(1)");
+    expect(detail).toContain("reason=OUT_OF_MEMORY(5)");
+    expect(detail).toContain("exit_code=5");
+    expect(detail).toContain("onnxruntime.dll");
+
+    const bare = formatRendererCrashDetail({ kind: "K", reason: "R", exitCode: 0 });
+    expect(bare).toBe("kind=K reason=R exit_code=0");
+    expect(formatRendererCrashMessage({ kind: "K", reason: "R", exitCode: 0 })).toContain("刚刚");
+  });
+
+  it("EV-9b: performance.memory 可用时把堆读数纳入样本，不可用时为 null", () => {
+    const mem = { usedJSHeapSize: 64 * 1024 * 1024, totalJSHeapSize: 80 * 1024 * 1024, jsHeapSizeLimit: 2048 * 1024 * 1024 };
+    Object.defineProperty(performance, "memory", { value: mem, configurable: true });
+    const withMem = collectSample(0);
+    expect(withMem.heapUsedMB).toBe(64);
+    expect(withMem.heapLimitMB).toBe(2048);
+    delete (performance as unknown as { memory?: unknown }).memory;
+    expect(collectSample(0).heapUsedMB).toBeNull();
   });
 
   it("EV-10: 有标记就上报一次；没有标记（或宿主不在）就什么都不做", async () => {
@@ -202,7 +221,9 @@ describe("渲染侧崩溃取证", () => {
     const rec = await reportRendererCrashIfAny(report);
     expect(rec).not.toBeNull();
     expect(report).toHaveBeenCalledTimes(1);
-    expect(report.mock.calls[0][0]).toContain("reason=CRASHED(3)");
+    expect(report.mock.calls[0][0]).toContain("已恢复");
+    expect(report.mock.calls[0][0]).not.toContain("reason=");
+    expect((report.mock.calls[0][1] as any).reason).toBe("CRASHED(3)");
 
     // 没有标记（Rust 返回 null）⇒ 不弹任何提示
     (globalThis as any).__TAURI__ = { core: { invoke: vi.fn(async () => null) } };
@@ -210,10 +231,16 @@ describe("渲染侧崩溃取证", () => {
     expect(await reportRendererCrashIfAny(report2)).toBeNull();
     expect(report2).not.toHaveBeenCalled();
 
-    // 没有宿主 ⇒ 同样什么都不做，且不抛
-    delete (globalThis as any).__TAURI__;
+    // 宿主 invoke 拒绝 ⇒ 同样什么都不做，且不抛
+    (globalThis as any).__TAURI__ = { core: { invoke: vi.fn(async () => { throw new Error("host down"); }) } };
     const report3 = vi.fn();
     await expect(reportRendererCrashIfAny(report3)).resolves.toBeNull();
     expect(report3).not.toHaveBeenCalled();
+
+    // 没有宿主 ⇒ 同样什么都不做，且不抛
+    delete (globalThis as any).__TAURI__;
+    const report4 = vi.fn();
+    await expect(reportRendererCrashIfAny(report4)).resolves.toBeNull();
+    expect(report4).not.toHaveBeenCalled();
   });
 });

@@ -11,17 +11,18 @@
  *  - 第 1 次：`LibraryPanel`（馆内页签）两个场景都漏传（真机 1.16.112 实测：房间里命中归属
  *    修好之后，点击仍然不选中任何岗位）；
  *  - 第 2 次：`OverviewPanel`（概览页签）的「场景实况」大卡只传了 `onSelectActor`
- *    —— 同一处漏接线在另一个面板里原样复现（概览页里那是唯一能直接点角色的入口）。
+ *    —— 同一处漏接线在另一个面板里原样复现（当时概览页里那是唯一能直接点角色的入口）。
  *
- * 两次都是"人去看才发现"，所以这里把它变成**结构性判据**：
- * 插件目录里凡出现 `<PixelLibraryScene` / `<LibraryScene` 的地方，该处 JSX 必须传 `onSelectZone`。
+ * 概览页的场景大卡后来按「去模板化」删掉了（画布只在「子智能体」页签），
+ * 于是场景渲染点收敛到 `LibraryPanel` 一处 —— 判据跟着收敛，但**不是放宽**：
+ * 插件目录里凡出现 `<PixelLibraryScene` / `<LibraryScene` 的地方，该处 JSX 仍然必须传 `onSelectZone`。
  *
  * ## 为什么用静态扫描而不是渲染测试
  *
  * 渲染测试只能证明"传了 prop 的组件会回调"（`library-ops-pixel-hit-area.test.tsx` 已经钉住了），
  * **测不到"面板有没有传"** —— 那正是缺陷所在的那一层。
  * 扫描的代价是它会因为写法变化而失败（例如多行属性、改名），所以下面同时钉了
- * **控制组**（必须先扫到 2 个文件 4 个调用点），避免"扫到 0 处 → 全部通过"的假绿。
+ * **控制组**（必须先扫到 2 个调用点），避免"扫到 0 处 → 全部通过"的假绿。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -72,10 +73,9 @@ const sites = collectTsx(ROOT).flatMap((file) => {
 
 describe("LO-WIRING 场景组件的可选 prop 必须真的接上", () => {
   it("LO-WIRING-0（控制组）：扫描必须真的扫到场景调用点，否则本文件测的是空", () => {
-    expect(sites.length, "插件里应当有 4 处场景调用（2 个面板 × pixel/iso 各一）").toBe(4);
+    expect(sites.length, "场景只应渲染在馆内页签（pixel/iso 各一）").toBe(2);
     expect([...new Set(sites.map((s) => s.file))].sort()).toEqual([
       "components/monitor/LibraryPanel.tsx",
-      "components/monitor/OverviewPanel.tsx",
     ]);
   });
 
@@ -93,10 +93,18 @@ describe("LO-WIRING 场景组件的可选 prop 必须真的接上", () => {
   });
 
   it("LO-WIRING-3：面板接的是 store 的 selectZone（不是自造的空函数）", () => {
-    for (const rel of ["components/monitor/LibraryPanel.tsx", "components/monitor/OverviewPanel.tsx"]) {
-      const src = readFileSync(join(ROOT, rel), "utf8");
-      expect(src, `${rel} 应当从 store 取 selectZone`).toMatch(/useLibraryOps\(\(s\) => s\.selectZone\)/);
-      expect(src, `${rel} 应当把它传给场景`).toMatch(/onSelectZone=\{selectZone\}/);
-    }
+    const rel = "components/monitor/LibraryPanel.tsx";
+    const src = readFileSync(join(ROOT, rel), "utf8");
+    expect(src, `${rel} 应当从 store 取 selectZone`).toMatch(/useLibraryOps\(\(s\) => s\.selectZone\)/);
+    expect(src, `${rel} 应当把它传给场景`).toMatch(/onSelectZone=\{selectZone\}/);
+  });
+
+  it("LO-WIRING-4：概览页不再自己渲染场景（画布只在「子智能体」页签）", () => {
+    const src = readFileSync(join(ROOT, "components/monitor/OverviewPanel.tsx"), "utf8");
+    expect(src, "概览页不应再 import 场景组件").not.toMatch(/PixelLibraryScene|LibraryScene/);
+    expect(src, "概览页不应再持有 initial scene / selectZone 状态").not.toMatch(
+      /initialPixelScene|initialIsoScene|selectZone/,
+    );
+    expect(src, "概览页不应再出现「场景实况」标题").not.toContain("场景实况");
   });
 });

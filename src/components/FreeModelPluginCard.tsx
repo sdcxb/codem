@@ -193,26 +193,30 @@ export function FreeModelPluginCard({
   const healthy = !!status.health;
 
   if (compact) {
+    /* 与 cordis 插件共用同一套列表行（列/行高由 `.plugin-row` 样式决定），不再单开一张卡片。 */
     return (
       <div
-        className={`market-skill-card ofm-compact-card ${status.enabled ? "" : "is-off"}`}
+        className={`plugin-row ofm-compact-card ${status.enabled ? "" : "is-off"}`}
         role="button"
         tabIndex={0}
+        data-plugin-row={freeModelPlugin.name}
+        data-plugin-status={status.enabled ? "enabled" : "disabled"}
         onClick={onOpenDetail}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpenDetail?.(); }}
       >
-        <div className="market-skill-card-header">
-          <span className="market-skill-icon"><PanelIcons.plugins /></span>
-          <div className="market-skill-card-title">
-            <span className="market-skill-name">{freeModelPlugin.name}</span>
-            <span className="ofm-compact-badge">外部服务</span>
-          </div>
-          <span className="ofm-compact-more">查看详情</span>
-        </div>
-        <div className="market-skill-desc">独立本地服务：免费模型列表与起停控制，点击查看详情。</div>
-        <div className="market-skill-card-footer">
-          <span className="hint-sm">{stateLabel}</span>
-        </div>
+        <span className="plugin-row-icon" aria-hidden="true">
+          <PanelIcons.plugins size={16} strokeWidth={1.5} />
+        </span>
+        <span className="plugin-row-name">
+          <span className="plugin-row-open">{freeModelPlugin.name}</span>
+          <span className="ofm-compact-badge">外部服务</span>
+        </span>
+        <span className="plugin-row-desc">独立本地服务：免费模型列表与起停控制</span>
+        <span className="plugin-row-type">服务</span>
+        <span className="plugin-row-deps">—</span>
+        <span className="plugin-row-actions">
+          <span className="ofm-compact-more" title={stateLabel}>{stateLabel} · 查看详情</span>
+        </span>
       </div>
     );
   }

@@ -5,6 +5,7 @@
  */
 
 import { memo } from "react";
+import { Type as TypeIcon, Image as ImageIcon, Clapperboard, type LucideIcon } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
 
 type GenerateMode = "text" | "image" | "video";
@@ -22,24 +23,27 @@ export const GenerateModeSelector = memo(function GenerateModeSelector({
 }: GenerateModeSelectorProps) {
   const lang = useLang();
 
-  const modes: { value: GenerateMode; icon: string; label: string }[] = [
-    { value: "text", icon: "📝", label: S.generateMode.text[lang] },
-    { value: "image", icon: "🖼️", label: S.generateMode.image[lang] },
-    { value: "video", icon: "🎬", label: S.generateMode.video[lang] },
+  const modes: { value: GenerateMode; icon: LucideIcon; label: string }[] = [
+    { value: "text", icon: TypeIcon, label: S.generateMode.text[lang] },
+    { value: "image", icon: ImageIcon, label: S.generateMode.image[lang] },
+    { value: "video", icon: Clapperboard, label: S.generateMode.video[lang] },
   ];
 
   return (
     <div className="generate-mode-selector">
-      {modes.map((m) => (
-        <button
-          key={m.value}
-          className={`mode-option ${mode === m.value ? "active" : ""}`}
-          onClick={() => onModeChange(m.value)}
-        >
-          <span className="mode-icon">{m.icon}</span>
-          <span className="mode-label">{m.label}</span>
-        </button>
-      ))}
+      {modes.map((m) => {
+        const Icon = m.icon;
+        return (
+          <button
+            key={m.value}
+            className={`mode-option ${mode === m.value ? "active" : ""}`}
+            onClick={() => onModeChange(m.value)}
+          >
+            <span className="mode-icon"><Icon size={16} aria-hidden /></span>
+            <span className="mode-label">{m.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 });

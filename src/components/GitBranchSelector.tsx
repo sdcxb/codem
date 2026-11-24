@@ -240,7 +240,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
               <input
                 ref={inputRef}
                 className="git-branch-input"
-                placeholder="新分支名称..."
+                placeholder="新分支名称"
                 value={newBranchName}
                 onChange={(e) => setNewBranchName(e.target.value)}
                 onKeyDown={(e) => {

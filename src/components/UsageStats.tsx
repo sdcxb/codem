@@ -455,7 +455,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 : limitsSaveState === "saved"
                   ? <span className="usage-saved"><CheckCircle size={16} /> 已保存</span>
                   : limitsSaveState === "failed"
-                    ? <span className="usage-saved">⚠️ 未确认保存（未落库）</span>
+                    ? <span className="usage-saved">未确认保存（未落库）</span>
                     : "保存限额"}
             </button>
             {limitsSaveError && (

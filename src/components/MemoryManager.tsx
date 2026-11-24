@@ -1501,6 +1501,14 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
     );
   };
 
+  /**
+   * 顶部三个主指标之一：**已生效 = 总计 − 待批准**（与既有 `getStats` 同一份口径）。
+   *
+   * 不另取数、不另算"生效"集合：待批准之外的条目已经是既有语义里的生效面
+   * （参与上下文 / 已归档 / 旧池等细分仍由「详情」原样列出）。
+   */
+  const activeEntries = Math.max(0, stats.totalEntries - stats.pendingEntries);
+
   return (
     <div className="memory-manager">
       <div className="memory-manager-header">
@@ -1569,53 +1577,20 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
         </div>
       </div>
 
-      <div className="memory-stats">
-        <div className="memory-stat">
-          <span className="memory-stat-value">{stats.totalEntries}</span>
-          <span className="memory-stat-label">总计</span>
-        </div>
-        <div className="memory-stat">
-          <span className="memory-stat-value platform">{stats.byScope.platform}</span>
-          <span className="memory-stat-label">平台</span>
-        </div>
-        <div className="memory-stat">
-          <span className="memory-stat-value project">{stats.byScope.project}</span>
-          <span className="memory-stat-label">项目</span>
-        </div>
-        {/* 25:668：团队级（跨群共享）—— 与项目级分开数，否则没法判断"团队记忆有没有写进来" */}
-        <div className="memory-stat" title="团队级：只在对应团队成员（同项目）的请求里注入；跨群共享">
-          <span className="memory-stat-value team">{stats.byScope.team}</span>
-          <span className="memory-stat-label">团队</span>
-        </div>
-        <div className="memory-stat">
-          <span className="memory-stat-value conversation">{stats.byScope.conversation}</span>
-          <span className="memory-stat-label">对话</span>
-        </div>
+      {/*
+        顶部只保留 3 个**用户要做决定**的读数：待批准（要不要批）、已生效（批完有多少）、
+        体积（要不要清理）。作用域拆分、归档、旧池、未知作用域都还在，只是收进「详情」
+        —— 它们回答的是"构成如何"，不是"现在该做什么"。
+      */}
+      <div className="memory-stats memory-stats--primary">
         <div className="memory-stat">
           <span className="memory-stat-value pending">{stats.pendingEntries}</span>
           <span className="memory-stat-label">待批准</span>
         </div>
-        {/* P1-3：已归档条数 —— 它们仍在库里、可恢复，不计入注入；要数得出来，否则用户以为被删了 */}
-        {stats.archivedEntries > 0 && (
-          <div className="memory-stat" title="已归档：不再进上下文，但正文与 id 都还在，可在列表里逐条恢复">
-            <span className="memory-stat-value other">{stats.archivedEntries}</span>
-            <span className="memory-stat-label">已归档</span>
-          </div>
-        )}
-        {/* M-5：作用域不是三者之一的条目 —— 过去在所有界面都看不见，现在至少数得出来 */}
-        {stats.unknownScope > 0 && (
-          <div className="memory-stat">
-            <span className="memory-stat-value other">{stats.unknownScope}</span>
-            <span className="memory-stat-label">其它（作用域无法识别）</span>
-          </div>
-        )}
-        {/* M-2：旧版跨项目池的条数（它们仍默认注入，但用户要能看出有多少） */}
-        {stats.legacyPool > 0 && (
-          <div className="memory-stat">
-            <span className="memory-stat-value other">{stats.legacyPool}</span>
-            <span className="memory-stat-label">旧版跨项目池</span>
-          </div>
-        )}
+        <div className="memory-stat" title="已生效 = 总计 − 待批准；各作用域与归档构成见「详情」">
+          <span className="memory-stat-value">{activeEntries}</span>
+          <span className="memory-stat-label">已生效</span>
+        </div>
         {/*
           O-36：体积这一格是"记忆镜像字节预算"的用户可见出口。
           没有它时，体积只存在于 `stats().memoryBytes` 里 —— 全仓一个消费方都没有，
@@ -1628,6 +1603,20 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
           </div>
         )}
       </div>
+
+      <details className="memory-stat-details">
+        <summary className="memory-stat-details-summary">详情</summary>
+        <div className="memory-stat-detail-line">
+          <span>总计 {stats.totalEntries}</span>
+          <span>平台 {stats.byScope.platform}</span>
+          <span>项目 {stats.byScope.project}</span>
+          <span>团队 {stats.byScope.team}</span>
+          <span>对话 {stats.byScope.conversation}</span>
+          <span>已归档 {stats.archivedEntries}</span>
+          <span>旧版 {stats.legacyPool}</span>
+          <span>其它 {stats.unknownScope}</span>
+        </div>
+      </details>
 
       {/*
         P2-B（24 §P2「观测面板」）：可观测指标的最小可见出口。
@@ -1706,10 +1695,18 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
         数字与上面那格、与上报通道同一个来源（`getByteStats()`）。
       */}
       {bytes && bytes.overBy > 0 && (
-        <div className="memory-notice">
-          记忆体积约 {formatBytes(bytes.payloadBytes)}，已超过预算 {formatBytes(bytes.budgetBytes)}（超出{" "}
-          {formatBytes(bytes.overBy)}）；最大的一块是「{bytes.biggestBucket}」（{formatBytes(bytes.biggestBucketBytes)}）。
-          超预算不会删除或截断任何条目；要缩小可删掉不再需要的条目，或先「导出为 JSON」留档再清理。
+        <div className="memory-notice memory-budget-notice">
+          <div className="memory-budget-summary">
+            记忆体积约 {formatBytes(bytes.payloadBytes)}，已超过预算 {formatBytes(bytes.budgetBytes)}（超出{" "}
+            {formatBytes(bytes.overBy)}）；超预算不会删除或截断任何条目。
+          </div>
+          <details className="memory-budget-help">
+            <summary className="memory-budget-help-summary">如何处理</summary>
+            <div className="memory-budget-help-body">
+              最大的一块是「{bytes.biggestBucket}」（{formatBytes(bytes.biggestBucketBytes)}）。
+              要缩小可删掉不再需要的条目，或先「导出为 JSON」留档再清理。
+            </div>
+          </details>
         </div>
       )}
 
@@ -1720,8 +1717,21 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
       */}
       <div className={`memory-pending-hint ${pending.length > 0 ? "active" : ""}`}>
         {pending.length > 0
-          ? `有 ${pending.length} 条自动记忆等待批准：它们现在不会进上下文，批准后才生效（手动条目不受影响）。可以逐条批准/拒绝，也可以勾选后批量处置（含全选）。`
-          : `自动提取的记忆按上面「写入审批」的开关处理：对话级默认直接生效（只跟本次对话有关的事实不再打扰你），项目级 / 平台级默认先进待批准区、批准后才进上下文。`}
+          ? `有 ${pending.length} 条自动记忆等待批准：它们现在不会进上下文，批准后才生效（手动条目不受影响）。`
+          : `自动提取的记忆按「写入审批」处理：对话级直接生效，项目级 / 平台级先进入待批准。`}
+        <details className="memory-write-guide">
+          <summary className="memory-write-guide-summary">如何写入</summary>
+          <div className="memory-write-guide-body">
+            <p>
+              未批准的自动记忆不进上下文；对话级默认直接生效（自动提取里「只跟本次对话有关」的那些），
+              项目级 / 平台级默认先进待批准区、批准后才进上下文。
+            </p>
+            <p>
+              待批准条目可以逐条批准 / 拒绝，也可以勾选后批量处置（含全选）；
+              手动条目永不被自动流程改写。
+            </p>
+          </div>
+        </details>
       </div>
 
       {/*
@@ -1761,8 +1771,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
           </button>
         ))}
         <span className="memory-approval-hint">
-          未批准的自动记忆不进上下文；对话级默认直接生效（自动提取里"只跟本次对话有关"的那些）；
-          手动条目永不被自动流程改写。
+          未批准的自动记忆不进上下文；手动条目永不被自动流程改写。
         </span>
       </div>
 
@@ -1977,15 +1986,18 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
             这里如实说明，而不是给一个点了没反应的按钮（旧批次也不会出现在这份列表里）。
           */}
           <div className="memory-batch-note">
-            只有本版本之后自动提取写入的条目带批次号。升级前的旧记忆没有批次信息，
-            无法用「撤销该批」回滚 —— 请到「设置 → 记忆体检」里用批量删除或归位处置。
+            只有本版本之后自动提取写入的条目带批次号，升级前的旧记忆无法整批回滚。
+            <details className="memory-batch-help">
+              <summary className="memory-batch-help-summary">批次说明</summary>
+              <div className="memory-batch-help-body">
+                旧记忆没有批次信息，无法用「撤销该批」回滚 —— 请到「设置 → 记忆体检」里用批量删除或归位处置。
+              </div>
+            </details>
           </div>
           {batches.slice(0, 10).map((batch) => (
-            <div key={batch.id} className="memory-batch-item">
-              <span className="memory-batch-id">{batch.id}</span>
-              <span className="memory-batch-meta">
-                {batch.count} 条 · {formatTime(batch.createdAt)}
-                {batch.sessionId ? ` · 会话 ${batch.sessionId}` : ""}
+            <div key={batch.id} className="memory-batch-item" title={batch.id}>
+              <span className="memory-batch-summary">
+                批次 · {formatTime(batch.createdAt)} · {batch.count} 条
               </span>
               <button className="memory-undo-btn" onClick={() => handleUndoBatch(batch.id)}>
                 撤销该批
@@ -2062,7 +2074,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
             />
           </div>
           <div className="memory-edit-actions">
-            <button className="memory-save-btn" onClick={handleSave}>💾 保存</button>
+            <button className="memory-save-btn" onClick={handleSave}>保存</button>
             <button className="memory-cancel-btn" onClick={handleCancelEdit}>取消</button>
           </div>
         </div>
@@ -2076,7 +2088,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="搜索记忆..."
+              placeholder="搜索记忆"
             />
             {/* 纯图标按钮 ⇒ 必须有可访问名（只加属性，不动布局与样式） */}
             <button
@@ -2150,7 +2162,7 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
                   value={crossQuery}
                   onChange={(e) => setCrossQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && void handleCrossScopeSearch()}
-                  placeholder="在指定项目里搜索记忆..."
+                  placeholder="在指定项目里搜索记忆"
                   aria-label="跨项目搜索的查询词 / Query for cross-project search"
                   data-testid="memory-cross-scope-query"
                 />

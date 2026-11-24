@@ -19,6 +19,9 @@ import {
   type PPTStyle, type CanvasSize, type StyleCategory,
 } from '../../core/knowledge/ppt-styles';
 import { isImageGenAvailable as checkImageGen } from '../../core/knowledge/ppt-image';
+import {
+  Loader2, Settings, Sparkles, Wrench, Palette, Image as ImageIcon, Upload, AlertTriangle,
+} from 'lucide-react';
 
 interface PPTAdapterProps {
   notebookId: string;
@@ -34,12 +37,12 @@ interface PPTAdapterProps {
 
 /** 生成阶段定义 */
 const STAGES = [
-  { key: 'loading',   label: '加载知识库',  icon: '📚' },
-  { key: 'preparing', label: '准备请求',    icon: '⚙️' },
-  { key: 'generating',label: 'AI 生成中',    icon: '✨' },
-  { key: 'parsing',   label: '解析结构',    icon: '🔧' },
-  { key: 'building',  label: '构建幻灯片',  icon: '🎨' },
-  { key: 'imaging',   label: 'AI 配图',     icon: '🖼️' },
+  { key: 'loading',   label: '加载知识库',  icon: Loader2 },
+  { key: 'preparing', label: '准备请求',    icon: Settings },
+  { key: 'generating',label: 'AI 生成中',    icon: Sparkles },
+  { key: 'parsing',   label: '解析结构',    icon: Wrench },
+  { key: 'building',  label: '构建幻灯片',  icon: Palette },
+  { key: 'imaging',   label: 'AI 配图',     icon: ImageIcon },
 ];
 
 function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGenerate = false, sourceIds, onSave, onBack }: PPTAdapterProps) {
@@ -219,7 +222,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
             {/* PPTX 导入入口 */}
             <div className="ppt-studio-import-row">
               <span className="ppt-studio-import-text">
-                📥 已有 PPTX 文件？直接导入编辑
+                <Upload size={14} aria-hidden /> 已有 PPTX 文件？直接导入编辑
               </span>
               <input
                 ref={fileInputRef}
@@ -327,7 +330,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
                 className="ppt-studio-checkbox"
               />
               <label htmlFor="enable-images" className="ppt-studio-option-label">
-                🖼️ 启用 AI 配图
+                <ImageIcon size={14} aria-hidden /> 启用 AI 配图
                 {!checkImageGen() && (
                   <span className="ppt-studio-option-hint">
                     (需在设置中配置生图模型)
@@ -338,7 +341,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
 
             {/* 生成按钮 */}
             <button onClick={handleGenerate} className="ppt-studio-generate-btn">
-              ✨ 生成 PPT
+              <Sparkles size={16} aria-hidden /> 生成 PPT
             </button>
           </div>
         </div>
@@ -350,11 +353,12 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
   if (loading) {
     const currentStageIdx = STAGES.findIndex(s => s.key === progressStage);
     const isGenerating = progressStage === 'generating';
+    const StageIcon = STAGES[currentStageIdx]?.icon ?? Loader2;
     return (
       <div className="ppt-studio-screen ppt-studio-screen--center">
         <div className="ppt-studio-stage ppt-studio-stage--narrow">
           <div className="ppt-studio-orb">
-            {STAGES[currentStageIdx]?.icon || '⏳'}
+            <StageIcon size={24} aria-hidden />
           </div>
           <div className="ppt-studio-heading">
             AI 正在生成 PPT
@@ -397,7 +401,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
     return (
       <div className="ppt-studio-screen ppt-studio-screen--center">
         <div className="ppt-studio-stage ppt-studio-stage--wide">
-          <div className="ppt-studio-orb ppt-studio-orb--error">⚠️</div>
+          <div className="ppt-studio-orb ppt-studio-orb--error"><AlertTriangle size={20} aria-hidden /></div>
           <div className="ppt-studio-heading ppt-studio-heading--error">生成失败</div>
           <div className="ppt-studio-error-text">
             {error}

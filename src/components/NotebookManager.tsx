@@ -913,7 +913,7 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
             <span className="notebook-source-chunks">{source.chunkCount} chunks</span>
           )}
           {source.errorMessage && (
-            <span className="notebook-source-error" title={source.errorMessage}>⚠</span>
+            <span className="notebook-source-error" title={source.errorMessage}>!</span>
           )}
         </div>
       </div>

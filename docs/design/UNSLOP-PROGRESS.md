@@ -1627,6 +1627,35 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 4. Windows ADS（`file.txt:stream`）已按敏感 ask 处理（默认文件视图看不到内容）；
    直读 token 的 symlink 已由 canonical shell 检测覆盖，但**脚本内部再拼路径**仍属文本解析边界。
 
+﻿### 3X. 第 18 轮：按 unslop 全量清理（2026-11-24）
+
+### 3X.1 屏幕级重构
+
+- 恢复提示：技术 dump 从默认文案移到折叠的「详情」，24h 后旧事故不再常驻；提示下移到标题栏下方。
+- 任务概览：四张等宽 KPI 卡 → 一条 4 项指标条；移除概览里的「场景实况」缩略；空活动不再画空热力图 + 大 0 圆环。
+- 插件管理：198 张 emoji 卡片墙 → 密集列表（图标 / 名称+版本 / 描述 / 类型 / 依赖 / 操作）；manifest emoji 不再渲染，按 category 映射 lucide；统计改一行 mono meta；筛选收敛为 4 段。
+- 设置：页面标题 20/600、section 16/500；底栏只保留「保存设置」主操作；模型选择加宽并显示完整名称。
+- 记忆：顶部 8 个数字 → 待批准 / 已生效 / 体积 3 个主指标；batch id 降级为 11px mono；三段长说明进 details。
+- 技能：拖拽区从首屏大块收成一行提示，只在拖入时显示目标区；默认选中第一个技能，详情区不再空白。
+
+### 3X.2 Emoji / 图标
+
+- 19 个文件里的可见 chrome emoji 全部换 lucide（PPT、Git、文件、目标、MCP、多模态、Recovery、Heartbeat、Notebook 等）；身份头像 / 宠物等产品内容保留。
+- 新增 `ui-visible-emoji` 门禁（JSX 文本 + 属性/表达式，排除 console/log），chrome 目标 0。
+- `ui-no-emoji` 棘轮从 233 行 / 47 文件收紧到 **16 行 / 6 文件**（剩余全部是身份/宠物 emoji 选择器、权限/输入端把 emoji 当兼容 key 的映射表；没有可见 chrome emoji）。
+
+### 3X.3 表面与门禁
+
+- 管理面 v2 重置旧玻璃/发光/彩色渐变/uppercase；开关打开态不再用 accent 铺满。
+- 新增 `ui-copy-shape`（placeholder 不以省略号收尾）、`ui-v2-surface`（无渐变/glow/玻璃/uppercase，section ≤ page title，开关不用 accent）。
+- 移除任务/场景重构后遗留的 19 个死 CSS 类；GitInfoPanel 的内联样式收成类；CSS 快照、icon 基线、time DST 例外表按实际迁移更新。
+
+### 3X.4 验证
+
+- 全量：1008 文件 / 10457 用例，10439 通过 / 18 skipped / 0 失败。
+- tsc 0；knip 46/30/9；ui-consistency / no-bom / visible-emoji / copy-shape / v2-surface 全绿。
+- 新增/更新任务、library-ops、插件、设置、记忆、恢复提示的定向判据共 40+ 条。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

@@ -128,8 +128,8 @@ export function VoiceSettingsPanel() {
           lineHeight: 1.5,
         }}>
           {zh
-            ? "⚠ 云端 Whisper 尚未配置：请到 设置 → 多模态 → STT 语音输入 启用并填入 OpenAI API Key（模型 whisper-1），否则点击麦克风会提示未配置。"
-            : "⚠ Cloud Whisper not configured: enable it with an OpenAI API key (model whisper-1) in Settings → Multimodal → STT Voice Input, otherwise the mic button will warn."}
+            ? "云端 Whisper 尚未配置：请到 设置 → 多模态 → STT 语音输入 启用并填入 OpenAI API Key（模型 whisper-1），否则点击麦克风会提示未配置。"
+            : "Cloud Whisper not configured: enable it with an OpenAI API key (model whisper-1) in Settings → Multimodal → STT Voice Input, otherwise the mic button will warn."}
         </div>
       )}
 
@@ -167,7 +167,7 @@ export function VoiceSettingsPanel() {
           color: "var(--warning)",
           marginLeft: 8,
         }}>
-          {zh ? "⚠ 云端 TTS 尚未配置，将回退使用浏览器内置 TTS。" : "⚠ Cloud TTS not configured, will fall back to browser TTS."}
+          {zh ? "云端 TTS 尚未配置，将回退使用浏览器内置 TTS。" : "Cloud TTS not configured, will fall back to browser TTS."}
         </div>
       )}
 

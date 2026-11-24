@@ -5,6 +5,7 @@
  */
 
 import { memo, useState, type ReactNode } from "react";
+import { Star } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
 
 interface Agent {
@@ -45,7 +46,7 @@ export const QuickAccessCards = memo(function QuickAccessCards({
   const renderCard = (agent: Agent) => (
     <div key={agent.id} className="quick-access-card">
       <button className="card-favorite" onClick={() => onToggleFavorite(agent.id)}>
-        {favoriteIds.has(agent.id) ? "★" : "☆"}
+        {favoriteIds.has(agent.id) ? <Star size={14} fill="currentColor" /> : <Star size={14} />}
       </button>
       <button className="card-body" onClick={() => onSelect(agent.id)}>
         <div className="card-icon">{agent.icon}</div>

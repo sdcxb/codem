@@ -7,6 +7,7 @@ import {
   type HeartbeatEvent,
 } from "../core/heartbeat/heartbeat";
 import { useLang } from "../core/i18n/lang";
+import { Activity, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 const STATUS_COLORS: Record<HeartbeatStatus, string> = {
   active: "var(--success)",
@@ -162,8 +163,8 @@ export function HeartbeatMonitor() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
-          💓 {zh ? "心跳监控" : "Heartbeat Monitor"}
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+          <Activity size={16} aria-hidden /> {zh ? "心跳监控" : "Heartbeat Monitor"}
         </div>
         <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "监控会话活动心跳，配置心跳上报端点和间隔。" : "Monitor session activity heartbeats, configure endpoint and interval."}
@@ -215,7 +216,7 @@ export function HeartbeatMonitor() {
                 )}
                 <span style={{ color: "var(--text-muted)" }}>{zh ? "消息" : "msg"}: {s.data.messageCount}</span>
                 {s.data.errorCount > 0 && (
-                  <span style={{ color: "var(--error)" }}>⚠️ {s.data.errorCount}</span>
+                  <span style={{ color: "var(--error)", display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} aria-hidden /> {s.data.errorCount}</span>
                 )}
                 <span style={{ color: STATUS_COLORS[s.status], fontWeight: 600 }}>{statusLabel(s.status)}</span>
               </div>
@@ -312,7 +313,7 @@ export function HeartbeatMonitor() {
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: "pointer",
           }}>
-            {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
+            {saved ? <><CheckCircle2 size={14} aria-hidden /> {zh ? "已保存" : "Saved"}</> : (zh ? "保存配置" : "Save Config")}
           </button>
           {stats.active > 0 && (
             <button onClick={handleStopAll} style={{

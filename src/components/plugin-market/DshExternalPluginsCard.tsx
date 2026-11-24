@@ -165,13 +165,17 @@ export function DshExternalPluginsCard({
   if (plugins.length === 0 && !error) return null;
 
   return (
-    <div className="market-skill-card dsh-ext-card" data-testid="dsh-external-plugins">
-      <div className="market-skill-card-header">
-        <span className="market-skill-icon">{<CommonIcons.package />}</span>
-        <div className="market-skill-card-title">
-          <span className="market-skill-name">DSH Ops / DSH 已安装插件</span>
-          <Badge variant="muted">外部运行时</Badge>
-        </div>
+    /*
+     * 这一段是**列表上方的一块元信息**，不再套 `market-skill-card`：
+     * 大卡片里再嵌卡片会让「已安装插件」看起来有两个层级。
+     * 行本身仍走 `dsh-ext-row`（版本 / 升级 / 停用三个行为原样保留）。
+     */
+    <section className="dsh-ext-card" data-testid="dsh-external-plugins">
+      {/* 复用 dsh-ext-row 的 flex/发丝线，块本身不再是一张卡片 */}
+      <div className="dsh-ext-row">
+        <CommonIcons.package size={16} strokeWidth={1.5} aria-hidden="true" />
+        <strong>DSH Ops · {zh ? "已安装插件" : "Installed plugins"}</strong>
+        <span className="dsh-ext-meta">{zh ? "外部运行时" : "External runtime"}</span>
         <div className="dsh-ext-actions">
           <button className="dsh-ext-btn dsh-ext-btn--secondary" onClick={() => void check()} disabled={checking}>
             {checking ? <StatusIcons.loading className="spin" /> : <ActionIcons.refresh />}
@@ -179,11 +183,11 @@ export function DshExternalPluginsCard({
           </button>
         </div>
       </div>
-      <div className="dsh-ext-note">
+      <p className="dsh-ext-note">
         {zh
           ? "这些是 DSH profile 里 npm 安装的独立插件。Codem 只管理版本与停用状态，不把它们的代码注入 Codem 运行时。"
           : "These are npm plugins installed in the DSH profile. Codem manages version/disabled state only; their code is not injected into the Codem runtime."}
-      </div>
+      </p>
       {error && (
         <div className="dsh-ext-error">
           {error}
@@ -198,6 +202,6 @@ export function DshExternalPluginsCard({
         moreLabel={(rest, next) => (zh ? `再显示 ${next} 个（还有 ${rest} 个）` : `Show ${next} more (${rest} left)`)}
         renderItem={(p) => renderPluginRow(p, zh, busy, upgrade, toggle)}
       />
-    </div>
+    </section>
   );
 }

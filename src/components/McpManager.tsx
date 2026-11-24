@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getMCPRegistry, type MCPServerConfig, type MCPServerStatus } from "../core/mcp/mcp";
-import { PanelIcons, ActionIcons, McpIcons } from "../core/icons/icon-map";
+import { PanelIcons, ActionIcons, McpIcons, MarketIcons } from "../core/icons/icon-map";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -265,7 +265,7 @@ export function McpManager({ onClose }: McpManagerProps) {
       {/* Actions */}
       <div className="mcp-manager-actions">
         <button className="mcp-action-btn marketplace-btn" onClick={() => setShowMarketplace(true)}>
-          <span style={{ marginRight: 4 }}>🏪</span>
+          <MarketIcons.store size={14} aria-hidden style={{ marginRight: 4 }} />
           服务器目录
         </button>
         <button

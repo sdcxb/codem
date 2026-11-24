@@ -6,6 +6,7 @@
  */
 
 import { memo } from "react";
+import { Search } from "lucide-react";
 import { useProjectStore } from "../core/store";
 import { useLang, S } from "../core/i18n/lang";
 
@@ -39,7 +40,7 @@ export const CorrectionModeToggle = memo(function CorrectionModeToggle({
       onClick={handleToggle}
       title={S.correctionMode.tooltip[lang]}
     >
-      <span className="toggle-icon">🔍</span>
+      <span className="toggle-icon"><Search size={12} aria-hidden /></span>
       <span className="toggle-label">{S.correctionMode.label[lang]}</span>
     </button>
   );

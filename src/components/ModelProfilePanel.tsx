@@ -492,8 +492,8 @@ function SlotConfigTable({
       </table>
       <div className="mp-table-hint">
         {zh
-          ? "💡 未配置的槽位会自动回退：memory→subagent→chat, compaction→subagent→chat"
-          : "💡 Unconfigured slots fall back: memory→subagent→chat, compaction→subagent→chat"}
+          ? "未配置的槽位会自动回退：memory→subagent→chat, compaction→subagent→chat"
+          : "Unconfigured slots fall back: memory→subagent→chat, compaction→subagent→chat"}
       </div>
     </div>
   );

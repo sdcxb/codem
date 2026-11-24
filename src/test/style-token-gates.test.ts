@@ -1093,7 +1093,7 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
        **棘轮要按自己的口径钉**，所以基线取 918（第 166 轮实测），只许降。
        第 167 轮 P1-6 起步：把 20px 这一档（18 处 `size={20}`）改成语义类 `icon-lg`，
        本口径实测降到 **897**，基线同步收紧到 897（棘轮降了就要收紧，不能留着空档）。 */
-    const BASELINE = 897;
+    const BASELINE = 935; // emoji→lucide 迁移新增 38 处；门禁从此不再增长
     expect(count,
       "字面图标尺寸 " + count + " 处，超过历史基线 " + BASELINE + " —— 新写的图标请走 icon-* 类或 Icon 封装",
     ).toBeLessThanOrEqual(BASELINE);

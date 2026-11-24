@@ -18,7 +18,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Skeleton } from "./ui/Skeleton";
 import { createPortal } from "./ui/portal";
-import { Save, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2 } from "lucide-react";
+import { Save, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2, FolderOpen } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 
 interface FileEditorProps {
@@ -537,7 +537,7 @@ function FilePreviewBinary({ filePath, fileName }: { filePath: string; fileName:
       <div className="file-preview-office-name">{fileName}</div>
       <div className="file-preview-office-type">二进制文件</div>
       <div className="file-preview-office-hint">无法在内置编辑器中预览</div>
-      <button className="file-preview-office-btn" onClick={handleOpenExternal}>📂 用系统应用打开</button>
+      <button className="file-preview-office-btn" onClick={handleOpenExternal}><FolderOpen size={14} aria-hidden /> 用系统应用打开</button>
     </div>
   );
 }

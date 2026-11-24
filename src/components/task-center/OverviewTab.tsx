@@ -1,14 +1,14 @@
 /**
  * OverviewTab — 任务管理概览页
  *
- * 只做「导航 + 关键计数」：委派 / 自动化 / Issue / 收件箱四张统计卡，
- * 以及一个进入「看板 → 用量 / 时间线」的入口。
+ * 只做「导航 + 关键计数」：一条紧凑指标条（未读 / 运行中委派 / 今日自动化触发 /
+ * 进行中 Issue），以及一个进入「看板 → 用量 / 时间线」的入口。
  * 活动明细不在这里重复渲染（那是插件「用量 / 时间线」的职责）；
  * 插件未启用时才回退到宿主自带的最近活动预览。
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Link2, Clock, ChevronRight, CheckCircle2, Loader2, XCircle, Timer, FileClock, ClipboardList, Inbox as InboxIcon } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle, Timer, FileClock, type LucideIcon } from "lucide-react";
 import { getDelegationOrchestrator } from "../../core/session";
 import { getAutomationConfig } from "../../core/automation/automation-manager";
 import { getIssueManager } from "../../core/issue/issue";
@@ -26,7 +26,7 @@ interface OverviewTabProps {
 }
 
 interface ActivityEntry {
-  icon: typeof Link2;
+  icon: LucideIcon;
   iconColor: string;
   text: string;
   timestamp: number;
@@ -159,87 +159,110 @@ const iconColor = t.status === "completed" ? "var(--success)" :
     };
   }, [loadData]);
 
-  const cards = [
+  /**
+   * 四个最重要的计数。单项 = 数字 + 小标签，点一下跳到对应页签；
+   * 不再给每项套大卡 / 边框 / 箭头（四张等宽 KPI 卡的模板感就来自那层壳）。
+   *
+   * `title` 里保留同族的次级计数（已完成 / 失败 / 待审查…）：数据还在，只是不占主视线；
+   * 回归判据也用它在「概览」与「委派」页签之间核对同一口径。
+   */
+  const metrics: Array<{
+    key: string;
+    tab: TaskCenterTab;
+    label: string;
+    value: number;
+    title: string;
+  }> = [
     {
-      tab: "inbox" as TaskCenterTab,
-      icon: InboxIcon,
-      label: zh ? "收件箱" : "Inbox",
-      stats: [
-        { label: zh ? "未读" : "Unread", value: inboxUnread, color: inboxUnread > 0 ? "var(--error)" : "var(--text-muted)" },
-      ],
+      key: "inbox",
+      tab: "inbox",
+      label: zh ? "未读" : "Unread",
+      value: inboxUnread,
+      title: zh ? "收件箱未读通知" : "Unread inbox notifications",
     },
     {
-      tab: "issues" as TaskCenterTab,
-      icon: ClipboardList,
-      label: zh ? "Issues" : "Issues",
-      stats: [
-{ label: zh ? "进行中" : "Active", value: issueStats.inProgress, color: "var(--accent)" },
-    { label: zh ? "待审查" : "Review", value: issueStats.inReview, color: "var(--warning)" },
-    { label: zh ? "已完成" : "Done", value: issueStats.done, color: "var(--success)" },
-      ],
+      key: "delegation",
+      tab: "delegation",
+      label: zh ? "运行中委派" : "Running delegations",
+      value: delegationStats.running,
+      title: zh
+        ? `已完成 ${delegationStats.completed} · 失败 ${delegationStats.failed} · 等待 ${delegationStats.pending}`
+        : `${delegationStats.completed} completed · ${delegationStats.failed} failed · ${delegationStats.pending} pending`,
     },
     {
-      tab: "delegation" as TaskCenterTab,
-      icon: Link2,
-      label: zh ? "委派任务" : "Delegation",
-      stats: [
-{ label: zh ? "运行中" : "Running", value: delegationStats.running, color: "var(--accent)" },
-    { label: zh ? "已完成" : "Completed", value: delegationStats.completed, color: "var(--success)" },
-        { label: zh ? "等待中" : "Pending", value: delegationStats.pending, color: "var(--text-muted)" },
-      ],
+      key: "automation",
+      tab: "automation",
+      label: zh ? "今日自动化触发" : "Automation today",
+      value: automationCount.todayTriggered,
+      title: zh
+        ? `活跃触发器 ${automationCount.active} · 总计 ${automationCount.total}`
+        : `${automationCount.active} active · ${automationCount.total} total triggers`,
     },
     {
-      tab: "automation" as TaskCenterTab,
-      icon: Clock,
-      label: zh ? "自动化" : "Automation",
-      stats: [
-        { label: zh ? "活跃" : "Active", value: automationCount.active, color: "var(--success)" },
-        { label: zh ? "总计" : "Total", value: automationCount.total, color: "var(--accent)" },
-        { label: zh ? "今日触发" : "Today", value: automationCount.todayTriggered, color: "var(--warning)" },
-      ],
+      key: "issues",
+      tab: "issues",
+      label: zh ? "进行中 Issue" : "Issues in progress",
+      value: issueStats.inProgress,
+      title: zh
+        ? `待审查 ${issueStats.inReview} · 已完成 ${issueStats.done}`
+        : `${issueStats.inReview} in review · ${issueStats.done} done`,
     },
   ];
 
   return (
     <div style={{ padding: "20px" }}>
-      {/* Stat cards */}
-      <div style={{ display: "flex", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
-        {cards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.tab}
-              onClick={() => onNavigate(card.tab)}
+      {/* 紧凑指标条：桌面一行、窄屏按项换行；每项只有数字 + 小标签 */}
+      <div
+        className="task-overview-metrics"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "baseline",
+          gap: "10px 28px",
+          marginBottom: "24px",
+        }}
+      >
+        {metrics.map((metric) => (
+          <button
+            key={metric.key}
+            type="button"
+            className="task-overview-metric"
+            data-metric={metric.key}
+            data-value={metric.value}
+            title={metric.title}
+            onClick={() => onNavigate(metric.tab)}
+            style={{
+              display: "inline-flex",
+              alignItems: "baseline",
+              gap: "6px",
+              padding: "2px 4px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              font: "inherit",
+              textAlign: "left",
+            }}
+          >
+            <span
+              className="task-overview-metric__value"
               style={{
-                flex: "1 1 200px",
-                background: "var(--bg-tertiary)",
-                borderRadius: "var(--radius)",
-                border: "1px solid var(--border-primary)",
-                padding: "16px",
-                cursor: "pointer",
-                transition: "border-color 0.2s",
+                fontSize: "var(--fs-2xl)",
+                fontWeight: 500,
+                lineHeight: 1.1,
+                color: "var(--text-primary)",
+                fontVariantNumeric: "tabular-nums",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-primary)")}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <Icon size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
-                  {card.label}
-                </span>
-                <ChevronRight size={14} style={{ marginLeft: "auto", color: "var(--text-secondary, #666)" }} />
-              </div>
-              <div style={{ display: "flex", gap: "16px" }}>
-                {card.stats.map((s) => (
-                  <div key={s.label}>
-                    <div style={{ fontSize: "var(--fs-3xl)", fontWeight: 700, color: s.color }}>{s.value}</div>
-                    <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{s.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+              {metric.value}
+            </span>
+            <span
+              className="task-overview-metric__label"
+              style={{ fontSize: "var(--fs-2xs)", color: "var(--text-muted)" }}
+            >
+              {metric.label}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* 「用量」（KPI / 健康度 / 活动分布 / token 与成本）由插件贡献到本页签

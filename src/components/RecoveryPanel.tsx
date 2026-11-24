@@ -8,6 +8,7 @@ import { reportActionFailure, reportPersistFailure } from "../core/storage/persi
 import { useLang } from "../core/i18n/lang";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { ActionIcons } from "../core/icons/icon-map";
+import { History, MessageSquare, Inbox } from "lucide-react";
 
 export function RecoveryPanel() {
   const lang = useLang();
@@ -137,7 +138,7 @@ export function RecoveryPanel() {
            * 也就是说标题在描述一个不存在的机制（本仓库反复处理的"印出来不是真的"）。
            * 那两个遗留实现已按"遗留物清理"删除，标题改为与实际机制一致。
            */}
-          🔄 {zh ? "会话恢复" : "Session Recovery"}
+          <History size={16} aria-hidden /> {zh ? "会话恢复" : "Session Recovery"}
         </div>
         <div className="recovery-subtitle">
           {zh ? "自动保存会话状态，崩溃后可恢复。数据持久化到 SQLite。" : "Auto-saves session state for crash recovery. Data persisted to SQLite."}
@@ -188,7 +189,7 @@ export function RecoveryPanel() {
                   onClick={() => setSelectedSessionId(active ? null : s.id)}
                   className={`recovery-item${active ? " is-active" : ""}`}
                 >
-                  <span className="recovery-item-icon">{msgCount > 0 ? "💬" : "📭"}</span>
+                  <span className="recovery-item-icon">{msgCount > 0 ? <MessageSquare size={16} aria-hidden /> : <Inbox size={16} aria-hidden />}</span>
                   <div className="recovery-item-body">
                     <div className="recovery-item-id">
                       {s.id.substring(0, 16)}...
@@ -255,13 +256,13 @@ export function RecoveryPanel() {
       {/* Actions */}
       <div className="recovery-actions">
         <button onClick={handleForceSave} className="panel-btn">
-          💾 {zh ? "强制保存" : "Force Save"}
+          <ActionIcons.save size={14} aria-hidden /> {zh ? "强制保存" : "Force Save"}
         </button>
         <button onClick={handleExport} className="panel-btn">
-          📤 {zh ? "导出数据" : "Export Data"}
+          <ActionIcons.download size={14} aria-hidden /> {zh ? "导出数据" : "Export Data"}
         </button>
         <button onClick={handleClear} className="panel-btn panel-btn--danger">
-          🗑️ {zh ? "清除所有" : "Clear All"}
+          <ActionIcons.delete size={14} aria-hidden /> {zh ? "清除所有" : "Clear All"}
         </button>
       </div>
 
@@ -273,7 +274,7 @@ export function RecoveryPanel() {
               {zh ? "导出数据" : "Export Data"}
             </span>
             <button onClick={() => navigator.clipboard?.writeText(exportData)} className="panel-btn panel-btn--sm">
-              📋 {zh ? "复制" : "Copy"}
+              <ActionIcons.copy size={14} aria-hidden /> {zh ? "复制" : "Copy"}
             </button>
           </div>
           <pre className="recovery-export-pre">

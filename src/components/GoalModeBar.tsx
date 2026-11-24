@@ -17,6 +17,7 @@
  * 面板的明细来自 `getGoalDetails(sessionId)`（每次展开时现读，够用且不会把整份计划塞进全局状态）。
  */
 import { useState } from "react";
+import { Compass, CheckCircle2, RotateCw, Ban, Clock, Check, X } from "lucide-react";
 
 import { useLang } from "../core/i18n/lang";
 import {
@@ -46,11 +47,9 @@ const STATUS_LABEL: Record<GoalView["status"], { zh: string; en: string }> = {
   cancelled: { zh: "目标已取消", en: "Goal cancelled" },
 };
 
-function phaseIcon(status: string): string {
-  if (status === "done") return "✅";
-  if (status === "active") return "🔄";
-  if (status === "blocked") return "⛔";
-  return "⏳";
+function PhaseIcon({ status }: { status: string }) {
+  const Icon = status === "done" ? CheckCircle2 : status === "active" ? RotateCw : status === "blocked" ? Ban : Clock;
+  return <Icon size={14} aria-hidden />;
 }
 
 /** 设置区（与目标面板放一起：用户改目标模式设置时正看着目标，不需要去设置面板翻） */
@@ -145,8 +144,8 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
   if (!view) {
     if (!planning) return null;
     return (
-      <div data-testid="goal-planning-bar" style={{ padding: "4px 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)" }}>
-        🧭 {zh ? "深规划中…（只读分析，不写工作区）" : "Deep planning… (read-only)"}
+      <div data-testid="goal-planning-bar" style={{ padding: "4px 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)", display: "flex", alignItems: "center", gap: 6 }}>
+        <Compass size={14} aria-hidden /> {zh ? "深规划中…（只读分析，不写工作区）" : "Deep planning… (read-only)"}
       </div>
     );
   }
@@ -190,7 +189,7 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
   return (
     <div data-testid="goal-mode-bar" className="goal-mode-bar">
       <div className="goal-mode-bar__row">
-        <span className="goal-mode-bar__icon" aria-hidden="true">🧭</span>
+        <span className="goal-mode-bar__icon" aria-hidden="true"><Compass size={16} /></span>
         <div className="goal-mode-bar__body">
           <div className="goal-mode-bar__line">
             <span className="goal-mode-bar__status">
@@ -330,7 +329,7 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
                 <ul>
                   {details.phases.map((p) => (
                     <li key={p.key}>
-                      {phaseIcon(p.status)} <b>{p.title}</b> —— {p.outcome}
+                      <PhaseIcon status={p.status} /> <b>{p.title}</b> —— {p.outcome}
                       <div style={{ color: "var(--text-muted)" }}>
                         {zh ? "验收：" : "acceptance: "}
                         {p.acceptance.map((a) => a.description).join("；")}
@@ -348,7 +347,7 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
             <ul>
               {details.evidence.slice(-8).map((e) => (
                 <li key={e.id}>
-                  {e.passed ? "✅" : "❌"} {e.phaseKey}/{e.acceptanceId}：{e.summary}
+                  {e.passed ? <Check size={12} aria-hidden /> : <X size={12} aria-hidden />} {e.phaseKey}/{e.acceptanceId}：{e.summary}
                 </li>
               ))}
               {details.evidence.length === 0 ? <li>{zh ? "（暂无）" : "(none)"}</li> : null}

@@ -302,7 +302,7 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
           }}
         >
           <div className="scrollbar-marker-preview-role">
-            {hovered.role === "user" && !isMachineInjectedMessage(hovered) ? "User" : "📌"}
+            {hovered.role === "user" && !isMachineInjectedMessage(hovered) ? "User" : "Note"}
           </div>
           <div className="scrollbar-marker-preview-text">
             {(hovered.content || "").slice(0, 240) || "(no text)"}

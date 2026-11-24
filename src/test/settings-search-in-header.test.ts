@@ -53,7 +53,7 @@ describe("SEARCHMOVE-198 设置搜索框移到标题栏中间", () => {
     expect(contentAt, "找不到 settings-content").toBeGreaterThan(sidebarAt);
     const sidebarBlock = PANEL.slice(sidebarAt, contentAt);
     expect(sidebarBlock, "全屏页缺少左侧搜索框").toContain("settings-side-search");
-    expect(sidebarBlock, "全屏页缺少搜索占位符").toContain("搜索设置...");
+    expect(sidebarBlock, "全屏页缺少搜索占位符").toContain("搜索设置");
     /* 非全屏弹窗仍保留标题栏搜索（旧路径不能丢） */
     expect(PANEL, "弹窗模式缺少标题栏搜索").toContain("settings-search-box--in-header");
   });
@@ -65,7 +65,7 @@ describe("SEARCHMOVE-198 设置搜索框移到标题栏中间", () => {
     const sidebarBlock = PANEL.slice(sidebarAt, contentAt);
     expect(sidebarBlock, "左侧栏缺少搜索框").toContain("settings-side-search");
     expect(sidebarBlock, "左侧栏缺少搜索输入框").toContain("sp-search-input");
-    expect(sidebarBlock, "左侧栏缺少搜索占位符").toContain("搜索设置...");
+    expect(sidebarBlock, "左侧栏缺少搜索占位符").toContain("搜索设置");
   });
 
   it("SEARCHMOVE-198-3 搜索的**功能**没被搬丢（输入、清空、匹配提示都还在）", () => {

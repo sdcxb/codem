@@ -138,7 +138,7 @@ export function PromptDebugger() {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
-          📝 {zh ? "系统提示词调试" : "System Prompt Debugger"}
+          {zh ? "系统提示词调试" : "System Prompt Debugger"}
         </div>
         <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "预览和调试生成的系统提示词。修改参数后实时更新。" : "Preview and debug the generated system prompt. Updates in real-time."}
@@ -210,7 +210,7 @@ export function PromptDebugger() {
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
-          📋 {zh ? "复制全部" : "Copy All"}
+          {zh ? "复制全部" : "Copy All"}
         </button>
       </div>
 

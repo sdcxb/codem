@@ -2405,3 +2405,406 @@
   min-height: 28px;
   height: 28px;
 }
+
+/* ========== 第 18 轮：告警/技能/设置/任务/插件收口 ========== */
+
+/* 告警不覆盖标题栏：下移到标题栏下方，单行结果 + 折叠详情 */
+[data-ui="v2"] .persist-alert-stack {
+  top: 44px;
+  width: min(620px, calc(100vw - var(--space-8)));
+}
+[data-ui="v2"] .persist-alert {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .persist-alert-details {
+  margin-top: var(--space-1);
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-xs);
+}
+[data-ui="v2"] .persist-alert-details > summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-xs);
+}
+[data-ui="v2"] .persist-alert-details > pre {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  max-height: 120px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-active);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 技能：拖拽提示不再占整块首屏，详情区有默认选中/空提示 */
+[data-ui="v2"] .skill-drop-hint {
+  padding: 0 var(--space-8) var(--space-3);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-xs);
+}
+[data-ui="v2"] .skill-drop-zone {
+  margin: 0 var(--space-8) var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .skill-detail--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* 设置层级：页面标题 > 区块标题；区块不再比页面还大 */
+[data-ui="v2"] .settings-panel .settings-section-title {
+  font-size: var(--fs-lg);
+  font-weight: 500;
+}
+[data-ui="v2"] .settings-panel .settings-title {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+/* v2 下旧装饰（玻璃/发光/彩色渐变）不进入管理面 */
+[data-ui="v2"] :is(.plugin-mgr, .skill-manager, .memory-manager, .task-center-panel, .settings-panel) :is(button, .btn, [class*="card"], [class*="pill"], [class*="badge"], [class*="tab"]) {
+  background-image: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+[data-ui="v2"] :is(.plugin-mgr, .skill-manager, .memory-manager, .task-center-panel, .settings-panel) [class*="pill"],
+[data-ui="v2"] :is(.plugin-mgr, .skill-manager, .memory-manager, .task-center-panel, .settings-panel) [class*="badge"] {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* 插件管理：密集列表（替代 emoji 卡片墙） */
+[data-ui="v2"] .plugin-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 var(--space-8) var(--space-4);
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .plugin-row {
+  display: grid;
+  grid-template-columns: 24px minmax(150px, 1.1fr) minmax(0, 2fr) 76px 64px minmax(112px, auto);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-line);
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+}
+[data-ui="v2"] .plugin-row:is(:hover, :focus-within) {
+  background: var(--ui-surface-active);
+}
+[data-ui="v2"] .plugin-row.is-off { opacity: .62; }
+[data-ui="v2"] .plugin-row.ofm-compact-card { width: 100%; max-width: none; margin: 0; }
+[data-ui="v2"] .plugin-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-muted);
+}
+[data-ui="v2"] .plugin-row-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+[data-ui="v2"] .plugin-row-open {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+[data-ui="v2"] .plugin-row-version,
+[data-ui="v2"] .plugin-row-core,
+[data-ui="v2"] .plugin-row-deps,
+[data-ui="v2"] .plugin-row-type,
+[data-ui="v2"] .plugin-row-state {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+[data-ui="v2"] .plugin-row-core { color: var(--ui-text-secondary); }
+[data-ui="v2"] .plugin-row-desc {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-ui="v2"] .plugin-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+[data-ui="v2"] .plugin-row-risk {
+  color: var(--ui-warning);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+[data-ui="v2"] .plugin-row-hot {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+[data-ui="v2"] .plugin-mgr-stats {
+  margin-left: var(--space-2);
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+}
+@media (max-width: 1360px) {
+  [data-ui="v2"] .plugin-row {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(120px, auto);
+  }
+  [data-ui="v2"] .plugin-row-desc,
+  [data-ui="v2"] .plugin-row-type,
+  [data-ui="v2"] .plugin-row-deps { display: none; }
+}
+
+/* 任务概览：紧凑指标条 */
+[data-ui="v2"] .task-overview-metrics {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .task-overview-metric {
+  border-radius: var(--radius-sm);
+}
+[data-ui="v2"] .task-overview-metric:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+}
+[data-ui="v2"] .task-overview-metric__value {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* library-ops 概览：当前工作与活动图，不再是三张等高卡 */
+[data-ui="v2"] .lo-overview-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--space-4);
+}
+[data-ui="v2"] .lo-overview-current,
+[data-ui="v2"] .lo-overview-activity {
+  min-width: 0;
+}
+[data-ui="v2"] .lo-overview-activity__caption {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+[data-ui="v2"] .lo-overview-activity__empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .lo-overview-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+@media (max-width: 980px) {
+  [data-ui="v2"] .lo-overview-top,
+  [data-ui="v2"] .lo-overview-lower { grid-template-columns: 1fr; }
+}
+
+/* 设置：次要动作降级，只留一个主操作 */
+[data-ui="v2"] .settings-footer-action--secondary {
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .settings-footer-action--secondary:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .settings-footer-action--primary {
+  height: 28px;
+}
+
+/* 记忆：三项主指标 + 技术 id 降级 + 规则折叠 */
+[data-ui="v2"] .memory-stats--primary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .memory-stat-details {
+  margin-top: var(--space-2);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-xs);
+}
+[data-ui="v2"] .memory-stat-details-summary,
+[data-ui="v2"] .memory-write-guide-summary,
+[data-ui="v2"] .memory-batch-help-summary,
+[data-ui="v2"] .memory-budget-help-summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-xs);
+}
+[data-ui="v2"] .memory-stat-detail-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+}
+[data-ui="v2"] .memory-batch-summary {
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .memory-batch-id {
+  overflow: hidden;
+  max-width: 34ch;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-ui="v2"] .memory-write-guide,
+[data-ui="v2"] .memory-batch-help,
+[data-ui="v2"] .memory-budget-help {
+  margin-top: var(--space-2);
+}
+[data-ui="v2"] .memory-write-guide-body,
+[data-ui="v2"] .memory-batch-help-body,
+[data-ui="v2"] .memory-budget-help-body {
+  padding: var(--space-2) 0 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+[data-ui="v2"] .settings-panel .settings-model-select {
+  min-width: 220px;
+  max-width: 360px;
+}
+
+[data-ui="v2"] .settings-footer-action {
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .memory-budget-notice {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface);
+}
+[data-ui="v2"] .memory-budget-summary {
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+}
+[data-ui="v2"] .task-overview-metric__label {
+  font-size: var(--fs-2xs);
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+}
+
+/* v2 未迁移表面：去旧玻璃/彩色渐变/uppercase，不把旧世界带回管理面 */
+[data-ui="v2"] :is([class^="ppt-"],[class*=" ppt-"],[class^="nb-"],[class*=" nb-"],[class^="lo-"],[class*=" lo-"]) :is(button, [class*="card"], [class*="pill"], [class*="badge"]) {
+  background-image: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* 开关不用金色铺满：accent 留给主操作/选择/关键数字 */
+[data-ui="v2"] .switch-root[data-state="checked"] {
+  background: var(--ui-text-secondary);
+}
+
+/* 设置：模型下拉独占一行，别把完整名称挤成省略号 */
+[data-ui="v2"] .settings-panel .sp-row:has(> .settings-model-select) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+[data-ui="v2"] .settings-panel .settings-model-select {
+  width: 100%;
+  max-width: none;
+  text-overflow: ellipsis;
+}
+
+/* 侧栏任务入口：角标与文字留出间距 */
+[data-ui="v2"] .sidebar-task-count {
+  margin-left: auto;
+  padding-left: var(--space-2);
+}
+
+/* 插件列表列头：没有表头时「服务 / —」看起来像随机字符 */
+[data-ui="v2"] .plugin-list-head {
+  display: grid;
+  grid-template-columns: 24px minmax(150px, 1.1fr) minmax(0, 2fr) 76px 64px minmax(112px, auto);
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 var(--space-8);
+  padding: 0 var(--space-4) var(--space-1) var(--space-3);
+  color: var(--ui-text-muted);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.02em;
+}
+[data-ui="v2"] .plugin-list-head > span:last-child { text-align: right; }
+@media (max-width: 1360px) {
+  [data-ui="v2"] .plugin-list-head {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(120px, auto);
+  }
+  [data-ui="v2"] .plugin-list-head > span:nth-child(3),
+  [data-ui="v2"] .plugin-list-head > span:nth-child(4),
+  [data-ui="v2"] .plugin-list-head > span:nth-child(5) { display: none; }
+}
+
+/* 技能详情：徽标不要被 grid 的第二列拉成整条 */
+[data-ui="v2"] .skill-detail-header .badge {
+  justify-self: start;
+}
+
+/* 设置模型行：独占整行，完整名称不再被 200px 列挤掉 */
+[data-ui="v2"] .settings-panel .setting-group > .sp-row:has(> .settings-model-select) {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
+}

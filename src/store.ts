@@ -156,6 +156,8 @@ export interface PersistAlert {
   kind: "persist" | "action" | "advisory";
   /** 已经面向用户准备好的整句文案 */
   message: string;
+  /** 可选的技术详情：默认折叠，只有用户点「详情」才显示（诊断/崩溃记录用） */
+  detail?: string;
   timestamp: number;
   /** 同一区域累计失败次数（去重合并时递增） */
   count: number;
@@ -930,7 +932,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         persistAlerts: s.persistAlerts.map((a) =>
           a.area === alert.area
-            ? { ...a, message: alert.message, kind: alert.kind, count: a.count + 1, timestamp: Date.now() }
+            ? { ...a, message: alert.message, detail: alert.detail ?? a.detail, kind: alert.kind, count: a.count + 1, timestamp: Date.now() }
             : a,
         ),
       };
@@ -943,6 +945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           area: alert.area,
           kind: alert.kind,
           message: alert.message,
+          detail: alert.detail,
           timestamp: alert.timestamp ?? Date.now(),
           count: 1,
         },

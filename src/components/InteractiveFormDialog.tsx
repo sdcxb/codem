@@ -236,7 +236,7 @@ return createPortal(
                         setCustomInputs({ ...customInputs, [q.id]: e.target.value });
                         handleTextChange(q.id, e.target.value);
                       }}
-                      placeholder="请输入自定义答案..."
+                      placeholder="自定义答案"
                       style={{
                         width: "100%",
                         marginTop: "8px",

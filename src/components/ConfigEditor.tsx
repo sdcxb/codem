@@ -285,7 +285,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 </div>
                 <div className="config-form-group">
                   <label>Emoji</label>
-                  <input value={identity.emoji} onChange={(e) => setIdentity({ ...identity, emoji: e.target.value })} placeholder="⚡" style={{ width: 80 }} />
+                  <input value={identity.emoji} onChange={(e) => setIdentity({ ...identity, emoji: e.target.value })} placeholder="emoji" style={{ width: 80 }} />
                 </div>
                 <div className="config-form-group">
                   <label>头像路径</label>
@@ -316,7 +316,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 </div>
                 <div className="config-form-group">
                   <label>上下文</label>
-                  <textarea value={user.context} onChange={(e) => setUser({ ...user, context: e.target.value })} rows={4} placeholder="用户在做什么项目、关心什么、喜欢什么..." />
+                  <textarea value={user.context} onChange={(e) => setUser({ ...user, context: e.target.value })} rows={4} placeholder="用户的项目、关注点、偏好" />
                 </div>
               </div>
             ) : (

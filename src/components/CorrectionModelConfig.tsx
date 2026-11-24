@@ -92,7 +92,7 @@ export function CorrectionModelConfig() {
     });
     setSaved({ provider: p, model: m });
     window.dispatchEvent(new Event("codem-settings-changed"));
-    showFlash(zh ? "✅ 已保存 — fact_check 将使用该专属纠偏模型" : "✅ Saved — fact_check will use this model");
+    showFlash(zh ? "已保存 — fact_check 将使用该专属纠偏模型" : "Saved — fact_check will use this model");
   };
 
   const handleClear = () => {
@@ -132,7 +132,7 @@ export function CorrectionModelConfig() {
           list="correction-provider-suggestions"
           value={provider}
           onChange={(e) => setProvider(e.target.value)}
-          placeholder="deepseek / openai / anthropic / gemini / …"
+          placeholder="deepseek / openai / anthropic"
           style={inputStyle}
         />
         <datalist id="correction-provider-suggestions">
@@ -156,7 +156,7 @@ export function CorrectionModelConfig() {
           type="text"
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          placeholder="deepseek-v4-flash / gpt-4o / claude-sonnet-4-20250514 / …"
+          placeholder="deepseek-v4-flash / gpt-4o"
           style={inputStyle}
         />
       </div>

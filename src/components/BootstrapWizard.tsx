@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Bot, Rocket } from "lucide-react";
 import { AppIdentity, IdentityConfig, UserConfig } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
@@ -112,7 +113,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
         <div className="bootstrap-content">
           {step === "welcome" && (
             <div className="bootstrap-step">
-              <div className="bootstrap-icon">🤖</div>
+              <div className="bootstrap-icon"><Bot size={32} aria-hidden /></div>
               <h2>嘿，你好。</h2>
               <p>我刚上线。我们一起搞清楚我是谁、你是谁。</p>
               <p className="bootstrap-sub">这只需要 1 分钟。</p>
@@ -127,7 +128,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
                 className="bootstrap-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="CODEM、小助手、或者随便什么..."
+                placeholder="例如 CODEM、小助手"
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleNext()}
               />
@@ -149,7 +150,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
                 className="bootstrap-input"
                 value={creature}
                 onChange={(e) => setCreature(e.target.value)}
-                placeholder="或者自己写..."
+                placeholder="或者自己写"
               />
             </div>
           )}
@@ -169,7 +170,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
                 className="bootstrap-input"
                 value={vibe}
                 onChange={(e) => setVibe(e.target.value)}
-                placeholder="或者自己描述..."
+                placeholder="或者自己描述"
               />
             </div>
           )}
@@ -248,7 +249,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
           )}
           <div className="bootstrap-spacer" />
           {step === "done" ? (
-            <button className="bootstrap-btn primary" onClick={handleFinish}>🚀 开始</button>
+            <button className="bootstrap-btn primary" onClick={handleFinish}><Rocket size={14} aria-hidden /> 开始</button>
           ) : (
             <button className="bootstrap-btn primary" onClick={handleNext}>继续 →</button>
           )}

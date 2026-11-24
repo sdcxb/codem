@@ -3,18 +3,29 @@
  * PluginManager — 插件市场 UI 组件。
  *
  * 功能：
- * 1. 展示所有插件列表（卡片式布局，对齐 SkillManager 样式）
- * 2. 每个插件显示：图标、名称、描述、类型标签、依赖信息、开关按钮
+ * 1. 已安装插件用**密集列表行**展示（不再是三列 emoji 卡片墙）
+ * 2. 每行：一个 lucide 图标 / 名称+版本 / 单行描述 / 类型 / 依赖数 / 开关
  * 3. 核心插件（core: true）标记为"核心"并禁用开关按钮
  * 4. 关闭有依赖的插件时，弹出级联确认对话框
  * 5. 启用插件时，自动启用缺失依赖
- * 6. 搜索和分类过滤
+ * 6. 搜索和能力/界面分组过滤
+ *
+ * ## 为什么不再渲染 `plugin.icon`
+ *
+ * 插件清单里的 `icon` 是 emoji（拼图 / 机器人 / 屏幕等字符）。198 行各带一个 emoji + 2–3 个徽标
+ * 正是「卡片墙看起来像噪音」的主因；manifest 里的 emoji 不再进入 DOM，图标位只放
+ * **一个**按分类映射的 lucide（`PluginGlyph`），没有映射时退回 `CommonIcons.package`。
+ *
+ * ## 行高与列宽由集成样式决定
+ *
+ * 本文件只产出结构与类名（`.plugin-list` / `.plugin-row` / `.plugin-row-*`）。
+ * 集成方在样式层给 `.plugin-row` 定 56–64px 行高与网格列宽；组件里不写死尺寸，
+ * 避免和皮肤/密度档（`data-density="compact"`）打架。
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 /* 第 181 轮审计整改：长列表分片渲染（一次渲染 208 张卡 = 6095 个节点） */
 import { IncrementalList } from './ui/IncrementalList'
-import { Lock } from 'lucide-react'
 import { PanelIcons, ActionIcons, StatusIcons, CommonIcons, McpIcons } from '../core/icons/icon-map'
 import { useLang } from '../core/i18n/lang'
 import { Switch } from './ui/switch'
@@ -26,7 +37,6 @@ import {
   PluginDependencyGraph,
 } from '../core/plugin-loader/dependency-graph'
 import {
-  type PluginStatus,
   type DisableConfirmationRequest,
   PluginManagerService,
   getPluginManager,
@@ -81,238 +91,161 @@ const TAG_CONFIG: Record<PluginTag, { label: string; variant: 'default' | 'succe
   security:  { label: '安全权限', variant: 'muted' },
 }
 
+/**
+ * 分类 → **一个** lucide 图标。
+ *
+ * `plugin.icon` 不再渲染（manifest 里那是 emoji）；没有分类映射时退回 package。
+ */
+const PLUGIN_CATEGORY_ICONS = {
+  core: PanelIcons.plugins,
+  provider: McpIcons.connect,
+  ui: PanelIcons.agent,
+  tool: PanelIcons.tools,
+  compat: ActionIcons.link,
+} as const
+
+/** 分类文案（类型标签为空时的兜底）。 */
+const PLUGIN_CATEGORY_LABEL: Record<string, { zh: string; en: string }> = {
+  core: { zh: '核心', en: 'Core' },
+  provider: { zh: '服务', en: 'Provider' },
+  ui: { zh: '界面', en: 'UI' },
+  tool: { zh: '工具', en: 'Tool' },
+  compat: { zh: '兼容', en: 'Compat' },
+}
+
+function PluginGlyph({ plugin, size = 16 }: { plugin: any; size?: number }) {
+  const Icon = PLUGIN_CATEGORY_ICONS[(plugin.category || 'core') as keyof typeof PLUGIN_CATEGORY_ICONS]
+    ?? CommonIcons.package
+  return <Icon size={size} strokeWidth={1.5} aria-hidden="true" />
+}
+
+/** 4 个分组（全部 / 核心 / 能力 / 界面），覆盖原来的 5 个分类。 */
+type PluginFilterKey = 'all' | 'core' | 'capability' | 'interface'
+
 /** 分类配置（支持 i18n） */
 function getCategoryConfig(zh: boolean) {
   return [
-    { key: 'all',      label: zh ? '全部' : 'All',         icon: <CommonIcons.info size={14} /> },
-    { key: 'core',     label: zh ? '核心' : 'Core',         icon: <PanelIcons.plugins size={14} /> },
-    { key: 'provider', label: zh ? 'Provider' : 'Provider', icon: <McpIcons.connect size={14} /> },
-    { key: 'ui',       label: zh ? '界面' : 'UI',           icon: <PanelIcons.agent size={14} /> },
-    { key: 'compat',   label: zh ? '兼容' : 'Compat',       icon: <ActionIcons.link size={14} /> },
-    { key: 'tool',     label: zh ? '工具' : 'Tool',         icon: <PanelIcons.tools size={14} /> },
+    { key: 'all' as PluginFilterKey,        label: zh ? '全部' : 'All',        icon: <CommonIcons.info size={14} /> },
+    { key: 'core' as PluginFilterKey,       label: zh ? '核心' : 'Core',       icon: <PanelIcons.plugins size={14} /> },
+    { key: 'capability' as PluginFilterKey, label: zh ? '能力' : 'Capability', icon: <PanelIcons.tools size={14} /> },
+    { key: 'interface' as PluginFilterKey,  label: zh ? '界面' : 'Interface',  icon: <PanelIcons.agent size={14} /> },
   ]
 }
 
-/** 插件状态图标 */
-function StatusIcon({ status }: { status: PluginStatus }) {
-  switch (status) {
-    case 'enabled':  return <StatusIcons.success size={14} style={{ color: 'var(--success)' }} />
-    case 'disabled': return <ActionIcons.toggle size={14} style={{ color: 'var(--text-muted)' }} />
-    case 'loading':  return <StatusIcons.loading size={14} className="spin" style={{ color: 'var(--accent)' }} />
-    case 'error':    return <StatusIcons.danger size={14} style={{ color: 'var(--error)' }} />
+/** 分组过滤：能力 = provider + tool；界面 = ui + compat。 */
+function matchesCategory(plugin: any, key: string): boolean {
+  const category = plugin.category || 'core'
+  switch (key) {
+    case 'all': return true
+    case 'core': return category === 'core'
+    case 'capability': return category === 'provider' || category === 'tool'
+    case 'interface': return category === 'ui' || category === 'compat'
+    default: return category === key
   }
 }
 
-/** 插件卡片 */
-function PluginCard({
+/**
+ * 已安装插件的一行。
+ *
+ * 列（由 `.plugin-row` 的网格在样式层落地）：图标 / 名称+版本 / 单行描述 /
+ * 类型 / 依赖数 / 状态开关。行本身可以点开详情，键盘入口是名称按钮。
+ */
+function PluginRow({
   plugin,
+  zh,
   onToggle,
   onRestart,
-  isSelected,
-  onSelect,
+  onOpenDetail,
 }: {
   plugin: any
+  zh: boolean
   onToggle: (name: string) => void
   onRestart: (name: string) => void
-  isSelected: boolean
-  onSelect: () => void
+  onOpenDetail: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
   const isEnabled = plugin.status === 'enabled'
   const isCore = plugin.core || plugin.locked
   const tags: PluginTag[] = plugin.tags || []
+  const tag = tags[0]
+  const tagLabel = tag ? (TAG_CONFIG[tag]?.label ?? tag) : undefined
+  const category = PLUGIN_CATEGORY_LABEL[plugin.category as string]
+  const typeLabel = tagLabel
+    ?? (category ? (zh ? category.zh : category.en) : (zh ? '插件' : 'Plugin'))
+  const depCount = plugin.dependencies?.length ?? 0
+  /*
+   * 风险只在「危险 + 用户真的能决定」时出现：核心插件是锁定的，挂个红点等于 198 行噪音。
+   * 这里只是一个安静的文字标签（不是 Badge/pill），完整说明在详情里。
+   */
+  const showRisk = plugin.riskLevel === 'danger' && !isCore
+  const description = plugin.description || (zh ? '暂无描述' : 'No description')
 
   return (
     <div
-      className={`market-skill-card ${isSelected ? 'selected' : ''} ${!isEnabled ? 'installed' : ''}`}
-      onClick={onSelect}
+      className={`plugin-row ${isEnabled ? '' : 'is-off'} ${isCore ? 'is-core' : ''}`}
+      data-plugin-row={plugin.name}
+      data-plugin-status={plugin.status}
+      onClick={onOpenDetail}
     >
-      {/* 头部：图标 + 名称 + 版本 + 状态 */}
-      <div className="market-skill-card-header">
-        <span className="market-skill-icon">{plugin.icon || <CommonIcons.package size={16} />}</span>
-        <div className="market-skill-card-title">
-          <span className="market-skill-name">{plugin.name}</span>
-          {plugin.version && <Badge variant="muted">v{plugin.version}</Badge>}
-          {isCore && (
-            <Badge variant="info">
-              <Lock size={10} className="icon-inline plugin-mgr-risk-icon" />
-              核心
-            </Badge>
-          )}
-        </div>
-        <StatusIcon status={plugin.status} />
-      </div>
+      <span className="plugin-row-icon" aria-hidden="true">
+        <PluginGlyph plugin={plugin} />
+      </span>
 
-      {/* 描述 */}
-      <div className="market-skill-desc">{plugin.description}</div>
-
-      {/* 类型标签 */}
-      {tags.length > 0 && (
-        <div className="plugin-mgr-tag-row">
-          {tags.map(tag => {
-            const cfg = TAG_CONFIG[tag] || { label: tag, variant: 'default' as const }
-            return <Badge key={tag} variant={cfg.variant}>{cfg.label}</Badge>
-          })}
-          {/* 风险等级标识 */}
-          {(() => {
-            const risk = RISK_LEVEL_CONFIG[plugin.riskLevel || 'safe']
-            if (plugin.riskLevel === 'safe') return null
-            return (
-              <Badge variant={plugin.riskLevel === 'danger' ? 'warning' : 'muted'}>
-                <span className="plugin-mgr-risk-icon">{risk.icon}</span>
-                {risk.label}
-              </Badge>
-            )
-          })()}
-        </div>
-      )}
-
-      {/* 依赖信息摘要 */}
-      {(plugin.dependencies?.length > 0 || plugin.dependents?.length > 0) && (
-        <div
-          className="plugin-mgr-deps"
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+      <span className="plugin-row-name">
+        <button
+          type="button"
+          className="plugin-row-open"
+          title={plugin.name}
+          onClick={(e) => { e.stopPropagation(); onOpenDetail() }}
         >
-          {expanded ? <ActionIcons.expand size={12} /> : <ActionIcons.collapse size={12} />}
-          {plugin.dependencies.length > 0 && (
-            <span className="plugin-mgr-dep-accent">
-              依赖 {plugin.dependencies.length} 个
-            </span>
-          )}
-          {plugin.dependents.length > 0 && (
-            <span className="plugin-mgr-dep-warn">
-              被 {plugin.dependents.length} 个依赖
-            </span>
-          )}
-          {!plugin.canSafelyDisable && !isCore && (
-            <span className="plugin-mgr-dep-warn">
-              <StatusIcons.danger size={12} className="icon-inline" />
-              关闭将影响其他插件
-            </span>
-          )}
-        </div>
-      )}
+          {plugin.name}
+        </button>
+        {plugin.version && <span className="plugin-row-version">v{plugin.version}</span>}
+        {isCore && <span className="plugin-row-core">{zh ? '核心' : 'Core'}</span>}
+      </span>
 
-      {/* 展开的详细信息 */}
-      {expanded && (
-        <div className="plugin-mgr-detail">
-          {/* 风险说明 */}
-          {plugin.riskLevel && plugin.riskLevel !== 'safe' && (
-            <div className={`plugin-mgr-box ${plugin.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
-              <div className="plugin-mgr-box-title" style={{ color: RISK_LEVEL_CONFIG[plugin.riskLevel].color }}>
-                {RISK_LEVEL_CONFIG[plugin.riskLevel].icon} {RISK_LEVEL_CONFIG[plugin.riskLevel].label}
-              </div>
-              <div className="plugin-mgr-box-text">{plugin.riskDescription}</div>
-            </div>
-          )}
-          {plugin.dependencies?.length > 0 && (
-            <div className="plugin-mgr-section">
-              <div className="plugin-mgr-section-title">依赖的插件：</div>
-              <div className="plugin-mgr-list">
-                {plugin.dependencies.map((dep: string) => (
-                  <div key={dep} className="plugin-mgr-list-item is-accent">→ {dep}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {plugin.dependents?.length > 0 && (
-            <div className="plugin-mgr-section">
-              <div className="plugin-mgr-section-title">被以下插件依赖：</div>
-              <div className="plugin-mgr-list">
-                {plugin.dependents.map((dep: string) => (
-                  <div key={dep} className="plugin-mgr-list-item is-warn">← {dep}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {plugin.provides?.length > 0 && (
-            <div className="plugin-mgr-section">
-              <div className="plugin-mgr-section-title">提供的服务：</div>
-              <div className="plugin-mgr-inline-tags">
-                {plugin.provides.map((s: string) => <Badge key={s} variant="success">{s}</Badge>)}
-              </div>
-            </div>
-          )}
-          {plugin.inject?.length > 0 && (
-            <div>
-              <div className="plugin-mgr-section-title">消费的服务：</div>
-              <div className="plugin-mgr-inline-tags">
-                {plugin.inject.map((s: string) => <Badge key={s} variant="info">{s}</Badge>)}
-              </div>
-            </div>
-          )}
-          {/* UI 影响声明 — P1-1 */}
-          {plugin.uiImpact && (
-            <div className="plugin-mgr-box is-accent plugin-mgr-impact">
-              <div className="plugin-mgr-impact-title">
-                🖥️ UI 影响
-              </div>
-              {plugin.uiImpact.slots?.length > 0 && (
-                <div className="plugin-mgr-impact-row">
-                  <span className="plugin-mgr-impact-key">影响槽位：</span>
-                  {plugin.uiImpact.slots.map((slot: string) => (
-                    <Badge key={slot} variant="default">{slot}</Badge>
-                  ))}
-                </div>
-              )}
-              {plugin.uiImpact.buttons?.length > 0 && (
-                <div className="plugin-mgr-impact-row">
-                  <span className="plugin-mgr-impact-key">影响按钮：</span>
-                  {plugin.uiImpact.buttons.map((btn: string) => (
-                    <Badge key={btn} variant="warning">{btn}</Badge>
-                  ))}
-                </div>
-              )}
-              {plugin.uiImpact.panels?.length > 0 && (
-                <div className="plugin-mgr-impact-row">
-                  <span className="plugin-mgr-impact-key">影响面板：</span>
-                  {plugin.uiImpact.panels.map((panel: string) => (
-                    <Badge key={panel} variant="info">{panel}</Badge>
-                  ))}
-                </div>
-              )}
-              {plugin.uiImpact.degradedTo && (
-                <div className="plugin-mgr-impact-degraded">
-                  ↳ 降级为：{plugin.uiImpact.degradedTo}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      <span className="plugin-row-desc" title={description}>{description}</span>
 
-      {/* 底部：作者 + 开关 */}
-      <div className="market-skill-card-footer">
-        <div className="market-skill-meta">
-          {plugin.author && <span className="hint-sm">@{plugin.author}</span>}
-          {plugin.hot && <Badge variant="warning">可热重载</Badge>}
-        </div>
-        <div className="plugin-mgr-switch-row" onClick={(e) => e.stopPropagation()}>
-          {plugin.hot && isEnabled && (
-            <button
-              className="market-skill-link-btn plugin-mgr-hot-btn"
-              title="热重载"
-              onClick={(e) => { e.stopPropagation(); onRestart(plugin.name) }}
-            >
-              <ActionIcons.refresh size={12} />
-            </button>
-          )}
-          {/* 核心插件禁用开关 */}
-          <Switch
-            checked={isEnabled}
-            onCheckedChange={() => onToggle(plugin.name)}
-            disabled={isCore || plugin.status === 'loading'}
-            aria-label={`${plugin.name}: ${plugin.status === 'enabled' ? 'disable plugin' : 'enable plugin'}`}
-          />
-        </div>
-      </div>
+      <span className="plugin-row-type">{typeLabel}</span>
 
-      {/* 错误信息 */}
-      {plugin.error && (
-        <div className="plugin-mgr-error">
-          {plugin.error}
-        </div>
-      )}
+      <span
+        className="plugin-row-deps"
+        title={depCount > 0 ? plugin.dependencies.join('、') : undefined}
+      >
+        {depCount > 0 ? (zh ? `${depCount} 依赖` : `${depCount} dep`) : '—'}
+      </span>
+
+      <span className="plugin-row-actions" onClick={(e) => e.stopPropagation()}>
+        {showRisk && (
+          <span
+            className="plugin-row-risk"
+            title={plugin.riskDescription || (zh ? '关闭前需要确认' : 'Confirm before disabling')}
+          >
+            {zh ? '高风险' : 'Risk'}
+          </span>
+        )}
+        {plugin.hot && isEnabled && (
+          <button
+            type="button"
+            className="plugin-row-hot"
+            title={zh ? '热重载' : 'Reload'}
+            onClick={() => onRestart(plugin.name)}
+          >
+            {zh ? '重载' : 'Reload'}
+          </button>
+        )}
+        {plugin.status === 'loading' && <span className="plugin-row-state">{zh ? '加载中' : 'Loading'}</span>}
+        {plugin.status === 'error' && (
+          <span className="plugin-row-state is-error" title={plugin.error}>{zh ? '错误' : 'Error'}</span>
+        )}
+        {/* 核心插件禁用开关 */}
+        <Switch
+          checked={isEnabled}
+          onCheckedChange={() => onToggle(plugin.name)}
+          disabled={isCore || plugin.status === 'loading'}
+          title={isCore ? (zh ? '核心插件已锁定，不可关闭' : 'Core plugin: locked') : undefined}
+          aria-label={`${plugin.name}: ${isEnabled ? 'disable plugin' : 'enable plugin'}`}
+        />
+      </span>
     </div>
   )
 }
@@ -355,7 +288,7 @@ function CascadeConfirmDialog({
         {request.riskLevel && request.riskLevel !== 'safe' && (
           <div className={`plugin-mgr-dialog-risk ${request.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
             <div className="plugin-mgr-dialog-risk-title" style={{ color: RISK_LEVEL_CONFIG[request.riskLevel].color }}>
-              {RISK_LEVEL_CONFIG[request.riskLevel].icon} 风险等级：{RISK_LEVEL_CONFIG[request.riskLevel].label}
+              风险等级：{RISK_LEVEL_CONFIG[request.riskLevel].label}
             </div>
             <div className="plugin-mgr-dialog-risk-desc">
               {request.riskDescription}
@@ -426,7 +359,7 @@ function PluginDetailDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="plugin-detail-head">
-          <span className="market-skill-icon">{plugin.icon || <CommonIcons.package />}</span>
+          <span className="market-skill-icon"><PluginGlyph plugin={plugin} size={16} /></span>
           <div className="plugin-detail-title">
             <strong>{plugin.name}</strong>
             {plugin.version && <Badge variant="muted">v{plugin.version}</Badge>}
@@ -437,6 +370,7 @@ function PluginDetailDialog({
           </button>
         </div>
         <p className="plugin-detail-desc">{plugin.description || (zh ? '暂无描述' : 'No description')}</p>
+        {plugin.error && <div className="plugin-mgr-error">{plugin.error}</div>}
         {tags.length > 0 && (
           <div className="plugin-detail-tags">
             {tags.map((tag) => <Badge key={tag} variant={TAG_CONFIG[tag]?.variant ?? 'default'}>{TAG_CONFIG[tag]?.label ?? tag}</Badge>)}
@@ -444,7 +378,7 @@ function PluginDetailDialog({
         )}
         {plugin.riskLevel && plugin.riskLevel !== 'safe' && (
           <div className={`plugin-detail-risk ${plugin.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
-            {RISK_LEVEL_CONFIG[plugin.riskLevel].icon} {RISK_LEVEL_CONFIG[plugin.riskLevel].label}
+            {RISK_LEVEL_CONFIG[plugin.riskLevel].label}
             {plugin.riskDescription ? ` — ${plugin.riskDescription}` : ''}
           </div>
         )}
@@ -708,6 +642,22 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     }
   }, [manager])
 
+  /*
+   * 热重载：列表行与详情弹层共用同一个处理器。
+   *
+   * 详情弹层原来接的是 `onRestart(name)` —— 那个标识符在组件作用域里**不存在**，
+   * 点一下就是 ReferenceError（只是很少有人真去点详情里的重启）。抽出来一并修掉。
+   */
+  const handleRestart = useCallback(async (name: string) => {
+    if (!manager) return
+    setToast({ msg: `正在重启 ${name}...`, type: 'warning' })
+    const result = await manager.restart(name)
+    setToast({
+      msg: result.success ? `${name} 已重启` : `重启失败: ${result.error}`,
+      type: result.success ? 'success' : 'error',
+    })
+  }, [manager])
+
   // 处理级联确认
   const handleConfirmCascade = useCallback(async () => {
     if (!confirmRequest || !manager) return
@@ -762,10 +712,11 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       )
     }
     if (activeCategory !== 'all') {
-      list = list.filter(p => (p.category || 'core') === activeCategory)
+      list = list.filter(p => matchesCategory(p, activeCategory))
     }
     const freeMatch = !searchQuery || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.toLowerCase().includes(k));
-    const freeCategory = activeCategory === 'all' || activeCategory === 'provider';
+    /* 免费模型插件的分类是 provider ⇒ 归在「能力」分组里。 */
+    const freeCategory = activeCategory === 'all' || activeCategory === 'capability';
     if (freeMatch && freeCategory) list = [FREE_MODEL_PLUGIN_STUB, ...list];
     return list
   }, [manager, searchQuery, activeCategory, stateVersion])
@@ -774,6 +725,14 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   const totalCount = (manager?.getPluginStates().length || 0) + 1
   const enabledCount = (manager?.getPluginStates().filter(p => p.status === 'enabled').length || 0) + 1
 
+  /** 分组计数（免费模型插件是 provider ⇒ 只在「全部/能力」里 +1）。 */
+  const countForFilter = (key: PluginFilterKey) => {
+    const states = manager?.getPluginStates() ?? []
+    const matched = states.filter(p => matchesCategory(p, key)).length
+    if (key === 'all') return matched + 1
+    return matched + (key === 'capability' ? 1 : 0)
+  }
+
   return (
     <div className="skill-manager">
       {/* Header */}
@@ -781,8 +740,12 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         <div className="skill-manager-title">
           <PanelIcons.plugins className="icon-lg skill-manager-icon-svg" />
           <span>{zh ? '插件管理' : 'Plugin Manager'}</span>
-          <Badge variant="muted">{totalCount}</Badge>
-          <Badge variant="success">{enabledCount} 启用</Badge>
+          {/* 统计是一行 mono meta，不再是两个 pill */}
+          <span className="plugin-mgr-stats" data-testid="plugin-mgr-stats">
+            {zh
+              ? `${totalCount} 个插件 · ${enabledCount} 个已启用`
+              : `${totalCount} plugins · ${enabledCount} enabled`}
+          </span>
         </div>
         <button className="skill-manager-close" aria-label={zh ? "关闭面板" : "Close panel"} onClick={onClose}>
           <ActionIcons.close size={16} />
@@ -826,7 +789,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           <ActionIcons.search size={14} className="skill-search-icon" />
           <input
             type="text"
-            placeholder={zh ? '搜索插件...' : 'Search plugins...'}
+            placeholder={zh ? '搜索插件' : 'Search plugins'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="skill-search-input" aria-label="搜索插件 / Search plugins"
@@ -850,22 +813,18 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         <DshExternalPluginsCard zh={zh} notify={(msg, type) => setToast({ msg, type: type ?? 'info' })} />
       )}
 
-      {/* 分类过滤（动态：只显示实际存在插件的分类 + 全部，避免恒 0 的空分类按钮） */}
+      {/* 分组过滤（4 个以内分段；空分组不渲染） */}
       <div className="skill-manager-filters">
         {getCategoryConfig(zh)
-          .filter(cat => {
-            if (cat.key === 'all') return true
-            if (!manager) return false
-            return manager.getPluginStates().some(p => (p.category || 'core') === cat.key)
-          })
+          .filter(cat => cat.key === 'all' || countForFilter(cat.key) > 0)
           .map(cat => {
-          const count = cat.key === 'all'
-            ? totalCount
-            : manager?.getPluginStates().filter(p => (p.category || 'core') === cat.key).length || 0
+          const count = countForFilter(cat.key)
           return (
             <button
               key={cat.key}
+              data-testid={`plugin-filter-${cat.key}`}
               className={`skill-filter-btn ${activeCategory === cat.key ? 'active' : ""}`}
+              aria-pressed={activeCategory === cat.key}
               onClick={() => setActiveCategory(cat.key)}
             >
               {cat.icon} {cat.label}
@@ -875,44 +834,46 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         })}
       </div>
 
-      {/* 插件网格
+      {/* 插件列表
           第 181 轮审计整改：原来这里是 `plugins.map(...)` —— 207 个内置插件 + 1 个扩展
           **一次性造 208 张卡**，实测 6095 个 DOM 节点（含 1952 个内联 SVG 图标），
-          而干净状态的整个应用只有 620 个节点。改走分片渲染：首屏 40 张，滚动/按钮追加。 */}
+          而干净状态的整个应用只有 620 个节点。改走分片渲染：首屏 40 行，滚动/按钮追加。 */}
+      {plugins.length > 0 && (
+        <div className="plugin-list-head" aria-hidden="true">
+          <span />
+          <span>{zh ? '插件' : 'Plugin'}</span>
+          <span>{zh ? '说明' : 'Description'}</span>
+          <span>{zh ? '类型' : 'Type'}</span>
+          <span>{zh ? '依赖' : 'Deps'}</span>
+          <span>{zh ? '状态' : 'State'}</span>
+        </div>
+      )}
       {plugins.length === 0 ? (
-        <div className="skill-market-grid">
+        <div className="plugin-list">
           <div className="empty-hint">
             {manager ? (zh ? '没有找到匹配的插件' : 'No matching plugins') : (zh ? '正在加载...' : 'Loading...')}
           </div>
         </div>
       ) : (
         <IncrementalList
-          className="skill-market-grid"
+          className="plugin-list"
           items={plugins}
           resetKey={`${activeCategory}|${searchQuery}|${tab}`}
           initial={40}
           step={40}
-          moreLabel={(rest, next) =>
-            zh ? `再显示 ${next} 个插件（还有 ${rest} 个）` : `Show ${next} more plugins (${rest} left)`
+          moreLabel={(rest) =>
+            zh ? `加载更多（剩余 ${rest}）` : `Load more (${rest} left)`
           }
           renderItem={(plugin) => plugin.name === "our-free-model" ? (
             <FreeModelPluginCard key={plugin.name} compact onOpenDetail={() => setFreeModelDetail(true)} />
           ) : (
-            <PluginCard
+            <PluginRow
               key={plugin.name}
               plugin={plugin}
+              zh={zh}
               onToggle={handleToggle}
-              onRestart={async (name) => {
-                if (!manager) return
-                setToast({ msg: `正在重启 ${name}...`, type: 'warning' })
-                const result = await manager.restart(name)
-                setToast({
-                  msg: result.success ? `${name} 已重启` : `重启失败: ${result.error}`,
-                  type: result.success ? 'success' : 'error',
-                })
-              }}
-              isSelected={false}
-              onSelect={() => setDetailPlugin(plugin)}
+              onRestart={handleRestart}
+              onOpenDetail={() => setDetailPlugin(plugin)}
             />
           )}
         />
@@ -920,7 +881,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
 
       {/* 核心插件说明 */}
       <div className="plugin-mgr-footnote">
-        💡 {zh ? '标有「核心」的插件是系统运行的基础设施，关闭会导致系统崩溃，已锁定不可关闭。其他插件可自由开关，系统会在关闭前检查依赖关系。' : 'Plugins marked as "Core" are system infrastructure. Disabling them would crash the system, so they are locked. Other plugins can be freely toggled; the system checks dependencies before disabling.'}
+        {zh ? '标有「核心」的插件是系统运行的基础设施，关闭会导致系统崩溃，已锁定不可关闭。其他插件可自由开关，系统会在关闭前检查依赖关系。' : 'Plugins marked as "Core" are system infrastructure. Disabling them would crash the system, so they are locked. Other plugins can be freely toggled; the system checks dependencies before disabling.'}
       </div>
         </>
       )}
@@ -939,8 +900,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           plugin={detailPlugin}
           zh={zh}
           onClose={() => setDetailPlugin(null)}
-          onToggle={(name) => { onToggle(name); setDetailPlugin(null) }}
-          onRestart={(name) => { onRestart(name) }}
+          onToggle={(name) => { void handleToggle(name); setDetailPlugin(null) }}
+          onRestart={(name) => { void handleRestart(name) }}
         />
       )}
 

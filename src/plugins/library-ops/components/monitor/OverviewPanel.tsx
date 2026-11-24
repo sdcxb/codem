@@ -1,16 +1,11 @@
 /**
- * OverviewPanel —— 运营总览（**布局对标 lobster-pet 的 DetailPanel**）。
+ * OverviewPanel —— 运营总览。
  *
- * lobster-pet 的监控界面是「单屏卡片网格」：
- *   行 1：状态卡(240px) | 最近会话(1fr) | 活动概览(1.5fr)
- *   行 2：左栈（智能体卡 + 定时任务卡，750px）+ 备忘卡 | **场景大卡(1fr)**
- *
- * 本面板照此布局，把「迷你办公室」换成**我们的图书馆场景**——
- * 这就是「把图书馆作为 lobster-pet 监控界面内的场景」的落地形态：
- * 场景与其它监控卡同屏、共享同一份快照。
+ * 概览只留两块核心：**当前工作**（状态行 + 最多 4 个会话）与一张更宽的**活动概览**；
+ * 场景画布只在「子智能体」页签渲染（这里保留一个「场景 →」入口，不再塞第二块画布）。
+ * 14 天没有任何活动时，活动概览退化成一行空状态 + 时间线入口，不摆空图表。
  */
 
-import { useMemo } from "react";
 import type { LibrarySnapshot, MonitorTab } from "../../types";
 import { ACTIVITY_META, KIND_META } from "../../types";
 import { formatCost, formatAge, formatPercent, formatTokens } from "../../core/format";
@@ -20,10 +15,6 @@ import { localTimeParts } from "../../../../core/time/local-time";
 import { Card, Empty, Field, Pill, SectionTitle, StatCard } from "./common";
 import { DonutChart, Heatmap, HourBars, ProgressRing } from "./charts";
 import { EventList } from "./EventList";
-import { PixelLibraryScene } from "../library/PixelLibraryScene";
-import { LibraryScene } from "../library/LibraryScene";
-import type { PixelSceneState } from "../../core/pixel-scene";
-import type { SceneState } from "../../types";
 import { LoIcon } from "../icons";
 
 export interface OverviewPanelProps {
@@ -48,22 +39,13 @@ function openTaskCenterTab(tab: string): void {
 }
 
 export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }: OverviewPanelProps) {
-  const settings = useLibraryOps((s) => s.settings);
   const selectActor = useLibraryOps((s) => s.selectActor);
   /**
-   * 概览页的场景卡同样要接**岗位选择**。
-   *
-   * 为什么（这是与 LibraryPanel 同一类的漏接线）：两个场景组件的 `onSelectZone` 是可选 prop，
-   * 改动前概览页只传了 `onSelectActor`，于是房间里那些 `role="button"` + `tabIndex` +
-   * `cursor:pointer` 的热区**点了没有任何反应** —— 一个看起来能点、实际不响应的控件。
-   * 「场景实况」卡是用户在概览页**唯一**能直接点角色的入口，漏了它这一整块就只剩装饰。
-   * 真机 1.16.113 的复量已经把房间命中归属修好（房间确实收到了点击），
-   * 所以这里缺的只是"把点击接到 store 上"这一步。
+   * 会话点击仍然要**先把场景调出来**再选中角色 —— 场景画布现在只渲染在
+   * 「子智能体」页签，少了这一步用户会"选中了但看不见"。这就是概览页
+   * `requestView("scene")` 入口必须保留的原因（不是场景卡的残留）。
    */
-  const selectZone = useLibraryOps((s) => s.selectZone);
   const requestView = useLibraryOps((s) => s.requestView);
-  const initialPixelScene = useMemo(() => useLibraryOps.getState().pixelScene, []);
-  const initialIsoScene = useMemo(() => useLibraryOps.getState().isoScene, []);
 
   if (!snapshot) return <Empty text={zh ? "等待第一次采样…" : "Waiting for first sample…"} />;
   const m = snapshot.metrics;
@@ -73,21 +55,37 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
   const nowHour = localTimeParts(new Date()).hour;
   const completion = m.tasksTotal > 0 ? m.tasksDone / m.tasksTotal : 0;
   const actors = sortedActors(snapshot);
-  const sessions = actors.filter((a) => a.kind === "captain" || a.kind === "session").slice(0, 6);
+  // 「当前工作」最多列 4 个会话；更长的历史在「看板 → 时间线」
+  const sessions = actors.filter((a) => a.kind === "captain" || a.kind === "session").slice(0, 4);
+  // 14 天全 0 ⇒ 不摆空热力图/圆环/小时柱，退化成一行空状态（快照没有 perDay 也算没有活动）
+  const hasActivity = dayValues.some((v) => v > 0);
+  const top = topActivity(snapshot);
+  const topMeta = ACTIVITY_META[top];
 
   return (
     <div className="lo-grid lo-grid--lp">
-      {/* ===== 行 1 ===== */}
-      <div className="lo-grid__row lo-grid__row--top">
-        {/* 状态卡 */}
-        <Card className="lo-card--status" icon={ACTIVITY_META[topActivity(snapshot)].icon} title={zh ? "运行状态" : "Status"}>
+      {/* ===== 当前工作 + 活动概览 ===== */}
+      <div className="lo-overview-top">
+        {/* 当前工作：状态行 + 最多 4 个会话（原「运行状态」「最近会话」两张等高卡合并） */}
+        <Card
+          title={zh ? "当前工作" : "Current work"}
+          icon={topMeta.icon}
+          className="lo-overview-current"
+          actions={
+            <span className="lo-card__actions-row">
+              <span className="lo-card__count" title={zh ? "会话总数" : "Total sessions"}>
+                {m.sessions}
+              </span>
+              <button className="lo-link-btn" onClick={onOpenLibrary}>
+                {zh ? "场景 →" : "Scene →"}
+              </button>
+            </span>
+          }
+        >
           <div className="lo-status">
-            <span
-              className="lo-status__dot"
-              style={{ background: `var(${ACTIVITY_META[topActivity(snapshot)].token})` }}
-            />
-            <span className="lo-status__text" style={{ color: `var(${ACTIVITY_META[topActivity(snapshot)].token})` }}>
-              {zh ? ACTIVITY_META[topActivity(snapshot)].zh : ACTIVITY_META[topActivity(snapshot)].en}
+            <span className="lo-status__dot" style={{ background: `var(${topMeta.token})` }} />
+            <span className="lo-status__text" style={{ color: `var(${topMeta.token})` }}>
+              {zh ? topMeta.zh : topMeta.en}
             </span>
           </div>
           <div className="lo-status__desc">
@@ -97,10 +95,10 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
           </div>
           <div className="lo-status__section">
             <div className="lo-status__label">
-              {zh ? "活跃会话" : "Active sessions"} ({m.activeSessions})
+              {zh ? "最近会话" : "Recent sessions"} ({m.activeSessions} {zh ? "活跃" : "active"} / {m.sessions})
             </div>
             <div className="lo-status__list">
-              {sessions.slice(0, 4).map((a) => (
+              {sessions.map((a) => (
                 // 场景画布在「子智能体」页签：点击角色要先把场景调出来，否则选中了也看不见
                 <div
                   key={a.id}
@@ -109,84 +107,88 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                     selectActor(a.id);
                     requestView("scene");
                   }}
+                  title={a.roleLabel}
                 >
                   <span className="lo-status__item-name" title={a.name}>
                     <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
                   </span>
-                  <span className="lo-status__item-type">{zh ? ACTIVITY_META[a.activity].zh : ACTIVITY_META[a.activity].en}</span>
+                  <span className="lo-status__item-type">
+                    {zh ? ACTIVITY_META[a.activity].zh : ACTIVITY_META[a.activity].en} · {formatAge(a.lastEventAt)}
+                  </span>
                 </div>
               ))}
               {sessions.length === 0 && <span className="lo-empty">{zh ? "暂无会话" : "No sessions"}</span>}
             </div>
           </div>
-          {/* token/成本只保留一处呈现（KPI 卡与 CostPanel 已有），这里不再重复第三遍 */}
         </Card>
 
-        {/* 最近会话（对标 TaskGrid） */}
+        {/* 活动概览：有数据才画三张图；空数据只给一行说明 + 时间线入口 */}
         <Card
-          title={zh ? "最近会话" : "Recent sessions"}
-          icon="message-square"
-          actions={<span className="lo-card__count">{m.sessions}</span>}
-          className="lo-card--sessions"
+          title={zh ? "活动概览" : "Activity"}
+          icon="bar-chart-3"
+          className="lo-card--activity lo-overview-activity"
         >
-          {sessions.length === 0 ? (
-            <Empty text={zh ? "暂无会话记录" : "No sessions"} />
+          {hasActivity ? (
+            <>
+              <div className="lo-av">
+                <div className="lo-av__col">
+                  <div
+                    className="lo-overview-activity__caption"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "var(--space-4)",
+                      marginBottom: "var(--space-2)",
+                      fontSize: "var(--fs-xs)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    <span>{zh ? "过去 14 天" : "Last 14 days"}</span>
+                    <span>
+                      {zh ? "今天" : "today"} {dayValues[todayIdx] ?? 0}
+                    </span>
+                  </div>
+                  <Heatmap values={dayValues} titles={days} highlightIndex={todayIdx} token="--accent" columns={7} />
+                </div>
+                <div className="lo-av__col">
+                  <DonutChart
+                    size={80}
+                    slices={[
+                      { label: zh ? "主控" : "Main", value: snapshot.activity.kinds.chat ?? 0, token: "--accent" },
+                      { label: zh ? "队长" : "Captain", value: snapshot.activity.kinds.captain ?? 0, token: "--success" },
+                      { label: zh ? "分支" : "Worktree", value: snapshot.activity.kinds.worktree ?? 0, token: "--info" },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div
+                className="lo-overview-activity__caption"
+                style={{
+                  marginBottom: "var(--space-2)",
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {zh ? "今日活跃时段" : "Hourly today"}
+              </div>
+              <HourBars values={snapshot.activity.perHour} token="--info" highlightIndex={nowHour} />
+            </>
           ) : (
-            <div className="lo-session-cards">
-              {sessions.map((a) => (
-                <button
-                  key={a.id}
-                  className="lo-session-card"
-                  onClick={() => {
-                    selectActor(a.id);
-                    requestView("scene");
-                  }}
-                  title={a.roleLabel}
-                >
-                  <span className="lo-session-card__top">
-                    <span className="lo-session-card__icon"><LoIcon name={KIND_META[a.kind].icon} size={14} /></span>
-                    <span className="lo-session-card__name">{a.name}</span>
-                    {a.activity !== "idle" && a.activity !== "sleeping" && <span className="lo-session-card__live">●</span>}
-                  </span>
-                  <span className="lo-session-card__bottom">
-                    <span className="lo-session-card__age">{formatAge(a.lastEventAt)}</span>
-                    <span className="lo-session-card__tools">{a.metrics.tools}t</span>
-                  </span>
-                </button>
-              ))}
+            <div
+              className="lo-overview-activity__empty empty-hint is-compact"
+              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-4)" }}
+            >
+              <span>{zh ? "最近 14 天没有活动" : "No activity in the last 14 days"}</span>
+              <button type="button" className="lo-link-btn" onClick={() => onOpenTab("timeline")}>
+                {zh ? "查看时间线" : "View timeline"}
+              </button>
             </div>
           )}
         </Card>
-
-        {/* 活动概览（对标 ActivityViz） */}
-        <Card title={zh ? "活动概览" : "Activity"} icon="bar-chart-3" className="lo-card--activity">
-          <div className="lo-av">
-            <div className="lo-av__col">
-              <SectionTitle hint={`${zh ? "今天" : "today"} ${dayValues[todayIdx] ?? 0}`}>
-                {zh ? "过去 14 天" : "Last 14 days"}
-              </SectionTitle>
-              <Heatmap values={dayValues} titles={days} highlightIndex={todayIdx} token="--accent" columns={7} />
-            </div>
-            <div className="lo-av__col">
-              <SectionTitle>{zh ? "会话类型" : "Kinds"}</SectionTitle>
-              <DonutChart
-                size={80}
-                slices={[
-                  { label: zh ? "主控" : "Main", value: snapshot.activity.kinds.chat ?? 0, token: "--accent" },
-                  { label: zh ? "队长" : "Captain", value: snapshot.activity.kinds.captain ?? 0, token: "--success" },
-                  { label: zh ? "分支" : "Worktree", value: snapshot.activity.kinds.worktree ?? 0, token: "--info" },
-                ]}
-              />
-            </div>
-          </div>
-          <SectionTitle>{zh ? "今日活跃时段" : "Hourly today"}</SectionTitle>
-          <HourBars values={snapshot.activity.perHour} token="--info" highlightIndex={nowHour} />
-        </Card>
       </div>
 
-      {/* ===== 行 2 ===== */}
-      <div className="lo-grid__row lo-grid__row--mid">
-        {/* 左栈 */}
+      {/* ===== 团队 / 任务 / 数据源（场景画布归「子智能体」页签） ===== */}
+      <div className="lo-overview-lower">
         <div className="lo-stack">
           <div className="lo-stack__row">
             {/* 团队卡（对标 GatewayAgentsCard） */}
@@ -286,54 +288,9 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             )}
           </Card>
         </div>
-
-        {/* 场景大卡（对标 MiniOffice，但换成我们的图书馆） */}
-        <Card
-          title={zh ? "场景实况" : "Scene live"}
-          icon="library"
-          className="lo-card--scene"
-          actions={
-            <span className="lo-card__actions-row">
-              <Pill token="--accent">
-                {m.actorsWorking} {zh ? "工作中" : "working"}
-              </Pill>
-              <button className="lo-link-btn" onClick={onOpenLibrary}>
-                {zh ? "场景 →" : "Scene →"}
-              </button>
-            </span>
-          }
-        >
-          <div className="lo-scene-host">
-            {settings.sceneStyle === "pixel" ? (
-              <PixelLibraryScene
-                snapshot={snapshot}
-                initialScene={(initialPixelScene as PixelSceneState | null) ?? undefined}
-                showZoneLabels={settings.showZoneLabels}
-                showNameplates={settings.showNameplates}
-                showBubbles={settings.showBubbles}
-                speed={settings.speed}
-                maxActors={settings.maxActors}
-                onSelectActor={selectActor}
-                onSelectZone={selectZone}
-              />
-            ) : (
-              <LibraryScene
-                snapshot={snapshot}
-                initialScene={(initialIsoScene as SceneState | null) ?? undefined}
-                showZoneLabels={settings.showZoneLabels}
-                showNameplates={settings.showNameplates}
-                showBubbles={settings.showBubbles}
-                speed={settings.speed}
-                maxActors={settings.maxActors}
-                onSelectActor={selectActor}
-                onSelectZone={selectZone}
-              />
-            )}
-          </div>
-        </Card>
       </div>
 
-      {/* ===== 行 3：KPI 细项 ===== */}
+      {/* ===== KPI 细项 ===== */}
       <div className="lo-kpi-grid lo-kpi-grid--compact">
         <StatCard label={zh ? "活动会话" : "Active sessions"} value={m.activeSessions} unit={`/ ${m.sessions}`} token="--accent" points={series.actors} />
         <StatCard label={zh ? "在馆角色" : "Actors"} value={m.actors} token="--info" points={series.actors} />

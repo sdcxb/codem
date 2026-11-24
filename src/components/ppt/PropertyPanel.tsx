@@ -5,6 +5,7 @@
 import { type SlideElement, type TextElement, type ShapeElement, type ImageElement, type ListElement, type ShapeKind, type ElementAnimation, type AnimationType, type AnimationTrigger } from '../../core/knowledge/ppt-types';
 import { PPT_FONTS } from '../../core/knowledge/ppt-styles';
 import { ActionIcons } from "../../core/icons/icon-map";
+import { FolderOpen } from "lucide-react";
 
 export interface PropertyPanelProps {
   selectedElements: SlideElement[];
@@ -410,7 +411,7 @@ function ImageProperties({ el, onUpdate }: { el: ImageElement; onUpdate: (id: st
       <div className="ppt-property-section">
         <div className="ppt-property-section-title">图片</div>
         <div className="ppt-property-row">
-          <button className="ppt-property-btn" onClick={handleImageUpload}>📁 上传图片</button>
+          <button className="ppt-property-btn" onClick={handleImageUpload}><FolderOpen size={14} aria-hidden /> 上传图片</button>
         </div>
         {el.src && (
           <div className="ppt-property-row">

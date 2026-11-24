@@ -6,6 +6,7 @@ import {
 } from "../core/settings/settings";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
+import { Layers, ShieldCheck, FolderUp, Copy } from "lucide-react";
 
 /**
  * 分层设置管理面板。
@@ -117,7 +118,7 @@ export function LayeredSettingsPanel() {
     <div className="layered-panel">
       <div>
         <div className="layered-title">
-          🏗️ {zh ? "分层设置管理" : "Layered Settings Management"}
+          <Layers size={16} aria-hidden /> {zh ? "分层设置管理" : "Layered Settings Management"}
         </div>
         <div className="layered-subtitle">
           {zh
@@ -229,7 +230,7 @@ export function LayeredSettingsPanel() {
       {mgr && (
         <div className="layered-card">
           <div className="layered-card-title">
-            🛡️ {zh ? "策略限制" : "Policy Restrictions"}
+            <ShieldCheck size={14} aria-hidden /> {zh ? "策略限制" : "Policy Restrictions"}
           </div>
           {/*
             D-7：策略来源是 DB 的 `codem-policy` 键（不是磁盘文件，也没有默认内容）。
@@ -251,7 +252,7 @@ export function LayeredSettingsPanel() {
             <div>
               <span className="layered-policy-key">{zh ? "绕过权限禁用" : "Bypass disabled"}: </span>
               <span className={`layered-policy-value ${mgr.isBypassDisabled() ? "is-bad" : "is-ok"}`}>
-                {mgr.isBypassDisabled() ? "✅ " + (zh ? "是" : "Yes") : "❌ " + (zh ? "否" : "No")}
+                {mgr.isBypassDisabled() ? "✓ " + (zh ? "是" : "Yes") : "✗ " + (zh ? "否" : "No")}
               </span>
             </div>
             <div>
@@ -274,11 +275,11 @@ export function LayeredSettingsPanel() {
       {/* Export */}
       <div className="layered-actions">
         <button onClick={handleExport} className="panel-btn">
-          📤 {zh ? "导出所有设置" : "Export All Settings"}
+          <FolderUp size={14} aria-hidden /> {zh ? "导出所有设置" : "Export All Settings"}
         </button>
         {showExport && (
           <button onClick={() => { navigator.clipboard?.writeText(exportData); }} className="panel-btn">
-            📋 {zh ? "复制到剪贴板" : "Copy to Clipboard"}
+            <Copy size={14} aria-hidden /> {zh ? "复制到剪贴板" : "Copy to Clipboard"}
           </button>
         )}
       </div>

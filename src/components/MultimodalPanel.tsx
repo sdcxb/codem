@@ -16,7 +16,8 @@ import {
 } from "../core/llm/multimodal";
 import { getSettingJSON } from "../core/storage/settings";
 import { AVAILABLE_LOCAL_MODELS, getStatus as getLocalStatus, type LocalEmbeddingStatus } from "../core/knowledge/local-embedding";
-import { ActionIcons } from "../core/icons/icon-map";
+import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
+import { Mic, Volume2, Palette, Lightbulb, type LucideIcon } from "lucide-react";
 
 interface ProviderKey {
   id: string;
@@ -109,7 +110,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
   const renderModalityConfig = (
     modality: "vision" | "stt" | "embedding" | "tts" | "imageGen",
     title: string,
-    icon: string,
+    icon: LucideIcon,
     description: string,
   ) => {
     const config = settings[modality];
@@ -120,6 +121,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
       : modality === "embedding" ? models?.embedding
       : modality === "tts" ? models?.tts
       : models?.imageGen;
+    const Icon = icon;
 
     return (
       <div
@@ -128,7 +130,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
       >
         <div className="mm-card-head">
           <div>
-            <span className="mm-card-icon">{icon}</span>
+            <span className="mm-card-icon"><Icon size={16} aria-hidden /></span>
             <span className="mm-card-title">{title}</span>
           </div>
           <label className="mm-toggle">
@@ -147,7 +149,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         {/* Embedding 未配置时显示默认本地模型提示 */}
         {!isEnabled && modality === "embedding" && (
           <div className="mm-note">
-            ✅ 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
+            <StatusIcons.success size={14} aria-hidden /> 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
             随安装包打包，无需配置 API Key，安装后即可离线使用。如需更高精度，可启用后选择其他本地模型或远程 API。
           </div>
         )}
@@ -191,7 +193,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                 ))}
                 {/* 本地模型选项（仅 Embedding 可用） */}
                 {modality === "embedding" && (
-                  <option value="local">🖥️ 本地模型 (ONNX Runtime)</option>
+                  <option value="local">本地模型 (ONNX Runtime)</option>
                 )}
               </select>
             </div>
@@ -233,15 +235,15 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* 模型状态指示器 */}
                 <div className={`mm-status is-${localStatus.state === "ready" ? "ready" : localStatus.state === "loading" ? "loading" : localStatus.state === "error" ? "error" : "idle"}`}>
-                  {localStatus.state === "ready" && "✅ 模型已加载，可正常使用"}
-                  {localStatus.state === "loading" && `⏳ ${localStatus.message || "正在加载..."}`}
-                  {localStatus.state === "not-loaded" && "⚪ 模型未加载（首次使用时自动下载）"}
-                  {localStatus.state === "error" && `❌ ${localStatus.message || "加载失败"}`}
+                  {localStatus.state === "ready" && <><StatusIcons.success size={14} aria-hidden /> 模型已加载，可正常使用</>}
+                  {localStatus.state === "loading" && <><StatusIcons.loading size={14} className="spin" aria-hidden /> {localStatus.message || "正在加载..."}</>}
+                  {localStatus.state === "not-loaded" && <><StatusIcons.idle size={14} aria-hidden /> 模型未加载（首次使用时自动下载）</>}
+                  {localStatus.state === "error" && <><StatusIcons.error size={14} aria-hidden /> {localStatus.message || "加载失败"}</>}
                 </div>
 
                 {/* 说明文字 */}
                 <div className="mm-help">
-                  💡 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
+                  <Lightbulb size={14} aria-hidden /> 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
                   默认模型（all-MiniLM-L6-v2）已随安装包内置，已内置。
                   其他模型首次使用时从 HuggingFace 下载并缓存。超长文本自动子分块处理。
                 </div>
@@ -315,7 +317,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
       className={inline ? "mm-panel-inline" : "floating-overlay-panel mm-panel-floating"}
     >
       <div className="mm-header">
-        <h3 className="mm-title">🎨 多模态设置</h3>
+        <h3 className="mm-title"><Palette size={16} aria-hidden /> 多模态设置</h3>
         <button
           onClick={onClose}
           className="mm-close"
@@ -334,42 +336,42 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         {renderModalityConfig(
           "vision",
           "Vision 图片理解",
-          "📷",
+          ActionIcons.view,
           "图片理解/OCR。当主对话模型不支持视觉（如 DeepSeek）时，自动调用视觉模型描述图片内容，再将描述转发给主模型。支持视觉的模型（如 GPT-4o）则直接传图。",
         )}
 
         {renderModalityConfig(
           "stt",
           "STT 语音输入",
-          "🎤",
+          Mic,
           "将语音转为文字输入（预留功能，需要 Whisper 等模型支持）。",
         )}
 
         {renderModalityConfig(
           "embedding",
           "Embedding 语义搜索",
-          "🔍",
+          ActionIcons.search,
           "将文本转为向量进行语义相似度搜索。未配置时默认使用本地模型（ONNX Runtime，无需 API Key），也可选择远程 API（OpenAI/Gemini）。",
         )}
 
         {renderModalityConfig(
           "tts",
           "TTS 语音合成",
-          "🔊",
+          Volume2,
           "将文本转为语音播放，支持多种音色和语速。",
         )}
 
         {renderModalityConfig(
           "imageGen",
           "ImageGen 图像生成",
-          "🎨",
+          Palette,
           "根据文字描述生成图像，支持多种尺寸和质量选项。",
         )}
       </div>
 
       <div className="mm-footer">
         {saved && (
-          <span className="mm-saved">✅ 已保存</span>
+          <span className="mm-saved"><StatusIcons.success size={14} aria-hidden /> 已保存</span>
         )}
         <button
           onClick={handleSave}

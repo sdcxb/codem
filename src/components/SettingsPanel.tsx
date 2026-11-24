@@ -121,6 +121,7 @@ import {
   Smartphone,
   PawPrint,
   Zap,
+  Rocket,
   HelpCircle,
   Key,
   Terminal,
@@ -543,7 +544,7 @@ export function SettingsPanel({
     const panel = panelOverride ?? settings;
     /**
      * D-21：写入是"内存即时生效 + 异步落库"，`setSetting*` 返回 `void`，
-     * 所以"✅ 已保存"必须建立在**可等待的确认**上，而不是"没抛异常"。
+     * 所以"✓ 已保存"必须建立在**可等待的确认**上，而不是"没抛异常"。
      * `beginSettingsWriteProbe()` 记下写入前的失败水位；`flushSettingsWrites()` 等写队列排空
      * 并检查这段窗口里有没有新增失败。落库失败本身仍有旁路上报（guidance 提示），
      * 这里修的是"**即时反馈**不许撒谎"。
@@ -858,14 +859,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       const { invoke } = (window as any).__TAURI__.core;
       const auth = await invoke("mimo_read_auth");
       if (auth?.xiaomi?.key) {
-        log("✅ key: " + auth.xiaomi.key.substring(0, 10) + "...");
+        log("✓ key: " + auth.xiaomi.key.substring(0, 10) + "...");
         log("  uid: " + auth.xiaomi.metadata?.uid);
         log("  url: " + auth.xiaomi.metadata?.base_url);
       } else {
-        log("❌ auth.json 无 key");
+        log("✗ auth.json 无 key");
       }
     } catch (e) {
-      log("❌ " + e);
+      log("✗ " + e);
       setTestResult(lines.join("\n"));
       return;
     }
@@ -881,9 +882,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       AccountStorage.createAccount({ ...testAcc, email: "updated" });
       log("  重复创建(upsert): OK");
       AccountStorage.deleteAccount(testId);
-      log("✅ createAccount upsert 正常");
+      log("✓ createAccount upsert 正常");
     } catch (e) {
-      log("❌ " + e);
+      log("✗ " + e);
     }
 
     // Test 3: loadFromAuthJson
@@ -893,14 +894,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       const auth = getMiMoAuth();
       const account = await auth.loadFromAuthJson();
       if (account) {
-        log("✅ id: " + account.id);
+        log("✓ id: " + account.id);
         log("  email: " + account.email);
         log("  token: " + account.accessToken.substring(0, 10) + "...");
       } else {
-        log("❌ 返回 null");
+        log("✗ 返回 null");
       }
     } catch (e) {
-      log("❌ " + e);
+      log("✗ " + e);
     }
 
     // Test 4: getActiveAccount
@@ -908,9 +909,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     try {
       const { getMiMoAuth } = await import("../core/auth/mimo");
       const active = getMiMoAuth().getActiveAccount();
-      log(active ? "✅ " + active.email : "❌ null");
+      log(active ? "✓ " + active.email : "✗ null");
     } catch (e) {
-      log("❌ " + e);
+      log("✗ " + e);
     }
 
     // Test 5: API call
@@ -929,9 +930,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         log("  非streaming HTTP " + r.status);
         if (r.ok) {
           const d = await r.json();
-          log("✅ 非streaming 响应: " + JSON.stringify(d).substring(0, 120));
+          log("✓ 非streaming 响应: " + JSON.stringify(d).substring(0, 120));
         } else {
-          log("❌ " + (await r.text()).substring(0, 100));
+          log("✗ " + (await r.text()).substring(0, 100));
         }
 
         // Test streaming
@@ -953,20 +954,20 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             chunks++;
             text += decoder.decode(value, { stream: true });
           }
-          log("✅ streaming OK: " + chunks + " chunks, " + text.length + " bytes");
+          log("✓ streaming OK: " + chunks + " chunks, " + text.length + " bytes");
         } else {
-          log("❌ streaming failed: " + rs.status);
+          log("✗ streaming failed: " + rs.status);
         }
       } else {
-        log("❌ 无活跃账号");
+        log("✗ 无活跃账号");
       }
     } catch (e) {
-      log("❌ " + e);
+      log("✗ " + e);
     }
 
     // Summary
-    const passed = lines.filter((l) => l.startsWith("✅")).length;
-    const failed = lines.filter((l) => l.startsWith("❌")).length;
+    const passed = lines.filter((l) => l.startsWith("✓")).length;
+    const failed = lines.filter((l) => l.startsWith("✗")).length;
     log("\n=== 结果: " + passed + " 通过, " + failed + " 失败 ===");
     setTestResult(lines.join("\n"));
   };
@@ -1210,6 +1211,35 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     setShowKeys((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  /**
+   * 页面标题在**渲染处**去 emoji（不改共享 i18n 的 `S.settings.title`）：
+   * 这个键全仓只有本面板两处消费，动 i18n 会越出"只改设置页"的范围。
+   */
+  const settingsTitle = lang === "zh" ? "设置" : "Settings";
+
+  /**
+   * 模型下拉的完整名称。
+   *
+   * 下拉被 flex 压缩时选项显示成 `OpenAI - G…`（真机实报），而原生 `<select>` 的
+   * 收起态无法靠 CSS 换行 ⇒ 至少让 `title` 能给出**完整**的「供应商 - 模型名」。
+   * 只用于展示，不改 `value` / 不改模型值。
+   */
+  const selectedModelTitle = (() => {
+    if (settings.mode === "cli") return `MiMo - ${settings.model}`;
+    const providerId = settings.provider || (isFreeModelId(settings.model) ? "free-model" : "");
+    const providerName =
+      providerId === "free-model"
+        ? freeModelPlugin.name
+        : settings.providers.find((p) => p.id === providerId)?.name || providerId;
+    const freeModel =
+      providerId === "free-model"
+        ? freeModelPlugin.models.cached().find((m) => m.id === settings.model)
+        : undefined;
+    const catalogModel = catalogFor(providerId).find((m) => m.id === settings.model);
+    const modelName = freeModel?.name || catalogModel?.name || settings.model;
+    return providerName ? `${providerName} - ${modelName}` : modelName;
+  })();
+
   return (
     <div
       className={`settings-overlay ${fullPage ? "settings-page-overlay" : ""}`}
@@ -1224,7 +1254,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       >
         {!fullPage && (
         <div className="settings-header">
-          <h3>{S.settings.title[lang]}</h3>
+          <h3>{settingsTitle}</h3>
           {/**
            * 第 198 轮：**搜索框从左侧栏搬进标题栏中间**（用户要求）。
            *
@@ -1247,7 +1277,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <SearchIcon size={14} className="sp-search-icon" />
               <input
                 type="text"
-                placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
+                placeholder={lang === "zh" ? "搜索设置" : "Search settings"}
                 value={settingsSearch}
                 onChange={(e) => setSettingsSearch(e.target.value)}
                 className="sp-search-input"
@@ -1280,12 +1310,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   <ArrowLeft />
                   <span>{lang === "zh" ? "返回工作台" : "Back to workspace"}</span>
                 </button>
-                <h2>{S.settings.title[lang]}</h2>
+                <h2>{settingsTitle}</h2>
                 <div className="settings-side-search">
                   <SearchIcon className="sp-search-icon" />
                   <input
                     type="text"
-                    placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
+                    placeholder={lang === "zh" ? "搜索设置" : "Search settings"}
                     value={settingsSearch}
                     onChange={(e) => setSettingsSearch(e.target.value)}
                     className="sp-search-input"
@@ -1597,7 +1627,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     console.warn("[SettingsPanel] 模型选择没能立刻落盘（面板保存仍可兜住）", err);
                   }
                 }}
-                className="sp-select-flex"
+                className="sp-select-flex settings-model-select"
+                title={selectedModelTitle}
               >
               {settings.mode === "cli" ? (
                 <>
@@ -2057,7 +2088,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   );
                 }}
               >
-                {lang === "zh" ? "♻️ 恢复默认界面设置" : "♻️ Reset UI Preferences"}
+                {lang === "zh" ? "恢复默认界面设置" : "Reset UI Preferences"}
               </button>
             </div>
             {resetNotice && <div className="sp-hint sp-hint--tiny">{resetNotice}</div>}
@@ -2077,7 +2108,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               type="text"
               value={identity.name}
               onChange={(e) => setIdentity({ ...identity, name: e.target.value })}
-                placeholder="CODEM、小助手、或者随便什么..."
+                placeholder="例如 CODEM、小助手"
             />
           </div>
 
@@ -2098,7 +2129,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               type="text"
               value={identity.creature}
               onChange={(e) => setIdentity({ ...identity, creature: e.target.value })}
-              placeholder="或者自己写..."
+              placeholder="或者自己写"
             />
           </div>
 
@@ -2119,7 +2150,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               type="text"
               value={identity.vibe}
               onChange={(e) => setIdentity({ ...identity, vibe: e.target.value })}
-              placeholder="或者自己描述..."
+              placeholder="或者自己描述"
             />
           </div>
 
@@ -2572,7 +2603,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               />
-              {lang === "zh" ? "🔒 沙箱模式（限制写入范围到工作目录）" : "🔒 Sandbox Mode (restrict writes to workspace)"}
+              {lang === "zh" ? "沙箱模式（限制写入范围到工作目录）" : "Sandbox Mode (restrict writes to workspace)"}
             </label>
             <div className="sp-note sp-note--spaced">
               {lang === "zh"
@@ -3051,23 +3082,23 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <div className="settings-footer-inner">
           {onSessionRecovery && (
             <button
-              className="save-btn sp-btn-auto"
+              className="settings-footer-action settings-footer-action--secondary"
               onClick={onSessionRecovery}
             >
-              {S.settings.sessionRecovery[lang]}
+              {lang === "zh" ? "会话恢复" : "Session Recovery"}
             </button>
           )}
           {onUsageStats && (
             <button
-              className="save-btn sp-btn-mr"
+              className="settings-footer-action settings-footer-action--secondary"
               onClick={onUsageStats}
             >
-              {S.settings.usageStats[lang]}
+              {lang === "zh" ? "用量统计" : "Usage Stats"}
             </button>
           )}
-          {saved && <span className="save-success">{S.settings.saved[lang]}</span>}
+          {saved && <span className="save-success">{lang === "zh" ? "已保存" : "Saved"}</span>}
           {saveFailure && <span className="sp-hint">{saveFailure}</span>}
-          <button className="save-btn" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
+          <button className="save-btn settings-footer-action settings-footer-action--primary" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
           </div>
         </div>
       </div>
@@ -3146,7 +3177,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           onClick={onOpenMarket}
           className="sp-btn sp-btn--lg sp-btn--primary"
         >
-          🐾 {zh ? "浏览市场" : "Browse Market"}
+          {zh ? "浏览市场" : "Browse Market"}
         </button>
       </div>
 
@@ -3347,7 +3378,7 @@ function PermissionRulesSection() {
   return (
     <div className="setting-group">
       <div className="settings-section-title">
-        {zh ? "🔐 权限规则" : "🔐 Permission Rules"}
+        {zh ? "权限规则" : "Permission Rules"}
       </div>
       <div className="sp-note sp-hint--lead">
         {zh
@@ -3499,7 +3530,10 @@ function SecurityModeSelector({
           className={`sp-mode-btn ${compact ? "sp-mode-btn--compact" : ""} ${currentMode === m.mode ? "is-active" : ""}`}
           title={zh ? m.desc_zh : m.desc_en}
         >
-          <span className={`sp-mode-icon ${compact ? "sp-mode-icon--compact" : ""}`}>{m.icon}</span>
+          {/* 去 emoji：安全模式不再用 🛡️/⚡/🚀 当图标，换成与全页一致的 lucide。 */}
+          <span className={`sp-mode-icon ${compact ? "sp-mode-icon--compact" : ""}`}>
+            {m.mode === "ask" ? <Shield size={16} /> : m.mode === "auto" ? <Zap size={16} /> : <Rocket size={16} />}
+          </span>
           <span>{zh ? m.label_zh : m.label_en}</span>
           {!compact && (
             <span className="sp-mode-desc">
@@ -3574,7 +3608,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
   return (
     <div className="setting-group">
       <label className="sp-label-lg">
-        🌲 {zh ? "Git 工作树管理" : "Git Worktree Management"}
+        {zh ? "Git 工作树管理" : "Git Worktree Management"}
       </label>
       <div className="sp-note sp-hint--lead">
         {zh
@@ -3739,7 +3773,7 @@ function NotebookSettingsSection() {
   return (
     <div className="sp-card sp-card--secondary sp-card--mt">
       <div className="settings-section-title sp-title--lead">
-        {zh ? '📓 知识笔记本设置' : '📓 Notebook Knowledge Settings'}
+        {zh ? '知识笔记本设置' : 'Notebook Knowledge Settings'}
       </div>
       <div className="sp-grid-2">
         <div>
@@ -3857,7 +3891,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
   return (
     <div className="sp-card sp-card--col">
       <div className="sp-row--between sp-row">
-        <h3 className="sp-title">{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
+        <h3 className="sp-title">{zh ? "Agent Profile 管理" : "Agent Profile Management"}</h3>
         <button
           onClick={() => setEditing({ identity: "", domain: "", scope: "" })}
           className="sp-btn sp-btn--sm sp-btn--primary"
@@ -3923,7 +3957,7 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
 
   return (
     <div className="sp-card sp-card--col">
-      <h3 className="sp-title">{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
+      <h3 className="sp-title">{zh ? "Transcript 缓存统计" : "Transcript Cache Stats"}</h3>
       <p className="sp-hint sp-hint--relaxed">
         {zh ? "缓存 LLM 请求/响应对以减少 token 消耗。10 分钟 TTL，最多 100 条。上下文压缩时自动清空。" : "Caches LLM request/response pairs to reduce token waste. 10min TTL, max 100 entries. Auto-cleared on context compaction."}
       </p>
@@ -3943,11 +3977,11 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
         <button
           onClick={() => { TranscriptCache.clear(); setStats(TranscriptCache.stats()); }}
           className="sp-btn"
-        >{zh ? "🗑️ 清空缓存" : "🗑️ Clear Cache"}</button>
+        >{zh ? "清空缓存" : "Clear Cache"}</button>
         <button
           onClick={() => setStats(TranscriptCache.stats())}
           className="sp-btn"
-        >{zh ? "🔄 刷新" : "🔄 Refresh"}</button>
+        >{zh ? "刷新" : "Refresh"}</button>
         <label className="sp-inline-check">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           {zh ? "自动刷新" : "Auto refresh"}
@@ -4124,7 +4158,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   return (
     <div className="sp-card sp-card--col sp-col--lg">
       <h3 className="sp-title">
-        {zh ? "🔗 CodeGraph 代码知识图谱" : "🔗 CodeGraph Code Intelligence"}
+        {zh ? "CodeGraph 代码知识图谱" : "CodeGraph Code Intelligence"}
       </h3>
       <p className="sp-hint sp-hint--relaxed-16 sp-flush">
         {zh
@@ -4153,7 +4187,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
             className="sp-btn sp-btn--xs"
             title={zh ? "重新检测 CLI 与索引" : "Re-check CLI and index"}
           >
-            {status === "checking" ? (zh ? "检测中..." : "Checking...") : (zh ? "🔄 重新检测" : "🔄 Re-check")}
+            {status === "checking" ? (zh ? "检测中..." : "Checking...") : (zh ? "重新检测" : "Re-check")}
           </button>
         </div>
         {status === "checking" && <div className="hint-sm">{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
@@ -4201,7 +4235,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
               disabled={initRunning}
               className="sp-btn sp-btn--lg sp-btn--primary"
             >
-              {initRunning ? (zh ? "构建中..." : "Building...") : (zh ? "🔨 构建代码图谱" : "🔨 Build Code Graph")}
+              {initRunning ? (zh ? "构建中..." : "Building...") : (zh ? "构建代码图谱" : "Build Code Graph")}
             </button>
           )}
           {initOutput && (
@@ -4214,7 +4248,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
 
       <div className="sp-card sp-card--sm sp-card--secondary">
         <div className="sp-text-soft sp-hint--lead">
-          {zh ? "📊 实测效果（7 个真实项目基准）" : "📊 Measured Results (7 real-world repos)"}
+          {zh ? "实测效果（7 个真实项目基准）" : "Measured Results (7 real-world repos)"}
         </div>
         <div className="sp-hint sp-hint--relaxed-16">
           {zh ? "• 工具调用次数减少 88%（28 次 → 2 次）" : "• Tool calls reduced 88% (28 → 2)"}<br />

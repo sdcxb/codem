@@ -232,15 +232,13 @@ describe("TC-AUDIT2-P2-6/P2-8 项目边界与切换重查", () => {
     await seedProject(null);
 
     const { container } = render(<OverviewTab onNavigate={() => {}} />);
-    // 委派卡片：运行中/已完成/等待中 三个数字都应为 0
-    const card = Array.from(container.querySelectorAll("div")).find((d) =>
-      d.textContent?.includes("委派任务"),
-    );
-    expect(card).toBeTruthy();
-    const nums = Array.from(card!.querySelectorAll("div"))
-      .map((d) => d.textContent?.trim())
-      .filter((t) => t === "1");
-    expect(nums.length).toBe(0);
+    // 概览指标条：委派只保留「运行中」这个主数字；已完成/失败/等待在 title 里，口径必须仍是本项目边界
+    const metric = container.querySelector<HTMLElement>('[data-metric="delegation"]');
+    expect(metric, "概览指标条应有委派指标").toBeTruthy();
+    expect(metric!.dataset.value, "无项目时运行中委派为 0").toBe("0");
+    const title = metric!.getAttribute("title") || "";
+    expect(title, "无项目时别的项目的已完成任务不许被算进来").toContain("已完成 0");
+    expect(title).not.toContain("已完成 1");
   });
 
   it("切换项目后收件箱重新查询（不会继续显示上一个项目的通知）", async () => {

@@ -114,7 +114,7 @@ export function NeedsYouPanel({ sessionId, onAnswer, onSkip }: NeedsYouPanelProp
             className="needs-you-input"
             value={customInput}
             onChange={(e) => setCustomInput(e.target.value)}
-            placeholder="或输入自定义回答..."
+            placeholder="自定义回答"
             rows={2}
           />
         </div>

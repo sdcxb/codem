@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { Paperclip } from "lucide-react";
+import { Spinner } from "./ui/Spinner";
 import { MessageAttachment } from "../store";
 import { isDocumentExtension } from "../core/document/path-ingest";
 import { hasDocumentBackend } from "../core/document/client";
@@ -179,8 +181,9 @@ export function FileUpload({ onUpload, hideButton, collectionId }: FileUploadPro
           onClick={() => void handleClick()}
           disabled={uploading}
           title="上传文件"
+          aria-label="上传文件"
         >
-          {uploading ? "⏳" : "📎"}
+          {uploading ? <Spinner size="md" label="" /> : <Paperclip size={14} aria-hidden />}
         </button>
       )}
     </>

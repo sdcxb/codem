@@ -160,8 +160,8 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
       if (div) div.style.display = s.id === ptyId ? "block" : "none";
     });
 
-    term.write(`\r\n🔗 Codem 终端 (PTY)\r\n`);
-    term.write(`📁 ${cwd}\r\n\r\n`);
+    term.write(`\r\n[Codem] 终端 (PTY)\r\n`);
+    term.write(`${cwd}\r\n\r\n`);
 
     /** 监听建立失败 / 卸载后完成 → 回收 PTY 并释放已建立的资源。 */
     const abortWithPty = () => {

@@ -205,6 +205,16 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     return true;
   });
 
+  /** 默认选中第一个技能，避免右侧详情区首屏空白（列表存在时）。 */
+  useEffect(() => {
+    if (activeTab !== "my-skills") return;
+    setSelectedSkill((prev) => {
+      const next = filteredSkills.find((s) => s.name === prev?.name) ?? filteredSkills[0] ?? null;
+      return next?.name === prev?.name ? prev : next;
+    });
+    // 只在筛选/搜索/技能集合变化时重选；selectedSkill 不进依赖，否则会自激
+  }, [activeTab, filter, searchQuery, skills]);
+
   const handleZipInstall = async (zipData: Uint8Array, overwrite: boolean = false) => {
     setInstallProgress({ value: 0, message: "准备安装..." });
     setInstallError(null);
@@ -601,7 +611,22 @@ return true;
   const LoadingIcon = StatusIcons.loading;
 
   return (
-    <div className="skill-manager">
+    <div
+      className="skill-manager"
+      onDragOver={(e) => {
+        if (Array.from(e.dataTransfer.types).includes("Files")) {
+          e.preventDefault();
+          setIsDragging(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragging(false);
+      }}
+      onDrop={(e) => {
+        setIsDragging(false);
+        void handleDrop(e);
+      }}
+    >
       {/* Header */}
       <div className="skill-manager-header">
         <div className="skill-manager-title">
@@ -643,7 +668,7 @@ return true;
               <SearchIcon size={14} className="skill-search-icon" />
               <input
                 type="text"
-                placeholder="搜索技能..."
+                placeholder="搜索技能"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="skill-search-input" aria-label="搜索技能 / Search skills"
@@ -665,16 +690,13 @@ return true;
             />
           </div>
 
-          {/* Drag & Drop Zone */}
-          <div
-            ref={dragRef}
-            className={`skill-drop-zone ${isDragging ? "dragging" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-          >
-            {isDragging ? "松开以安装 ZIP 技能包" : "拖拽 .zip 文件到此处安装技能"}
-          </div>
+          {/* 拖拽安装：默认不占一整块首屏，只在真的拖入时显示目标区。 */}
+          <div className="skill-drop-hint">拖入 .zip 也可安装</div>
+          {isDragging && (
+            <div ref={dragRef} className="skill-drop-zone dragging">
+              松开以安装 ZIP 技能包
+            </div>
+          )}
 
           {/* Install Progress */}
           {installProgress && (
@@ -758,6 +780,11 @@ return true;
             </div>
 
             {/* Detail Panel */}
+            {!selectedSkill && (
+              <div className="skill-detail skill-detail--empty empty-hint is-fill">
+                <p>选择左侧技能查看详情</p>
+              </div>
+            )}
             {selectedSkill && (
               <div className="skill-detail">
                 <div className="skill-detail-header">
@@ -862,7 +889,7 @@ return true;
                         listPublishableMarkets().then(setPublishMarkets);
                       }}
                     >
-                      <span>📤</span>
+                      <ActionIcons.upload size={14} aria-hidden />
                       发布到市场
                     </button>
                     <button
@@ -943,7 +970,7 @@ return true;
               <SearchIcon size={14} className="skill-search-icon" />
               <input
                 type="text"
-                placeholder="搜索市场技能..."
+                placeholder="搜索市场技能"
                 value={marketSearchQuery}
                 onChange={(e) => setMarketSearchQuery(e.target.value)}
                 className="skill-search-input" aria-label="搜索市场 / Search marketplace"
@@ -1037,7 +1064,7 @@ return true;
               >
                 <div className="market-skill-card-header">
                   <span className="market-skill-icon">
-                    {skill.installType === "builtin" ? "⚡" : "📦"}
+                    <CommonIcons.package size={16} />
                   </span>
                   <div className="market-skill-card-title">
                     <span className="market-skill-name">{skill.displayName}</span>
@@ -1223,7 +1250,7 @@ return true;
         <Dialog open={true} onOpenChange={(open) => { if (!open) setPublishTarget(null); }}>
           <DialogContent className="publish-dialog">
             <DialogHeader>
-              <DialogTitle>📤 发布技能到市场</DialogTitle>
+              <DialogTitle>发布技能到市场</DialogTitle>
               <DialogDescription>
                 将「{publishTarget.displayName || publishTarget.name}」发布到技能市场，供其他用户安装使用。
               </DialogDescription>
@@ -1296,7 +1323,7 @@ return true;
                 <textarea
                   value={publishForm.changelog}
                   onChange={(e) => setPublishForm({ ...publishForm, changelog: e.target.value })}
-                  placeholder="本次发布包含的改动..."
+                  placeholder="发布说明"
                   className="publish-textarea"
                   rows={3}
                 />
@@ -1319,7 +1346,7 @@ return true;
               {/* Not-ready warnings */}
               {publishMarkets.find((m) => m.target === publishForm.target)?.notReadyReason && (
                 <div className="publish-warning">
-                  ⚠️ {publishMarkets.find((m) => m.target === publishForm.target)?.notReadyReason}
+                  注意：{publishMarkets.find((m) => m.target === publishForm.target)?.notReadyReason}
                 </div>
               )}
 
@@ -1336,7 +1363,7 @@ return true;
                       )}
                     </>
                   ) : (
-                    <p>❌ {publishResult.error}</p>
+                    <p>✗ {publishResult.error}</p>
                   )}
                 </div>
               )}

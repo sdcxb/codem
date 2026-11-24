@@ -50,6 +50,12 @@ export function PersistFailureBanner() {
           </span>
           <div className="persist-alert-body">
             <span className="persist-alert-text">{a.message}</span>
+            {a.detail && (
+              <details className="persist-alert-details">
+                <summary>{zh ? "详情" : "Details"}</summary>
+                <pre>{a.detail}</pre>
+              </details>
+            )}
             {a.count > 1 && (
               /**
                * 第 88 轮：**发现类**不能说"已累计失败 N 次" —— 它没有失败。

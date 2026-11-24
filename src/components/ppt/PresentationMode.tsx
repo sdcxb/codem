@@ -13,17 +13,18 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { type V2SlideDeck, type V2Slide, type PPTTheme } from '../../core/knowledge/ppt-types';
 import { SlideCanvas } from './SlideCanvas';
 
 export type TransitionType = 'fade' | 'slide' | 'zoom' | 'flip' | 'none';
 
-const TRANSITIONS: Record<TransitionType, { label: string; icon: string }> = {
-  fade: { label: '淡入', icon: '🌫️' },
-  slide: { label: '滑动', icon: '➡️' },
-  zoom: { label: '缩放', icon: '🔍' },
-  flip: { label: '翻转', icon: '🔄' },
-  none: { label: '无', icon: '⏭️' },
+const TRANSITIONS: Record<TransitionType, { label: string }> = {
+  fade: { label: '淡入' },
+  slide: { label: '滑动' },
+  zoom: { label: '缩放' },
+  flip: { label: '翻转' },
+  none: { label: '无' },
 };
 
 export interface PresentationModeProps {
@@ -248,12 +249,12 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
       onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
       >
-        <button className="ppt-present-btn" onClick={goPrev} disabled={currentIndex === 0} style={{
+        <button className="ppt-present-btn" onClick={goPrev} disabled={currentIndex === 0} aria-label="上一页" title="上一页" style={{
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', fontSize: 'var(--fs-lg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: currentIndex === 0 ? 0.3 : 1, transition: 'background 0.15s',
-        }}>◀</button>
+        }}><ChevronLeft size={16} aria-hidden /></button>
 
         {/* 过渡效果选择 */}
         <select value={transition} onChange={e => setTransition(e.target.value as TransitionType)} style={{
@@ -277,14 +278,14 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           padding: '6px 12px', borderRadius: "var(--radius-xs)", cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
-        }}>✕ 退出</button>
+        }}><X size={14} aria-hidden /> 退出</button>
 
-        <button className="ppt-present-btn" onClick={goNext} disabled={currentIndex === totalSlides - 1} style={{
+        <button className="ppt-present-btn" onClick={goNext} disabled={currentIndex === totalSlides - 1} aria-label="下一页" title="下一页" style={{
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', fontSize: 'var(--fs-lg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: currentIndex === totalSlides - 1 ? 0.3 : 1, transition: 'background 0.15s',
-        }}>▶</button>
+        }}><ChevronRight size={16} aria-hidden /></button>
       </div>
 
       {/* 进度条 */}

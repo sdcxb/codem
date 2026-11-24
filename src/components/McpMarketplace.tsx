@@ -14,7 +14,7 @@ import {
 } from "../core/mcp/mcp-registry-catalog";
 import type { MCPServerConfig } from "../core/mcp/mcp";
 import { getMCPRegistry } from "../core/mcp/mcp";
-import { ActionIcons } from "../core/icons/icon-map";
+import { ActionIcons, CommonIcons, MarketIcons } from "../core/icons/icon-map";
 import {
   Dialog,
   DialogContent,
@@ -121,6 +121,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
   const SearchIcon = ActionIcons.search;
   const InstallIcon = ActionIcons.add;
   const UninstallIcon = ActionIcons.delete;
+  const CatalogIcon = CommonIcons.package;
 
   /**
    * ## 第 76 轮（真机实测用户可见缺陷）：这个面板曾经**关不掉**
@@ -153,7 +154,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
       {/* Header */}
       <div className="mcp-marketplace-header">
         <div className="mcp-marketplace-title">
-          <span className="mcp-marketplace-title-icon">🏪</span>
+          <span className="mcp-marketplace-title-icon"><MarketIcons.store size={16} aria-hidden /></span>
           <span>MCP 服务器目录</span>
         </div>
         {/* 纯图标按钮 ⇒ 必须有可访问名（与 `.mcp-manager-close` / `.usage-stats-close` 同一做法） */}
@@ -173,7 +174,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索 MCP 服务器..."
+          placeholder="搜索 MCP 服务器"
           className="mcp-search-input"
         />
         {query && (
@@ -201,7 +202,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
               className={`mcp-category-btn ${activeCategory === cat ? "active" : ""}`}
               onClick={() => setActiveCategory(cat)}
             >
-              <span>{label.icon} {label.zh}</span>
+              <span>{label.zh}</span>
               <Badge>{count}</Badge>
             </button>
           );
@@ -232,7 +233,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
           return (
             <div key={entry.id} className={`mcp-catalog-card ${isInstalled ? "installed" : ""}`}>
               <div className="mcp-catalog-card-header">
-                <span className="mcp-catalog-icon">{entry.icon || "📦"}</span>
+                <span className="mcp-catalog-icon"><CatalogIcon size={16} aria-hidden /></span>
                 <div className="mcp-catalog-title-area">
                   <span className="mcp-catalog-name" onClick={() => setDetailEntry(entry)}>
                     {entry.name}
@@ -371,7 +372,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
               </div>
               <div className="mcp-detail-row">
                 <span className="mcp-detail-label">分类:</span>
-                <span>{CATEGORY_LABELS[detailEntry.category].icon} {CATEGORY_LABELS[detailEntry.category].zh}</span>
+                <span>{CATEGORY_LABELS[detailEntry.category].zh}</span>
               </div>
               <div className="mcp-detail-row">
                 <span className="mcp-detail-label">传输:</span>

@@ -100,7 +100,7 @@ async function getCordisContext(): Promise<Context> {
   const mergedEntries = mergeYamlEntries(baseYml, desktopYml);
   const yamlResult = loadFromEntries(ctx, mergedEntries);
   /**
-   * ⚠️ 这里只报「已装配」（`ctx.plugin` 没抛）—— 激活是异步的（第 184 波 F6）。
+   * 注意： 这里只报「已装配」（`ctx.plugin` 没抛）—— 激活是异步的（第 184 波 F6）。
    * 真实激活口径由下面的 `settleActivation(yamlResult)` 结算后打印。
    */
   console.log(
@@ -158,7 +158,7 @@ async function getCordisContext(): Promise<Context> {
     console.log('[Cordis] assertActivated passed — all fibers ACTIVE');
   } catch (err: any) {
     // 不终止启动，但明确报告问题（桌面应用不能直接 exit(1)）
-    // ⚠️ 第 184 波 F6：这里**必须**把失败带进下面的启动汇总 ——
+    // 注意： 第 184 波 F6：这里**必须**把失败带进下面的启动汇总 ——
     //    改前它只 console.error，随后照样打印 "completed successfully"。
     activationErrors.push(`assertActivated: ${err.message}`);
     console.error('[Cordis] assertActivated FAILED:', err.message);
@@ -466,7 +466,7 @@ import { debugLog } from "./core/debug";
 import { composePersistAlertText, reportActionFailure, reportAdvisory, PERSIST_WITHDRAWN_EVENT } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
 import { reportCredentialStartupIssues } from "./core/storage/credential-startup-report";
-import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
+import { formatRendererCrashDetail, installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
 import { alertDialog } from "./core/ui/native-dialog";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionAutosave } from "./hooks/useSessionAutosave";
@@ -1129,7 +1129,7 @@ useEffect(() => {
           }
           // 第 18 轮：维护模块从旧引擎里抽出来了（它本来一行都不跑，见 storage/maintenance.ts 的说明）
           /**
-           * ⚠️ 启动维护不能每次启动都跑：真机 669 个会话 / 942 MB 库时，
+           * 注意： 启动维护不能每次启动都跑：真机 669 个会话 / 942 MB 库时，
            * 即使裁剪/回填已限量，日志压缩、VACUUM、完整性检查、605 次计数对账
            * 仍要几十秒 ~ 数分钟。它放在后台仍会抢 CPU/磁盘，让"刚打开就卡"。
            * 现在：24 小时内只跑一次；且延迟 8 秒，先让首屏与首条输入跑起来。
@@ -1305,7 +1305,7 @@ useEffect(() => {
        *
        * 用户在恢复发生前就手动选了会话/项目时**不抢**：`currentSession` 已有值就跳过。
        *
-       * ## ⚠️ 第 47 轮补：一次性闸门原来是**会毁数据**的（只读审计坐实）
+       * ## 注意： 第 47 轮补：一次性闸门原来是**会毁数据**的（只读审计坐实）
        *
        * 第一版在这里把 `restoredLastSessionRef.current = true` 放在**尝试之前**，
        * 于是一次尝试定终身。而"这次尝试"可能恰好落在 `sessions` 镜像尚未就绪的窗口里
@@ -1429,7 +1429,7 @@ useEffect(() => {
    * - 写失败只记 `console.warn`：这是一个**便利性**偏好，不是数据 ——
    *   丢了只影响"下次打开落在哪个会话"，不该弹错误打扰用户。
    *
-   * ## ⚠️ 第 47 轮补：**恢复还没落地之前，绝不许把键写成 null**
+   * ## 注意： 第 47 轮补：**恢复还没落地之前，绝不许把键写成 null**
    *
    * 真机抓到的形态（1.16.70 复核时发现"键被清空、目标会话却好好地在库里"）：
    * 这个 effect 与恢复 effect **在同一次 commit 里**跑，而恢复的第一次读是**异步**的
@@ -2013,7 +2013,7 @@ const streamViewRef: ViewStateRef = { current: null };
   /**
    * 把缓冲的**流式正文**送回去（F1）。
    *
-   * ⚠️ 判据**只有一份**：`routeBufferedTextToOwnCopy` → `isSessionOnScreen()`
+   * 注意： 判据**只有一份**：`routeBufferedTextToOwnCopy` → `isSessionOnScreen()`
    * （先看消息列表归属 `loadedSessionId`，再退回 `currentSession`）。
    * 修前这里判的是 `useProjectStore.getState().currentSession?.id === sessionId` ——
    * 而笔记本工作区**从不改 `currentSession`**，于是笔记本回合的正文
@@ -2355,7 +2355,7 @@ flushStreamBuffer(); // flush all on unmount
               if (target && store.currentProject?.id !== target.id) store.openProject(target.id);
             }
             // Create a new session and send the trigger message
-            const session = useProjectStore.getState().createSession(`🤖 ${trigger.name}`);
+            const session = useProjectStore.getState().createSession(`触发器：${trigger.name}`);
             if (session) {
               handleSendRef.current(trigger.message, [], []);
             }
@@ -2901,10 +2901,19 @@ flushStreamBuffer(); // flush all on unmount
      * 现在 Rust 侧在 ProcessFailed 时落一个一次性标记，这里读出来弹常驻提示（读完即删）。
      */
     void reportRendererCrashIfAny((message, record) => {
+      /**
+       * 旧事故不再常驻首屏：超过 24h 的崩溃记录只留在控制台/诊断日志里。
+       * 首屏只给一行结果，技术判据放 `detail`（默认折叠）。
+       */
+      if (record.at && Date.now() - record.at > 24 * 60 * 60 * 1000) {
+        console.warn("[renderer-evidence] 忽略超过 24h 的旧崩溃记录：", record);
+        return;
+      }
       useAppStore.getState().addPersistAlert({
         area: "crash.renderer-process",
         kind: "action",
         message,
+        detail: formatRendererCrashDetail(record),
       });
       console.warn("[renderer-evidence] 上次渲染进程崩溃：", record);
     });
@@ -2995,7 +3004,7 @@ flushStreamBuffer(); // flush all on unmount
       if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
       reportedPersistAreas.add(area);
       /**
-       * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：改走**常驻提示通道**，不再塞进引导队列
+       * ## 注意： 第 47 轮补（UI/UX 审计 P1）：改走**常驻提示通道**，不再塞进引导队列
        *
        * 原来这里是 `addGuidanceMessage(...)`，而那条队列在界面上唯一的渲染点带着
        * `isSessionStreaming` 前置条件 → **用户空闲时（大多数写失败发生的时刻）
@@ -3326,13 +3335,13 @@ if (!session) {
      * 会把回执落到**别人的会话**里。这里统一走 `deliverOwnedMessage`（写进归属会话 +
      * 不在屏时留未读痕迹），并**显式落库**。
      *
-     * ⚠️ **"标未读"与"落库"必须同生共死**：只有真落进归属会话的消息才允许留未读痕迹，
+     * 注意： **"标未读"与"落库"必须同生共死**：只有真落进归属会话的消息才允许留未读痕迹，
      * 否则徽标会指向一个打开后什么都看不到的会话 —— 那就是**编造数字**
      * （这条不变量由 `src/test/loop-owned-message.test.ts` 的 XSESS-5b / XSESS-6 守）。
      *
      * 逐处的"落库 or 纯界面"判定写在各自调用点的注释里：本轮被改的 8 处**没有一处**走"纯界面"
      * （都是错误、不可复现的结果、工作区副作用或用户自己的输入）。
-     * `handleSend` 里唯一的瞬时进度提示是 `/generate-agents` 的 🔍 那条，
+     * `handleSend` 里唯一的瞬时进度提示是 `/generate-agents` 的 那条，
      * 它在下面**路径上没有 await** 的地方投递 ⇒ 当前会话就是归属会话，本来就对，
      * 因此保持纯界面投递不动（并标了 XSESS-5 登记供门禁核对清单）。
      */
@@ -3364,7 +3373,7 @@ if (!session) {
         id: `computer-${Date.now()}`,
         role: "system",
         content: nowApproved
-          ? "✅ 电脑操作已批准：本会话允许执行 computer_* 键鼠工具（重启后需重新批准）。再次输入 /computer 撤销。"
+          ? "✓ 电脑操作已批准：本会话允许执行 computer_* 键鼠工具（重启后需重新批准）。再次输入 /computer 撤销。"
           : "电脑操作批准已撤销：本会话不再允许执行键鼠工具（只读工具仍可用）。再次输入 /computer 重新批准。",
         timestamp: Date.now(),
         status: "done",
@@ -3420,14 +3429,14 @@ if (!session) {
             : "";
         const readableLine = stats.readable
           ? ""
-          : `⚠️ 记忆当前**读不出来**（${stats.loadFailureReason ?? "未知原因"}）：为避免覆盖旧数据，本次不会再写入记忆，请重启应用（或修复存储）后重试\n`;
+          : `注意： 记忆当前**读不出来**（${stats.loadFailureReason ?? "未知原因"}）：为避免覆盖旧数据，本次不会再写入记忆，请重启应用（或修复存储）后重试\n`;
         // [XSESS-5] 纯界面：路径上无 await
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
           content:
             readableLine +
-            `记忆状态: ${enabled ? "✅ 开启" : "❌ 关闭"}\n` +
+            `记忆状态: ${enabled ? "✓ 开启" : "✗ 关闭"}\n` +
             `记忆总数: ${stats.totalEntries}（其中待批准 ${stats.pendingEntries} 条，未批准不进上下文）\n` +
             `潜在重复: ${stats.potentialDuplicates}\n` +
             `作用域分布: 平台=${stats.scopeBreakdown.platform}, 项目=${stats.scopeBreakdown.project}, 对话=${stats.scopeBreakdown.conversation}\n` +
@@ -3487,8 +3496,8 @@ if (!session) {
             id: `system-${Date.now()}`,
             role: "system",
             content: result.ok
-              ? `✅ 已批准 ${targetId}：该自动记忆从现在起参与上下文。`
-              : `❌ 批准失败：${result.message ?? "未知原因"}`,
+              ? `✓ 已批准 ${targetId}：该自动记忆从现在起参与上下文。`
+              : `✗ 批准失败：${result.message ?? "未知原因"}`,
             timestamp: Date.now(),
             status: "done",
           });
@@ -3499,7 +3508,7 @@ if (!session) {
             role: "system",
             content: removed
               ? `已拒绝并删除 ${targetId}（它没有进入过上下文）。`
-              : `❌ 拒绝失败：未找到该条目，或它不在待批准状态。`,
+              : `✗ 拒绝失败：未找到该条目，或它不在待批准状态。`,
             timestamp: Date.now(),
             status: "done",
           });
@@ -3528,7 +3537,7 @@ if (!session) {
         deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `${undoResult.ok ? "✅" : "❌"} ${undoResult.message}`,
+          content: `${undoResult.ok ? "✓" : "✗"} ${undoResult.message}`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3600,7 +3609,7 @@ if (!session) {
           deliverToOwningSession({
             id: `system-${Date.now()}`,
             role: "system",
-            content: `${consolidationUndo.ok ? "✅" : "❌"} 记忆整合撤销：${consolidationUndo.message}`,
+            content: `${consolidationUndo.ok ? "✓" : "✗"} 记忆整合撤销：${consolidationUndo.message}`,
             timestamp: Date.now(),
             status: "done",
           });
@@ -3669,7 +3678,7 @@ if (!session) {
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
-          content: "❌ 未找到项目路径，请先打开一个项目。",
+          content: "✗ 未找到项目路径，请先打开一个项目。",
           timestamp: Date.now(),
           status: "done",
         });
@@ -3684,7 +3693,7 @@ if (!session) {
       addMessage({
         id: `system-${Date.now()}`,
         role: "system",
-        content: "🔍 正在分析项目结构并生成 AGENTS.md...",
+        content: "正在分析项目结构并生成 AGENTS.md...",
         timestamp: Date.now(),
         status: "done",
       });
@@ -3694,7 +3703,7 @@ if (!session) {
         const content = await generateAgentsMd(projectPath);
         await writeFile(`${projectPath}\\AGENTS.md`, content);
         /*
-         * 归属判定：**落库**（与上面那条 🔍 进度提示刻意不同）。
+         * 归属判定：**落库**（与上面那条 进度提示刻意不同）。
          * 理由：这一步在**工作区真的写了一个文件**（AGENTS.md），是不可逆的副作用 ——
          * 进度提示可以只活在界面里（它同步投递、用户当时就看着），但**结果**必须留档，
          * 否则用户在 `await generateAgentsMd` / `await writeFile` 期间切走后，
@@ -3703,7 +3712,7 @@ if (!session) {
         deliverToOwningSession({
           id: `system-${Date.now() + 1}`,
           role: "system",
-          content: `✅ AGENTS.md 已生成并写入项目根目录。\n\n生成内容摘要：\n- 检测技术栈和框架\n- 识别项目结构\n- 推断构建/测试/lint 命令\n- 生成代码规范和 AI 规则\n\n你可以编辑 AGENTS.md 来补充更多项目特定信息。`,
+          content: `✓ AGENTS.md 已生成并写入项目根目录。\n\n生成内容摘要：\n- 检测技术栈和框架\n- 识别项目结构\n- 推断构建/测试/lint 命令\n- 生成代码规范和 AI 规则\n\n你可以编辑 AGENTS.md 来补充更多项目特定信息。`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3715,7 +3724,7 @@ if (!session) {
         deliverToOwningSession({
           id: `system-${Date.now() + 1}`,
           role: "system",
-          content: `❌ 生成 AGENTS.md 失败：${e?.message || e}`,
+          content: `✗ 生成 AGENTS.md 失败：${e?.message || e}`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3743,23 +3752,23 @@ if (!session) {
         // `recordSessionFeedback` 现在返回 { seq, persisted }；事件日志在端口未接手/未就绪时
         // **不抛**，而是返回 seq=0 的"未落库事件"（见 `event-log.ts` 的 append）。
         // 所以这里必须看 persisted，不能只靠 try/catch —— 原来那样会在事件根本没落库时
-        // 照样打 ✅，属于本项目明令禁止的"假成功"。
+        // 照样打 ✓，属于本项目明令禁止的"假成功"。
         const written = recordSessionFeedback(session.id, feedbackText);
         /*
          * 归属判定：**落库**。
          * 理由：这条气泡本身就是"反馈到底有没有进事件日志"的**唯一可见证据**
-         * （事件日志没有界面入口，用户无从自查）；而它的 ⚠️ 分支还是
+         * （事件日志没有界面入口，用户无从自查）；而它的 注意： 分支还是
          * "用户需要采取动作"的真失败 ⇒ 不能随界面一起消失。
-         * 考虑过"不在屏就不投递"（纯界面档）：**否决** —— 那会让 ⚠️ 那条失败彻底静默。
+         * 考虑过"不在屏就不投递"（纯界面档）：**否决** —— 那会让 注意： 那条失败彻底静默。
          * 另外它在 `await import("./core/llm/feedback")` 之后 ⇒ 裸 addMessage 会写进别人的会话。
          */
         deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
           content: written.persisted
-            ? `✅ 反馈已留档到会话 ${session.id.substring(0, 8)}... 的事件日志（session_meta / feedback_record，seq ${written.seq}）。` +
+            ? `✓ 反馈已留档到会话 ${session.id.substring(0, 8)}... 的事件日志（session_meta / feedback_record，seq ${written.seq}）。` +
               `当前没有任何自动流程读取它 —— 它只是留档，不会影响模型行为或后续自动处理。`
-            : `⚠️ 反馈**没有**写进事件日志：事件通道当前不可用（未落库，seq=0）。` +
+            : `注意： 反馈**没有**写进事件日志：事件通道当前不可用（未落库，seq=0）。` +
               `文本没有被保存到会话 ${session.id.substring(0, 8)}... —— 请稍后重试；` +
               `若持续失败，见界面上的持久化失败提示（事件未写入：端口侧事件通道不可用）。`,
           timestamp: Date.now(),
@@ -3770,7 +3779,7 @@ if (!session) {
         deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `❌ 记录反馈失败：${e?.message || e}`,
+          content: `✗ 记录反馈失败：${e?.message || e}`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3780,7 +3789,7 @@ if (!session) {
 
     useProjectStore.getState().updateSession(session.id, {
       /*
-       * ⚠️ 第 191 波：**不许**在这里写 `messageCount`。
+       * 注意： 第 191 波：**不许**在这里写 `messageCount`。
        *
        * 这一列由引擎在 `messages.upsert_index` 的同一事务里维护（`repo.rs::bump_session_message_count`），
        * 渲染侧再写一个"自己读到的值 + 1"就是**第二个写入者** ⇒ 引擎 bump 再加一次，
@@ -4157,7 +4166,7 @@ if (!session) {
      * 快照只在归属一致时取（`loadedSessionId === session.id`）—— 不一致说明
      * store 里那份是别的会话的，一条都不能进 loop 的这份。
      *
-     * ## ⚠️ 第 187 波：这一段为什么必须定义在**最前面**
+     * ## 注意： 第 187 波：这一段为什么必须定义在**最前面**
      *
      * 紧随其后的那几条**早退**（会话忙 / 引擎未初始化 / MiMo 认证缺失 / provider 未配置 /
      * 工作树创建失败·成功）也在往会话里写系统消息，而它们都在 `await` 之后
@@ -4197,11 +4206,11 @@ if (!session) {
      * 里落定，见 `src/store.ts:334–342`）。
      *
      * - 笔记本工作区打开时，它自己 `loadMessages(笔记本会话)`（`NotebookWorkspace.tsx:364`）
-     *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✅；
-     * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✅（与既有行为一致）；
-     * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✅。
+     *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✓；
+     * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✓（与既有行为一致）；
+     * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✓。
      *
-     * ## ⚠️ 第 184 波（UI 审计 F1）：**判据只许有一份**
+     * ## 注意： 第 184 波（UI 审计 F1）：**判据只许有一份**
      *
      * 上一段的说明当时是对的，但它只描述了 `isViewingSession` 自己 —— 而
      * `flushStreamBuffer` / `flushReasoningBuffer`（**流式正文**）当时另判一套
@@ -4214,10 +4223,10 @@ if (!session) {
      * Safe message helpers：**UI 只在查看这个会话时更新**（这条行为不变），
      * 但**落库与查看态无关** —— 一律写 loop 自己那份（上面 `persistLoopMessages`）。
      *
-     * ⚠️ 这几个 helper 必须定义在 `try` **之外**：`catch` 分支也要用
+     * 注意： 这几个 helper 必须定义在 `try` **之外**：`catch` 分支也要用
      * （原来的 `catch` 里那句裸 `addMessage` 会把错误气泡加进"当前显示的会话"）。
      *
-     * ## ⚠️ 第 187 波：**归属投递**（写进归属会话 + 不在屏时留未读痕迹）
+     * ## 注意： 第 187 波：**归属投递**（写进归属会话 + 不在屏时留未读痕迹）
      *
      * `deliverOwnedMessage`（`core/ui/loop-owned-message.ts`）做三件事，**顺序是语义的一部分**：
      * ① 把这条记进 `ownCopy`（= loop 自己那份，落库的唯一来源，与"用户在看谁"无关）；
@@ -4450,8 +4459,8 @@ streamingSessionIdRef.current = session.id;
           id: `wt-err-${Date.now()}`,
           role: "system",
           content: lang === "zh"
-            ? `❌ 工作树创建失败，使用本地目录: ${e instanceof Error ? e.message : String(e)}`
-            : `❌ Worktree creation failed, using local dir: ${e instanceof Error ? e.message : String(e)}`,
+            ? `✗ 工作树创建失败，使用本地目录: ${e instanceof Error ? e.message : String(e)}`
+            : `✗ Worktree creation failed, using local dir: ${e instanceof Error ? e.message : String(e)}`,
           timestamp: Date.now(),
           status: "error",
         });
@@ -4462,7 +4471,7 @@ streamingSessionIdRef.current = session.id;
       safeAddMessage({
         id: `wt-ok-${Date.now()}`,
         role: "system",
-        content: lang === "zh" ? `🌲 工作树已创建: \`${session.worktreePath}\`` : `🌲 Worktree created: \`${session.worktreePath}\``,
+        content: lang === "zh" ? `工作树已创建: \`${session.worktreePath}\`` : `Worktree created: \`${session.worktreePath}\``,
         timestamp: Date.now(),
         status: "done",
       });
@@ -4495,7 +4504,7 @@ streamingSessionIdRef.current = session.id;
     /**
      * 循环吐的**最后一个事件**（通常就是 `{type:"end", result}`）。
      *
-     * ⚠️ 第 184 波（F2）：必须在 `try` **里面** 声明但要在**收尾（也在 try 里）**之前
+     * 注意： 第 184 波（F2）：必须在 `try` **里面** 声明但要在**收尾（也在 try 里）**之前
      * 可见 —— 收尾原来被 `if (assistantContent)` 罩住时只在这里面用过一次；
      * 现在收尾无条件执行，所以它不能再是"循环内部"的局部量。
      * `finally` 看不见它（块作用域），所以不要在那里读。
@@ -4522,7 +4531,7 @@ registerSessionAbort(session.id, sessionAbort);
           safeAddMessage({
             id: 'watchdog-' + Date.now(),
             role: 'system',
-            content: '⚠️ 任务超过 15 分钟无响应，已自动终止（可能是 LLM 服务端无响应）。请重试。',
+            content: '注意： 任务超过 15 分钟无响应，已自动终止（可能是 LLM 服务端无响应）。请重试。',
             timestamp: Date.now(),
             status: 'error',
           });
@@ -4536,7 +4545,7 @@ registerSessionAbort(session.id, sessionAbort);
          * 拿它当归属键会让主工作区与 worktree 会话**互相看不到对方的项目记忆**，
          * 而且 worktree 目录一删，那些归属键就永久无法归位（体检只能把它们标成"归属已失效"）。
          *
-         * ⚠️ 第 191 波（O-46 的残余边界）：**显式值只在"当前项目就是该会话所属项目"时才给**。
+         * 注意： 第 191 波（O-46 的残余边界）：**显式值只在"当前项目就是该会话所属项目"时才给**。
          * 旧写法无条件传 `projectIdFromCwd(currentProject.path)` —— 被委派的会话（属于别的项目）
          * 一旦在"当前项目"里被驱动，显式值就会**盖过登记表**，把记忆写进当前项目而不是它自己的项目。
          * 现在：项目一致才给显式值（省一次反查）；不一致 / 没有当前项目 ⇒ 传 `undefined`，
@@ -4923,7 +4932,7 @@ flushReasoningBuffer(session.id);
                 safeAddMessage({
                   id: 'tool-error-' + Date.now(),
                   role: "system",
-                  content: `⚠️ 工具执行失败：${err}`,
+                  content: `注意： 工具执行失败：${err}`,
                   timestamp: Date.now(),
                   status: "error",
                 });
@@ -4998,7 +5007,7 @@ flushReasoningBuffer(session.id);
               addMessage(pm);
             }
             // Show a brief toast/notification via pet system
-            getPet().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
+            getPet().showRawBubble(`引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
             break;
           }
 
@@ -5158,7 +5167,7 @@ flushReasoningBuffer(session.id);
           lang,
         });
         safeUpdateMessage(assistantMsgId, update);
-        // ⚠️ 无论有没有助手消息都要清 —— 残留会让下一轮的文件计数虚高
+        // 注意： 无论有没有助手消息都要清 —— 残留会让下一轮的文件计数虚高
         generatedFilesRef.current.clear();
       }
       /**
@@ -5246,7 +5255,7 @@ unregisterSessionAbort(session?.id || "", abortedController);
       //
       // 第 93 波修正：这个通知**原来是无条件的** —— 循环被停滞守卫杀掉
       // （`{type:"stop", reason:"plan_stale"}`）、LLM 调用失败、用户按了停止，
-      // 只要窗口不在前台，用户就会收到一条「✅ 完成」宠物气泡 + 一条
+      // 只要窗口不在前台，用户就会收到一条「✓ 完成」宠物气泡 + 一条
       // 原生通知「任务完成 — …」。用户报的「任务提前停掉，然后说完成了」，
       // 这条就是其中最直接的来源之一。
       //
@@ -5259,7 +5268,7 @@ unregisterSessionAbort(session?.id || "", abortedController);
         if (petStore.enabled) {
           const sessionTitle = session.title || "对话";
           const userQuestion = message.length > 30 ? message.substring(0, 30) + "..." : message;
-          petStore.showBubble(`✅ ${sessionTitle} 完成：${userQuestion}`, 6000);
+          petStore.showBubble(`✓ ${sessionTitle} 完成：${userQuestion}`, 6000);
         }
         // Only send a native notification — do NOT steal focus / unminimize the window
         // (用户已切到其他应用办公，弹窗会打断操作；已有完成提示标签即可)
@@ -5405,7 +5414,7 @@ unregisterSessionAbort(session?.id || "", abortedController);
    * 换算本身抽在 `core/session/fork-index.ts`（纯函数，有专门的用例守着）——
    * 这里只负责把"窗口"注进去。
    *
-   * ⚠️ P0-0（D11）：**"读全量"必须与 `forkSession` 的切片用同一个视图**
+   * 注意： P0-0（D11）：**"读全量"必须与 `forkSession` 的切片用同一个视图**
    * （`listDisplayMessages`）。会话换过段时模型投影只有最新段，用它数偏移量会让
    * 分叉点被往前挪 —— 所以这里不再自己注入 `listMessages`，改走
    * `resolveForkIndexForSession`（它内部注入的就是 DisplayView）。
@@ -5482,11 +5491,11 @@ unregisterSessionAbort(session?.id || "", abortedController);
      * 那条路上**只有** `SessionStorage.forkSession` 会写 `parent_id`，所以这里补一次调用
      * 把关系钉住 —— 行写的是 `mode: "replace"`（重复写安全，理由见那个函数里的第 47 轮说明）。
      *
-     * ⚠️ 第 54 轮补充：现在 `sessionToWire` 自己也写 `parent_id` 了（建行路径是 `insert`，
+     * 注意： 第 54 轮补充：现在 `sessionToWire` 自己也写 `parent_id` 了（建行路径是 `insert`，
      * 构造器漏列 = 静默 NULL），所以"唯一写点"这句话已经过时 —— 但**这次调用仍然必须留**：
      * `createSession` 建的行是"没有父"的，谱系是这次调用补上的。
      *
-     * ⚠️ 第 45 轮（P2-D6 的加重形态）：`SessionStorage.forkSession` **不再复制事件日志**了。
+     * 注意： 第 45 轮（P2-D6 的加重形态）：`SessionStorage.forkSession` **不再复制事件日志**了。
      * 原来它会整段复制，而这里只复制**前缀消息** —— 于是回退会话带着"源会话全量事件 +
      * 仅前缀消息"，事件里描述的后半段对话在子会话里根本不存在（投影会凭空造出消息）。
      * 现在事件只由消息自己的写入产生，这个不一致从根上消失。
@@ -6579,9 +6588,9 @@ onClose={() => setCitationViewer(null)}
           InteractiveFormDialog 需要 questions/onSubmit/onCancel props，
           活动时间线（原 ActivityTimeline 组件）需要 items prop，
           二者均通过各自的条件渲染路径使用，不能放在无 props 的 SlotBridge 中。
-          ⚠️ 第 62 轮：`components/ActivityTimeline.tsx` 本身**从未被任何界面渲染**（无人 import），
+          注意： 第 62 轮：`components/ActivityTimeline.tsx` 本身**从未被任何界面渲染**（无人 import），
           已作为遗留物删除。
-          ⚠️ 第 97 轮：它当年的数据源 `run-status-tracker.ts::buildActivityTimeline()` 也一并删掉了 ——
+          注意： 第 97 轮：它当年的数据源 `run-status-tracker.ts::buildActivityTimeline()` 也一并删掉了 ——
           那个函数**同样没有任何消费方**（全仓只剩注释在提它），而且实现是半成品
           （自身注释写着"简化"：`slice(cursor, cursor)` 恒为空、`cursor` 从不前进，
           内容会被整段误挂到末尾的 "text-tail" 组）。此处保留历史原因，不再指向任何已删除的东西。 */}

@@ -338,35 +338,33 @@ describe("收件箱可见性：无项目时全局通知必须看得见（用户�
     const delegation = render(<DelegationTab />);
     const delegationText = delegation.container.textContent || "";
 
+    // 概览的委派主数字是「运行中」；已完成 / 失败在 title 里（数字还在，只是不占主视线）
+    const metric = overview.container.querySelector<HTMLElement>('[data-metric="delegation"]');
+    expect(metric, "概览指标条应有委派指标").toBeTruthy();
+    const metricTitle = metric!.getAttribute("title") || "";
+
+    // 全局的 2 条（已完成 1 / 失败 1）都要算进来；别的项目的那条一个字都不许露出来
+    expect(metricTitle, "概览：无项目时要看到全局的已完成 1").toContain("已完成 1");
+    expect(metricTitle, "概览：无项目时要看到全局的失败 1").toContain("失败 1");
+    expect(delegationText, "委派页签：无项目时要看到全局的 2 条").toContain("2");
     for (const [what, text] of [["概览", overviewText], ["委派页签", delegationText]] as const) {
-      expect(text, `${what}：无项目时要看到全局的 2 条`).toContain("2");
       expect(text, `${what}：别的项目的任务不许出现在任何地方（P2-12）`).not.toContain("别的项目的任务");
     }
+
     /*
      * 逐项比对两处自己算出来的数字。
      *
-     * ⚠️ 取值必须**落在委派卡内部**：概览页上「已完成」这个词在 Issues 卡里也有
-     * （`0 进行中 0 待审查 0 已完成`），第一版直接对整页文本做正则，抓到的是 Issues 卡的 0 ——
-     * 于是"两处不一致"变成了我自己造的假警报。判据要落到正确的容器上才算数。
+     * ⚠️ 委派页签是「数字在标签前」，概览 title 是「标签在数字前」——
+     * 两个方向不能共用一条正则（第一版共用会把两处都抓成 null）。
      */
-    const cardText = (() => {
-      // 取"同时含标题与统计"的**最小**容器：只含 `委派任务` 的那个 div 是标题本身，
-      // 里面没有数字（第一版就是这么抓的，断言直接变成 null）。
-      const divs = Array.from(overview.container.querySelectorAll("div"))
-        .filter((d) => {
-          const t = d.textContent || "";
-          return t.includes("委派任务") && t.includes("已完成");
-        })
-        .sort((a, b) => (a.textContent || "").length - (b.textContent || "").length);
-      return divs[0]?.textContent || "";
-    })();
-    expect(cardText, "找不到概览页的「委派任务」卡片").not.toBe("");
-
-    const num = (text: string, label: string) => new RegExp(`(\\d+)\\s*${label}`).exec(text)?.[1] ?? null;
-    for (const label of ["运行中", "已完成"]) {
-      const a = num(cardText, label);
-      const b = num(delegationText, label);
-      expect(a, `概览卡的委派卡应当显示「${label}」`).not.toBeNull();
+    const valueBeforeLabel = (text: string, label: string) =>
+      new RegExp(`(\\d+)\\s*${label}`).exec(text)?.[1] ?? null;
+    const valueAfterLabel = (text: string, label: string) =>
+      new RegExp(`${label}\\s*(\\d+)`).exec(text)?.[1] ?? null;
+    for (const label of ["运行中", "已完成", "失败"]) {
+      const a = label === "运行中" ? metric!.dataset.value ?? null : valueAfterLabel(metricTitle, label);
+      const b = valueBeforeLabel(delegationText, label);
+      expect(a, `概览指标应当显示「${label}」`).not.toBeNull();
       expect(b, `委派页签应当显示「${label}」`).not.toBeNull();
       expect(a, `「${label}」两处必须相等（真机上曾出现 0 vs 3）`).toBe(b);
     }

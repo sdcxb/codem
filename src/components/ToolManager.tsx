@@ -142,7 +142,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="搜索工具..."
+          placeholder="搜索工具"
           style={{
             width: "100%", padding: "6px 12px", fontSize: 'var(--fs-base)', borderRadius: "var(--radius-sm)",
             border: "1px solid var(--border-primary)",

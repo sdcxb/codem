@@ -178,7 +178,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
       await loadProjectData(gitProjectPath);
 
       setGitStatus("done");
-      setGitStatusMsg(`✅ 仓库已创建: ${apiResp.html_url || cloneUrl}`);
+      setGitStatusMsg(`✓ 仓库已创建: ${apiResp.html_url || cloneUrl}`);
       setTimeout(() => {
         onClose();
         // Reset state
@@ -261,7 +261,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
       await loadProjectData(projectDir);
 
       setCloneStatus("done");
-      setCloneMsg(`✅ 项目 ${name} 创建成功`);
+      setCloneMsg(`✓ 项目 ${name} 创建成功`);
       setTimeout(() => {
         onClose();
         setCloneStatus("idle");

@@ -202,7 +202,7 @@ export function SourceViewer({
           <Search size={14} style={{ opacity: 0.5 }} />
           <input
             type="text"
-            placeholder="搜索来源内容..."
+            placeholder="搜索来源内容"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -288,7 +288,7 @@ export function SourceViewer({
                         color: 'var(--warning)',
                         fontWeight: 500,
                       }}>
-                        ⚡ 引用段落
+                        引用段落
                       </span>
                     )}
                     </div>

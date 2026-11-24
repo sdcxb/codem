@@ -223,7 +223,7 @@ export function EnvironmentConfigSection() {
       id: `op-${Date.now()}`,
       name: zh ? "新操作" : "New Operation",
       command: "",
-      icon: "🔧",
+      icon: "",
     };
     update({ customOperations: [...(envConfig.customOperations || []), newOp] });
   };
@@ -251,7 +251,7 @@ export function EnvironmentConfigSection() {
       const { useProjectStore } = await import("../core/store");
       const cwd = useProjectStore.getState().currentProject?.path;
       if (!cwd) {
-        setRunResult(zh ? "❌ 未打开项目" : "❌ No project open");
+        setRunResult(zh ? "✗ 未打开项目" : "✗ No project open");
         return;
       }
       const result = await runCustomOperation(opId, cwd);
@@ -264,11 +264,11 @@ export function EnvironmentConfigSection() {
         ];
         if (result.stdout) lines.push(`\nstdout:\n${result.stdout}`);
         if (result.stderr) lines.push(`\nstderr:\n${result.stderr}`);
-        lines.push(result.success ? "✅ " + (zh ? "成功" : "Success") : "❌ " + (zh ? "失败" : "Failed"));
+        lines.push(result.success ? "✓ " + (zh ? "成功" : "Success") : "✗ " + (zh ? "失败" : "Failed"));
         setRunResult(lines.join("\n"));
       }
     } catch (e: any) {
-      setRunResult(`❌ ${e?.message || e}`);
+      setRunResult(`✗ ${e?.message || e}`);
     } finally {
       setRunning(null);
     }
@@ -337,7 +337,7 @@ export function EnvironmentConfigSection() {
               type="text"
               value={op.icon || ""}
               onChange={(e) => updateOp(op.id, { icon: e.target.value })}
-              placeholder="🔧"
+              placeholder="icon"
               className="git-env-op-icon"
             />
             <div className="git-env-op-main">

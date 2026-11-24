@@ -30,6 +30,10 @@ import { EditorToolbar } from './EditorToolbar';
 import { PresentationMode } from './PresentationMode';
 import './ppt-editor.css';
 import { ActionIcons } from "../../core/icons/icon-map";
+import {
+  ClipboardList, Target, FileText, Columns2, Bookmark, Quote, BarChart3, Flag,
+  Sparkles, History, Mic,
+} from "lucide-react";
 import { confirmDialog } from "../../core/ui/native-dialog";
 
 // ========== 命令接口 (Undo/Redo) ==========
@@ -546,7 +550,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
 
   const beginExport = useCallback((): boolean => {
     if (exportingRef.current) {
-      setChatMessages(prev => [...prev, { role: 'assistant', text: '⚠ 已有导出正在进行，请等它结束' }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', text: '已有导出正在进行，请等它结束' }]);
       return false;
     }
     exportingRef.current = true;
@@ -725,11 +729,11 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         setChatMessages(prev => [...prev.slice(-1), { role: 'assistant', text: `正在生成演讲稿 (${current}/${total}) — ${title}...` }]);
       });
       setDeck(updated);
-      setChatMessages(prev => [...prev, { role: 'assistant', text: `✅ 已为 ${updated.slides.length} 页幻灯片生成演讲稿` }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', text: `已为 ${updated.slides.length} 页幻灯片生成演讲稿` }]);
       // 生成完成后自动打开查看面板
       setShowNotesPanel(true);
     } catch (err) {
-      setChatMessages(prev => [...prev, { role: 'assistant', text: `❌ 演讲稿生成失败: ${err instanceof Error ? err.message : String(err)}` }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', text: `演讲稿生成失败: ${err instanceof Error ? err.message : String(err)}` }]);
     }
     setGeneratingNotes(false);
   }, [deck, generatingNotes]);
@@ -873,22 +877,25 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         <div className="ppt-thumbnail-bar">
           {deck.slides.map((slide, i) => renderThumbnail(slide, i))}
           <button className="ppt-thumbnail-add" onClick={handleAddSlide}>+ 添加幻灯片</button>
-          <button className="ppt-thumbnail-add" onClick={() => setShowTemplates(!showTemplates)}>📋 从模板</button>
+          <button className="ppt-thumbnail-add" onClick={() => setShowTemplates(!showTemplates)}><ClipboardList size={14} aria-hidden /> 从模板</button>
           {showTemplates && (
             <div style={{ padding: 8, display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
               {[
-                { id: 'tpl-cover', name: '封面页', icon: '🎯' },
-                { id: 'tpl-content', name: '标题+内容', icon: '📝' },
-                { id: 'tpl-two-col', name: '双栏对比', icon: '⚖️' },
-                { id: 'tpl-section', name: '章节过渡', icon: '🔖' },
-                { id: 'tpl-quote', name: '引用金句', icon: '💬' },
-                { id: 'tpl-data', name: '数据卡片', icon: '📊' },
-                { id: 'tpl-conclusion', name: '结论页', icon: '🏁' },
-              ].map(tpl => (
-                <button key={tpl.id} onClick={() => handleAddFromTemplate(tpl.id)} className="ppt-toolbar-btn" style={{ width: '100%', textAlign: 'left' }}>
-                  {tpl.icon} {tpl.name}
-                </button>
-              ))}
+                { id: 'tpl-cover', name: '封面页', icon: Target },
+                { id: 'tpl-content', name: '标题+内容', icon: FileText },
+                { id: 'tpl-two-col', name: '双栏对比', icon: Columns2 },
+                { id: 'tpl-section', name: '章节过渡', icon: Bookmark },
+                { id: 'tpl-quote', name: '引用金句', icon: Quote },
+                { id: 'tpl-data', name: '数据卡片', icon: BarChart3 },
+                { id: 'tpl-conclusion', name: '结论页', icon: Flag },
+              ].map(tpl => {
+                const Icon = tpl.icon;
+                return (
+                  <button key={tpl.id} onClick={() => handleAddFromTemplate(tpl.id)} className="ppt-toolbar-btn" style={{ width: '100%', textAlign: 'left' }}>
+                    <Icon size={14} aria-hidden /> {tpl.name}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -958,7 +965,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
                 onClick={handleChatSubmit}
                 disabled={chatLoading || !chatInput.trim()}
               >
-                {chatLoading ? '...' : '✨ AI 修改'}
+                {chatLoading ? '...' : <><Sparkles size={14} aria-hidden /> AI 修改</>}
               </button>
             </div>
           </div>
@@ -989,7 +996,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
       {showVersionPanel && (
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600 }}>📚 版本历史</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><History size={16} aria-hidden /> 版本历史</span>
             <button onClick={() => setShowVersionPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={14} /></button>
           </div>
           {versions.length === 0 ? (
@@ -1011,7 +1018,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
       {showNotesPanel && (
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600 }}>📝 演讲稿</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mic size={16} aria-hidden /> 演讲稿</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => handleGenerateNotes()}

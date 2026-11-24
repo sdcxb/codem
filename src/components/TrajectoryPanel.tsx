@@ -422,7 +422,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 )}
                 {/* toolCallCount */}
                 {step.type === 'llm_call' && step.data?.toolCallCount != null && step.data.toolCallCount > 0 && (
-                  <span className="tj-num tj-num--info">⚙{step.data.toolCallCount}</span>
+                  <span className="tj-num tj-num--info">工具 {step.data.toolCallCount}</span>
                 )}
                 {/* iteration */}
                 {step.data?.iteration != null && (

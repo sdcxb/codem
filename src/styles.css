@@ -19185,8 +19185,6 @@ color: var(--accent, #7c6cf0);
   cursor: pointer;
 }
 .sp-tab.is-active { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
-.sp-btn-auto { margin-right: auto; }
-.sp-btn-mr { margin-right: var(--space-4); }
 .sp-slider-row { display: flex; justify-content: space-between; margin-bottom: var(--space-2); }
 .sp-slider-label { font-size: var(--fs-base); color: var(--text-primary); }
 .sp-slider-value { font-size: var(--fs-sm); color: var(--text-secondary); }
@@ -21793,18 +21791,17 @@ html[data-contrast="high"] {
   margin-top: var(--space-2);
 }
 
-.memory-batch-id {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  color: var(--text-muted);
-}
-
-.memory-batch-meta {
+.memory-batch-summary {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-2xs);
+  overflow: hidden;
   color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.memory-undo-btn { flex-shrink: 0; }
 
 /* ---- 按作用域分组的列表 ---- */
 .memory-group {
@@ -22452,3 +22449,14 @@ html[data-contrast="high"] {
     padding: var(--space-4);
   }
 }
+
+/* Git 面板：把重复的内联布局收成类（降低 inline-style-dense） */
+.git-loading-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); color: var(--text-muted); font-size: var(--fs-sm); }
+.git-status-column { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
+.git-branch-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.git-stats-row { display: flex; gap: var(--space-2); color: var(--text-muted); font-size: var(--fs-xs); }
+.git-stat-chip { display: inline-flex; align-items: center; gap: var(--space-1); }
+.git-worktree-row { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+.git-worktree-path { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+.git-conflicts { display: flex; flex-direction: column; gap: var(--space-1); color: var(--text-muted); font-size: var(--fs-xs); }
+.git-commits-toggle { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-muted); cursor: pointer; font-size: var(--fs-xs); user-select: none; }

@@ -71,7 +71,7 @@ export class PetErrorBoundary extends Component<PetErrorBoundaryProps, PetErrorB
           overflow: "hidden",
         }}
       >
-        <div>⚠️ 宠物窗口渲染出错</div>
+        <div>宠物窗口渲染出错</div>
         <div style={{ opacity: 0.8, wordBreak: "break-word", maxHeight: 60, overflow: "hidden" }}>
           {this.state.message}
         </div>

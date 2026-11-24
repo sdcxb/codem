@@ -199,7 +199,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
         })}
       </div>      {/* 兼容性说明 */}
       <div style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, lineHeight: 1.5 }}>
-        💡 {zh
+        {zh
           ? 'dsh 插件是 npm 包（依赖 Node 模块运行时）。Codem 桌面内无法直接加载任意 npm 包：<内置等价> 表示该能力已内置（安装=启用对应插件）；<可适配> 表示按 dsh 协议、无第三方依赖的插件可经 dsh-compat 桥接；其余标注暂不兼容。'
           : 'dsh plugins are npm packages (Node runtime). Codem cannot load arbitrary npm packages: "Bundled" means Codem already ships an equivalent (install = enable it); "Adaptable" means a dependency-free dsh-protocol plugin can run via the dsh-compat bridge; others are marked unsupported.'}
       </div>

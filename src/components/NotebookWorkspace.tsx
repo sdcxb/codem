@@ -21,6 +21,7 @@ import {
   ChevronRight, StickyNote, Pin, Edit3, Save, X, Sparkles, Share2, Presentation,
   Download, Route, Map, XCircle, Layers, Eye, Columns, ChevronDown, ChevronUp,
   PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose,
+  ClipboardList, ListTree, GraduationCap, HelpCircle, Calendar, Lightbulb, Brain, type LucideIcon,
 } from 'lucide-react';
 // 对话系统复用 — 笔记本专用精简聊天面板
 import { NbChatPanel } from './NbChatPanel';
@@ -207,15 +208,15 @@ export function NotebookWorkspace({
     return () => document.removeEventListener('mousedown', handler);
   }, [showStudio, showExport]);
 
-  const studioOptions: { type: StudioContentType; icon: string; labelZh: string; labelEn: string }[] = [
-    { type: 'summary', icon: '📋', labelZh: '内容摘要', labelEn: 'Summary' },
-    { type: 'outline', icon: '📑', labelZh: '内容大纲', labelEn: 'Outline' },
-    { type: 'study_guide', icon: '🎓', labelZh: '学习指南', labelEn: 'Study Guide' },
-    { type: 'faq', icon: '❓', labelZh: '常见问题', labelEn: 'FAQ' },
-    { type: 'timeline', icon: '📅', labelZh: '事件时间线', labelEn: 'Timeline' },
-    { type: 'brief', icon: '📝', labelZh: '简要简报', labelEn: 'Brief' },
-    { type: 'key_insights', icon: '💡', labelZh: '关键洞察', labelEn: 'Key Insights' },
-    { type: 'mindmap', icon: '🧠', labelZh: '思维导图', labelEn: 'Mind Map' },
+  const studioOptions: { type: StudioContentType; icon: LucideIcon; labelZh: string; labelEn: string }[] = [
+    { type: 'summary', icon: ClipboardList, labelZh: '内容摘要', labelEn: 'Summary' },
+    { type: 'outline', icon: ListTree, labelZh: '内容大纲', labelEn: 'Outline' },
+    { type: 'study_guide', icon: GraduationCap, labelZh: '学习指南', labelEn: 'Study Guide' },
+    { type: 'faq', icon: HelpCircle, labelZh: '常见问题', labelEn: 'FAQ' },
+    { type: 'timeline', icon: Calendar, labelZh: '事件时间线', labelEn: 'Timeline' },
+    { type: 'brief', icon: FileText, labelZh: '简要简报', labelEn: 'Brief' },
+    { type: 'key_insights', icon: Lightbulb, labelZh: '关键洞察', labelEn: 'Key Insights' },
+    { type: 'mindmap', icon: Brain, labelZh: '思维导图', labelEn: 'Mind Map' },
   ];
 
   const handleStudioGenerate = async (contentType: StudioContentType) => {
@@ -357,7 +358,7 @@ export function NotebookWorkspace({
     if (!project) {
       project = {
         id: virtualProjectId,
-        name: `📓 ${notebookName}`,
+        name: notebookName,
         path: '',  // 笔记本对话不需要工作目录
         description: `Notebook: ${notebookName}`,
         pinned: false,
@@ -736,7 +737,7 @@ setShowNoteEditor(true);
             {showExport && (
               <div className="nb-export-menu">
                 <button className="nb-studio-option" onClick={handleExportNotebook}>
-                  <span className="nb-studio-icon">📄</span>
+                  <span className="nb-studio-icon"><FileText size={16} aria-hidden /></span>
                   <span>{isZh ? '导出为 Markdown' : 'Export as Markdown'}</span>
                 </button>
               </div>
@@ -779,23 +780,26 @@ setShowNoteEditor(true);
                 <div className="nb-studio-dropdown-header">
                   {isZh ? '生成内容' : 'Generate Content'}
                 </div>
-                {studioOptions.map((opt) => (
-                  <button
-                    key={opt.type}
-                    className="nb-studio-option"
-                    onClick={() => handleStudioGenerate(opt.type)}
-                  >
-                    <span className="nb-studio-icon">{opt.icon}</span>
-                    <span>{isZh ? opt.labelZh : opt.labelEn}</span>
-                  </button>
-                ))}
+                {studioOptions.map((opt) => {
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.type}
+                      className="nb-studio-option"
+                      onClick={() => handleStudioGenerate(opt.type)}
+                    >
+                      <span className="nb-studio-icon"><Icon size={16} aria-hidden /></span>
+                      <span>{isZh ? opt.labelZh : opt.labelEn}</span>
+                    </button>
+                  );
+                })}
                 {/* PPT 生成入口 — 借鉴 oh-my-ppt 思路, 自研实现 */}
                 <div className="nb-studio-divider" />
                 <button
                   className="nb-studio-option nb-studio-ppt"
                   onClick={handleGeneratePPT}
                 >
-                  <span className="nb-studio-icon">📊</span>
+                  <span className="nb-studio-icon"><Presentation size={16} aria-hidden /></span>
                   <span>{isZh ? 'PPT 演示' : 'PPT Presentation'}</span>
                 </button>
               </div>

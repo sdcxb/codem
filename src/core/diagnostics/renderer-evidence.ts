@@ -172,14 +172,18 @@ export function parseRendererCrashRecord(raw: string | null): RendererCrashRecor
   };
 }
 
-/** 给用户看的提示文本（带上可转述给开发者的判据字段） */
+/** 给用户看的**一行**提示：技术判据移到 `formatRendererCrashDetail`，默认折叠。 */
 export function formatRendererCrashMessage(record: RendererCrashRecord): string {
   const when = record.at ? new Date(record.at).toLocaleString() : "刚刚";
+  return `上次界面意外重启（${when}），已恢复；会话数据未丢失。`;
+}
+
+/** 技术详情（只在用户点「详情」时显示；复制给开发者用）。 */
+export function formatRendererCrashDetail(record: RendererCrashRecord): string {
   return (
-    `检测到界面渲染进程崩溃（${when}），已自动重载恢复；会话数据都在本地数据库里，不受影响。\n` +
-    `判据（反馈问题时请附上这一行）：kind=${record.kind} reason=${record.reason} exit_code=${record.exitCode}` +
+    `kind=${record.kind} reason=${record.reason} exit_code=${record.exitCode}` +
     (record.module ? ` module=${record.module}` : "") +
-    (record.memory ? ` | ${record.memory}` : "")
+    (record.memory ? `\n${record.memory}` : "")
   );
 }
 

@@ -289,26 +289,16 @@
 
 /* ===== 总览/用量网格（自然高度，容器滚动；对标 lobster-pet DetailPanel 的三段式） ===== */
 .lo-grid--lp { display: flex; flex-direction: column; gap: var(--space-5); }
-.lo-grid__row { display: grid; gap: var(--space-5); }
-.lo-grid__row--top {
-  grid-template-columns: minmax(180px, 236px) minmax(0, 1fr) minmax(0, 1.45fr);
-}
-.lo-grid__row--mid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .lo-stack { display: flex; flex-direction: column; gap: var(--space-5); }
 .lo-stack__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-5); }
 .lo-card--memo { }
-/* 场景卡固定一段高度（画布自适应这段高度），其余卡片自然高度 + 内部滚动 */
-.lo-card--scene { height: clamp(220px, 34vh, 340px); }
-.lo-card--scene .lo-card__body { flex: 1; min-height: 0; display: flex; }
 .lo-card--status,
-.lo-card--sessions,
 .lo-card--activity { max-height: 320px; }
 /*
  * 第 12 轮（运行时审计 R4）：800×600（窗口最小尺寸）下「活跃时段」卡片内容比 320px 高，
  * 这里是 overflow:hidden ⇒ 底部数据被静默裁掉。改成纵向可滚（统计卡片本来就允许滚动）。
  */
 .lo-card--status .lo-card__body,
-.lo-card--sessions .lo-card__body,
 .lo-card--activity .lo-card__body { flex: 1; min-height: 0; overflow-y: auto; }
 .lo-card__count {
   padding: 0 var(--space-4);
@@ -318,15 +308,6 @@
   font-size: var(--fs-xs);
 }
 .lo-card__actions-row { display: inline-flex; align-items: center; gap: var(--space-4); }
-.lo-scene-host {
-  position: relative;
-  flex: 1;
-  min-height: 180px;
-  min-width: 0;
-  border-radius: var(--radius-sm, 6px);
-  overflow: hidden;
-  background: color-mix(in srgb, var(--bg-tertiary) 72%, transparent);
-}
 .lo-kpi-grid--compact { margin-bottom: 0; }
 
 /* 状态卡 */
@@ -360,29 +341,6 @@
 
 
 
-
-/* 会话卡片网格（对标 TaskGrid） */
-.lo-session-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: var(--space-3); align-content: start; }
-.lo-session-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-4);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm, 6px);
-  background: color-mix(in srgb, var(--bg-tertiary) 65%, transparent);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-  min-width: 0;
-}
-.lo-session-card:is(:hover, :focus-visible) { border-color: var(--accent); background: var(--bg-hover); }
-.lo-session-card__top { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-2); min-width: 0; }
-.lo-session-card__icon { flex-shrink: 0; }
-.lo-session-card__name { flex: 1; min-width: 0; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-session-card__live { color: var(--success); font-size: var(--fs-xs); /* 第 167 轮：9px 既不在刻度上、也低于可读下限（吸附到 --fs-xs = 10px） */ }
-.lo-session-card__bottom { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3); font-size: var(--fs-xs); color: var(--text-muted); }
-.lo-session-card__tools { margin-left: auto; }
 
 /* 活动概览两列 */
 .lo-av { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-6); align-items: start; }
@@ -1607,13 +1565,8 @@
 @container lo (max-width: 1080px) {
   /* 事件流让位给主内容（设置里的开关仍管桌面宽屏） */
   .lo-task__feed { display: none; }
-  .lo-grid__row--top { grid-template-columns: minmax(160px, 200px) minmax(0, 1fr); }
-  .lo-grid__row--top > .lo-card--activity { grid-column: 1 / -1; }
 }
 @container lo (max-width: 980px) {
-  .lo-grid__row--top { grid-template-columns: minmax(0, 1fr); }
-  .lo-grid__row--top > .lo-card--activity { grid-column: auto; }
-  .lo-grid__row--mid { grid-template-columns: minmax(0, 1fr); }
   .lo-stack__row { grid-template-columns: minmax(0, 1fr); }
   .lo-overview__row,
   .lo-overview__row--bottom,
@@ -1635,8 +1588,6 @@
   .lo-card { padding: var(--space-4) var(--space-5); }
 }
 @container lo (max-height: 620px) {
-  .lo-card--scene { min-height: 0; }
-  .lo-scene-host { min-height: 180px; }
   .lo-library { grid-template-rows: minmax(150px, 1fr) auto; }
 }
 
@@ -1675,9 +1626,6 @@
 
 /* 成本视图根容器（.lo-cost__row / __chart 已有定义） */
 .lo-cost { display: flex; flex-direction: column; gap: var(--space-5); }
-
-/* 会话卡片的"多久以前"（对标 .lo-alerts__age） */
-.lo-session-card__age { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* 自定义场景图选项：虚线上传位（.lo-scene-option 已有定义） */
 .lo-scene-option--custom { border-style: dashed; }

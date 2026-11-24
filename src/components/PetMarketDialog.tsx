@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ActionIcons } from "../core/icons/icon-map";
+import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
 import type { MarketPet } from "../core/pet/pet-types";
 import { listMarketPets, installMarketPet, isMarketPetInstalled, fetchPetImageAsDataUrl } from "../core/pet/pet-market-client";
 import { uninstallPet, isPetInstalled } from "../core/pet/pet-manager";
@@ -298,7 +298,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
         <div className="petm-search-row">
           <input
             type="text"
-            placeholder="搜索宠物..."
+            placeholder="搜索宠物"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="petm-search"
@@ -309,14 +309,14 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
         <div ref={scrollRef} className="petm-body">
           {loading && (
             <div className="petm-state">
-              <div className="petm-state-icon">🔄</div>
+              <div className="petm-state-icon"><ActionIcons.refresh size={24} aria-hidden /></div>
               <div>正在加载宠物市场...</div>
             </div>
           )}
 
           {error && !loading && (
             <div className="petm-state petm-state--error">
-              <div className="petm-state-icon">😞</div>
+              <div className="petm-state-icon"><StatusIcons.warning size={24} aria-hidden /></div>
               <div className="petm-state-gap">{error}</div>
               <button
                 onClick={() => { setError(null); void loadMarket(); }}
@@ -336,7 +336,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
           {!loading && !error && filteredPets.length === 0 && (
             <div className="petm-state">
-              <div className="petm-state-icon">🔍</div>
+              <div className="petm-state-icon"><ActionIcons.search size={24} aria-hidden /></div>
               <div>未找到宠物</div>
             </div>
           )}

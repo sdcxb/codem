@@ -208,8 +208,8 @@ describe("LAYOUT-REG：挤压/竖排/裁切的根因（第 8 轮）", () => {
 
   it("LAYOUT-15: 任务中心统计卡正文超出时要滚动，不许静默裁切", () => {
     const css = readCss("src/plugins/library-ops/styles/library-ops.css");
-    const body = /\n\.lo-card--status \.lo-card__body,\r?\n\.lo-card--sessions \.lo-card__body,\r?\n\.lo-card--activity \.lo-card__body \{([^}]*)\}/.exec(css);
-    expect(body, "找不到三张统计卡的 body 规则").toBeTruthy();
+    const body = /\n\.lo-card--status \.lo-card__body,\r?\n\.lo-card--activity \.lo-card__body \{([^}]*)\}/.exec(css);
+    expect(body, "找不到统计卡 body 规则").toBeTruthy();
     expect(body![1], "800×600 实测内容比 320px 高，hidden 会裁掉底部").toContain("overflow-y: auto");
     expect(body![1]).not.toContain("overflow: hidden");
   });

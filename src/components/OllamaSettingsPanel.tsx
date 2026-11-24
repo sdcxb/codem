@@ -200,7 +200,7 @@ export function OllamaSettingsPanel() {
         </div>
         {!status?.connected && status && (
           <div style={{ marginTop: 8, fontSize: 'var(--fs-sm)', color: "var(--warning)" }}>
-            ⚠ {S.ollama.connectError[lang]}
+            ! {S.ollama.connectError[lang]}
           </div>
         )}
       </div>

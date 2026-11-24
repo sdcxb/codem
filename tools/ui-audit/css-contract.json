@@ -4368,7 +4368,7 @@
     "width": "auto"
   },
   "fade-in-element": {
-    "@starting-style {\r\n    opacity": "0",
+    "@starting-style {\n    opacity": "0",
     "opacity": "1",
     "transform": "translateY(-8px)",
     "transition": "opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out)"
@@ -5342,9 +5342,31 @@
     "transition": "var(--transition-color)",
     "width": "100%"
   },
+  "git-branch-row": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-2)"
+  },
   "git-branch-selector": {
     "display": "inline-flex",
     "position": "relative"
+  },
+  "git-commits-toggle": {
+    "align-items": "center",
+    "color": "var(--text-muted)",
+    "cursor": "pointer",
+    "display": "inline-flex",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-1)",
+    "user-select": "none"
+  },
+  "git-conflicts": {
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "flex-direction": "column",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-1)"
   },
   "git-env-check-label": {
     "cursor": "pointer",
@@ -5481,6 +5503,25 @@
     "gap": "var(--space-6)",
     "justify-content": "space-between"
   },
+  "git-loading-row": {
+    "align-items": "center",
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-2)",
+    "padding": "var(--space-3)"
+  },
+  "git-stat-chip": {
+    "align-items": "center",
+    "display": "inline-flex",
+    "gap": "var(--space-1)"
+  },
+  "git-stats-row": {
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-2)"
+  },
   "git-status-added": {
     "background": "var(--success-surface-strong)",
     "color": "var(--success-content)"
@@ -5493,6 +5534,12 @@
     "font-weight": "var(--weight-semibold)",
     "margin-left": "auto",
     "padding": "0 var(--space-1)"
+  },
+  "git-status-column": {
+    "display": "flex",
+    "flex-direction": "column",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-2)"
   },
   "git-status-deleted": {
     "background": "var(--error-surface-strong)",
@@ -5509,6 +5556,24 @@
   "git-status-untracked": {
     "background": "var(--info-surface-strong)",
     "color": "var(--info-content)"
+  },
+  "git-worktree-path": {
+    "align-items": "center",
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "flex": "1",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-2)",
+    "min-width": "0",
+    "overflow": "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap"
+  },
+  "git-worktree-row": {
+    "align-items": "center",
+    "display": "flex",
+    "gap": "var(--space-2)",
+    "margin-top": "var(--space-1)"
   },
   "github-clone-input": {
     "background": "var(--input-bg)",
@@ -8696,11 +8761,6 @@
     "font-size": "var(--fs-2xs)",
     "padding": "var(--space-1) var(--space-5)"
   },
-  "memory-batch-id": {
-    "color": "var(--text-muted)",
-    "font-family": "var(--font-mono)",
-    "font-size": "var(--fs-2xs)"
-  },
   "memory-batch-item": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
@@ -8711,12 +8771,6 @@
     "gap": "var(--space-4)",
     "padding": "var(--space-3) var(--space-4)"
   },
-  "memory-batch-meta": {
-    "color": "var(--text-secondary)",
-    "flex": "1",
-    "font-size": "var(--fs-2xs)",
-    "min-width": "0"
-  },
   "memory-batch-note": {
     "color": "var(--text-muted)",
     "font-size": "var(--fs-2xs)",
@@ -8726,6 +8780,15 @@
   "memory-batch-section": {
     "border-bottom": "1px solid var(--border-primary)",
     "padding": "var(--space-6) var(--space-8)"
+  },
+  "memory-batch-summary": {
+    "color": "var(--text-secondary)",
+    "flex": "1",
+    "font-size": "var(--fs-2xs)",
+    "min-width": "0",
+    "overflow": "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap"
   },
   "memory-batch-title": {
     "color": "var(--text-secondary)",
@@ -9309,6 +9372,7 @@
     "border-radius": "var(--radius-sm)",
     "color": "var(--text-primary)",
     "cursor": "pointer",
+    "flex-shrink": "0",
     "font-size": "var(--fs-2xs)",
     "padding": "var(--space-1) var(--space-5)"
   },
@@ -16867,7 +16931,7 @@
     "transition": "opacity var(--duration-fast) var(--ease-out)"
   },
   "sidebar-session-context-menu": {
-    "@starting-style {\r\n    opacity": "0",
+    "@starting-style {\n    opacity": "0",
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius)",
@@ -18030,12 +18094,6 @@
   "sp-btn--xs": {
     "font-size": "var(--fs-xs)",
     "padding": "var(--space-1) var(--space-4)"
-  },
-  "sp-btn-auto": {
-    "margin-right": "auto"
-  },
-  "sp-btn-mr": {
-    "margin-right": "var(--space-4)"
   },
   "sp-callout": {
     "background": "var(--accent-surface)",

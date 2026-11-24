@@ -17,9 +17,14 @@ import { mergeWorktreeToProject, removeWorktree, conflictAbsolutePath } from "..
 import { openFileDirectly } from "../utils/file-link";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { useProjectStore } from "../core/store";
+import { Spinner } from "./ui/Spinner";
 import { useLang } from "../core/i18n/lang";
 import { onAutoCommitted } from "../core/environment/git-commit-service";
 import { GitBranchSelector } from "./GitBranchSelector";
+import {
+  AlertTriangle, FilePlus, Pencil, FileQuestion, ArrowUpFromLine, ArrowDownToLine,
+  GitBranch, ChevronDown, ChevronRight, RefreshCw,
+} from "lucide-react";
 
 interface GitStatus {
   branch: string;
@@ -158,14 +163,14 @@ export function GitInfoPanel() {
         projectPath
       );
       if (result.exitCode && result.exitCode !== 0) {
-        setActionResult(`❌ ${result.stderr}`);
+        setActionResult(`✗ ${result.stderr}`);
       } else {
-        setActionResult(`✅ ${zh ? "提交成功" : "Committed"}`);
+        setActionResult(`✓ ${zh ? "提交成功" : "Committed"}`);
         setCommitMsg("");
         refresh();
       }
     } catch (e: any) {
-      setActionResult(`❌ ${e?.message || e}`);
+      setActionResult(`✗ ${e?.message || e}`);
     }
     setTimeout(() => setActionResult(null), 5000);
   };
@@ -179,13 +184,13 @@ export function GitInfoPanel() {
         projectPath
       );
       if (result.exitCode && result.exitCode !== 0) {
-        setActionResult(`❌ ${result.stderr}`);
+        setActionResult(`✗ ${result.stderr}`);
       } else {
-        setActionResult(`✅ ${zh ? "推送成功" : "Pushed"}`);
+        setActionResult(`✓ ${zh ? "推送成功" : "Pushed"}`);
         refresh();
       }
     } catch (e: any) {
-      setActionResult(`❌ ${e?.message || e}`);
+      setActionResult(`✗ ${e?.message || e}`);
     }
     setTimeout(() => setActionResult(null), 5000);
   };
@@ -199,13 +204,13 @@ export function GitInfoPanel() {
         projectPath
       );
       if (result.exitCode && result.exitCode !== 0) {
-        setActionResult(`❌ ${result.stderr}`);
+        setActionResult(`✗ ${result.stderr}`);
       } else {
-        setActionResult(`✅ ${zh ? "拉取成功" : "Pulled"}`);
+        setActionResult(`✓ ${zh ? "拉取成功" : "Pulled"}`);
         refresh();
       }
     } catch (e: any) {
-      setActionResult(`❌ ${e?.message || e}`);
+      setActionResult(`✗ ${e?.message || e}`);
     }
     setTimeout(() => setActionResult(null), 5000);
   };
@@ -249,10 +254,10 @@ export function GitInfoPanel() {
           worktreePath: undefined,
         });
       }
-      setActionResult(`✅ ${zh ? "已合并并清理工作树" : "Merged and removed worktree"}: ${res.mergedSha.slice(0, 7)}`);
+      setActionResult(`✓ ${zh ? "已合并并清理工作树" : "Merged and removed worktree"}: ${res.mergedSha.slice(0, 7)}`);
       refresh();
     } catch (e: any) {
-      setActionResult(`❌ ${e?.message || e}`);
+      setActionResult(`✗ ${e?.message || e}`);
       if (Array.isArray(e?.conflictFiles) && e.conflictFiles.length > 0) setConflictFiles(e.conflictFiles);
     }
     setTimeout(() => setActionResult(null), 10000);
@@ -268,20 +273,20 @@ export function GitInfoPanel() {
 
   if (!status && loading) {
     return (
-      <div style={{ padding: 12, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
-        ⏳ {zh ? "加载中..." : "Loading..."}
+      <div className="git-loading-row">
+        <Spinner size="md" label="" /> {zh ? "加载中..." : "Loading..."}
       </div>
     );
   }
 
   return (
-    <div style={{ fontSize: 'var(--fs-sm)', display: "flex", flexDirection: "column", gap: 8 }}>
+    <div className="git-status-column">
       {/* 分支选择器（显示/切换/新建）—— 由标题栏 GitBranchSelector 合并而来，承担当前分支展示 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="git-branch-row">
         <GitBranchSelector refreshInterval={5000} onBranchChange={handleBranchChange} />
         {status && (status.isDirty ? (
-          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 15%, transparent)", padding: "1px 6px", borderRadius: "var(--radius)" }}>
-            ⚠️ {zh ? "未提交" : "dirty"}
+          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 15%, transparent)", padding: "1px 6px", borderRadius: "var(--radius)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <AlertTriangle size={12} aria-hidden /> {zh ? "未提交" : "dirty"}
           </span>
         ) : (
           <span style={{ fontSize: 'var(--fs-xs)', color: "var(--success)" }}>✓ {zh ? "干净" : "clean"}</span>
@@ -290,10 +295,10 @@ export function GitInfoPanel() {
 
       {/* Stats */}
       {status && status.isDirty && (
-        <div style={{ display: "flex", gap: 8, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
-          <span>📝 {status.stagedCount} {zh ? "已暂存" : "staged"}</span>
-          <span>✏️ {status.unstagedCount} {zh ? "已修改" : "modified"}</span>
-          <span>❓ {status.untrackedCount} {zh ? "未跟踪" : "untracked"}</span>
+        <div className="git-stats-row">
+          <span className="git-stat-chip"><FilePlus size={12} aria-hidden /> {status.stagedCount} {zh ? "已暂存" : "staged"}</span>
+          <span className="git-stat-chip"><Pencil size={12} aria-hidden /> {status.unstagedCount} {zh ? "已修改" : "modified"}</span>
+          <span className="git-stat-chip"><FileQuestion size={12} aria-hidden /> {status.untrackedCount} {zh ? "未跟踪" : "untracked"}</span>
           {(status.insertions > 0 || status.deletions > 0) && (
             <span>+{status.insertions}/-{status.deletions}</span>
           )}
@@ -330,6 +335,7 @@ export function GitInfoPanel() {
         <button
           onClick={handlePush}
           title={zh ? "推送" : "Push"}
+          aria-label={zh ? "推送" : "Push"}
           style={{
             padding: "4px 10px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)",
             border: "1px solid var(--border-primary)",
@@ -337,11 +343,12 @@ export function GitInfoPanel() {
             cursor: "pointer",
           }}
         >
-          ⬆
+          <ArrowUpFromLine size={14} aria-hidden />
         </button>
         <button
           onClick={handlePull}
           title={zh ? "拉取" : "Pull"}
+          aria-label={zh ? "拉取" : "Pull"}
           style={{
             padding: "4px 10px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)",
             border: "1px solid var(--border-primary)",
@@ -349,14 +356,14 @@ export function GitInfoPanel() {
             cursor: "pointer",
           }}
         >
-          ⬇
+          <ArrowDownToLine size={14} aria-hidden />
         </button>
       </div>
 
       {currentSession?.worktreePath && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 'var(--fs-xs)', color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            🌒 {currentSession.worktreePath}
+        <div className="git-worktree-row">
+          <div className="git-worktree-path">
+            <GitBranch size={12} aria-hidden /> {currentSession.worktreePath}
           </div>
           <button
             onClick={() => handleMergeWorktree()}
@@ -374,13 +381,13 @@ export function GitInfoPanel() {
       )}
 
       {actionResult && (
-        <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✅") ? "var(--success)" : "var(--error)" }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✓") ? "var(--success)" : "var(--error)" }}>
           {actionResult}
         </div>
       )}
 
       {conflictFiles.length > 0 && (
-        <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="git-conflicts">
           <div>{zh ? "冲突文件：逐文件选择保留哪一边，或整体选一边；工作树会清理" : "Conflicted files: pick a side per file, or use one side for all; worktree will be removed"}</div>
           <div className="wt-conflict-list">
             {conflictFiles.map((rel) => (
@@ -446,9 +453,9 @@ export function GitInfoPanel() {
         <div>
           <div
             onClick={() => setIsExpanded(!isExpanded)}
-            style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", cursor: "pointer", userSelect: "none" }}
+            className="git-commits-toggle"
           >
-            {isExpanded ? "▼" : "▶"} {zh ? "最近提交" : "Recent commits"} ({commits.length})
+            {isExpanded ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />} {zh ? "最近提交" : "Recent commits"} ({commits.length})
           </div>
           {isExpanded && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
@@ -476,7 +483,7 @@ export function GitInfoPanel() {
           alignSelf: "flex-start",
         }}
       >
-        {loading ? "⏳" : "🔄"} {zh ? "刷新" : "Refresh"}
+        {loading ? <Spinner size="sm" label="" /> : <RefreshCw size={12} aria-hidden />} {zh ? "刷新" : "Refresh"}
       </button>
     </div>
   );

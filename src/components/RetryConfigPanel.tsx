@@ -80,7 +80,7 @@ export function RetryConfigPanel() {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
-          🔄 {zh ? "重试执行器" : "Retry Executor"}
+          {zh ? "重试执行器" : "Retry Executor"}
         </div>
         <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "配置 API 请求失败时的自动重试策略（指数退避）。" : "Configure automatic retry strategy for failed API requests (exponential backoff)."}
@@ -165,7 +165,7 @@ export function RetryConfigPanel() {
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: "pointer",
           }}>
-            {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
+            {saved ? (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
           {/*
             ★ 第 185 波（复审 I-4）：**「重置状态」按钮已删**。
@@ -182,7 +182,7 @@ export function RetryConfigPanel() {
         background: "var(--bg-secondary)",
       }}>
         <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-          🔍 {zh ? "错误分类测试器" : "Error Classification Tester"}
+          {zh ? "错误分类测试器" : "Error Classification Tester"}
         </div>
         <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginBottom: 6 }}>
           {zh ? "输入错误信息（JSON 或文本），测试是否可重试。" : "Enter error info (JSON or text) to test if it's retryable."}
@@ -213,7 +213,7 @@ export function RetryConfigPanel() {
             <div>
               <span style={{ color: "var(--text-muted)" }}>{zh ? "可重试" : "Retryable"}: </span>
               <span style={{ fontWeight: 600, color: testResult.isRetryable ? "var(--success)" : "var(--error)" }}>
-                {testResult.isRetryable ? "✅ " + (zh ? "是" : "Yes") : "❌ " + (zh ? "否" : "No")}
+                {testResult.isRetryable ? (zh ? "是" : "Yes") : (zh ? "否" : "No")}
               </span>
             </div>
             {testResult.retryAfter && (

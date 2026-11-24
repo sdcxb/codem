@@ -91,8 +91,8 @@ function getEntityColor(entityType: EntityType): string {
 
 function getEntityIcon(entityType: EntityType): string {
   const iconMap: Record<EntityType, string> = {
-    concept: '💡', entity: '📌', event: '⚡', person: '👤',
-    place: '📍', organization: '🏢', technology: '⚙️',
+    concept: '◇', entity: '•', event: '△', person: '人',
+    place: '地', organization: '组', technology: '技',
   };
   return iconMap[entityType] || '●';
 }

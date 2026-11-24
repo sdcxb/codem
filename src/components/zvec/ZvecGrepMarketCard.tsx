@@ -168,7 +168,7 @@ export function ZvecGrepMarketCard() {
       )}
       {resultMsg && (
         <div style={{ fontSize: "var(--fs-xs)", color: resultMsg.ok ? "var(--success)" : "var(--error)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {resultMsg.ok ? "✅ " : "❌ "}{resultMsg.text}
+          {resultMsg.text}
         </div>
       )}
 
