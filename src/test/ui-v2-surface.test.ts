@@ -7,11 +7,15 @@ const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("v2 表面预算", () => {
   const clean = stripComments(css);
-  it("chrome 不引入彩色渐变 / glow / 玻璃", () => {
-    expect(clean).not.toMatch(/radial-gradient\(/);
-    expect(clean).not.toMatch(/linear-gradient\(/);
-    expect(clean).not.toMatch(/--shadow-glow/);
-    expect(clean).not.toMatch(/backdrop-filter:\s*(?!none)[a-z]/);
+  it("chrome 不引入彩色渐变 / glow / 玻璃（Dream 皮肤唯一例外）", () => {
+    /* Dream 的壁纸画在 webview 内部，必须有 CSS 毛玻璃；只放行同时带
+       [data-ui=v2][data-skin=dream] 的规则，默认 v2 chrome 仍不许玻璃。 */
+    const nonDream = clean.replace(/\[data-ui="v2"\]\[data-skin="dream"\][^{]*\{[^}]*\}/g, "");
+    expect(nonDream).not.toMatch(/radial-gradient\(/);
+    expect(nonDream).not.toMatch(/linear-gradient\(/);
+    expect(nonDream).not.toMatch(/--shadow-glow/);
+    expect(nonDream).not.toMatch(/backdrop-filter:\s*(?!none)[a-z]/);
+    expect(clean).toMatch(/\[data-ui="v2"\]\[data-skin="dream"\][\s\S]*?backdrop-filter:\s*blur\(/);
   });
 
   it("管理面不再用 uppercase 标签", () => {

@@ -1224,3 +1224,31 @@ backdrop-filter: none !important;
   --bg-secondary: var(--dream-c56);
   --bg-hover: var(--dream-c58);
 }
+
+/* ========== Dream × unslop v2：让透明度/毛玻璃重新生效 ==========
+ * v2 把 `--ui-*` 定义成不透明中性色（#0e1012 / #f7f5f0），并显式
+ * `backdrop-filter: none !important` 关掉 dream 的玻璃；结果设置里的
+ * 「卡片透明度 / 毛玻璃模糊度」滑杆改了变量却没有任何表面消费它。
+ *
+ * 这里把 v2 的语义令牌重新指回 dream 的 alpha 变量（CSS 变量惰性求值，
+ * 滑杆更新 --dream-bg-card / --dream-blur-px 后会立即生效），
+ * 再用更高特异性 + !important 恢复玻璃。只影响 v2 + dream 同时开启的组合。
+ */
+:root[data-ui="v2"][data-skin="dream"] {
+  --ui-bg: transparent;
+  --ui-sidebar: var(--dream-bg-card, rgba(255, 255, 255, 0.65));
+  --ui-surface: var(--dream-bg-card, rgba(255, 255, 255, 0.65));
+  --ui-surface-raised: var(--dream-bg-panel, rgba(255, 255, 255, 0.78));
+  --ui-surface-active: var(--dream-c5, rgba(232, 140, 154, 0.12));
+  --ui-line: var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  --ui-line-strong: color-mix(in srgb, var(--dream-text-main, #1e1e2e) 24%, transparent);
+  --ui-text: var(--dream-text-main, #1e1e2e);
+  --ui-text-secondary: var(--dream-text-muted, #555566);
+  --ui-text-muted: color-mix(in srgb, var(--dream-text-muted, #555566) 88%, var(--dream-text-main, #1e1e2e));
+  --ui-text-dim: color-mix(in srgb, var(--dream-text-muted, #555566) 70%, transparent);
+  --ui-accent: var(--dream-accent, #e88c9a);
+  --ui-accent-hover: var(--dream-accent, #e88c9a);
+  --ui-accent-ink: var(--dream-c7, #ffffff);
+  --ui-backdrop: var(--dream-c30, rgba(0, 0, 0, 0.35));
+  --ui-on-status: var(--dream-c7, #ffffff);
+}

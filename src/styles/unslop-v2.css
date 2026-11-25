@@ -3387,3 +3387,38 @@
   border-color: var(--ui-text-secondary);
   color: var(--ui-text);
 }
+
+/* Dream × v2：恢复被 v2 明确关掉的毛玻璃；特异性高于 v2 的 `backdrop-filter: none !important` */
+[data-ui="v2"][data-skin="dream"] :is(
+  .titlebar,
+  .sidebar,
+  .right-sidebar,
+  .panel-right,
+  .input-card-container,
+  .search-dialog,
+  .settings-panel,
+  .plugin-mgr,
+  .skill-manager,
+  .memory-manager,
+  .task-center-panel,
+  .modal-editor,
+  .project-manager,
+  .config-editor,
+  .confirm-dialog,
+  .app-menu-surface
+) {
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
+}
+
+/* 管理面里的卡片/分组也吃同一份模糊；底色由 --ui-surface 的 alpha 提供 */
+[data-ui="v2"][data-skin="dream"] :is(
+  .settings-panel,
+  .plugin-mgr,
+  .skill-manager,
+  .memory-manager,
+  .task-center-panel
+) :is(.settings-section, .setting-group, .card, .lo-card, .tc-card, .mode-btn, .tool-card, [class*="card"], [class*="Card"]) {
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.2) !important;
+}

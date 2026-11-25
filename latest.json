@@ -1,15 +1,15 @@
 {
-  "version": "1.18.18",
-  "notes": "设置底栏与模型行次操作恢复为可见按钮",
-  "pub_date": "2026-11-25T09:58:48Z",
+  "version": "1.18.19",
+  "notes": "梦幻皮肤透明度与毛玻璃重新生效",
+  "pub_date": "2026-11-25T10:36:41Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2NVMnRGUkh4Yyt1blBJdjFjRmM3YklQSVI2TXpKTUpFSC9KZDZjM21VZUtneDZhU0VBdTQ1V0tsN1lTSzlGSUdJemRMcG94WXBCZ3ZobHl5U1drVHdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAwNzI0CWZpbGU6Q29kZW1fMS4xOC4xOF94NjQtc2V0dXAuZXhlCjlvdXpIT0p4eFMxZVg0cjgzLzVIVFVQTU9aNzk1c0pZdmdBYW1GWW9wbUExcWEvenNuc2swU0l2OVJtMTdETlRrd1k2K0ZjMjl5Z2k4ZU1kTDRBQkRnPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.18/Codem_1.18.18_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lRMVBGWFp5TU5TR25EZ25lOFVBNnFFbDlZUHJTQ3RuYUZ4VTdoRk96Z1FuYm1HNk5wZ3JUb3lneGp4M1pSV3N5eklGaWlsZTNzN0tDaWxRQWl6cndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAyOTU0CWZpbGU6Q29kZW1fMS4xOC4xOV94NjQtc2V0dXAuZXhlCk40c1BVYmVzZkVWSFdsQUNFQktOc1I1UXBpZDYvU2tPWDFaZWpQUVZRQzF4NGVML1VPY083SGtSOWJFa2lWems2bk90MkVmdHdxYkNObWQ3ajFCckRBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.19/Codem_1.18.19_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2NVMnRGUkh4Yyt1blBJdjFjRmM3YklQSVI2TXpKTUpFSC9KZDZjM21VZUtneDZhU0VBdTQ1V0tsN1lTSzlGSUdJemRMcG94WXBCZ3ZobHl5U1drVHdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAwNzI0CWZpbGU6Q29kZW1fMS4xOC4xOF94NjQtc2V0dXAuZXhlCjlvdXpIT0p4eFMxZVg0cjgzLzVIVFVQTU9aNzk1c0pZdmdBYW1GWW9wbUExcWEvenNuc2swU0l2OVJtMTdETlRrd1k2K0ZjMjl5Z2k4ZU1kTDRBQkRnPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.18/Codem_1.18.18_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lRMVBGWFp5TU5TR25EZ25lOFVBNnFFbDlZUHJTQ3RuYUZ4VTdoRk96Z1FuYm1HNk5wZ3JUb3lneGp4M1pSV3N5eklGaWlsZTNzN0tDaWxRQWl6cndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAyOTU0CWZpbGU6Q29kZW1fMS4xOC4xOV94NjQtc2V0dXAuZXhlCk40c1BVYmVzZkVWSFdsQUNFQktOc1I1UXBpZDYvU2tPWDFaZWpQUVZRQzF4NGVML1VPY083SGtSOWJFa2lWems2bk90MkVmdHdxYkNObWQ3ajFCckRBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.19/Codem_1.18.19_x64-setup.exe"
     }
   }
 }
