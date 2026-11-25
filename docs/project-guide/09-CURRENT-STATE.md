@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-11-04 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（v1.18.16 已发布）｜ **1.18.16**（2026-11-23 发布，GitHub `Latest`；上一稳定版 1.18.15）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.18.17 已发布）｜ **1.18.17**（2026-11-25 发布，GitHub `Latest`；上一稳定版 1.18.16）
 >
 > 1.18.0 包含：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）+ Flutter 原生 Android 客户端预览 +
 > Tailscale Serve 零配对码 + 远程新建项目/会话 + 交互式命令 stdin 修复；Funnel/公网仍保留配对码。
@@ -14,25 +14,25 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.18.16**（2026-11-23 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.18.16` = **Latest**（2026-11-23） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` = 1.18.16（发布时上传并远端校验） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（v1.18.16 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.16 已提交并推送 | `git status -sb` |
-| 本地 tag | 最新为 **v1.18.16** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.18.17**（2026-11-25 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.18.17` = **Latest**（2026-11-25） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.18.17（发布时上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.18.17 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.17 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.18.17** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：以 `gh release list` 与 `latest.json` 为准。
 
 ---
 
-## 2. 工作区状态（v1.18.16 已提交）
+## 2. 工作区状态（v1.18.17 已提交）
 
 ```text
 ## master...origin/master
-# v1.18.16 已提交并推送；仅 .codem/ 运行时文件未跟踪
+# v1.18.17 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
-- v1.18.14 的 Context OS / 分层记忆 / 团队记忆 / 文档与 Goal / 多设备同步改动已提交并推送；v1.18.16 在其上把聊天头部 7 个视图开关恢复为常显图标。
+- v1.18.14 的 Context OS / 分层记忆 / 团队记忆 / 文档与 Goal / 多设备同步改动已提交并推送；v1.18.17 在其上完成界面字号、聊天工作证据、插件/任务/设置收口与图标/强调色/边框统一。
 - `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不属于本次发布，未提交。
 - `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
@@ -47,7 +47,7 @@
 | `cargo test` | 261 passed / 6 ignored / 0 failed（Tauri）；codem-db 全绿 |
 | `cargo check` | exit 0（**0 error**） |
 | `flutter analyze` / `flutter test` | 0 issue / **10 passed** |
-| `npm run audit:docs` | 通过（version=1.18.16） |
+| `npm run audit:docs` | 通过（version=1.18.17） |
 | 已知失败 | **0** |
 
 ### 3.1 本轮没有已知失败
