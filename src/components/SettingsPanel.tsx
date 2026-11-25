@@ -3104,7 +3104,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <div className="settings-action-bar__secondary">
               {onSessionRecovery && (
                 <button
-                  className="settings-footer-action settings-footer-action--secondary"
+                  className="settings-footer-action settings-footer-action--secondary sp-btn sp-btn--secondary"
                   onClick={onSessionRecovery}
                 >
                   {lang === "zh" ? "会话恢复" : "Session Recovery"}
@@ -3112,7 +3112,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               )}
               {onUsageStats && (
                 <button
-                  className="settings-footer-action settings-footer-action--secondary"
+                  className="settings-footer-action settings-footer-action--secondary sp-btn sp-btn--secondary"
                   onClick={onUsageStats}
                 >
                   {lang === "zh" ? "用量统计" : "Usage Stats"}

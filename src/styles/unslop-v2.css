@@ -3339,3 +3339,51 @@
 [data-ui="v2"] .memory-item-expand:is(:hover, :focus-visible) {
   color: var(--ui-text);
 }
+
+/* 设置底栏次操作：必须看起来是可点击按钮，而不是一行灰字 */
+[data-ui="v2"] .settings-panel .settings-footer .settings-footer-action.settings-footer-action--secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--radius);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+[data-ui="v2"] .settings-panel .settings-footer .settings-footer-action.settings-footer-action--secondary:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-text-secondary);
+  color: var(--ui-text);
+}
+
+/* 设置里的次级按钮（配置方案 / 清除 / 登录等）统一有可见外框，避免退化成文字 */
+[data-ui="v2"] .settings-panel .sp-btn--secondary {
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .settings-panel .sp-btn--secondary:is(:hover, :focus-visible) {
+  border-color: var(--ui-text-secondary);
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+
+/* 模型行内的「配置方案」是附加动作，给一个比页面略亮的底色，避免和普通文字混在一起 */
+[data-ui="v2"] .settings-panel .settings-model-profiles .sp-btn {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-surface-active);
+  border-color: var(--ui-text-muted);
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .settings-panel .settings-model-profiles .sp-btn:is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-text-secondary);
+  color: var(--ui-text);
+}
