@@ -1,17 +1,19 @@
 /**
- * StatsLine — 助手消息统计行
+ * StatsLine — 助手消息的「运行详情」入口（compact）
  *
- * 对标 DSH ui-conversation/src/client/chat/StatsLine.tsx
- * 在助手消息底部展示：turns/steps 计数、LLM 耗时、tool 耗时、
- * TTFT 平均延迟、解码吞吐量（tokens/s）、token 总量、cache hit 率。
+ * 对标 DSH ui-conversation 的统计行，但默认形态不再是**一长行原始指标**：
+ * - `<summary>` 只放人读摘要：轮 / 步 / 总耗时；
+ * - token、cache 命中、费用、TTFT、解码吞吐全收进 `<details>`，展开后与旧版逐项一致；
+ * - 没有额外指标时连 `<details>` 都不画（不给一个空折叠壳）。
  *
  * 数据来源：从 message 的 toolCalls 和 trajectory metadata 中推导。
- * 管道分隔符分组显示，无数据的组自动省略。
+ * 空值 / 未上报语义原样保留：provider 没报缓存字段时**不显示**命中率
+ * （绝不写成「缓存命中 0%」）。
  */
 
-import { memo, useMemo, useLayoutEffect, useRef, useState, Fragment } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { Message } from '../store'
-import { useLang, getLang } from '../core/i18n/lang'
+import { useLang } from '../core/i18n/lang'
 import { summarizeCacheUsage, formatCacheUsageLabel } from '../core/llm/cache-percent'
 
 /** 紧凑 token 计数格式：517 / 12.2K / 517K / 1.2M */
@@ -50,6 +52,14 @@ interface WindowStats {
   steps: number
   llmMs: number
   toolMs: number
+  /**
+   * 摘要用的"总耗时"（人读）。
+   *
+   * 有 `turnStartTime/turnEndTime`（真正的回合墙钟）时用它 —— 这个区间**已经包含**
+   * 工具执行时间，再和 `toolMs` 相加就会重复计时；没有墙钟时才退化为
+   * `llmMs + toolMs`（两者的顺序阶段相加）。
+   */
+  turnMs: number
   ttftMs: number
   ttftSteps: number
   decodeMs: number
@@ -70,6 +80,7 @@ function deriveStats(message: Message): WindowStats {
     steps: 1,
     llmMs: 0,
     toolMs: 0,
+    turnMs: 0,
     ttftMs: 0,
     ttftSteps: 0,
     decodeMs: 0,
@@ -82,7 +93,7 @@ function deriveStats(message: Message): WindowStats {
     cacheReported: false,
   }
 
-  // LLM 耗时：从 metadata.llmDuration 或 reasoning 时长推导
+  // LLM 耗时：从 metadata.llmDuration 或回合墙钟推导
   const meta = message.metadata || {}
   if (meta.llmDuration) {
     stats.llmMs = meta.llmDuration as number
@@ -129,6 +140,12 @@ function deriveStats(message: Message): WindowStats {
     }
   }
 
+  const turnWindowMs =
+    meta.turnStartTime && meta.turnEndTime
+      ? Math.max(0, (meta.turnEndTime as number) - (meta.turnStartTime as number))
+      : 0
+  stats.turnMs = turnWindowMs > 0 ? turnWindowMs : stats.llmMs + stats.toolMs
+
   return stats
 }
 
@@ -145,38 +162,50 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
   const lang = useLang()
   const zh = lang === 'zh'
   const stats = useMemo(() => deriveStats(message), [message])
+  const [expanded, setExpanded] = useState(false)
 
-  // 管道分隔的分组
-  const groups: string[] = []
-
-  // 第 1 组：turns/steps + 耗时
-  if (stats.steps > 0) {
-    if (zh) {
-      groups.push(`${stats.turns} 轮 · ${stats.steps} 步`)
-    } else {
-      groups.push(`${stats.turns} turn${stats.turns > 1 ? 's' : ''} · ${stats.steps} step${stats.steps > 1 ? 's' : ''}`)
-    }
-    const durations: string[] = []
-    if (stats.llmMs > 0) {
-      durations.push(zh ? `LLM ${formatDuration(stats.llmMs)}` : `LLM ${formatDuration(stats.llmMs)}`)
-    }
-    if (stats.toolMs > 0) {
-      durations.push(zh ? `工具 ${formatDuration(stats.toolMs)}` : `Tools ${formatDuration(stats.toolMs)}`)
-    }
-    if (durations.length > 0) groups.push(durations.join(' · '))
+  // ===== summary：只放人读信息（轮 / 步 / 总耗时） =====
+  const summaryParts: string[] = [
+    zh
+      ? `${stats.turns} 轮`
+      : `${stats.turns} turn${stats.turns > 1 ? 's' : ''}`,
+    zh
+      ? `${stats.steps} 步`
+      : `${stats.steps} step${stats.steps > 1 ? 's' : ''}`,
+  ]
+  if (stats.turnMs > 0) {
+    summaryParts.push(
+      zh
+        ? `总耗时 ${formatDuration(stats.turnMs)}`
+        : `total ${formatDuration(stats.turnMs)}`,
+    )
   }
+  const summaryText = summaryParts.join(' · ')
+
+  // ===== details：原有全部原始指标，一项不少 =====
+  const detailGroups: string[] = []
+
+  // 第 1 组：LLM / 工具耗时拆分
+  const durations: string[] = []
+  if (stats.llmMs > 0) {
+    durations.push(`LLM ${formatDuration(stats.llmMs)}`)
+  }
+  if (stats.toolMs > 0) {
+    durations.push(zh ? `工具 ${formatDuration(stats.toolMs)}` : `Tools ${formatDuration(stats.toolMs)}`)
+  }
+  if (durations.length > 0) detailGroups.push(durations.join(' · '))
 
   // 第 2 组：速度指标
   const speeds: string[] = []
   if (stats.ttftSteps > 0 && stats.ttftMs > 0) {
     const avgTtft = stats.ttftMs / stats.ttftSteps
-    speeds.push(zh ? `TTFT ${formatDuration(avgTtft)}` : `TTFT ${formatDuration(avgTtft)}`)
+    speeds.push(`TTFT ${formatDuration(avgTtft)}`)
   }
   if (stats.decodeMs > 0 && stats.decodeTokens > 0) {
     const tps = stats.decodeTokens / (stats.decodeMs / 1000)
     speeds.push(`${formatTokensPerSecond(tps)} tok/s`)
   }
-  if (speeds.length > 0) groups.push(speeds.join(' · '))
+  if (speeds.length > 0) detailGroups.push(speeds.join(' · '))
 
   // 第 3 组：token 计数 + cache 读数（仅当 provider 上报缓存字段时显示；
   // 未上报时整组不出现，绝不显示误导性的「缓存命中 0%」）
@@ -190,49 +219,48 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
         cacheWriteTokens: stats.cacheWriteTokens,
         cacheReported: true,
       })
-      groups.push(formatCacheUsageLabel(summary))
+      detailGroups.push(formatCacheUsageLabel(summary))
     }
-    groups.push(
+    detailGroups.push(
       zh
         ? `${formatTokens(billed)} 入 / ${formatTokens(stats.outputTokens)} 出`
         : `${formatTokens(billed)} in / ${formatTokens(stats.outputTokens)} out`
     )
     if (stats.cost > 0) {
-      groups.push(`≈$${formatCost(stats.cost)}`)
+      detailGroups.push(`≈$${formatCost(stats.cost)}`)
     }
   }
 
-  if (groups.length === 0) return null
-
-  const line = groups.join(' | ')
-
-  // 截断检测 + tooltip
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const [truncated, setTruncated] = useState(false)
-  useLayoutEffect(() => {
-    const el = rootRef.current
-    if (el === null) return
-    const measure = () => { setTruncated(el.scrollWidth > el.clientWidth) }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => { observer.disconnect() }
-  }, [line])
+  // 没有可折叠的原始指标 ⇒ 只画一行摘要，不给空折叠壳
+  // （不套 `.stats-line-summary`：集成方那份 CSS 给它加了展开箭头，静态行会假装可点）
+  if (detailGroups.length === 0) {
+    return <div className="stats-line--compact">{summaryText}</div>
+  }
 
   return (
-    <div
-      ref={rootRef}
-      className="stats-line"
-      title={truncated ? line : undefined}
+    <details
+      className="stats-line--compact"
+      open={expanded}
+      onToggle={(event) => {
+        /**
+         * `<summary>` 的原生 toggle 已经改过 DOM；这里只把 state 对齐它。
+         * 不要在 `onClick` 里再手翻一次 —— 原生 toggle 与手动翻转会互相抵消
+         * （实测：state 先 true 再被 click 的 updater 翻回 false）。
+         */
+        const next = event.currentTarget.open
+        setExpanded((prev) => (prev === next ? prev : next))
+      }}
     >
-      {groups.map((group, i) => (
-        <Fragment key={group}>
-          {i > 0 && <span style={{ opacity: 0.4, margin: '0 2px' }}>|</span>}
-          <span>{group}</span>
-        </Fragment>
-      ))}
-    </div>
+      <summary className="stats-line-summary" title={zh ? '运行详情' : 'Run details'}>
+        {summaryText}
+      </summary>
+      <div className="stats-line-body">
+        {detailGroups.map((group, index) => (
+          <div className="stats-line-metric" key={`${index}-${group}`}>
+            {group}
+          </div>
+        ))}
+      </div>
+    </details>
   )
 })
-

@@ -13,6 +13,12 @@
  * - 主操作只有「保存设置」；另外两颗降级为 `.settings-footer-action--secondary`，
  *   不再带 `.save-btn`（否则 unslop-v2.css 会把它们涂成主色）；
  * - 模型值/业务逻辑一个字不动，只补 `title` 与语义 class（样式由集成方补）。
+ *
+ * 第二轮收口（本轮新增 SU-7/SU-8）：
+ * - 底栏是**一个 action bar**：次操作（会话恢复/用量统计）一组在左、主操作（保存设置）一组在右；
+ *   结构与 class 是本次交付，sticky 视觉由集成 CSS 落地；
+ * - 模型行下方的「配置方案」不再是和下拉并排的第二个字段，而是字段行内的附加动作行：
+ *   与下拉左缘对齐，且不改 select 的宽度/落库逻辑。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
@@ -149,5 +155,69 @@ describe("SETTINGS-UNSLOP：标题/按钮去 emoji，主操作唯一", () => {
     ]) {
       expect(source, `标题不该再用 emoji：${heading}`).not.toContain(heading);
     }
+  });
+
+  it("SU-7：底栏是一个 action bar —— 次操作一组在左、主操作一组在右（回调不变）", () => {
+    const onSessionRecovery = vi.fn();
+    const onUsageStats = vi.fn();
+    const { container } = renderPanel(undefined, { onSessionRecovery, onUsageStats });
+
+    const bar = container.querySelector<HTMLElement>(".settings-footer .settings-action-bar");
+    expect(bar, "底栏要有明确的 action bar 容器（供集成 CSS 做 sticky）").toBeTruthy();
+    expect(bar!.classList.contains("settings-footer-inner"), "既有底栏几何 class 不能丢").toBe(true);
+    expect(bar!.getAttribute("role"), "动作条用分组语义").toBe("group");
+    expect(bar!.getAttribute("style"), "不新增内联样式").toBeNull();
+
+    const secondary = bar!.querySelector<HTMLElement>(".settings-action-bar__secondary");
+    const primary = bar!.querySelector<HTMLElement>(".settings-action-bar__primary");
+    expect(secondary, "次操作要有独立分组").toBeTruthy();
+    expect(primary, "主操作要有独立分组").toBeTruthy();
+
+    /* 左次右主：DOM 顺序上主组是 bar 的最后一个子元素（flex 两端对齐） */
+    expect(bar!.firstElementChild, "次操作组在左").toBe(secondary);
+    expect(bar!.lastElementChild, "主操作组在右").toBe(primary);
+    expect(secondary!.querySelectorAll(".settings-footer-action--secondary")).toHaveLength(2);
+    expect(primary!.querySelectorAll(".settings-footer-action--primary")).toHaveLength(1);
+    expect(primary!.querySelector(".save-btn"), "主操作仍是 save-btn").toBeTruthy();
+
+    /* 主组里只有保存设置是按钮（已保存/失败提示是文本，不是动作） */
+    expect(primary!.querySelectorAll("button")).toHaveLength(1);
+
+    /* 行为不变：点击仍然调用原回调 */
+    const secondaryButtons = [...secondary!.querySelectorAll<HTMLButtonElement>("button")];
+    expect(secondaryButtons.map((b) => (b.textContent ?? "").trim())).toEqual(["会话恢复", "用量统计"]);
+    act(() => {
+      fireEvent.click(secondaryButtons[0]);
+      fireEvent.click(secondaryButtons[1]);
+    });
+    expect(onSessionRecovery).toHaveBeenCalledTimes(1);
+    expect(onUsageStats).toHaveBeenCalledTimes(1);
+  });
+
+  it("SU-8：模型行下方「配置方案」是字段内的附加动作行（与下拉左对齐，select 逻辑不变）", () => {
+    const { container } = renderPanel();
+
+    const select = container.querySelector<HTMLSelectElement>(".settings-model-select");
+    expect(select, "模型下拉仍在").toBeTruthy();
+    const row = select!.parentElement as HTMLElement;
+    expect(row.classList.contains("settings-model-row"), "字段行有语义 class").toBe(true);
+    expect(row.classList.contains("sp-row"), "既有布局 class 不能拿掉").toBe(true);
+
+    /* 配置方案不再与 select 平级（那会被当成第二个字段/被挤到右侧） */
+    const profiles = row.querySelector<HTMLElement>(".settings-model-profiles");
+    expect(profiles, "配置方案应在字段行内部作为附加动作行").toBeTruthy();
+    const profilesButton = profiles!.querySelector("button");
+    expect(profilesButton?.textContent).toContain("配置方案");
+    expect(profilesButton!.classList.contains("sp-btn--secondary"), "仍复用既有次按钮样式").toBe(true);
+    expect(row.children.length, "字段行 = 下拉 + 附加动作行（两格）").toBe(2);
+    expect(row.lastElementChild, "附加动作行在下拉之后（视觉上位于其下方）").toBe(profiles);
+
+    /* 模型值/落库字段没有被这轮结构改动 */
+    expect(select!.value).toContain("gpt-4o");
+    expect(select!.classList.contains("sp-select-flex")).toBe(true);
+
+    /* 入口行为不变：点开仍是原来的配置方案面板（面板走 portal 挂到 body） */
+    fireEvent.click(profilesButton!);
+    expect(document.querySelector(".mp-panel"), "配置方案面板仍能打开").toBeTruthy();
   });
 });

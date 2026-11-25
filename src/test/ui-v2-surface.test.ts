@@ -20,10 +20,21 @@ describe("v2 表面预算", () => {
 
   it("设置层级：section 不大于 page title", () => {
     expect(clean).toMatch(/\.settings-section-title\s*\{[^}]*font-size:\s*var\(--fs-lg\)/);
-    expect(clean).toMatch(/\.settings-title\s*\{[^}]*font-size:\s*var\(--fs-xl\)/);
+    expect(clean).toMatch(/\.settings-title\s*\{[^}]*font-size:\s*var\(--fs-2xl\)/);
   });
 
   it("开关打开态不再用 accent 铺满", () => {
     expect(clean).toMatch(/\.switch-root\[data-state="checked"\]\s*\{[^}]*background:\s*var\(--ui-text-secondary\)/);
+  });
+
+  it("v2 阅读刻度不小于 12/14，且图标描边统一 1.5", () => {
+    expect(clean).toMatch(/--fs-2xs:\s*calc\(12px/);
+    expect(clean).toMatch(/--fs-base:\s*calc\(14px/);
+    expect(clean).toMatch(/svg\.lucide\s*\{[^}]*stroke-width:\s*1\.5/);
+  });
+
+  it("顶部图标按钮不小于 32px 点击目标", () => {
+    expect(clean).toMatch(/\.chat-header-action\s*\{[^}]*min-width:\s*32px/);
+    expect(clean).toMatch(/\.chat-header-action\s*\{[^}]*height:\s*32px/);
   });
 });

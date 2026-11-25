@@ -12,6 +12,7 @@ import path from "node:path";
 import { scanMotion } from "../../tools/audit/scan-motion-tokens.mjs";
 
 const ROOT = path.resolve(__dirname, "..", "..");
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 describe("MOTION 动效令牌", () => {
   it("MOTION-1: 除令牌定义外没有裸 cubic-bezier（基线 0）", () => {
@@ -27,6 +28,17 @@ describe("MOTION 动效令牌", () => {
       expect(m, `${token} 未定义`).toBeTruthy();
       expect(m![1]).toContain("cubic-bezier(");
     }
+  });
+
+  it("MOTION-2b: 语义曲线收敛为同一条主曲线（不保留回弹/多套手感）", () => {
+    const css = fs.readFileSync(path.join(ROOT, "src", "styles.css"), "utf8");
+    const values = ["--ease-out", "--ease-in-out", "--ease-drawer", "--ease-standard", "--ease-swift", "--ease-pop"].map((token) => {
+      const m = css.match(new RegExp(escapeRegExp(token) + ":\\s*([^;]+);"));
+      expect(m, token + " 未定义").toBeTruthy();
+      return m![1].trim();
+    });
+    expect(new Set(values).size, "缓动曲线必须只有一条：" + values.join(" / ")).toBe(1);
+    expect(values[0]).toBe("cubic-bezier(0.22, 1, 0.36, 1)");
   });
 
   it("MOTION-3: 时长令牌按档位存在（fast/normal/slow，且 fast < normal < slow）", () => {

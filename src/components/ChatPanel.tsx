@@ -1750,12 +1750,14 @@ canEdit={editable}
           <SlotListBridge name="conversation.messages" />
           {/* SlotBridge 消费 conversation.details.tool slot — 工具调用详情 */}
           <SlotBridge name="conversation.details.tool" fallback={null} />
-          {/* SlotBridge 消费 app.deliverable-files — Turn tail 交付物文件列表 */}
+          {/* SlotBridge 消费 app.deliverable-files — 消息流末尾的工作证据 rail
+              （文件变更 + 最近验证；全局只挂一次，不放进每轮 footer） */}
           <SlotBridge
             name="app.deliverable-files"
             fallback={null}
             sessionId={sessionId || currentSession?.id || ''}
             workspace={projectPath || currentProject?.path || ''}
+            streaming={isSessionStreaming}
             onOpenFile={(path: string) => {
               // 打开文件 — 复用 App.tsx 的事件机制
               window.dispatchEvent(new CustomEvent('codem-open-file', { detail: { path } }))

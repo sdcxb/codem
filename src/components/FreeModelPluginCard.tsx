@@ -213,7 +213,7 @@ export function FreeModelPluginCard({
         </span>
         <span className="plugin-row-desc">独立本地服务：免费模型列表与起停控制</span>
         <span className="plugin-row-type">服务</span>
-        <span className="plugin-row-deps">—</span>
+        <span className="plugin-row-deps" />
         <span className="plugin-row-actions">
           <span className="ofm-compact-more" title={stateLabel}>{stateLabel} · 查看详情</span>
         </span>

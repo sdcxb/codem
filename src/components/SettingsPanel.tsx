@@ -1600,9 +1600,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </div>
           )}
 
-          <div className="setting-group">
+          <div className="setting-group settings-model-group">
             <label>{S.settings.model[lang]}</label>
-            <div className="sp-row">
+            <div className="sp-row settings-model-row">
               <select
                 value={settings.mode === "cli" ? settings.model : settings.provider || isFreeModelId(settings.model) ? `${settings.provider || "free-model"}::${settings.model}` : settings.model}
                 onChange={(e) => {
@@ -1781,12 +1781,20 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </>
               )}
             </select>
-              <button
-                onClick={() => setShowModelProfiles(true)}
-                className="sp-btn sp-btn--secondary sp-btn--nowrap"
-              >
-                {lang === "zh" ? <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> 配置方案</span> : <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> Profiles</span>}
-              </button>
+              {/*
+                「配置方案」是模型字段的**附加动作**，不是第二个字段。
+                v2 的集成样式让模型下拉独占整行（`.settings-model-row` 变成纵向 flex），
+                所以这里再包一层行：按钮按内容宽度从行首排，左缘与下拉框左缘对齐；
+                它仍在同一个字段行内，模型下拉的宽度/落库逻辑一个字没动。
+              */}
+              <div className="sp-row settings-model-profiles">
+                <button
+                  onClick={() => setShowModelProfiles(true)}
+                  className="sp-btn sp-btn--secondary sp-btn--nowrap"
+                >
+                  {lang === "zh" ? <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> 配置方案</span> : <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> Profiles</span>}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -3079,26 +3087,43 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         </div>
 
         <div className="settings-footer">
-          <div className="settings-footer-inner">
-          {onSessionRecovery && (
-            <button
-              className="settings-footer-action settings-footer-action--secondary"
-              onClick={onSessionRecovery}
-            >
-              {lang === "zh" ? "会话恢复" : "Session Recovery"}
-            </button>
-          )}
-          {onUsageStats && (
-            <button
-              className="settings-footer-action settings-footer-action--secondary"
-              onClick={onUsageStats}
-            >
-              {lang === "zh" ? "用量统计" : "Usage Stats"}
-            </button>
-          )}
-          {saved && <span className="save-success">{lang === "zh" ? "已保存" : "Saved"}</span>}
-          {saveFailure && <span className="sp-hint">{saveFailure}</span>}
-          <button className="save-btn settings-footer-action settings-footer-action--primary" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
+          {/*
+            底栏 = 一个 action bar：左侧一组次要动作（会话恢复 / 用量统计），
+            右侧主操作（保存设置）。分组用语义 class 表达，布局交给集成样式做 sticky；
+            这里复用 `sp-row--between`（既有工具类，只做 justify-content: space-between）
+            让左右两端在**没有新增 CSS** 时也成立，回调与按钮层级（--primary/--secondary）不变。
+
+            次要组**始终渲染**：即使两个回调都没传，它也是 bar 的左端占位，
+            主操作才不会在「只有一个子元素」时被 space-between 推到左边。
+          */}
+          <div
+            className="settings-footer-inner settings-action-bar sp-row--between"
+            role="group"
+            aria-label={lang === "zh" ? "设置操作" : "Settings actions"}
+          >
+            <div className="settings-action-bar__secondary">
+              {onSessionRecovery && (
+                <button
+                  className="settings-footer-action settings-footer-action--secondary"
+                  onClick={onSessionRecovery}
+                >
+                  {lang === "zh" ? "会话恢复" : "Session Recovery"}
+                </button>
+              )}
+              {onUsageStats && (
+                <button
+                  className="settings-footer-action settings-footer-action--secondary"
+                  onClick={onUsageStats}
+                >
+                  {lang === "zh" ? "用量统计" : "Usage Stats"}
+                </button>
+              )}
+            </div>
+            <div className="settings-action-bar__primary">
+              {saved && <span className="save-success">{lang === "zh" ? "已保存" : "Saved"}</span>}
+              {saveFailure && <span className="sp-hint">{saveFailure}</span>}
+              <button className="save-btn settings-footer-action settings-footer-action--primary" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
+            </div>
           </div>
         </div>
       </div>

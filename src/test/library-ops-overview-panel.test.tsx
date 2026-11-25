@@ -7,6 +7,10 @@
  * 现在：运行状态与最近会话合并成一张「当前工作」（状态行 + 最多 4 个会话），
  * 活动概览单独一张更宽的卡；14 天全 0 时退化成一行空状态 +「查看时间线」。
  * 场景画布只在「子智能体」页签，概览不再渲染它（但保留「场景 →」入口）。
+ *
+ * 第二轮收口（LO-OV-4/5）：团队/任务没有数据时不再摆一排 0%（健康环 / 完成率 / 错误率），
+ * 团队卡空态给出「去哪儿建」+ 明确动作；任务卡空态不再渲染 8 个全零字段；
+ * 真实数据源读数与「全部 →」「查看时间线」等入口一个不少。有数据时走原路径。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
@@ -53,7 +57,11 @@ const SESSION_ACTORS: LibraryActor[] = [
   actor("s6", "session", "thinking"),
 ];
 
-function makeSnapshot(activity: LibrarySnapshot["activity"]): LibrarySnapshot {
+function makeSnapshot(
+  activity: LibrarySnapshot["activity"],
+  overrides: Partial<Omit<LibrarySnapshot, "metrics">> = {},
+  metricOverrides: Partial<LibrarySnapshot["metrics"]> = {},
+): LibrarySnapshot {
   return {
     at: NOW,
     actors: SESSION_ACTORS,
@@ -82,6 +90,7 @@ function makeSnapshot(activity: LibrarySnapshot["activity"]): LibrarySnapshot {
       filesTouched: 3,
       messages: 8,
       health: 0.82,
+      ...metricOverrides,
     },
     events: [],
     activity,
@@ -97,8 +106,29 @@ function makeSnapshot(activity: LibrarySnapshot["activity"]): LibrarySnapshot {
       failed: [],
     },
     sampleMs: 1.2,
+    ...overrides,
   };
 }
+
+/** 一个活动团队（有数据路径：团队卡必须画成员，而不是空态）。 */
+const ACTIVE_TEAM: LibrarySnapshot["teams"][number] = {
+  id: "team-1",
+  name: "前端小队",
+  captainSessionId: "s1",
+  captainName: "角色-s1",
+  memberCount: 2,
+  members: [
+    { id: "m1", name: "前队员", status: "working", tasks: 2, done: 1 },
+    { id: "m2", name: "后队员", status: "idle", tasks: 1, done: 0 },
+  ],
+  tasks: [],
+  taskCounts: { pending: 1, claimed: 0, in_progress: 1, completed: 1, failed: 0, cancelled: 0 },
+  unread: 0,
+  createdAt: NOW - 60_000,
+  updatedAt: NOW,
+  archived: false,
+  completion: 1 / 3,
+};
 
 const ACTIVE_ACTIVITY: LibrarySnapshot["activity"] = {
   perDay: Object.fromEntries(DAY_KEYS.map((day, i) => [day, i])),
@@ -194,5 +224,81 @@ describe("LO-OV 概览页去模板化", () => {
     expect(container.querySelector(".lo-donut")).toBeTruthy();
     expect(container.querySelector(".lo-hourbars")).toBeTruthy();
     expect(screen.queryByText("最近 14 天没有活动")).toBeNull();
+  });
+
+  it("LO-OV-4: 团队/任务无数据 → 不摆 0% 仪表模板；团队卡给明确动作，数据源口径不丢", () => {
+    const snapshot = makeSnapshot(
+      EMPTY_ACTIVITY,
+      { teams: [], events: [] },
+      {
+        teams: 0,
+        tasksTotal: 0,
+        tasksDone: 0,
+        tasksRunning: 0,
+        tasksPending: 0,
+        tasksFailed: 0,
+        toolCalls: 0,
+        toolErrors: 0,
+        filesTouched: 0,
+        health: 0.6,
+      },
+    );
+    const { container } = renderPanel(snapshot);
+
+    /* 没有样本时：健康环 + 两个 0% 速率字段都不渲染，只留一行说明 */
+    expect(container.querySelector(".lo-ring"), "没有任务/工具样本时不画健康环").toBeNull();
+    expect(screen.queryByText("任务完成率"), "完成率 0% 是空模板，不该出现").toBeNull();
+    expect(screen.queryByText("工具错误率"), "错误率 0% 是空模板，不该出现").toBeNull();
+    expect(container.querySelector('[data-empty="health"]'), "改为一句说明").toBeTruthy();
+
+    /* 真实数据源读数仍然保留（口径不变，只是不再伪装成百分比仪表） */
+    for (const label of ["运行时团队", "团队成员", "子智能体", "采样耗时"]) {
+      expect(screen.getByText(label), `数据源读数不能丢：${label}`).toBeTruthy();
+    }
+
+    /* 团队卡空态：说明 + 明确动作；卡片自带的「全部 →」仍在 */
+    const teamEmpty = container.querySelector<HTMLElement>('[data-empty="team"]');
+    expect(teamEmpty, "团队空态有独立结构").toBeTruthy();
+    expect(teamEmpty!.classList.contains("empty-hint")).toBe(true);
+    expect(teamEmpty!.textContent).toContain("任务管理 → 团队");
+    expect(screen.getAllByText("全部 →").length, "团队/任务两张卡的真实入口都保留").toBe(2);
+
+    /* 任务卡空态：不再摆 8 个全零字段 */
+    expect(container.querySelector('[data-empty="task"]'), "任务空态有独立结构").toBeTruthy();
+    expect(screen.queryByText("团队任务总数"), "空态不渲染全零字段").toBeNull();
+    expect(screen.queryByText("待领取"), "空态不渲染全零字段").toBeNull();
+
+    /* 活动空态仍保留时间线入口；卡片数量不变（活动卡没被删掉） */
+    expect(screen.getByText("查看时间线")).toBeTruthy();
+    expect(container.querySelectorAll(".lo-card").length).toBe(5);
+
+    /* 团队空态的「打开团队 →」落到任务管理的团队页签 */
+    const seen: unknown[] = [];
+    const listener = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener("codem:open-task-center", listener);
+    try {
+      fireEvent.click(screen.getByText("打开团队 →"));
+    } finally {
+      window.removeEventListener("codem:open-task-center", listener);
+    }
+    expect(seen).toContainEqual({ tab: "teams" });
+  });
+
+  it("LO-OV-5: 团队/任务有数据 → 走原路径（成员、字段、健康环都在，无空态）", () => {
+    const { container } = renderPanel(
+      makeSnapshot(ACTIVE_ACTIVITY, { teams: [ACTIVE_TEAM] }, { teams: 1, tasksTotal: 3 }),
+    );
+
+    expect(container.querySelector('[data-empty="team"]')).toBeNull();
+    expect(container.querySelectorAll(".lo-team-mini").length, "团队卡画成员").toBe(1);
+    expect(container.querySelector(".lo-team-mini__mtasks")?.textContent).toBe("1/2");
+
+    expect(container.querySelector('[data-empty="task"]')).toBeNull();
+    expect(screen.getByText("团队任务总数"), "有数据时字段口径不变").toBeTruthy();
+    expect(screen.getByText("待领取")).toBeTruthy();
+
+    expect(container.querySelector(".lo-ring"), "有样本时健康环保留").toBeTruthy();
+    expect(screen.getByText("任务完成率")).toBeTruthy();
+    expect(container.querySelector('[data-empty="health"]')).toBeNull();
   });
 });

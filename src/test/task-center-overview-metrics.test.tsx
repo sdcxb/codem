@@ -8,7 +8,7 @@
  * 每项 = 数字 + 小标签，点一下跳到对应页签；插件槽位与最近活动 fallback 不动。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { render, act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { useProjectStore } from "../core/store";
 import { OverviewTab } from "../components/task-center/OverviewTab";
 
@@ -113,5 +113,42 @@ describe("TC-OVERVIEW-METRICS 概览指标条", () => {
 
     // fallback 仍在（插件未接管概览时用户仍能看到最近活动）
     expect(container.textContent).toContain("最近活动");
+    expect(container.querySelector('[data-empty="activity"]'), "有活动时不渲染空态").toBeNull();
+    expect(screen.queryByText("查看时间线"), "有活动时没有空态入口").toBeNull();
+  });
+
+  it("空态：没有委派/自动化/活动时，活动 fallback 是一行紧凑说明 +「查看时间线」入口", async () => {
+    h.delegations = [];
+    h.automation = { triggers: [], history: [] };
+    h.issueStats = {};
+    h.unread = 0;
+
+    const onNavigate = vi.fn();
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<OverviewTab onNavigate={onNavigate} />));
+    });
+
+    /* 指标条仍保留：它是收件箱/委派/自动化/Issue 的唯一导航入口，不是「0% 进度条」 */
+    expect(container.querySelectorAll(".task-overview-metric").length).toBe(4);
+
+    const empty = container.querySelector<HTMLElement>('[data-empty="activity"]');
+    expect(empty, "空活动走紧凑空态，不再是一整块占位").toBeTruthy();
+    expect(empty!.classList.contains("empty-hint"), "复用共享空态样式").toBe(true);
+    expect(empty!.classList.contains("is-compact"), "紧凑档：小内边距、左对齐").toBe(true);
+    expect(empty!.getAttribute("style"), "不新增内联样式").toBeNull();
+    expect(empty!.textContent).toContain("暂无活动记录");
+
+    /* 时间线入口仍在，且落到「看板 → 时间线」 */
+    const seen: unknown[] = [];
+    const listener = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener("codem:open-task-center", listener);
+    try {
+      fireEvent.click(screen.getByText("查看时间线"));
+    } finally {
+      window.removeEventListener("codem:open-task-center", listener);
+    }
+    expect(onNavigate, "先切到看板页签").toHaveBeenCalledWith("board");
+    expect(seen, "再通过既有深链事件打开时间线视图").toContainEqual({ tab: "board", view: "timeline" });
   });
 });

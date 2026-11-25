@@ -315,10 +315,10 @@
   --duration-modal: 300ms;        /* modals, drawers */
 
   /* Easing curves — strong, not built-in CSS easings */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);        /* strong ease-out for UI entrances/exits */
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);    /* strong ease-in-out for on-screen movement */
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);     /* iOS-like drawer curve */
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);     /* Material standard */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);        /* unslop 唯一主曲线：UI entrances/exits */
+  --ease-in-out: cubic-bezier(0.22, 1, 0.36, 1);     /* 与主曲线一致；不再分叉 */
+  --ease-drawer: cubic-bezier(0.22, 1, 0.36, 1);     /* 与主曲线一致 */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);   /* 与主曲线一致，不引入第二套手感 */
   /*
    * 语义动效曲线（2026-10-18，对标 open-claude-ui 的命名 ease 集）。
    *
@@ -326,8 +326,8 @@
    * 入场 / 回弹）在不同面板里必须**手感一致**；名字写清用途，评审时才能判断"这里该不该用弹回"。
    * 棘轮：`audit:motion`（`tools/audit/scan-motion-tokens.mjs`）钉住"除这里外不许出现裸 cubic-bezier"。
    */
-  --ease-swift: cubic-bezier(0.16, 1, 0.3, 1);        /* 幽灵按钮 / 高频微交互 */
-  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);      /* 弹窗 / 图标回弹 +56%（library-ops 的 lo-pop 动画在用） */
+  --ease-swift: cubic-bezier(0.22, 1, 0.36, 1);       /* 幽灵按钮 / 高频微交互 */
+  --ease-pop: cubic-bezier(0.22, 1, 0.36, 1);         /* 弹窗 / 图标：不再回弹 */
 
   /* Transition presets — specific properties, never "all" */
   --transition-color: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
@@ -19417,24 +19417,6 @@ input[type="range"].sp-flex-fill {
   contain-intrinsic-size: auto 120px;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.deliverable-files { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-2) 0; }
-.deliverable-files-label { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
-.deliverable-files-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-
-.stats-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding-left: var(--space-9);
-  overflow: hidden;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0.8;
 }
 
 .persona-manager { display: flex; flex-direction: column; }

@@ -13,6 +13,9 @@
  * | PML-6 | 风险文字只出现在「danger 且非核心」的行 | 每行挂风险徽标 |
  * | PML-7 | 顶部统计是一行 mono meta 文本，不再是两个 Badge | 恢复两个 pill |
  * | PML-8 | 加载更多文案是「加载更多（剩余 N）」，原「再显示…还有…」绝迹 | 恢复二次计数文案 |
+ * | PML-10 | 依赖数为 0 的行**不留「—」占位**，但依赖列仍占位（六列不错位） | 恢复 '—' 或省掉 deps 单元格 |
+ * | PML-11 | 「全部」且未搜索时按类别插入分组标题（核心 → 服务 → 界面），组内行连续 | 不分组 / 标题出现在筛选或搜索下 |
+ * | PML-12 | 搜索或切换筛选时分组标题消失（平铺），清空后恢复 | 分组条件写成「总是显示」 |
  *
  * ## 口径说明
  *
@@ -186,7 +189,10 @@ describe("插件管理：已安装插件用密集列表行", () => {
     expect(game!.querySelector(".plugin-row-version")?.textContent).toBe("v1.2.3");
     expect(game!.querySelector(".plugin-row-desc")?.textContent).toContain("小游戏面板");
     expect(game!.querySelector(".plugin-row-type")?.textContent).toBe("界面组件");
-    expect(game!.querySelector(".plugin-row-deps")?.textContent).toContain("—");
+    expect(
+      game!.querySelector(".plugin-row-deps")?.textContent,
+      "依赖数为 0 的行不留「—」占位（列本身仍在，见 PML-10）",
+    ).toBe("");
     expect(game!.querySelector('[role="switch"]'), "每行要有状态开关").toBeTruthy();
   });
 
@@ -322,5 +328,89 @@ describe("插件管理：已安装插件用密集列表行", () => {
     expect(src, "外部运行时区块必须还在").toContain('data-testid="dsh-external-plugins"');
     expect(src, "检查更新行为必须还在").toContain("void check()");
     expect(src, "不再使用卡片外壳").not.toMatch(/className="[^"]*market-skill-card/);
+  });
+
+  it("PML-10: 依赖数为 0 不留「—」占位；依赖列仍在，六列不错位", async () => {
+    const { container } = await renderManager();
+
+    /* 免费模型入口是合成卡片（不在本组件的行结构里），只看 cordis 插件的行 */
+    const rows = [...container.querySelectorAll<HTMLElement>("[data-plugin-row]:not(.ofm-compact-card)")];
+    expect(rows.length, "3 个 cordis 插件行").toBe(3);
+
+    for (const row of rows) {
+      const deps = row.querySelector<HTMLElement>(".plugin-row-deps");
+      expect(deps, `${row.dataset.pluginRow}: 依赖列必须仍然渲染（网格第五格）`).toBeTruthy();
+      expect(row.textContent, `${row.dataset.pluginRow}: 行内不许出现「—」占位`).not.toContain("—");
+    }
+
+    /* 六格顺序固定：图标 / 名称 / 描述 / 类型 / 依赖 / 操作 —— 缺一格就会错列 */
+    const shell = rowOf(container, "@codem/shell-local")!;
+    const cells = [...shell.children].map((el) => (el as HTMLElement).className.split(" ")[0]);
+    expect(cells).toEqual([
+      "plugin-row-icon",
+      "plugin-row-name",
+      "plugin-row-desc",
+      "plugin-row-type",
+      "plugin-row-deps",
+      "plugin-row-actions",
+    ]);
+    expect(shell.querySelector(".plugin-row-deps")!.textContent, "有依赖时如实显示数量").toBe("1 依赖");
+    expect(rowOf(container, "@codem/ui-game")!.querySelector(".plugin-row-deps")!.textContent).toBe("");
+  });
+
+  it("PML-11: 「全部」未搜索时按类别分组；组内行连续，标题带计数", async () => {
+    const { container } = await renderManager();
+
+    const headers = [...container.querySelectorAll<HTMLElement>(".plugin-list [data-plugin-group]")];
+    expect(headers.map((h) => h.dataset.pluginGroup), "核心 → 服务 → 界面（无 tool/compat 数据）").toEqual([
+      "core",
+      "provider",
+      "ui",
+    ]);
+    expect(headers.map((h) => h.querySelector(".plugin-list-group__label")!.textContent)).toEqual([
+      "核心",
+      "服务",
+      "界面",
+    ]);
+    expect(
+      headers.map((h) => h.querySelector(".plugin-list-group__count")!.textContent),
+      "计数 = 该组插件数（服务组含免费模型入口）",
+    ).toEqual(["1", "2", "1"]);
+
+    /* 标题是行的兄弟节点：同一组的行必须连续排列在标题之后 */
+    const sequence = [...container.querySelectorAll(".plugin-list [data-plugin-group], .plugin-list [data-plugin-row]")]
+      .map((el) => {
+        const group = el.getAttribute("data-plugin-group");
+        if (group) return `group:${group}`;
+        return (el as HTMLElement).classList.contains("ofm-compact-card") ? "row:ofm" : `row:${el.getAttribute("data-plugin-row")}`;
+      });
+    expect(sequence).toEqual([
+      "group:core", "row:@codem/llm",
+      "group:provider", "row:ofm", "row:@codem/shell-local",
+      "group:ui", "row:@codem/ui-game",
+    ]);
+  });
+
+  it("PML-12: 搜索 / 筛选时分组标题消失（平铺），清空搜索后分组恢复", async () => {
+    const { container } = await renderManager();
+    const search = container.querySelector<HTMLInputElement>(".skill-search-input")!;
+    expect(container.querySelectorAll("[data-plugin-group]").length).toBe(3);
+
+    fireEvent.change(search, { target: { value: "game" } });
+    await waitFor(() => {
+      expect(container.querySelectorAll("[data-plugin-row]").length, "搜索只留命中行").toBe(1);
+    });
+    expect(container.querySelectorAll("[data-plugin-group]").length, "搜索时保持平铺").toBe(0);
+
+    fireEvent.change(search, { target: { value: "" } });
+    await waitFor(() => {
+      expect(container.querySelectorAll("[data-plugin-group]").length, "清空搜索后恢复分组").toBe(3);
+    });
+
+    fireEvent.click(screen.getByTestId("plugin-filter-core"));
+    await waitFor(() => {
+      expect(container.querySelectorAll("[data-plugin-row]").length).toBe(1);
+    });
+    expect(container.querySelectorAll("[data-plugin-group]").length, "筛选时保持平铺").toBe(0);
   });
 });

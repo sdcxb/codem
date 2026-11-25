@@ -266,27 +266,50 @@ const iconColor = t.status === "completed" ? "var(--success)" :
       </div>
 
       {/* 「用量」（KPI / 健康度 / 活动分布 / token 与成本）由插件贡献到本页签
-          （slot: task-center.overview）；插件禁用时回退宿主自带的最近活动预览。 */}
+          （slot: task-center.overview）；插件禁用时回退宿主自带的最近活动预览。
+          `onViewTimeline` 透传给 fallback：插件不在场时，空活动仍要能进时间线。 */}
       <SlotBridge
         name={TASK_CENTER_OVERVIEW_SLOT}
         fallback={RecentActivity}
         activities={activities}
         zh={zh}
+        onViewTimeline={() => openBoardView("timeline")}
       />
     </div>
   );
 }
 
-/** 宿主自带的「最近活动」预览（仅在插件未接管概览时显示） */
-function RecentActivity({ activities, zh }: { activities: ActivityEntry[]; zh: boolean }) {
+/**
+ * 宿主自带的「最近活动」预览（仅在插件未接管概览时显示）。
+ *
+ * 空态不是一张「数据卡」：一行说明 + 时间线入口，走共享的 `.empty-hint.is-compact`
+ * （小内边距、左对齐），不再用一整块 20px 内边距的居中占位。
+ */
+function RecentActivity({
+  activities,
+  zh,
+  onViewTimeline,
+}: {
+  activities: ActivityEntry[];
+  zh: boolean;
+  onViewTimeline?: () => void;
+}) {
   return (
     <div>
       <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
         {zh ? "最近活动" : "Recent Activity"}
       </div>
       {activities.length === 0 ? (
-        <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "var(--fs-base)" }}>
-          {zh ? "暂无活动记录" : "No activity yet"}
+        <div
+          className="task-overview-activity-empty empty-hint is-compact sp-row"
+          data-empty="activity"
+        >
+          <span>{zh ? "暂无活动记录" : "No activity yet"}</span>
+          {onViewTimeline && (
+            <button type="button" className="sp-btn sp-btn--ghost sp-btn--xs" onClick={onViewTimeline}>
+              {zh ? "查看时间线" : "View timeline"}
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>

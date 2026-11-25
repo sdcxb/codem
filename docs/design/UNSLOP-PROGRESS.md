@@ -1656,6 +1656,18 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 - tsc 0；knip 46/30/9；ui-consistency / no-bom / visible-emoji / copy-shape / v2-surface 全绿。
 - 新增/更新任务、library-ops、插件、设置、记忆、恢复提示的定向判据共 40+ 条。
 
+### 3Y 2026-11-25 · 第二轮非 emoji 收口
+
+- 阅读刻度：v2 正文 14 / 次要 13 / meta 12 / 区块 17 / 页面 24；页面标题与 section 不再倒挂。
+- 动效：六条语义曲线收敛到 `cubic-bezier(0.22, 1, 0.36, 1)`，删除 `ease-pop` 回弹；新增单曲线判据。
+- 图标：v2 的 lucide 统一 1.5 描边；顶部图标按钮 28→32。
+- Chat：StatsLine 改成默认折叠的「运行详情」；新增 TurnEvidenceRail（文件变更 + 最近验证，带通过/失败文字，不把会话记录说成本轮）。
+- 插件：全部视图按 core→provider→tool→ui→compat→other 分组；deps=0 不再显示「—」；≤1360px 保留说明/类型、只隐藏依赖，≤1120px 才收成三列。
+- 设置：模型行独占宽度、「配置方案」左对齐为子行；底栏成为 sticky action bar（次操作左、保存右），内容底部留出 footer 高度。
+- 弹窗：插件/技能/记忆/任务标题、工具栏与列表统一 24px 水平留白，修掉文字贴边。
+- 任务/活动：空态不再画 0% 健康环/全零字段；团队空态给「打开团队 →」，任务活动空态给「查看时间线」；技术 footer 改成「同时最多 N 个 · 委派最多 M 层」。
+- 验证：全量 **1010 文件 / 10476 用例，10458 通过 / 18 skipped / 0 失败**；tsc 0；scan-ui 0/0；mutation artifact 重跑；coverage 门禁通过。
+
 ## 4. Batch 1A 的实现细节（留档）
 
 `App.tsx` 里三份主区：`skin==="hub"` 5634–5765、`"dream"` 5766–5888、默认 5889–6033。

@@ -62,6 +62,17 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
   const top = topActivity(snapshot);
   const topMeta = ACTIVITY_META[top];
 
+  /**
+   * 「有没有可计算的团队/任务数据」。
+   *
+   * 团队任务与工具调用都没有时，`完成率 0%` / `错误率 0.0%` / 健康环（无任务时按中性值算）
+   * 是一个纯模板：三个仪表都没有样本，却排成一行 0% —— 本轮不再渲染它们，
+   * 只留一句说明 + 真实的数据源计数（`sources.*` 的口径一个字不改）。
+   */
+  const liveTeams = snapshot.teams.filter((t) => !t.archived);
+  const hasTeams = liveTeams.length > 0;
+  const hasTaskData = m.tasksTotal > 0 || m.toolCalls > 0 || m.filesTouched > 0;
+
   return (
     <div className="lo-grid lo-grid--lp">
       {/* ===== 当前工作 + 活动概览 ===== */}
@@ -202,32 +213,43 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                 </button>
               }
             >
-              {snapshot.teams.filter((t) => !t.archived).length === 0 ? (
-                <Empty text={zh ? "暂无活动团队" : "No active team"} />
+              {!hasTeams ? (
+                /*
+                 * 空态不是「暂无数据」四个字：团队是要**建**出来的，
+                 * 所以给一句「去哪儿建」+ 一个直达入口（卡片右上「全部 →」仍然保留）。
+                 */
+                <div className="lo-overview-empty lo-overview-empty--team empty-hint is-compact" data-empty="team">
+                  <span>
+                    {zh
+                      ? "还没有活动团队。团队模板与运行时团队在「任务管理 → 团队」，也可以在对话里用 squad_dispatch / agent_teams_* 建队。"
+                      : "No active team yet. Templates and running teams live in Task Center → Teams; you can also create one from chat via squad_dispatch / agent_teams_*."}
+                  </span>
+                  <button type="button" className="lo-link-btn" onClick={() => openTaskCenterTab("teams")}>
+                    {zh ? "打开团队 →" : "Open teams →"}
+                  </button>
+                </div>
               ) : (
-                snapshot.teams
-                  .filter((t) => !t.archived)
-                  .map((t) => (
-                    <div key={t.id} className="lo-team-mini">
-                      <div className="lo-team-mini__head">
-                        <span className="lo-team-mini__name">{t.name}</span>
-                        <Pill token={t.completion >= 1 ? "--success" : "--warning"}>{formatPercent(t.completion)}</Pill>
-                      </div>
-                      <ul className="lo-team-mini__members">
-                        {t.members.slice(0, 6).map((mem) => (
-                          <li key={mem.id}>
-                            <span className="lo-members__dot" style={{ background: `var(${memberToken(mem.status)})` }} />
-                            <span className="lo-team-mini__mname" title={mem.name}>
-                              {mem.name}
-                            </span>
-                            <span className="lo-team-mini__mtasks">
-                              {mem.done}/{mem.tasks}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                liveTeams.map((t) => (
+                  <div key={t.id} className="lo-team-mini">
+                    <div className="lo-team-mini__head">
+                      <span className="lo-team-mini__name">{t.name}</span>
+                      <Pill token={t.completion >= 1 ? "--success" : "--warning"}>{formatPercent(t.completion)}</Pill>
                     </div>
-                  ))
+                    <ul className="lo-team-mini__members">
+                      {t.members.slice(0, 6).map((mem) => (
+                        <li key={mem.id}>
+                          <span className="lo-members__dot" style={{ background: `var(${memberToken(mem.status)})` }} />
+                          <span className="lo-team-mini__mname" title={mem.name}>
+                            {mem.name}
+                          </span>
+                          <span className="lo-team-mini__mtasks">
+                            {mem.done}/{mem.tasks}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
               )}
             </Card>
 
@@ -242,20 +264,34 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                 </button>
               }
             >
-              <div className="lo-fields">
-                <Field label={zh ? "团队任务总数" : "Team tasks"}>{m.tasksTotal}</Field>
-                <Field label={zh ? "完成" : "Done"}>{m.tasksDone}</Field>
-                <Field label={zh ? "执行中" : "Running"}>{m.tasksRunning}</Field>
-                <Field label={zh ? "待领取" : "Pending"}>{m.tasksPending}</Field>
-                <Field label={zh ? "失败" : "Failed"}>
-                  <span style={{ color: m.tasksFailed > 0 ? "var(--error)" : undefined }}>{m.tasksFailed}</span>
-                </Field>
-                <Field label={zh ? "工具调用（按事件流）" : "Tool calls (events)"}>{m.toolCalls}</Field>
-                <Field label={zh ? "工具失败" : "Tool errors"}>
-                  <span style={{ color: m.toolErrors > 0 ? "var(--error)" : undefined }}>{m.toolErrors}</span>
-                </Field>
-                <Field label={zh ? "产出文件" : "Files"}>{m.filesTouched}</Field>
-              </div>
+              {/*
+                团队任务与工具调用都没有时，不再摆 8 个全零字段（那是一条「空进度条模板」）；
+                有任一数据后，字段与口径与之前完全一致。
+              */}
+              {hasTaskData ? (
+                <div className="lo-fields">
+                  <Field label={zh ? "团队任务总数" : "Team tasks"}>{m.tasksTotal}</Field>
+                  <Field label={zh ? "完成" : "Done"}>{m.tasksDone}</Field>
+                  <Field label={zh ? "执行中" : "Running"}>{m.tasksRunning}</Field>
+                  <Field label={zh ? "待领取" : "Pending"}>{m.tasksPending}</Field>
+                  <Field label={zh ? "失败" : "Failed"}>
+                    <span style={{ color: m.tasksFailed > 0 ? "var(--error)" : undefined }}>{m.tasksFailed}</span>
+                  </Field>
+                  <Field label={zh ? "工具调用（按事件流）" : "Tool calls (events)"}>{m.toolCalls}</Field>
+                  <Field label={zh ? "工具失败" : "Tool errors"}>
+                    <span style={{ color: m.toolErrors > 0 ? "var(--error)" : undefined }}>{m.toolErrors}</span>
+                  </Field>
+                  <Field label={zh ? "产出文件" : "Files"}>{m.filesTouched}</Field>
+                </div>
+              ) : (
+                <div className="lo-overview-empty lo-overview-empty--task empty-hint is-compact" data-empty="task">
+                  <span>
+                    {zh
+                      ? "还没有团队任务或工具调用。任务总数 / 完成 / 执行中 / 待领取 / 失败 / 工具调用与失败 / 产出文件会在有数据后按原口径汇总。"
+                      : "No team tasks or tool calls yet. Totals, completion, running/pending/failed, tool calls/errors and files touched appear here once activity exists."}
+                  </span>
+                </div>
+              )}
               {/* 最近事件复用 EventList（原先这里手写了一份同构列表，属于重复实现）；
                   全量事件与筛选在「看板 → 时间线」 */}
               <SectionTitle hint={`${snapshot.events.length}`}>{zh ? "最近事件" : "Recent events"}</SectionTitle>
@@ -269,17 +305,37 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
 
           {/* 数据源 / 健康度（对标 MemoCard） */}
           <Card title={zh ? "数据源与健康度" : "Sources & health"} icon="stethoscope" className="lo-card--memo">
-            <div className="lo-health lo-health--row">
-              <ProgressRing ratio={m.health} size={62} token={m.health > 0.75 ? "--success" : m.health > 0.45 ? "--warning" : "--error"} label={zh ? "健康" : "health"} />
-              <div className="lo-fields">
-                <Field label={zh ? "任务完成率" : "Completion"}>{formatPercent(completion)}</Field>
-                <Field label={zh ? "工具错误率" : "Tool error rate"}>{formatPercent(m.toolCalls > 0 ? m.toolErrors / m.toolCalls : 0, 1)}</Field>
-                <Field label={zh ? "运行时团队" : "Teams"}>{snapshot.sources.teams}</Field>
-                <Field label={zh ? "团队成员" : "Members"}>{snapshot.sources.teamMembers}</Field>
-                <Field label={zh ? "子智能体" : "Subagents"}>{snapshot.sources.subagents}</Field>
-                <Field label={zh ? "采样耗时" : "Sample time"}>{snapshot.sampleMs}ms</Field>
+            {/*
+              没有团队任务/工具调用时**不画 0% 仪表**：健康环、任务完成率、工具错误率都没有样本，
+              排成一行 0% 只是模板。此时只留一句说明 + 真实的数据源计数（口径不变）。
+            */}
+            {hasTaskData ? (
+              <div className="lo-health lo-health--row">
+                <ProgressRing ratio={m.health} size={62} token={m.health > 0.75 ? "--success" : m.health > 0.45 ? "--warning" : "--error"} label={zh ? "健康" : "health"} />
+                <div className="lo-fields">
+                  <Field label={zh ? "任务完成率" : "Completion"}>{formatPercent(completion)}</Field>
+                  <Field label={zh ? "工具错误率" : "Tool error rate"}>{formatPercent(m.toolCalls > 0 ? m.toolErrors / m.toolCalls : 0, 1)}</Field>
+                  <Field label={zh ? "运行时团队" : "Teams"}>{snapshot.sources.teams}</Field>
+                  <Field label={zh ? "团队成员" : "Members"}>{snapshot.sources.teamMembers}</Field>
+                  <Field label={zh ? "子智能体" : "Subagents"}>{snapshot.sources.subagents}</Field>
+                  <Field label={zh ? "采样耗时" : "Sample time"}>{snapshot.sampleMs}ms</Field>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="lo-overview-empty lo-overview-empty--health empty-hint is-compact" data-empty="health">
+                <span>
+                  {zh
+                    ? "还没有团队任务与工具调用，完成率 / 错误率没有可计算的样本（健康环不显示 0%）。"
+                    : "No team tasks or tool calls yet, so completion and error rates have no sample (the health ring is hidden instead of showing 0%)."}
+                </span>
+                <div className="lo-fields">
+                  <Field label={zh ? "运行时团队" : "Teams"}>{snapshot.sources.teams}</Field>
+                  <Field label={zh ? "团队成员" : "Members"}>{snapshot.sources.teamMembers}</Field>
+                  <Field label={zh ? "子智能体" : "Subagents"}>{snapshot.sources.subagents}</Field>
+                  <Field label={zh ? "采样耗时" : "Sample time"}>{snapshot.sampleMs}ms</Field>
+                </div>
+              </div>
+            )}
             {snapshot.sources.failed.length > 0 && (
               <div className="lo-warn">
                 <Pill token="--warning"><LoIcon name="triangle-alert" size={12} /> {zh ? "采集失败" : "Failed"}</Pill>

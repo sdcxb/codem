@@ -2586,11 +2586,16 @@
 }
 @media (max-width: 1360px) {
   [data-ui="v2"] .plugin-row {
+    grid-template-columns: 24px minmax(150px, 1.1fr) minmax(0, 1.6fr) 76px minmax(104px, auto);
+  }
+  [data-ui="v2"] .plugin-row-deps { display: none; }
+}
+@media (max-width: 1120px) {
+  [data-ui="v2"] .plugin-row {
     grid-template-columns: 24px minmax(0, 1fr) minmax(120px, auto);
   }
   [data-ui="v2"] .plugin-row-desc,
-  [data-ui="v2"] .plugin-row-type,
-  [data-ui="v2"] .plugin-row-deps { display: none; }
+  [data-ui="v2"] .plugin-row-type { display: none; }
 }
 
 /* 任务概览：紧凑指标条 */
@@ -2790,11 +2795,16 @@
 [data-ui="v2"] .plugin-list-head > span:last-child { text-align: right; }
 @media (max-width: 1360px) {
   [data-ui="v2"] .plugin-list-head {
+    grid-template-columns: 24px minmax(150px, 1.1fr) minmax(0, 1.6fr) 76px minmax(104px, auto);
+  }
+  [data-ui="v2"] .plugin-list-head > span:nth-child(5) { display: none; }
+}
+@media (max-width: 1120px) {
+  [data-ui="v2"] .plugin-list-head {
     grid-template-columns: 24px minmax(0, 1fr) minmax(120px, auto);
   }
   [data-ui="v2"] .plugin-list-head > span:nth-child(3),
-  [data-ui="v2"] .plugin-list-head > span:nth-child(4),
-  [data-ui="v2"] .plugin-list-head > span:nth-child(5) { display: none; }
+  [data-ui="v2"] .plugin-list-head > span:nth-child(4) { display: none; }
 }
 
 /* 技能详情：徽标不要被 grid 的第二列拉成整条 */
@@ -2807,4 +2817,343 @@
   grid-column: 1 / -1;
   width: 100%;
   max-width: 100%;
+}
+
+/* ========== 第 19 轮：unslop 收口（字号 / 曲线 / accent / 密度 / 可访问性） ========== */
+
+/*
+ * v2 的阅读刻度：正文 14、次要 13、meta 12、区块 17、页面 24。
+ * 只在 v2 作用域覆盖，v1 兼容分支保持原样；--ui-font-scale 仍参与缩放。
+ */
+[data-ui="v2"] {
+  --fs-2xs: calc(12px * var(--ui-font-scale));
+  --fs-xs: calc(12px * var(--ui-font-scale));
+  --fs-sm: calc(13px * var(--ui-font-scale));
+  --fs-base: calc(14px * var(--ui-font-scale));
+  --fs-md: calc(15px * var(--ui-font-scale));
+  --fs-lg: calc(17px * var(--ui-font-scale));
+  --fs-xl: calc(20px * var(--ui-font-scale));
+  --fs-2xl: calc(24px * var(--ui-font-scale));
+  --fs-3xl: calc(28px * var(--ui-font-scale));
+}
+
+/* 图标统一 1.5 描边（lucide 的 class 由图标库自己加） */
+[data-ui="v2"] svg.lucide {
+  stroke-width: 1.5;
+}
+
+/* 页面/区块层级：页面 24，区块 17；旧规则里的 20/24 不再互相打架 */
+[data-ui="v2"] .settings-title {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+}
+[data-ui="v2"] .settings-panel .settings-section-title {
+  font-size: var(--fs-lg);
+  font-weight: 500;
+}
+[data-ui="v2"] .skill-manager-title {
+  font-size: var(--fs-xl);
+  font-weight: 500;
+}
+
+/* accent 只留给主操作/当前选择：徽标、项目图标、普通 active 图标改中性 */
+[data-ui="v2"] .agent-badge {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .sidebar-project.active .sidebar-project-icon,
+[data-ui="v2"] .agent-toggle.active,
+[data-ui="v2"] .chat-header-action.active {
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .memory-notice,
+[data-ui="v2"] .mc-notice {
+  border-left-color: var(--ui-line-strong);
+}
+
+/* 列表不再每行画线：用行高/悬停分组，减少管理员表格感 */
+[data-ui="v2"] .plugin-row {
+  border-bottom: 0;
+}
+[data-ui="v2"] .plugin-list {
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .lo-card,
+[data-ui="v2"] .tc-card {
+  box-shadow: none;
+}
+
+/* 顶部图标按钮 28 → 32，满足最小点击目标 */
+[data-ui="v2"] .chat-header-action {
+  flex: 0 0 32px;
+  min-width: 32px;
+  height: 32px;
+}
+
+/* 完成状态不再是一块金色：用中性底 + 勾选，把 accent 留给主操作 */
+[data-ui="v2"] .task-complete-badge {
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+[data-ui="v2"] .task-complete-badge.is-warning {
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ui-warning) 30%, transparent);
+}
+
+/* 设置底栏：贴底 action bar，次操作在左，主操作固定在右 */
+[data-ui="v2"] .settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--ui-surface);
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .settings-footer-inner {
+  justify-content: space-between;
+}
+[data-ui="v2"] .settings-footer-action--primary {
+  margin-left: auto;
+}
+
+/* ========== 聊天工作证据 rail + 运行详情 ========== */
+
+[data-ui="v2"] .stats-line--compact {
+  margin-top: var(--space-2);
+  padding-left: var(--space-9);
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+[data-ui="v2"] .stats-line-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+[data-ui="v2"] .stats-line-summary::-webkit-details-marker { display: none; }
+[data-ui="v2"] .stats-line-summary::before {
+  content: "›";
+  display: inline-block;
+  color: var(--ui-text-dim);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+[data-ui="v2"] details[open] > .stats-line-summary::before { transform: rotate(90deg); }
+[data-ui="v2"] .stats-line-summary:is(:hover, :focus-visible) { color: var(--ui-text); }
+[data-ui="v2"] .stats-line-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .stats-line-metric { white-space: nowrap; }
+
+[data-ui="v2"] .turn-evidence-rail {
+  margin: var(--space-3) 0 var(--space-5);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--ui-line);
+  border-bottom: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .turn-evidence-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+[data-ui="v2"] .turn-evidence-section { margin-top: var(--space-2); }
+[data-ui="v2"] .turn-evidence-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+[data-ui="v2"] .turn-evidence-section-title {
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-2xs);
+}
+[data-ui="v2"] .turn-evidence-section-meta {
+  color: var(--ui-text-muted);
+  font-size: var(--fs-2xs);
+}
+[data-ui="v2"] .turn-evidence-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+}
+[data-ui="v2"] .turn-evidence-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+[data-ui="v2"] button.turn-evidence-file { cursor: pointer; }
+[data-ui="v2"] button.turn-evidence-file:is(:hover, :focus-visible) {
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .turn-evidence-file-status { color: var(--ui-text-muted); }
+[data-ui="v2"] .turn-evidence-file-name { overflow: hidden; max-width: 32ch; text-overflow: ellipsis; white-space: nowrap; }
+[data-ui="v2"] .turn-evidence-more {
+  min-height: 24px;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--ui-text-muted);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+[data-ui="v2"] .turn-evidence-more:is(:hover, :focus-visible) { color: var(--ui-text); }
+[data-ui="v2"] .turn-evidence-check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+[data-ui="v2"] .turn-evidence-check { display: inline-flex; align-items: baseline; gap: var(--space-1); min-width: 0; }
+[data-ui="v2"] .turn-evidence-check-result { font-size: var(--fs-2xs); white-space: nowrap; }
+[data-ui="v2"] .turn-evidence-check--pass .turn-evidence-check-result { color: var(--ui-success); }
+[data-ui="v2"] .turn-evidence-check--fail .turn-evidence-check-result { color: var(--ui-danger); }
+[data-ui="v2"] .turn-evidence-check-command {
+  overflow: hidden;
+  max-width: 42ch;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 插件分组标题：轻量证据，不抢行 */
+[data-ui="v2"] .plugin-list-group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-3);
+}
+[data-ui="v2"] .plugin-list-group__label {
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+[data-ui="v2"] .plugin-list-group__count {
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+/* 设置：模型字段 + 配置方案子行；底栏左右分组 */
+[data-ui="v2"] .settings-panel .settings-model-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 100%;
+}
+[data-ui="v2"] .settings-panel .settings-model-row > .settings-model-select {
+  width: 100%;
+  max-width: none;
+}
+[data-ui="v2"] .settings-panel .settings-model-profiles {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+}
+[data-ui="v2"] .settings-panel .settings-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+[data-ui="v2"] .settings-panel .settings-action-bar__secondary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[data-ui="v2"] .settings-panel .settings-model-group {
+  min-width: 0;
+}
+[data-ui="v2"] .settings-panel .settings-action-bar__primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+[data-ui="v2"] .turn-evidence-title {
+  color: var(--ui-text-secondary);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+[data-ui="v2"] .turn-evidence-files,
+[data-ui="v2"] .turn-evidence-checks {
+  min-width: 0;
+}
+
+[data-ui="v2"] .task-overview-activity-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+[data-ui="v2"] .lo-overview-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) 0;
+}
+[data-ui="v2"] :is(.lo-overview-empty--team, .lo-overview-empty--task, .lo-overview-empty--health) {
+  align-items: flex-start;
+}
+
+
+/* 弹窗内容边距：标题/工具栏/列表统一 24px 水平留白，避免文字贴边 */
+[data-ui="v2"] :is(.skill-manager-header, .memory-manager-header) {
+  padding: var(--space-6) var(--space-10);
+}
+[data-ui="v2"] .task-center-header {
+  padding: 0 var(--space-10);
+  min-height: 48px;
+}
+[data-ui="v2"] .skill-manager-toolbar {
+  padding: var(--space-4) var(--space-10);
+}
+[data-ui="v2"] .plugin-list {
+  margin-left: var(--space-10);
+  margin-right: var(--space-10);
+}
+[data-ui="v2"] .plugin-list-head {
+  margin-left: var(--space-10);
+  margin-right: var(--space-10);
+}
+[data-ui="v2"] .plugin-row {
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+[data-ui="v2"] .plugin-list-group {
+  padding-left: var(--space-2);
+}
+
+/* 设置内容底部留出 sticky action bar 的高度，最后一行可滚到 footer 上方 */
+[data-ui="v2"] .settings-content {
+  padding-bottom: var(--space-14);
 }

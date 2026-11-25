@@ -23,7 +23,7 @@
  * 避免和皮肤/密度档（`data-density="compact"`）打架。
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 /* 第 181 轮审计整改：长列表分片渲染（一次渲染 208 张卡 = 6095 个节点） */
 import { IncrementalList } from './ui/IncrementalList'
 import { PanelIcons, ActionIcons, StatusIcons, CommonIcons, McpIcons } from '../core/icons/icon-map'
@@ -111,6 +111,28 @@ const PLUGIN_CATEGORY_LABEL: Record<string, { zh: string; en: string }> = {
   ui: { zh: '界面', en: 'UI' },
   tool: { zh: '工具', en: 'Tool' },
   compat: { zh: '兼容', en: 'Compat' },
+  /* 没有类别（或运行时出现未知类别）的插件统一归到这里，不另造一个分组。 */
+  other: { zh: '其他', en: 'Other' },
+}
+
+/**
+ * 「全部」视图里的分组顺序（插件类别是 `PluginMeta.category` 的五档 + 其他）。
+ *
+ * 顺序按能力面收敛：核心 → 服务 → 工具 → 界面 → 兼容 → 其他。
+ * 分组标题只在「全部」筛选且没有搜索词时出现；搜索/筛选保持平铺（见 `groupedView`）。
+ */
+const PLUGIN_GROUP_ORDER = ['core', 'provider', 'tool', 'ui', 'compat', 'other'] as const
+
+/** 插件所属分组 key：已知类别即类别，缺类别/未知类别归 `other`。 */
+function pluginGroupKey(plugin: any): string {
+  const category = plugin?.category
+  return category && PLUGIN_CATEGORY_LABEL[category] ? category : 'other'
+}
+
+/** 分组标题文案（中英与类型标签同源，都取 `PLUGIN_CATEGORY_LABEL`）。 */
+function pluginGroupLabel(key: string, zh: boolean): string {
+  const entry = PLUGIN_CATEGORY_LABEL[key] ?? PLUGIN_CATEGORY_LABEL.other
+  return zh ? entry.zh : entry.en
 }
 
 function PluginGlyph({ plugin, size = 16 }: { plugin: any; size?: number }) {
@@ -211,7 +233,13 @@ function PluginRow({
         className="plugin-row-deps"
         title={depCount > 0 ? plugin.dependencies.join('、') : undefined}
       >
-        {depCount > 0 ? (zh ? `${depCount} 依赖` : `${depCount} dep`) : '—'}
+        {/*
+          依赖数为 0 时**不留「—」占位**：那时它传递的信息是「没有依赖」，
+          而「—」在一列里会读成缺失值（真机上看起来像「服务 / —」随机字符）。
+          列本身（这个 span）仍然渲染 —— 它是 `.plugin-row` 网格的第五格，
+          少了子元素会让开关错列到「依赖」列。
+        */}
+        {depCount > 0 ? (zh ? `${depCount} 依赖` : `${depCount} dep`) : null}
       </span>
 
       <span className="plugin-row-actions" onClick={(e) => e.stopPropagation()}>
@@ -681,6 +709,9 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     setConfirmRequest(null)
   }, [])
 
+  // 分组标题只在「全部」且没有搜索词时出现；搜索/筛选保持平铺。
+  const groupedView = activeCategory === 'all' && searchQuery.trim() === ''
+
   // 获取过滤后的插件列表
   //
   // ⚠️ 第 48 轮（真机发现的 P1）：`stateVersion` **必须**在依赖里。
@@ -718,8 +749,38 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     /* 免费模型插件的分类是 provider ⇒ 归在「能力」分组里。 */
     const freeCategory = activeCategory === 'all' || activeCategory === 'capability';
     if (freeMatch && freeCategory) list = [FREE_MODEL_PLUGIN_STUB, ...list];
+
+    /*
+     * 分组要**连续**才有意义：注册表里同类插件并不总是相邻
+     * （UI 插件之后还有 R4/R5 的 provider）。直接按出现顺序插标题会把
+     * 同一类别切成好几段，所以这里做稳定分桶（组内保持注册表原顺序），
+     * 让「全部」视图成为 core → provider → tool → ui → compat → 其他 的连续分组。
+     */
+    if (groupedView) {
+      const buckets = new Map<string, typeof list>()
+      for (const key of PLUGIN_GROUP_ORDER) buckets.set(key, [])
+      for (const plugin of list) buckets.get(pluginGroupKey(plugin))!.push(plugin)
+      list = PLUGIN_GROUP_ORDER.flatMap((key) => buckets.get(key)!)
+    }
     return list
-  }, [manager, searchQuery, activeCategory, stateVersion])
+  }, [manager, searchQuery, activeCategory, stateVersion, groupedView])
+
+  /**
+   * 分组标题的计数，以及「这一行是不是本组第一行」。
+   * 只在 `groupedView` 下参与渲染；平铺视图不读它。
+   */
+  const pluginGroups = useMemo(() => {
+    const counts: Record<string, number> = {}
+    const starts: Record<string, boolean> = {}
+    let previous: string | null = null
+    for (const plugin of plugins) {
+      const key = pluginGroupKey(plugin)
+      counts[key] = (counts[key] ?? 0) + 1
+      if (key !== previous) starts[plugin.name] = true
+      previous = key
+    }
+    return { counts, starts }
+  }, [plugins])
 
   // 统计数量
   const totalCount = (manager?.getPluginStates().length || 0) + 1
@@ -864,18 +925,35 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           moreLabel={(rest) =>
             zh ? `加载更多（剩余 ${rest}）` : `Load more (${rest} left)`
           }
-          renderItem={(plugin) => plugin.name === "our-free-model" ? (
-            <FreeModelPluginCard key={plugin.name} compact onOpenDetail={() => setFreeModelDetail(true)} />
-          ) : (
-            <PluginRow
-              key={plugin.name}
-              plugin={plugin}
-              zh={zh}
-              onToggle={handleToggle}
-              onRestart={handleRestart}
-              onOpenDetail={() => setDetailPlugin(plugin)}
-            />
-          )}
+          renderItem={(plugin) => {
+            /*
+             * 分组标题是**行的兄弟节点**（同一个分片里、同一个 Fragment），
+             * 不是分片元素本身 —— 40/40 的「行」计数与「加载更多（剩余 N）」
+             * 仍是行数，不会因为多插了几个标题而变。
+             */
+            const groupKey = groupedView ? pluginGroupKey(plugin) : null
+            return (
+              <Fragment key={plugin.name}>
+                {groupKey && pluginGroups.starts[plugin.name] && (
+                  <div className="plugin-list-group" data-plugin-group={groupKey}>
+                    <span className="plugin-list-group__label">{pluginGroupLabel(groupKey, zh)}</span>
+                    <span className="plugin-list-group__count">{pluginGroups.counts[groupKey] ?? 0}</span>
+                  </div>
+                )}
+                {plugin.name === "our-free-model" ? (
+                  <FreeModelPluginCard compact onOpenDetail={() => setFreeModelDetail(true)} />
+                ) : (
+                  <PluginRow
+                    plugin={plugin}
+                    zh={zh}
+                    onToggle={handleToggle}
+                    onRestart={handleRestart}
+                    onOpenDetail={() => setDetailPlugin(plugin)}
+                  />
+                )}
+              </Fragment>
+            )
+          }}
         />
       )}
 

@@ -309,7 +309,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           {/* 委派限制读真实配置（原先写死「深度 2 · 并发 5」，与运行时配置可能不一致） */}
           <span>
             {zh
-              ? `委派深度限制: ${limits.maxDepth} · 最大并发: ${limits.maxConcurrent}`
+              ? `同时最多 ${limits.maxConcurrent} 个 · 委派最多 ${limits.maxDepth} 层`
               : `Max depth: ${limits.maxDepth} · Max concurrent: ${limits.maxConcurrent}`}
           </span>
         </div>

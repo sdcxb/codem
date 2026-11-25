@@ -362,8 +362,8 @@
       "patches": [
         {
           "file": "src/components/PluginManager.tsx",
-          "from": "<FreeModelPluginCard key={plugin.name} compact",
-          "to": "<FreeModelPluginCard key={plugin.name}"
+          "from": "<FreeModelPluginCard compact onOpenDetail={() => setFreeModelDetail(true)} />",
+          "to": "<FreeModelPluginCard onOpenDetail={() => setFreeModelDetail(true)} />"
         }
       ],
       "tests": [
