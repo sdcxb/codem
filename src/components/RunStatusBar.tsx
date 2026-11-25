@@ -65,7 +65,7 @@ export const RunStatusBar = memo(function RunStatusBar({
     >
       <div className="run-status-bar-left">
         <Icon
-          size={14}
+          size={16}
           className={isRunning && (phase === "working" || phase === "thinking") ? "spinning" : ""}
         />
         <span className="run-status-bar-label">{label}</span>

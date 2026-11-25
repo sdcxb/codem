@@ -368,7 +368,7 @@ export function EnvironmentConfigSection() {
               className="git-env-remove-btn"
               aria-label={zh ? "删除" : "Delete"}
             >
-              <ActionIcons.delete size={12} />
+              <ActionIcons.delete size={16} />
             </button>
           </div>
         ))}

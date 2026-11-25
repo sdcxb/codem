@@ -50,7 +50,7 @@ function StatusBadge({ status, conclusion }: { status: string; conclusion: strin
   return (
     <span className="cicd-badge" style={{ background: color }}>
       {status === "in_progress" || status === "queued" ? (
-        <RefreshCw size={10} className="spin" />
+        <RefreshCw size={16} className="spin" />
       ) : null}
       {label}
     </span>
@@ -348,7 +348,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
               <div className="cicd-runs-head">
                 <span className="cicd-runs-title">{S.cicd.recentRuns[lang]}</span>
                 <button onClick={loadRuns} disabled={loading} className="cicd-refresh-btn">
-                  <RefreshCw size={12} className={loading ? "spin" : ""} />
+                  <RefreshCw size={16} className={loading ? "spin" : ""} />
                   {S.cicd.refresh[lang]}
                 </button>
               </div>
@@ -364,7 +364,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                       {/* Run header row */}
                       <div className="cicd-run-head" onClick={() => toggleRunJobs(run.id)}>
                         <span className="cicd-run-chevron">
-                          {expandedRun === run.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {expandedRun === run.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </span>
                         <StatusBadge status={run.status} conclusion={run.conclusion} />
                         <span className="cicd-run-title">#{run.runNumber} {run.name}</span>
@@ -372,7 +372,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                         <span className="hint-sm">{run.headBranch}</span>
                         <span className="cicd-run-time">{formatTime(run.createdAt)}</span>
                         <a href={run.htmlUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="cicd-run-link">
-                          <ExternalLink size={14} />
+                          <ExternalLink size={16} />
                         </a>
                       </div>
 
@@ -380,12 +380,12 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                       <div className="cicd-run-actions">
                         {run.conclusion === "failure" && (
                           <button onClick={() => handleRetry(run.id)} disabled={actionBusy} className="cicd-btn">
-                            <RotateCcw size={12} /> {S.cicd.retry[lang]}
+                            <RotateCcw size={16} /> {S.cicd.retry[lang]}
                           </button>
                         )}
                         {(run.status === "in_progress" || run.status === "queued") && (
                           <button onClick={() => handleCancel(run.id)} disabled={actionBusy} className="cicd-btn">
-                            <StopCircle size={12} /> {S.cicd.cancel[lang]}
+                            <StopCircle size={16} /> {S.cicd.cancel[lang]}
                           </button>
                         )}
                       </div>
@@ -457,11 +457,11 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                   <div>
                     <div className="cicd-workflow-actions">
                       <button onClick={handleCopyYaml} className="cicd-btn">
-                        {copied ? <Check size={12} /> : <Copy size={12} />}
+                        {copied ? <Check size={16} /> : <Copy size={16} />}
                         {copied ? S.cicd.copied[lang] : S.cicd.copyYaml[lang]}
                       </button>
                       <button onClick={handleSaveYaml} className="cicd-btn">
-                        <FileDown size={12} />
+                        <FileDown size={16} />
                         {S.cicd.saveToFile[lang]}
                       </button>
                       <span className="cicd-workflow-path">{generatedWorkflow.path}</span>

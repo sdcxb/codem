@@ -305,7 +305,7 @@ export function ChangesList(props: ChangesListProps): React.ReactElement {
                 }
               }}
             >
-              {isExpanded ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
+              {isExpanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
               <span className="turn-label">
                 {turnLabel(record)}
                 {isReverted ? <span className="reverted-tag">已回滚</span> : null}
@@ -332,7 +332,7 @@ export function ChangesList(props: ChangesListProps): React.ReactElement {
                     disabled={isReverted}
                     title="回滚此轮变更"
                   >
-                    <RotateCcw size={12} aria-hidden="true" /> 回滚
+                    <RotateCcw size={16} aria-hidden="true" /> 回滚
                   </button>
                 ) : null}
               </div>

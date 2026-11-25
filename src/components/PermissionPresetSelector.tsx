@@ -160,12 +160,12 @@ export function PermissionPresetSelector({
         >
           {(() => {
             const Icon = MODE_ICONS[currentInfo?.icon || '🛡️'] || Shield
-            return <Icon size={14} />
+            return <Icon size={16} />
           })()}
           <span style={{ fontSize: 'var(--fs-sm)' }}>
             {currentInfo ? (zh ? currentInfo.label_zh : currentInfo.label_en) : effectiveMode}
           </span>
-          <ChevronDown size={10} style={{ opacity: 0.5 }} />
+          <ChevronDown size={16} style={{ opacity: 0.5 }} />
         </button>
 
         {open && dropdownPos && createPortal(
@@ -192,9 +192,9 @@ export function PermissionPresetSelector({
                   onClick={() => handleSelect(m.mode)}
                   title={zh ? m.desc_zh : m.desc_en}
                 >
-                  <Icon size={14} />
+                  <Icon size={16} />
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{zh ? m.label_zh : m.label_en}</span>
-                  {effectiveMode === m.mode && <Check size={12} style={{ marginLeft: 'auto' }} />}
+                  {effectiveMode === m.mode && <Check size={16} style={{ marginLeft: 'auto' }} />}
                 </button>
               )
             })}
@@ -228,11 +228,11 @@ export function PermissionPresetSelector({
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {(() => {
             const Icon = MODE_ICONS[currentInfo?.icon || '🛡️'] || Shield
-            return <Icon size={14} />
+            return <Icon size={16} />
           })()}
           {currentInfo ? (zh ? currentInfo.label_zh : currentInfo.label_en) : effectiveMode}
         </span>
-        <ChevronDown size={12} style={{ opacity: 0.5 }} />
+        <ChevronDown size={16} style={{ opacity: 0.5 }} />
       </button>
 
       {open && (
@@ -272,9 +272,9 @@ export function PermissionPresetSelector({
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-base)', fontWeight: 600 }}>
-                  <Icon size={14} />
+                  <Icon size={16} />
                   {zh ? m.label_zh : m.label_en}
-                  {effectiveMode === m.mode && <Check size={12} style={{ marginLeft: 'auto' }} />}
+                  {effectiveMode === m.mode && <Check size={16} style={{ marginLeft: 'auto' }} />}
                 </span>
                 <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.7 }}>
                   {zh ? m.desc_zh : m.desc_en}

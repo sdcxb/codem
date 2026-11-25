@@ -59,7 +59,7 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             aria-pressed={feedback === "like"}
             style={inline && feedback === "like" ? { color: "var(--accent)" } : {}}
           >
-            <ThumbsUp size={14} />
+            <ThumbsUp size={16} />
           </button>
         </TooltipTrigger>
         <TooltipContent>{S.bubble.like[lang]}</TooltipContent>
@@ -73,7 +73,7 @@ export const FeedbackButtons = memo(function FeedbackButtons({ message, sessionI
             aria-pressed={feedback === "dislike"}
             style={inline && feedback === "dislike" ? { color: "var(--accent)" } : {}}
           >
-            <ThumbsDown size={14} />
+            <ThumbsDown size={16} />
           </button>
         </TooltipTrigger>
         <TooltipContent>{S.bubble.dislike[lang]}</TooltipContent>

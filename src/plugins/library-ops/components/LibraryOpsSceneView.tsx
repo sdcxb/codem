@@ -56,10 +56,10 @@ export function LibraryOpsSceneView() {
       extraMeta={
         <>
           <span title={zh ? "子智能体" : "Sub-agents"}>
-            <LoIcon name="bot" size={12} /> {subagents}
+            <LoIcon name="bot" size={16} /> {subagents}
           </span>
           <span title={zh ? "团队成员" : "Team members"}>
-            <LoIcon name="user" size={12} /> {members}
+            <LoIcon name="user" size={16} /> {members}
           </span>
         </>
       }

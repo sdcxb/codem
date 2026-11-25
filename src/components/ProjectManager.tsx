@@ -357,16 +357,16 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
           <div className="project-list-body">
             <div className="project-actions pm-actions-grid">
               <button className="project-action-btn" onClick={() => setMode("create")}>
-                <ActionIcons.add size={14} /> 新建项目
+                <ActionIcons.add size={16} /> 新建项目
               </button>
               <button className="project-action-btn" onClick={() => setMode("import")}>
-                <FolderOpen size={14} /> 导入文件夹
+                <FolderOpen size={16} /> 导入文件夹
               </button>
               <button className="project-action-btn" onClick={() => { setGitStatus("idle"); setGitStatusMsg(""); setMode("git-create"); }}>
-                <LinkIcon size={14} /> 新建 Git 项目
+                <LinkIcon size={16} /> 新建 Git 项目
               </button>
               <button className="project-action-btn" onClick={() => { setCloneStatus("idle"); setCloneMsg(""); setMode("git-clone"); }}>
-                <Download size={14} /> 从 GitHub 拉取
+                <Download size={16} /> 从 GitHub 拉取
               </button>
             </div>
 
@@ -556,7 +556,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                         checked={gitIsPrivate}
                         onChange={() => setGitIsPrivate(true)}
                       />
-                      <Lock size={14} /> 私有
+                      <Lock size={16} /> 私有
                     </label>
                     <label className="pm-radio">
                       <input
@@ -564,7 +564,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                         checked={!gitIsPrivate}
                         onChange={() => setGitIsPrivate(false)}
                       />
-                      <Globe size={14} /> 公开
+                      <Globe size={16} /> 公开
                     </label>
                   </div>
                 </div>
@@ -592,7 +592,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     onClick={handleGitCreate}
                     disabled={!gitRepoName.trim() || !gitProjectPath.trim() || !gitToken.trim()}
                   >
-                    <LinkIcon size={14} /> 创建并推送
+                    <LinkIcon size={16} /> 创建并推送
                   </button>
                 </div>
               </>
@@ -614,7 +614,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {gitStatus === "error" && (
               <div className="pm-error-block">
-                <div className="pm-error-title"><StatusIcons.error size={14} /> 创建失败</div>
+                <div className="pm-error-title"><StatusIcons.error size={16} /> 创建失败</div>
                 <pre className="pm-error-pre">
                   {gitStatusMsg}
                 </pre>
@@ -655,7 +655,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     onClick={handleClone}
                     disabled={!cloneUrl.trim()}
                   >
-                    <Download size={14} /> 拉取
+                    <Download size={16} /> 拉取
                   </button>
                 </div>
               </>
@@ -677,7 +677,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {cloneStatus === "error" && (
               <div className="pm-error-block">
-                <div className="pm-error-title"><StatusIcons.error size={14} /> 克隆失败</div>
+                <div className="pm-error-title"><StatusIcons.error size={16} /> 克隆失败</div>
                 <pre className="pm-error-pre">
                   {cloneMsg}
                 </pre>
@@ -728,7 +728,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   setTimeout(() => { setEnvSaved(false); setMode("list"); }, 1000);
                 }}
               >
-                {envSaved ? <span className="pm-saved"><StatusIcons.success size={14} /> 已保存</span> : "保存"}
+                {envSaved ? <span className="pm-saved"><StatusIcons.success size={16} /> 已保存</span> : "保存"}
               </button>
             </div>
           </div>

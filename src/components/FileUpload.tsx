@@ -183,7 +183,7 @@ export function FileUpload({ onUpload, hideButton, collectionId }: FileUploadPro
           title="上传文件"
           aria-label="上传文件"
         >
-          {uploading ? <Spinner size="md" label="" /> : <Paperclip size={14} aria-hidden />}
+          {uploading ? <Spinner size="md" label="" /> : <Paperclip size={16} aria-hidden />}
         </button>
       )}
     </>

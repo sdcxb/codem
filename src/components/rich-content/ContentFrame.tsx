@@ -69,7 +69,7 @@ export function ContentFrame({
               onClick={() => setCollapsed((c) => !c)}
               aria-label={collapsed ? "展开" : "折叠"}
             >
-              {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
             </button>
           )}
           {icon}
@@ -85,7 +85,7 @@ export function ContentFrame({
               aria-label="复制"
               title="复制"
             >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? <Check size={16} /> : <Copy size={16} />}
             </button>
           )}
           {fullscreenable && onFullscreen && (
@@ -95,7 +95,7 @@ export function ContentFrame({
               aria-label="全屏"
               title="全屏"
             >
-              <Maximize2 size={14} />
+              <Maximize2 size={16} />
             </button>
           )}
         </div>

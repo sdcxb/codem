@@ -68,7 +68,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
               className={`lo-chip${settings.sceneStyle === s.id ? " is-active" : ""}`}
               onClick={() => update({ sceneStyle: s.id })}
             >
-              <LoIcon name={s.icon} size={14} /> {zh ? s.zh : s.en}
+              <LoIcon name={s.icon} size={16} /> {zh ? s.zh : s.en}
             </button>
           ))}
         </div>
@@ -157,7 +157,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
               className={`lo-chip${settings.defaultTab === t.id ? " is-active" : ""}`}
               onClick={() => update({ defaultTab: t.id })}
             >
-              <LoIcon name={t.icon} size={14} /> {zh ? t.zh : t.en}
+              <LoIcon name={t.icon} size={16} /> {zh ? t.zh : t.en}
             </button>
           ))}
         </div>

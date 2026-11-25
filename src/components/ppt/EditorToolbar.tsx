@@ -85,51 +85,51 @@ export function EditorToolbar({
     <div className="ppt-editor-toolbar">
       {/* 撤销重做 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn" onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)" aria-label="撤销"><Undo2 size={14} aria-hidden /></button>
-        <button className="ppt-toolbar-btn" onClick={onRedo} disabled={!canRedo} title="重做 (Ctrl+Y)" aria-label="重做"><Redo2 size={14} aria-hidden /></button>
+        <button className="ppt-toolbar-btn" onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)" aria-label="撤销"><Undo2 size={16} aria-hidden /></button>
+        <button className="ppt-toolbar-btn" onClick={onRedo} disabled={!canRedo} title="重做 (Ctrl+Y)" aria-label="重做"><Redo2 size={16} aria-hidden /></button>
       </div>
 
       {/* 插入元素 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn" onClick={onInsertText} title="插入文本 (T)"><Type size={14} aria-hidden /> 文本</button>
-        <button className="ppt-toolbar-btn" onClick={onInsertList} title="插入列表"><List size={14} aria-hidden /> 列表</button>
+        <button className="ppt-toolbar-btn" onClick={onInsertText} title="插入文本 (T)"><Type size={16} aria-hidden /> 文本</button>
+        <button className="ppt-toolbar-btn" onClick={onInsertList} title="插入列表"><List size={16} aria-hidden /> 列表</button>
         <div className="ppt-toolbar-divider" />
-        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('rect')} title="插入矩形"><Square size={14} aria-hidden /> 矩形</button>
-        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('circle')} title="插入圆形"><Circle size={14} aria-hidden /> 圆形</button>
-        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('triangle')} title="插入三角形"><Triangle size={14} aria-hidden /> 三角</button>
-        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('arrow')} title="插入箭头"><ArrowRight size={14} aria-hidden /> 箭头</button>
-        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('line')} title="插入线条"><Minus size={14} aria-hidden /> 线条</button>
+        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('rect')} title="插入矩形"><Square size={16} aria-hidden /> 矩形</button>
+        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('circle')} title="插入圆形"><Circle size={16} aria-hidden /> 圆形</button>
+        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('triangle')} title="插入三角形"><Triangle size={16} aria-hidden /> 三角</button>
+        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('arrow')} title="插入箭头"><ArrowRight size={16} aria-hidden /> 箭头</button>
+        <button className="ppt-toolbar-btn" onClick={() => onInsertShape('line')} title="插入线条"><Minus size={16} aria-hidden /> 线条</button>
         <div className="ppt-toolbar-divider" />
-        <button className="ppt-toolbar-btn" onClick={onInsertImage} title="插入图片"><ImageIcon size={14} aria-hidden /> 图片</button>
+        <button className="ppt-toolbar-btn" onClick={onInsertImage} title="插入图片"><ImageIcon size={16} aria-hidden /> 图片</button>
       </div>
 
       {/* 操作 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn" onClick={onDuplicate} disabled={selectedCount === 0} title="复制 (Ctrl+D)"><Copy size={14} aria-hidden /> 复制</button>
-        <button className="ppt-toolbar-btn" onClick={onDelete} disabled={selectedCount === 0} title="删除" style={{ color: selectedCount > 0 ? 'var(--error)' : undefined }}><Trash2 size={14} aria-hidden /> 删除</button>
+        <button className="ppt-toolbar-btn" onClick={onDuplicate} disabled={selectedCount === 0} title="复制 (Ctrl+D)"><Copy size={16} aria-hidden /> 复制</button>
+        <button className="ppt-toolbar-btn" onClick={onDelete} disabled={selectedCount === 0} title="删除" style={{ color: selectedCount > 0 ? 'var(--error)' : undefined }}><Trash2 size={16} aria-hidden /> 删除</button>
       </div>
 
       {/* 层级 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn" onClick={onBringForward} disabled={selectedCount === 0} title="上移一层"><ArrowUp size={14} aria-hidden /> 上移</button>
-        <button className="ppt-toolbar-btn" onClick={onSendBackward} disabled={selectedCount === 0} title="下移一层"><ArrowDown size={14} aria-hidden /> 下移</button>
+        <button className="ppt-toolbar-btn" onClick={onBringForward} disabled={selectedCount === 0} title="上移一层"><ArrowUp size={16} aria-hidden /> 上移</button>
+        <button className="ppt-toolbar-btn" onClick={onSendBackward} disabled={selectedCount === 0} title="下移一层"><ArrowDown size={16} aria-hidden /> 下移</button>
       </div>
 
       {/* 对齐 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('left')} disabled={selectedCount < 2} title="左对齐"><AlignLeft size={14} aria-hidden /> 左</button>
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('center')} disabled={selectedCount < 2} title="水平居中"><AlignCenterHorizontal size={14} aria-hidden /> 中</button>
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('right')} disabled={selectedCount < 2} title="右对齐"><AlignRight size={14} aria-hidden /> 右</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('left')} disabled={selectedCount < 2} title="左对齐"><AlignLeft size={16} aria-hidden /> 左</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('center')} disabled={selectedCount < 2} title="水平居中"><AlignCenterHorizontal size={16} aria-hidden /> 中</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('right')} disabled={selectedCount < 2} title="右对齐"><AlignRight size={16} aria-hidden /> 右</button>
         <div className="ppt-toolbar-divider" />
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('top')} disabled={selectedCount < 2} title="顶对齐"><AlignStartVertical size={14} aria-hidden /> 顶</button>
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('middle')} disabled={selectedCount < 2} title="垂直居中"><AlignCenterVertical size={14} aria-hidden /> 中</button>
-        <button className="ppt-toolbar-btn" onClick={() => onAlign('bottom')} disabled={selectedCount < 2} title="底对齐"><AlignEndVertical size={14} aria-hidden /> 底</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('top')} disabled={selectedCount < 2} title="顶对齐"><AlignStartVertical size={16} aria-hidden /> 顶</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('middle')} disabled={selectedCount < 2} title="垂直居中"><AlignCenterVertical size={16} aria-hidden /> 中</button>
+        <button className="ppt-toolbar-btn" onClick={() => onAlign('bottom')} disabled={selectedCount < 2} title="底对齐"><AlignEndVertical size={16} aria-hidden /> 底</button>
       </div>
 
       {/* 风格切换 — 下拉弹出风格选择网格 */}
       <div className="ppt-toolbar-group" ref={styleRef} style={{ position: 'relative' }}>
         <button className="ppt-toolbar-btn" onClick={() => setShowStyleMenu(!showStyleMenu)} title="选择风格">
-          <Palette size={14} aria-hidden /> 风格: {currentTheme.name}
+          <Palette size={16} aria-hidden /> 风格: {currentTheme.name}
         </button>
         {showStyleMenu && (
           <div style={{
@@ -183,7 +183,7 @@ export function EditorToolbar({
       {/* 导出 — 下拉菜单 */}
       <div className="ppt-toolbar-group" ref={exportRef} style={{ position: 'relative' }}>
         <button className="ppt-toolbar-btn" onClick={() => setShowExportMenu(!showExportMenu)} title="导出">
-          <Download size={14} aria-hidden /> 导出
+          <Download size={16} aria-hidden /> 导出
         </button>
         {showExportMenu && (
           <div style={{
@@ -193,22 +193,22 @@ export function EditorToolbar({
             boxShadow: 'var(--shadow-popover, 0 8px 32px rgba(0,0,0,0.3))',
           }}>
             <button className="ppt-export-menu-item" onClick={() => { onExportHTML(); setShowExportMenu(false); }}>
-              <Globe size={14} aria-hidden /> HTML 演示文稿
+              <Globe size={16} aria-hidden /> HTML 演示文稿
             </button>
             <button className="ppt-export-menu-item" onClick={() => { onExportPDF(); setShowExportMenu(false); }}>
-              <FileText size={14} aria-hidden /> PDF 文档
+              <FileText size={16} aria-hidden /> PDF 文档
             </button>
             <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPNG(); setShowExportMenu(false); }}
               style={{ opacity: exporting ? 0.6 : 1 }}>
-              {exporting ? <><Spinner size="md" label="" /> 导出中...</> : <><ImageIcon size={14} aria-hidden /> PNG 批量图片 (ZIP)</>}
+              {exporting ? <><Spinner size="md" label="" /> 导出中...</> : <><ImageIcon size={16} aria-hidden /> PNG 批量图片 (ZIP)</>}
             </button>
             <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPNGLong(); setShowExportMenu(false); }}
               style={{ opacity: exporting ? 0.6 : 1 }}>
-              <ScrollText size={14} aria-hidden /> PNG 长图
+              <ScrollText size={16} aria-hidden /> PNG 长图
             </button>
             <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPPTX(); setShowExportMenu(false); }}
               style={{ opacity: exporting ? 0.6 : 1 }}>
-              <Presentation size={14} aria-hidden /> PPTX 文件
+              <Presentation size={16} aria-hidden /> PPTX 文件
             </button>
           </div>
         )}
@@ -216,13 +216,13 @@ export function EditorToolbar({
 
       {/* 放映 */}
       <div className="ppt-toolbar-group">
-        <button className="ppt-toolbar-btn active" onClick={onPlayPresentation} title="播放演示 (F5)"><Play size={14} aria-hidden /> 播放</button>
+        <button className="ppt-toolbar-btn active" onClick={onPlayPresentation} title="播放演示 (F5)"><Play size={16} aria-hidden /> 播放</button>
 <button className="ppt-toolbar-btn" onClick={onGenerateNotes} disabled={generatingNotes} title="AI 生成演讲稿" style={{ opacity: generatingNotes ? 0.6 : 1 }}>
-  {generatingNotes ? <><Spinner size="md" label="" /> 生成中...</> : <><Mic size={14} aria-hidden /> 演讲稿</>}
+  {generatingNotes ? <><Spinner size="md" label="" /> 生成中...</> : <><Mic size={16} aria-hidden /> 演讲稿</>}
 </button>
-<button className="ppt-toolbar-btn" onClick={onSaveVersion} title="保存版本"><Save size={14} aria-hidden /> 版本</button>
+<button className="ppt-toolbar-btn" onClick={onSaveVersion} title="保存版本"><Save size={16} aria-hidden /> 版本</button>
 <button className="ppt-toolbar-btn" onClick={onShowVersions} title="历史版本">
-  <History size={14} aria-hidden /> 历史{versionCount > 0 ? ` (${versionCount})` : ''}
+  <History size={16} aria-hidden /> 历史{versionCount > 0 ? ` (${versionCount})` : ''}
 </button>
       </div>
 

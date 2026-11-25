@@ -432,12 +432,12 @@ function SubagentStatus({ taskId, name, toolStatus }: { taskId: string; name?: s
   if (status === "init") return null;
 
   if (status === "completed") {
-    return <span className="subagent-status done icon-inline"><CheckCircle size={12} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
+    return <span className="subagent-status done icon-inline"><CheckCircle size={16} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
   }
   if (status === "failed") {
-    return <span className="subagent-status failed icon-inline"><XCircle size={12} /> {displayName} {zh ? "失败" : "failed"}</span>;
+    return <span className="subagent-status failed icon-inline"><XCircle size={16} /> {displayName} {zh ? "失败" : "failed"}</span>;
   }
-  return <span className="subagent-status running icon-inline"><Clock size={12} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
+  return <span className="subagent-status running icon-inline"><Clock size={16} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
 /** 工具区：笔记操作提示 + 插件槽（fallback 连续工具组）+ 子智能体状态行 */
@@ -491,12 +491,12 @@ function DesktopToolSection({ message, initialExpanded }: { message: MessageLike
                   color: 'var(--text-secondary, #a0a0a8)',
                 }}
               >
-                <span>{isError ? <XCircle size={12} /> : isDone ? <FileText size={12} /> : <Clock size={12} />}</span>
+                <span>{isError ? <XCircle size={16} /> : isDone ? <FileText size={16} /> : <Clock size={16} />}</span>
                 <span style={{ fontWeight: 500 }}>
                   {opLabel}{title ? `: "${title}"` : ''}
                 </span>
                 {isDone && tc.result && (
-                  <span style={{ opacity: 0.6, fontSize: 'var(--fs-xs)' }}><Check size={10} /></span>
+                  <span style={{ opacity: 0.6, fontSize: 'var(--fs-xs)' }}><Check size={16} /></span>
                 )}
               </div>
             );

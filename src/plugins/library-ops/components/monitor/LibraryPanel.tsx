@@ -90,7 +90,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           {/* 去重说明：场景与「子智能体」「团队」页签是同一份数据的两种表达，
               这里只做可视化，不再重复提供明细列表。 */}
           <p className="lo-note" style={{ margin: "0 0 8px" }}>
-            <LoIcon name="users" size={12} />{" "}
+            <LoIcon name="users" size={16} />{" "}
             {zh
               ? "场景 = 子智能体 / 团队的可视化视图（同一份数据）；明细列表见「子智能体」「团队」页签。"
               : "Scene = a visual view of the same Sub-agents / Teams data; see those tabs for detail lists."}
@@ -111,14 +111,14 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                     <span className="lo-roster__swatch" style={{ background: palette.uniform }} />
                     <span className="lo-roster__main">
                       <span className="lo-roster__name" title={a.name}>
-                        <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
+                        <LoIcon name={KIND_META[a.kind].icon} size={16} /> {a.name}
                       </span>
                       <span className="lo-roster__role" title={a.roleLabel}>
                         {a.roleLabel}
                       </span>
                     </span>
                     <span className="lo-roster__status" style={{ color: `var(${meta.token})` }}>
-                      <LoIcon name={meta.icon} size={12} /> {zh ? meta.zh : meta.en}
+                      <LoIcon name={meta.icon} size={16} /> {zh ? meta.zh : meta.en}
                     </span>
                   </li>
                 );
@@ -131,7 +131,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           {selectedZone ? (
             <div className="lo-fields">
               <Field label={zh ? "岗位" : "Zone"}>
-                <LoIcon name={selectedZone.icon} size={12} /> {zh ? selectedZone.name : selectedZone.nameEn}
+                <LoIcon name={selectedZone.icon} size={16} /> {zh ? selectedZone.name : selectedZone.nameEn}
               </Field>
               <Field label={zh ? "职责" : "Duty"}>{selectedZone.duty}</Field>
               <Field label={zh ? "在岗" : "On duty"}>
@@ -141,7 +141,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                 </span>
               </Field>
               <Field label={zh ? "默认动作" : "Default action"}>
-                <LoIcon name={ACTIVITY_META[selectedZone.activity].icon} size={12} />{" "}
+                <LoIcon name={ACTIVITY_META[selectedZone.activity].icon} size={16} />{" "}
                 {zh ? ACTIVITY_META[selectedZone.activity].zh : ACTIVITY_META[selectedZone.activity].en}
               </Field>
               <div className="lo-zone-occupants">
@@ -153,7 +153,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                       <span className="lo-roster__swatch" style={{ background: paletteOf(a.look).uniform }} />
                       <span className="lo-roster__name">{a.name}</span>
                       <span style={{ color: `var(${ACTIVITY_META[a.activity].token})` }}>
-                        <LoIcon name={ACTIVITY_META[a.activity].icon} size={12} />
+                        <LoIcon name={ACTIVITY_META[a.activity].icon} size={16} />
                       </span>
                     </button>
                   ))
@@ -170,13 +170,13 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
               <Field label={zh ? "名称" : "Name"}>{selected.name}</Field>
               <Field label={zh ? "类型" : "Kind"}>
                 <Pill token="--accent">
-                  <LoIcon name={KIND_META[selected.kind].icon} size={12} /> {zh ? KIND_META[selected.kind].zh : KIND_META[selected.kind].en}
+                  <LoIcon name={KIND_META[selected.kind].icon} size={16} /> {zh ? KIND_META[selected.kind].zh : KIND_META[selected.kind].en}
                 </Pill>
               </Field>
               <Field label={zh ? "岗位" : "Zone"}>{selected.roleLabel}</Field>
               <Field label={zh ? "状态" : "Status"}>
                 <span style={{ color: `var(${ACTIVITY_META[selected.activity].token})` }}>
-                  <LoIcon name={ACTIVITY_META[selected.activity].icon} size={12} /> {zh ? ACTIVITY_META[selected.activity].zh : ACTIVITY_META[selected.activity].en}
+                  <LoIcon name={ACTIVITY_META[selected.activity].icon} size={16} /> {zh ? ACTIVITY_META[selected.activity].zh : ACTIVITY_META[selected.activity].en}
                 </span>
               </Field>
               {selected.focus && <Field label={zh ? "正在做" : "Focus"}>{selected.focus}</Field>}
@@ -224,7 +224,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                   title={zone.duty}
                   onClick={() => selectZone(zone.id === selectedZoneId ? null : zone.id)}
                 >
-                  <span className="lo-zones__icon"><LoIcon name={zone.icon} size={14} /></span>
+                  <span className="lo-zones__icon"><LoIcon name={zone.icon} size={16} /></span>
                   <span className="lo-zones__name">{zh ? zone.name : zone.nameEn}</span>
                   <span className="lo-zones__count" style={{ color: over ? "var(--warning)" : `var(${zone.token})` }}>
                     {count}/{zone.capacity}

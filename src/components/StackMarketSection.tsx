@@ -67,7 +67,7 @@ export function StackMarketSection() {
         <div className="skill-install-error">
           <span>{error}</span>
           <button onClick={() => setError(null)} aria-label="关闭">
-            <ActionIcons.close size={14} />
+            <ActionIcons.close size={16} />
           </button>
         </div>
       )}

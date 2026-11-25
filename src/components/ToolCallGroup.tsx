@@ -89,15 +89,15 @@ export const ToolCallGroup = memo(function ToolCallGroup({
         onClick={() => setExpanded((e) => !e)}
         aria-label={expanded ? "Collapse tools" : "Expand tools"}
       >
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <Wrench size={14} />
+        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <Wrench size={16} />
         <span className="tool-group-title-inline">{title}</span>
         <span className="tool-group-count-inline">
           {totalDone}/{items.length}
           {totalRunning > 0 && <span className="tool-group-running-inline"> · {totalRunning} running</span>}
           {totalError > 0 && <span className="tool-group-errors-inline"> · {totalError} failed</span>}
         </span>
-        {totalRunning > 0 && <LoaderCircle size={12} className="tool-group-spin" />}
+        {totalRunning > 0 && <LoaderCircle size={16} className="tool-group-spin" />}
       </button>
 
       {/* Inline tool pills */}
@@ -155,7 +155,7 @@ const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged
             padding: "2px 6px",
           }}
         >
-          <ChevronDown size={10} style={{ display: "inline", marginRight: 2 }} />
+          <ChevronDown size={16} style={{ display: "inline", marginRight: 2 }} />
           {hiddenCount} earlier {merged.toolName} calls — click to collapse
         </button>
       </>
@@ -179,7 +179,7 @@ const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged
           gap: "4px",
         }}
       >
-        <ChevronRight size={10} />
+        <ChevronRight size={16} />
         {hiddenCount} earlier {merged.toolName} calls collapsed
       </button>
       <ToolCallCard {...lastItem} />

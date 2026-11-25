@@ -445,7 +445,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   if (loading) {
     return (
       <div className="kg-loading">
-        <Loader2 size={24} className="spin kg-refresh-btn" />
+        <Loader2 size={20} className="spin kg-refresh-btn" />
         <span className="kg-source-hint">
           {isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}
         </span>
@@ -486,7 +486,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
       {/* Toolbar */}
       <div className="kg-toolbar">
         <div className="kg-search-wrapper">
-          <Search size={14} className="kg-search-icon" />
+          <Search size={16} className="kg-search-icon" />
           <input
             className="kg-search-input"
             placeholder={isZh ? '搜索节点...' : 'Search nodes...'}
@@ -620,14 +620,14 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                 onClick={() => { setEditingNodeId(selectedNode.id); setEditLabel(selectedNode.label); }}
                 className="kg-action-btn kg-action-btn--edit"
               >
-                <Edit3 size={12} />
+                <Edit3 size={16} />
                 {isZh ? '编辑节点' : 'Edit Node'}
               </button>
               <button
                 onClick={() => handleDeleteNode(selectedNode.id)}
                 className="kg-action-btn kg-action-btn--danger"
               >
-                <Trash2 size={12} />
+                <Trash2 size={16} />
                 {isZh ? '删除节点' : 'Delete Node'}
               </button>
             </div>
@@ -694,7 +694,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                     onClick={() => { setEditingNodeId(contextMenu.nodeId!); const n = graphData.nodes.find(x => x.id === contextMenu.nodeId); if (n) setEditLabel(n.label); setContextMenu(null); }}
                     className="kg-menu-item"
                   >
-                    <Edit3 size={12} />
+                    <Edit3 size={16} />
                     {isZh ? '编辑标签' : 'Edit Label'}
                   </button>
                   <div className="kg-menu-sep" />
@@ -702,7 +702,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                     onClick={() => handleDeleteNode(contextMenu.nodeId!)}
                     className="kg-menu-item kg-menu-item--danger"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={16} />
                     {isZh ? '删除节点' : 'Delete Node'}
                   </button>
                 </>
@@ -712,7 +712,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                   onClick={() => handleDeleteEdge(contextMenu.edgeId!)}
                   className="kg-menu-item kg-menu-item--danger"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={16} />
                   {isZh ? '删除连线' : 'Delete Edge'}
                 </button>
               )}

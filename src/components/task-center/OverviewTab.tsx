@@ -326,7 +326,7 @@ function RecentActivity({
                 fontSize: "var(--fs-sm)",
               }}
             >
-              <act.icon size={14} style={{ color: act.iconColor, flexShrink: 0 }} />
+              <act.icon size={16} style={{ color: act.iconColor, flexShrink: 0 }} />
               <span style={{ flex: 1, color: "var(--text-secondary, #aaa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {act.text}
               </span>

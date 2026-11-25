@@ -175,7 +175,6 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           maxHeight: "90vh",
           background: "var(--bg-secondary, #1e1e2e)",
           borderRadius: "var(--radius-md)",
-          border: "1px solid var(--border-primary)",
           boxShadow: "0 8px 32px var(--shadow-color)",
           display: "flex",
           flexDirection: "column",
@@ -190,12 +189,11 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            borderBottom: "1px solid var(--border-primary)",
             flexShrink: 0,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <ClipboardList className="icon-lg" style={{ color: "var(--accent, #7c3aed)" }} />
+            <ClipboardList className="icon-lg task-center-icon" />
             <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
               {zh ? "任务管理" : "Task Center"}
             </span>
@@ -222,11 +220,11 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
 
         {/* Tab bar */}
         <div
+          className="task-center-tabs"
           style={{
             display: "flex",
             gap: "2px",
             padding: "0 12px",
-            borderBottom: "1px solid var(--border-primary)",
             flexShrink: 0,
             overflowX: "auto",
           }}
@@ -240,6 +238,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
                 data-tab-id={tab.id}
                 onClick={() => tab.available && setActiveTab(tab.id)}
                 disabled={!tab.available}
+                className={`task-center-tab${isActive ? " is-active" : ""}`}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -247,20 +246,12 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
                   padding: "10px 14px",
                   fontSize: "var(--fs-base)",
                   fontWeight: isActive ? 600 : 400,
-                  color: isActive
-                    ? "var(--accent, #7c3aed)"
-                    : tab.available
-                      ? "var(--text-secondary, #888)"
-                      : "var(--text-muted, #555)",
-                  background: "none",
-                  border: "none",
-                  borderBottom: isActive ? "2px solid var(--accent, #7c3aed)" : "2px solid transparent",
                   cursor: tab.available ? "pointer" : "not-allowed",
                   whiteSpace: "nowrap",
                   opacity: tab.available ? 1 : 0.4,
                 }}
               >
-                <Icon size={14} />
+                <Icon size={16} />
                 {tab.label}
                 {!tab.available && (
                   <span style={{ fontSize: "var(--fs-xs)", opacity: 0.5, marginLeft: 2 }}>soon</span>
@@ -293,9 +284,9 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
 
         {/* Footer status bar */}
         <div
+          className="task-center-footer"
           style={{
             padding: "6px 20px",
-            borderTop: "1px solid var(--border-primary)",
             fontSize: "var(--fs-xs)",
             color: "var(--text-secondary, #666)",
             display: "flex",

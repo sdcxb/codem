@@ -136,9 +136,9 @@ export const InlineDiffReview = memo(function InlineDiffReview({
           }}
           aria-label={collapsed ? "展开" : "折叠"}
         >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
         </button>
-        <FileText size={14} className="inline-diff-file-icon" />
+        <FileText size={16} className="inline-diff-file-icon" />
         <div className="inline-diff-title-area">
           <div className="inline-diff-filename-row">
             <strong className="inline-diff-filename">{fileName}</strong>
@@ -222,16 +222,16 @@ export const InlineDiffReview = memo(function InlineDiffReview({
           {/* Action bar */}
           <div className="inline-diff-actions">
             <button className="inline-diff-btn accept" onClick={handleAccept}>
-              <Check size={14} />
+              <Check size={16} />
               <span>批准</span>
             </button>
             <button className="inline-diff-btn reject" onClick={handleReject}>
-              <X size={14} />
+              <X size={16} />
               <span>拒绝</span>
             </button>
             {onAcceptAll && (
               <button className="inline-diff-btn accept-all" onClick={onAcceptAll}>
-                <ShieldCheck size={14} />
+                <ShieldCheck size={16} />
                 <span>全部批准</span>
               </button>
             )}
@@ -240,7 +240,7 @@ export const InlineDiffReview = memo(function InlineDiffReview({
                 className="inline-diff-btn custom"
                 onClick={() => setShowCustomInput(true)}
               >
-                <Edit3 size={14} />
+                <Edit3 size={16} />
                 <span>自定义</span>
               </button>
             )}

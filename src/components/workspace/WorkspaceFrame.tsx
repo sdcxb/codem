@@ -116,7 +116,7 @@ export function WorkspaceMainColumn({
                 compactionStatus.skipped ? (
                   <div className="compaction-skipped-hint">{compactionStatus.skipReason ?? "当前没有可压缩的内容"}</div>
                 ) : (
-                  <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                  <><CheckCircle size={16} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                 )
               )}
             </div>
@@ -125,17 +125,17 @@ export function WorkspaceMainColumn({
             <div className="notebook-mode-banner">
               <span className="notebook-mode-icon"><BookOpen size={16} /></span>
               <span>{lang === "zh" ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-              <button className="notebook-mode-save" onClick={onSaveAIResponseAsNote} title={lang === "zh" ? "保存AI回复为笔记" : "Save AI response as note"}><Save size={14} /></button>
+              <button className="notebook-mode-save" onClick={onSaveAIResponseAsNote} title={lang === "zh" ? "保存AI回复为笔记" : "Save AI response as note"}><Save size={16} /></button>
               <button
                 className="notebook-mode-save"
                 onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }}
                 title={lang === "zh" ? "返回工作区" : "Back to Workspace"}
-              ><FolderOpen size={14} /></button>
+              ><FolderOpen size={16} /></button>
               <button aria-label="关闭" title="关闭"
                 className="notebook-mode-close"
                 onClick={() => { setActiveNotebookId(null); setActiveNotebookName(""); setNotebookSourceFilter(null); }}
               >
-                <X size={14} />
+                <X size={16} />
               </button>
             </div>
           )}
@@ -145,14 +145,14 @@ export function WorkspaceMainColumn({
           {bottomTab === "terminal" && (
             <div className="terminal-drawer">
               <div className="terminal-drawer-header">
-                <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+                <span className="terminal-drawer-title"><Terminal size={16} /> {lang === "zh" ? "终端" : "Terminal"}</span>
                 <button
                   className="terminal-drawer-close"
                   onClick={onCloseTerminal}
                   title={lang === "zh" ? "关闭终端" : "Close terminal"}
                   aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
                 >
-                  <X size={14} />
+                  <X size={16} />
                 </button>
               </div>
               <div className="terminal-drawer-body">{terminal}</div>

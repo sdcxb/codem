@@ -425,7 +425,7 @@ export function LibraryScene({
                 <polygon points={blockPoints(zone.rect)} className="lo-zone__edge" />
                 {showZoneLabels && (
                   <text x={c.x} y={c.y} className="lo-zone__label" textAnchor="middle">
-                    <LoIcon name={zone.icon} size={12} /> {zone.name}
+                    <LoIcon name={zone.icon} size={16} /> {zone.name}
                   </text>
                 )}
               </g>
@@ -505,26 +505,26 @@ export function LibraryScene({
       <div className="lo-scene__hud">
         <span className="lo-scene__stats" title="在馆 / 行走 / 工作 / 待命">
           <span>
-            <LoIcon name="users" size={12} /> {stats.total}
+            <LoIcon name="users" size={16} /> {stats.total}
           </span>
           <span>
-            <LoIcon name="footprints" size={12} /> {stats.walking}
+            <LoIcon name="footprints" size={16} /> {stats.walking}
           </span>
           <span>
-            <LoIcon name="cog" size={12} /> {stats.working}
+            <LoIcon name="cog" size={16} /> {stats.working}
           </span>
           <span>
-            <LoIcon name="coffee" size={12} /> {stats.idle}
+            <LoIcon name="coffee" size={16} /> {stats.idle}
           </span>
         </span>
         <button className="lo-hud-btn" onClick={() => zoomBy(1.25)} title="放大" aria-label="放大">
-          <LoIcon name="plus" size={14} />
+          <LoIcon name="plus" size={16} />
         </button>
         <button className="lo-hud-btn" onClick={() => zoomBy(0.8)} title="缩小" aria-label="缩小">
-          <LoIcon name="minus" size={14} />
+          <LoIcon name="minus" size={16} />
         </button>
         <button className="lo-hud-btn" onClick={fitView} title="适应窗口（双击场景同效）" aria-label="适应窗口">
-          <LoIcon name="maximize-2" size={14} />
+          <LoIcon name="maximize-2" size={16} />
         </button>
         <span className="lo-scene__hint">滚轮缩放 · 拖拽平移 · 双击复位</span>
       </div>

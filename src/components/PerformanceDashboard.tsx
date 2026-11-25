@@ -152,7 +152,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
           </div>
           <div className="perf-header-actions">
             <button onClick={() => { telemetry.flush(); refresh(); }} className="perf-btn">
-              <RefreshCw size={14} />
+              <RefreshCw size={16} />
               {S.perf.refresh[lang]}
             </button>
           </div>
@@ -161,9 +161,9 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         {/* Tabs + Controls */}
         <div className="perf-tabs">
           <div className="perf-tab-group">
-            <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")} icon={<BarChart3 size={14} />} label={S.perf.overview[lang]} />
-            <TabButton active={activeTab === "sessions"} onClick={() => setActiveTab("sessions")} icon={<Clock size={14} />} label={S.perf.sessions[lang]} />
-            <TabButton active={activeTab === "latency"} onClick={() => setActiveTab("latency")} icon={<Gauge size={14} />} label={S.perf.latency[lang]} />
+            <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")} icon={<BarChart3 size={16} />} label={S.perf.overview[lang]} />
+            <TabButton active={activeTab === "sessions"} onClick={() => setActiveTab("sessions")} icon={<Clock size={16} />} label={S.perf.sessions[lang]} />
+            <TabButton active={activeTab === "latency"} onClick={() => setActiveTab("latency")} icon={<Gauge size={16} />} label={S.perf.latency[lang]} />
           </div>
           <div className="perf-controls">
             {activeTab === "overview" && (
@@ -182,11 +182,11 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
               {S.perf.autoRefresh[lang]}
             </label>
             <button onClick={handleExportOTel} className="perf-btn">
-              <Download size={12} />
+              <Download size={16} />
               {S.perf.exportOTel[lang]}
             </button>
             <button onClick={() => setShowClearConfirm(true)} className="perf-btn">
-              <Trash2 size={12} />
+              <Trash2 size={16} />
               {S.perf.clearAll[lang]}
             </button>
           </div>
@@ -216,7 +216,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
               {/* Trend Chart */}
               <div className="perf-section">
                 <div className="perf-section-title">
-                  <Zap size={14} />
+                  <Zap size={16} />
                   {S.perf.eventTrend[lang]}
                 </div>
                 <div className="perf-chart">

@@ -40,7 +40,7 @@ export const CorrectionModeToggle = memo(function CorrectionModeToggle({
       onClick={handleToggle}
       title={S.correctionMode.tooltip[lang]}
     >
-      <span className="toggle-icon"><Search size={12} aria-hidden /></span>
+      <span className="toggle-icon"><Search size={16} aria-hidden /></span>
       <span className="toggle-label">{S.correctionMode.label[lang]}</span>
     </button>
   );

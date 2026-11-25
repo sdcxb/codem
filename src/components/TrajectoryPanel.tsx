@@ -57,14 +57,14 @@ export interface TrajectoryPanelProps {
 /** 类型图标 */
 function TypeIcon({ type }: { type: TrajectoryStepType }) {
   switch (type) {
-    case 'llm_call': return <Brain size={12} className="tj-icon tj-tone-accent" />
-    case 'tool_call': return <Wrench size={12} className="tj-icon tj-tone-info" />
-    case 'tool_result': return <CheckCircle2 size={12} className="tj-icon tj-tone-success" />
-    case 'user_input': return <MessageSquare size={12} className="tj-icon tj-tone-secondary" />
-    case 'assistant_output': return <MessageSquare size={12} className="tj-icon tj-tone-primary" />
-    case 'error': return <AlertCircle size={12} className="tj-icon tj-tone-error" />
-    case 'turn_end': return <Activity size={12} className="tj-icon tj-tone-muted" />
-    default: return <Clock size={12} className="tj-icon" />
+    case 'llm_call': return <Brain size={16} className="tj-icon tj-tone-accent" />
+    case 'tool_call': return <Wrench size={16} className="tj-icon tj-tone-info" />
+    case 'tool_result': return <CheckCircle2 size={16} className="tj-icon tj-tone-success" />
+    case 'user_input': return <MessageSquare size={16} className="tj-icon tj-tone-secondary" />
+    case 'assistant_output': return <MessageSquare size={16} className="tj-icon tj-tone-primary" />
+    case 'error': return <AlertCircle size={16} className="tj-icon tj-tone-error" />
+    case 'turn_end': return <Activity size={16} className="tj-icon tj-tone-muted" />
+    default: return <Clock size={16} className="tj-icon" />
   }
 }
 
@@ -255,8 +255,8 @@ function MetricChip({ icon, label, value }: { icon: React.ReactNode; label: stri
 /** 摘要区折叠箭头（三处摘要共用） */
 function SummaryChevron({ expanded }: { expanded: boolean }) {
   return expanded
-    ? <ChevronDown size={10} className="tj-chevron" />
-    : <ChevronRight size={10} className="tj-chevron" />
+    ? <ChevronDown size={16} className="tj-chevron" />
+    : <ChevronRight size={16} className="tj-chevron" />
 }
 
 /**
@@ -325,7 +325,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
     <div className="trajectory-panel">
       {/* Header — 紧凑单行 */}
       <div className="tj-header">
-        <Activity size={14} className="tj-icon tj-tone-accent" />
+        <Activity size={16} className="tj-icon tj-tone-accent" />
         <span className="tj-title">
           {zh ? '执行轨迹' : 'Trajectory'}
         </span>
@@ -339,9 +339,9 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
             onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(!showFilterDropdown) }}
             className="tj-filter-btn"
           >
-            <Filter size={10} />
+            <Filter size={16} />
             {filter === 'all' ? (zh ? '全部' : 'All') : typeLabel(filter as TrajectoryStepType, zh)}
-            <ChevronDown size={10} />
+            <ChevronDown size={16} />
           </button>
           {showFilterDropdown && (
             <>
@@ -366,17 +366,17 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
       {/* Stats — 网格布局自动换行 */}
       {turnMetrics.turns > 0 && (
         <div className="tj-stats">
-          <MetricChip icon={<Timer size={10} />} label="" value={`${turnMetrics.turns}T · ${turnMetrics.steps}S`} />
-          {turnMetrics.llmMs > 0 && <MetricChip icon={<Clock size={10} />} label="LLM" value={formatDuration(turnMetrics.llmMs)} />}
-          {turnMetrics.toolMs > 0 && <MetricChip icon={<Wrench size={10} />} label="" value={formatDuration(turnMetrics.toolMs)} />}
+          <MetricChip icon={<Timer size={16} />} label="" value={`${turnMetrics.turns}T · ${turnMetrics.steps}S`} />
+          {turnMetrics.llmMs > 0 && <MetricChip icon={<Clock size={16} />} label="LLM" value={formatDuration(turnMetrics.llmMs)} />}
+          {turnMetrics.toolMs > 0 && <MetricChip icon={<Wrench size={16} />} label="" value={formatDuration(turnMetrics.toolMs)} />}
           {turnMetrics.ttftSteps > 0 && turnMetrics.ttftMs > 0 && (
-            <MetricChip icon={<Gauge size={10} />} label="TTFT" value={formatDuration(turnMetrics.ttftMs / turnMetrics.ttftSteps)} />
+            <MetricChip icon={<Gauge size={16} />} label="TTFT" value={formatDuration(turnMetrics.ttftMs / turnMetrics.ttftSteps)} />
           )}
           {turnMetrics.decodeMs > 0 && turnMetrics.decodeTokens > 0 && (
-            <MetricChip icon={<TrendingUp size={10} />} label="" value={`${formatTps(turnMetrics.decodeTokens / (turnMetrics.decodeMs / 1000))}t/s`} />
+            <MetricChip icon={<TrendingUp size={16} />} label="" value={`${formatTps(turnMetrics.decodeTokens / (turnMetrics.decodeMs / 1000))}t/s`} />
           )}
           {(turnMetrics.inputTokens > 0 || turnMetrics.outputTokens > 0) && (
-            <MetricChip icon={<Zap size={10} />} label="" value={`${formatTokens(turnMetrics.inputTokens)}↓/${formatTokens(turnMetrics.outputTokens)}↑`} />
+            <MetricChip icon={<Zap size={16} />} label="" value={`${formatTokens(turnMetrics.inputTokens)}↓/${formatTokens(turnMetrics.outputTokens)}↑`} />
           )}
         </div>
       )}
@@ -411,7 +411,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 {/* LLM provider — 紧凑 */}
                 {step.data?.provider && (
                   <span className="tj-meta">
-                    <Cpu size={10} />{step.data.provider}
+                    <Cpu size={16} />{step.data.provider}
                   </span>
                 )}
                 {/* LLM usage — input↓/output↑（对标 dsh 每 request usage 展示） */}
@@ -432,7 +432,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 )}
                 {/* 时间 — 右对齐 */}
                 <span className="tj-time">
-                  <Clock size={10} />
+                  <Clock size={16} />
                   {formatTime(step.timestamp)}
                   {step.duration && <span>·{formatDuration(step.duration)}</span>}
                 </span>
@@ -477,7 +477,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {/* token usage 行 — 独立小行 */}
               {step.data?.usage && !isExpanded && (
                 <div className="tj-usage">
-                  <Zap size={10} />
+                  <Zap size={16} />
                   {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}↓
                   {' '}
                   {formatTokens(step.data.usage.completionTokens || step.data.usage.outputTokens || 0)}↑

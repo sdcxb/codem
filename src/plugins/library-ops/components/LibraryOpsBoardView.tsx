@@ -89,7 +89,7 @@ export function LibraryOpsBoardView() {
             aria-label={zh ? "实时事件" : "Live feed"}
             aria-pressed={feedOnBoard}
           >
-            <LoIcon name="layout-panel-left" size={14} />
+            <LoIcon name="layout-panel-left" size={16} />
           </button>
         ) : null
       }

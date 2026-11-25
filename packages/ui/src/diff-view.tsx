@@ -81,7 +81,7 @@ export function DiffView(props: DiffViewProps): React.ReactElement {
     <div className="diff-viewer">
       <div className="diff-viewer-header">
         <div className="diff-viewer-title">
-          <span className="diff-viewer-icon"><FileText size={14} aria-hidden="true" /></span>
+          <span className="diff-viewer-icon"><FileText size={16} aria-hidden="true" /></span>
           <span className="diff-viewer-filename" title={props.filePath}>{fileName}</span>
           <span className="diff-viewer-stats">
             <span className="diff-stat-added">+{addedCount}</span>

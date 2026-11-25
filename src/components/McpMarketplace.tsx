@@ -179,7 +179,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
         />
         {query && (
           <button aria-label="清空搜索" title="清空搜索" className="mcp-search-clear" onClick={() => setQuery("")}>
-            <CloseIcon size={14} />
+            <CloseIcon size={16} />
           </button>
         )}
       </div>
@@ -268,7 +268,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
                     onClick={() => handleUninstall(entry)}
                     disabled={state?.installing}
                   >
-                    <UninstallIcon size={14} />
+                    <UninstallIcon size={16} />
                     卸载
                   </button>
                 ) : entry.requiresApiKey ? (
@@ -285,7 +285,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
                     onClick={() => handleInstall(entry)}
                     disabled={state?.installing}
                   >
-                    <InstallIcon size={14} />
+                    <InstallIcon size={16} />
                     {state?.installing ? "安装中..." : "安装"}
                   </button>
                 )}

@@ -272,7 +272,7 @@ function ListProperties({ el, onUpdate }: { el: ListElement; onUpdate: (id: stri
               }} />
             <button className="ppt-property-btn" style={{ flex: '0 0 auto', padding: '4px 8px' }}
               aria-label="删除该项"
-              onClick={() => { const items = el.items.filter((_, idx) => idx !== i); onUpdate(el.id, { items }); }}><ActionIcons.delete size={12} /></button>
+              onClick={() => { const items = el.items.filter((_, idx) => idx !== i); onUpdate(el.id, { items }); }}><ActionIcons.delete size={16} /></button>
           </div>
         ))}
         <button className="ppt-property-btn" style={{ marginTop: 4 }}
@@ -411,7 +411,7 @@ function ImageProperties({ el, onUpdate }: { el: ImageElement; onUpdate: (id: st
       <div className="ppt-property-section">
         <div className="ppt-property-section-title">图片</div>
         <div className="ppt-property-row">
-          <button className="ppt-property-btn" onClick={handleImageUpload}><FolderOpen size={14} aria-hidden /> 上传图片</button>
+          <button className="ppt-property-btn" onClick={handleImageUpload}><FolderOpen size={16} aria-hidden /> 上传图片</button>
         </div>
         {el.src && (
           <div className="ppt-property-row">

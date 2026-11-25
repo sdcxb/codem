@@ -813,7 +813,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         style={{ background: slide.background, aspectRatio, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', padding: 8 }}
       >
         <span className="ppt-thumbnail-number">{index + 1}</span>
-        <button className="ppt-thumbnail-delete" onClick={(e) => { e.stopPropagation(); handleDeleteSlide(index); }} aria-label="删除这张幻灯片"><ActionIcons.delete size={12} /></button>
+        <button className="ppt-thumbnail-delete" onClick={(e) => { e.stopPropagation(); handleDeleteSlide(index); }} aria-label="删除这张幻灯片"><ActionIcons.delete size={16} /></button>
         {firstText && (
           <div style={{ fontSize: "var(--fs-xs)", color: deck.theme.textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
             {(firstText as any).content}
@@ -877,7 +877,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         <div className="ppt-thumbnail-bar">
           {deck.slides.map((slide, i) => renderThumbnail(slide, i))}
           <button className="ppt-thumbnail-add" onClick={handleAddSlide}>+ 添加幻灯片</button>
-          <button className="ppt-thumbnail-add" onClick={() => setShowTemplates(!showTemplates)}><ClipboardList size={14} aria-hidden /> 从模板</button>
+          <button className="ppt-thumbnail-add" onClick={() => setShowTemplates(!showTemplates)}><ClipboardList size={16} aria-hidden /> 从模板</button>
           {showTemplates && (
             <div style={{ padding: 8, display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
               {[
@@ -892,7 +892,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
                 const Icon = tpl.icon;
                 return (
                   <button key={tpl.id} onClick={() => handleAddFromTemplate(tpl.id)} className="ppt-toolbar-btn" style={{ width: '100%', textAlign: 'left' }}>
-                    <Icon size={14} aria-hidden /> {tpl.name}
+                    <Icon size={16} aria-hidden /> {tpl.name}
                   </button>
                 );
               })}
@@ -965,7 +965,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
                 onClick={handleChatSubmit}
                 disabled={chatLoading || !chatInput.trim()}
               >
-                {chatLoading ? '...' : <><Sparkles size={14} aria-hidden /> AI 修改</>}
+                {chatLoading ? '...' : <><Sparkles size={16} aria-hidden /> AI 修改</>}
               </button>
             </div>
           </div>
@@ -997,7 +997,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><History size={16} aria-hidden /> 版本历史</span>
-            <button onClick={() => setShowVersionPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={14} /></button>
+            <button onClick={() => setShowVersionPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={16} /></button>
           </div>
           {versions.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 20 }}>暂无保存的版本</div>
@@ -1028,7 +1028,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
               >
                 {generatingNotes ? '生成中...' : '重新生成'}
               </button>
-              <button onClick={() => setShowNotesPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={14} /></button>
+              <button onClick={() => setShowNotesPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={16} /></button>
             </div>
           </div>
           <div>

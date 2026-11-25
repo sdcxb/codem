@@ -42,7 +42,7 @@ export const ImagePreviewView = memo(function ImagePreviewView({
   return (
     <ContentFrame
       title={title || "图片"}
-      icon={<ImageIcon size={14} />}
+      icon={<ImageIcon size={16} />}
       fullscreenable
       onFullscreen={() => setFullscreen(true)}
       className="image-preview-view"

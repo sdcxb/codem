@@ -154,7 +154,7 @@ export function OllamaSettingsPanel() {
       {/* Save button */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button onClick={handleSave} style={btnStyle}>
-          <SettingsIcon size={14} />
+          <SettingsIcon size={16} />
           {S.ollama.save[lang]}
         </button>
         {saved && <span style={{ color: "var(--success)", fontSize: 'var(--fs-sm)', alignSelf: "center" }}>✓ {S.ollama.saved[lang]}</span>}
@@ -171,19 +171,19 @@ export function OllamaSettingsPanel() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.connectionStatus[lang]}</span>
           <button onClick={checkConnection} disabled={checking} style={btnStyle}>
-            <RefreshCw size={12} className={checking ? "spin" : ""} />
+            <RefreshCw size={16} className={checking ? "spin" : ""} />
             {S.ollama.checkConnection[lang]}
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'var(--fs-base)' }}>
           {checking ? (
             <>
-              <RefreshCw size={14} className="spin" />
+              <RefreshCw size={16} className="spin" />
               <span>{S.ollama.checking[lang]}</span>
             </>
           ) : status?.connected ? (
             <>
-              <CheckCircle size={14} className="sp-icon-success" />
+              <CheckCircle size={16} className="sp-icon-success" />
               <span style={{ color: "var(--success)" }}>{S.ollama.connected[lang]}</span>
               <span className="hint-sm">— {status.url}</span>
               <span style={{ marginLeft: "auto", fontWeight: 600 }}>
@@ -192,7 +192,7 @@ export function OllamaSettingsPanel() {
             </>
           ) : status ? (
             <>
-              <XCircle size={14} className="sp-icon-error" />
+              <XCircle size={16} className="sp-icon-error" />
               <span style={{ color: "var(--error)" }}>{S.ollama.disconnected[lang]}</span>
               <span className="hint-sm">— {status.error}</span>
             </>
@@ -211,7 +211,7 @@ export function OllamaSettingsPanel() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.models[lang]}</span>
             <button onClick={fetchModels} disabled={loadingModels} style={btnStyle}>
-              <RefreshCw size={12} className={loadingModels ? "spin" : ""} />
+              <RefreshCw size={16} className={loadingModels ? "spin" : ""} />
               {S.ollama.refreshModels[lang]}
             </button>
           </div>
@@ -237,7 +237,7 @@ export function OllamaSettingsPanel() {
                   border: "1px solid var(--border-primary)",
                   fontSize: 'var(--fs-sm)',
                 }}>
-                  <Cpu size={14} style={{ flexShrink: 0 }} />
+                  <Cpu size={16} style={{ flexShrink: 0 }} />
                   <span style={{ fontWeight: 600, fontFamily: "'Cascadia Code', monospace" }}>{m.id}</span>
                   <span className="hint-sm">
                     ctx: {(m.contextWindow / 1000).toFixed(0)}K

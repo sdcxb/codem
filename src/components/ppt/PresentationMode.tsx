@@ -278,7 +278,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           padding: '6px 12px', borderRadius: "var(--radius-xs)", cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
-        }}><X size={14} aria-hidden /> 退出</button>
+        }}><X size={16} aria-hidden /> 退出</button>
 
         <button className="ppt-present-btn" onClick={goNext} disabled={currentIndex === totalSlides - 1} aria-label="下一页" title="下一页" style={{
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',

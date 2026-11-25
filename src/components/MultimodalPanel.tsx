@@ -149,7 +149,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         {/* Embedding 未配置时显示默认本地模型提示 */}
         {!isEnabled && modality === "embedding" && (
           <div className="mm-note">
-            <StatusIcons.success size={14} aria-hidden /> 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
+            <StatusIcons.success size={16} aria-hidden /> 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
             随安装包打包，无需配置 API Key，安装后即可离线使用。如需更高精度，可启用后选择其他本地模型或远程 API。
           </div>
         )}
@@ -235,15 +235,15 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* 模型状态指示器 */}
                 <div className={`mm-status is-${localStatus.state === "ready" ? "ready" : localStatus.state === "loading" ? "loading" : localStatus.state === "error" ? "error" : "idle"}`}>
-                  {localStatus.state === "ready" && <><StatusIcons.success size={14} aria-hidden /> 模型已加载，可正常使用</>}
-                  {localStatus.state === "loading" && <><StatusIcons.loading size={14} className="spin" aria-hidden /> {localStatus.message || "正在加载..."}</>}
-                  {localStatus.state === "not-loaded" && <><StatusIcons.idle size={14} aria-hidden /> 模型未加载（首次使用时自动下载）</>}
-                  {localStatus.state === "error" && <><StatusIcons.error size={14} aria-hidden /> {localStatus.message || "加载失败"}</>}
+                  {localStatus.state === "ready" && <><StatusIcons.success size={16} aria-hidden /> 模型已加载，可正常使用</>}
+                  {localStatus.state === "loading" && <><StatusIcons.loading size={16} className="spin" aria-hidden /> {localStatus.message || "正在加载..."}</>}
+                  {localStatus.state === "not-loaded" && <><StatusIcons.idle size={16} aria-hidden /> 模型未加载（首次使用时自动下载）</>}
+                  {localStatus.state === "error" && <><StatusIcons.error size={16} aria-hidden /> {localStatus.message || "加载失败"}</>}
                 </div>
 
                 {/* 说明文字 */}
                 <div className="mm-help">
-                  <Lightbulb size={14} aria-hidden /> 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
+                  <Lightbulb size={16} aria-hidden /> 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
                   默认模型（all-MiniLM-L6-v2）已随安装包内置，已内置。
                   其他模型首次使用时从 HuggingFace 下载并缓存。超长文本自动子分块处理。
                 </div>
@@ -371,7 +371,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
       <div className="mm-footer">
         {saved && (
-          <span className="mm-saved"><StatusIcons.success size={14} aria-hidden /> 已保存</span>
+          <span className="mm-saved"><StatusIcons.success size={16} aria-hidden /> 已保存</span>
         )}
         <button
           onClick={handleSave}

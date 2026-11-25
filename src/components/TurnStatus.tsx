@@ -49,7 +49,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
       className="turn-status-row turn-error"
       role="status"
     >
-      <AlertCircle size={14} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
+      <AlertCircle size={16} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontWeight: 600, color: 'var(--error)' }}>
           {zh ? '执行出错' : 'Turn Error'}
@@ -95,7 +95,7 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         fontSize: 'var(--fs-sm)',
       }}
     >
-      <AlertTriangle size={14} style={{ color: 'var(--warning, #eab008)', flexShrink: 0, marginTop: 1 }} />
+      <AlertTriangle size={16} style={{ color: 'var(--warning, #eab008)', flexShrink: 0, marginTop: 1 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontWeight: 600, color: 'var(--warning, #eab008)' }}>
           {zh ? '已达到输出上限' : 'Max Tokens Reached'}
@@ -170,10 +170,10 @@ const ModelRetryRow = memo(function ModelRetryRow({
         }}
       >
         {expanded
-          ? <ChevronDown size={12} style={{ flexShrink: 0 }} />
-          : <ChevronRight size={12} style={{ flexShrink: 0 }} />
+          ? <ChevronDown size={16} style={{ flexShrink: 0 }} />
+          : <ChevronRight size={16} style={{ flexShrink: 0 }} />
         }
-        <RotateCw size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} className={active ? 'spin' : ''} />
+        <RotateCw size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} className={active ? 'spin' : ''} />
         <span role="status" style={{ color: 'var(--text-secondary)' }}>
           {zh
             ? `${label} · 第 ${retry}/${maximum} 次 · ${seconds}s`

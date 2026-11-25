@@ -786,26 +786,26 @@ export function PixelLibraryScene({
       <div className="lo-scene__hud">
         <span className="lo-scene__stats" title="在馆 / 行走 / 工作 / 待命">
           <span>
-            <LoIcon name="users" size={12} /> {stats.total}
+            <LoIcon name="users" size={16} /> {stats.total}
           </span>
           <span>
-            <LoIcon name="footprints" size={12} /> {stats.walking}
+            <LoIcon name="footprints" size={16} /> {stats.walking}
           </span>
           <span>
-            <LoIcon name="cog" size={12} /> {stats.working}
+            <LoIcon name="cog" size={16} /> {stats.working}
           </span>
           <span>
-            <LoIcon name="coffee" size={12} /> {stats.idle}
+            <LoIcon name="coffee" size={16} /> {stats.idle}
           </span>
         </span>
         <button className="lo-hud-btn" onClick={() => zoomBy(1.25)} title="放大" aria-label="放大">
-          <LoIcon name="plus" size={14} />
+          <LoIcon name="plus" size={16} />
         </button>
         <button className="lo-hud-btn" onClick={() => zoomBy(0.8)} title="缩小" aria-label="缩小">
-          <LoIcon name="minus" size={14} />
+          <LoIcon name="minus" size={16} />
         </button>
         <button className="lo-hud-btn" onClick={fitView} title="适应窗口（双击场景同效）" aria-label="适应窗口">
-          <LoIcon name="maximize-2" size={14} />
+          <LoIcon name="maximize-2" size={16} />
         </button>
         <button
           className={`lo-hud-btn${editingLayout ? " is-active" : ""}`}
@@ -814,7 +814,7 @@ export function PixelLibraryScene({
           aria-label="对位模式"
           aria-pressed={editingLayout}
         >
-          <LoIcon name="move" size={14} />
+          <LoIcon name="move" size={16} />
         </button>
         {editingLayout && (
           <button
@@ -823,7 +823,7 @@ export function PixelLibraryScene({
             title="清除当前场景图的全部对位调整（回到内置布局）"
             aria-label="重置对位"
           >
-            <LoIcon name="rotate-ccw" size={14} />
+            <LoIcon name="rotate-ccw" size={16} />
           </button>
         )}
         <span className="lo-scene__hint" title={`${SCENE_CREDITS[0].project} · ${SCENE_CREDITS[0].license}`}>
@@ -833,7 +833,7 @@ export function PixelLibraryScene({
 
       {editingLayout && (
         <div className="lo-scene__edit-hint">
-          <LoIcon name="move" size={12} /> 对位模式：拖动<b>房间框</b>移动、右下角小方块改大小，拖动<b>圆点</b>改走道；角色会按新位置走动。
+          <LoIcon name="move" size={16} /> 对位模式：拖动<b>房间框</b>移动、右下角小方块改大小，拖动<b>圆点</b>改走道；角色会按新位置走动。
         </div>
       )}
 

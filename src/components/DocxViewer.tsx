@@ -185,7 +185,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
                   display: 'flex', alignItems: 'center', gap: '4px',
                 }}
               >
-                <Save size={12} />
+                <Save size={16} />
                 {isZh ? '存为笔记' : 'Save'}
               </button>
             )}
@@ -199,7 +199,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
                 display: 'flex', alignItems: 'center', gap: '4px',
               }}
             >
-              <Copy size={12} />
+              <Copy size={16} />
               {isZh ? '复制' : 'Copy'}
             </button>
             <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}>
@@ -216,7 +216,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
           alignItems: 'center',
           gap: '8px',
         }}>
-          <Search size={14} style={{ opacity: 0.5 }} />
+          <Search size={16} style={{ opacity: 0.5 }} />
           <input
             type="text"
             placeholder={isZh ? '搜索文档内容...' : 'Search document...'}

@@ -18,7 +18,7 @@ import { scopeDelegations } from "./delegation-scope";
 
 const STATUS_CONFIG: Record<DelegationState, { label: string; labelEn: string; color: string; Icon: typeof CheckCircle2 }> = {
   pending: { label: "等待中", labelEn: "Pending", color: "var(--text-muted)", Icon: Timer },
-  running: { label: "执行中", labelEn: "Running", color: "var(--accent)", Icon: Loader2 },
+  running: { label: "执行中", labelEn: "Running", color: "var(--text-secondary)", Icon: Loader2 },
   completed: { label: "已完成", labelEn: "Completed", color: "var(--success)", Icon: CheckCircle2 },
   failed: { label: "已失败", labelEn: "Failed", color: "var(--error)", Icon: XCircle },
   cancelled: { label: "已取消", labelEn: "Cancelled", color: "var(--warning)", Icon: Ban },
@@ -102,20 +102,19 @@ export function DelegationTab() {
       {/* Stats bar */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
         {[
-          { label: zh ? "总计" : "Total", value: stats.total, color: "var(--accent)" },
-          { label: zh ? "运行中" : "Running", value: stats.running, color: "var(--accent)" },
+          { label: zh ? "总计" : "Total", value: stats.total, color: "var(--text-primary)" },
+          { label: zh ? "运行中" : "Running", value: stats.running, color: "var(--text-primary)" },
           { label: zh ? "已完成" : "Completed", value: stats.completed, color: "var(--success)" },
           { label: zh ? "失败" : "Failed", value: stats.failed, color: "var(--error)" },
           { label: zh ? "等待中" : "Pending", value: stats.pending, color: "var(--text-muted)" },
         ].map((s) => (
-          <div key={s.label} style={{
+          <div key={s.label} className="delegation-stat" style={{
             background: "var(--bg-tertiary)",
             borderRadius: "var(--radius-sm)",
             padding: "8px 14px",
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            border: "1px solid var(--border-primary)",
           }}>
             <span style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: s.color }}>{s.value}</span>
             <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{s.label}</span>
@@ -134,7 +133,7 @@ export function DelegationTab() {
           {projectId ? (
             <>
               {zh ? "暂无委派任务。在对话中使用 " : "No delegation tasks. Use "}
-              <code style={{ color: "var(--accent)" }}>delegate_to_session</code>
+              <code>delegate_to_session</code>
               {zh ? " 工具来委派任务到其他会话。" : " tool to delegate tasks."}
             </>
           ) : (
@@ -154,19 +153,19 @@ export function DelegationTab() {
             return (
               <div
                 key={task.id}
+                className="delegation-card"
                 style={{
                   padding: "12px 14px",
                   borderRadius: "var(--radius)",
                   background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border-primary)",
                   display: "flex",
                   flexDirection: "column",
                   gap: "6px",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <Link2 size={14} style={{ color: "var(--text-secondary)" }} />
-                  <StatusIcon size={14} style={{ color: config.color }} />
+                  <Link2 size={16} style={{ color: "var(--text-secondary)" }} />
+                  <StatusIcon size={16} style={{ color: config.color }} />
                   <span style={{
                     fontSize: "var(--fs-xs)",
                     fontWeight: 600,
@@ -178,7 +177,7 @@ export function DelegationTab() {
                     {zh ? config.label : config.labelEn}
                   </span>
                   <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-primary)" }}>{sourceTitle}</span>
-                  <ArrowRight size={12} style={{ color: "var(--text-secondary, #888)" }} />
+                  <ArrowRight size={16} style={{ color: "var(--text-secondary, #888)" }} />
                   <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-primary)" }}>{targetTitle}</span>
                   <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)" }}>
                     {formatTime(task.createdAt)}
@@ -189,6 +188,7 @@ export function DelegationTab() {
                       onClick={() => handleCancel(task)}
                       title={zh ? "终止这个委派任务（子会话会被立刻中止）" : "Cancel this delegation (the child session is aborted immediately)"}
                       aria-label={zh ? "终止委派任务" : "Cancel delegation"}
+                      className="delegation-cancel"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -196,13 +196,11 @@ export function DelegationTab() {
                         padding: "2px 8px",
                         fontSize: "var(--fs-xs)",
                         color: "var(--error)",
-                        background: "transparent",
-                        border: "1px solid var(--border-primary)",
                         borderRadius: "var(--radius-xs)",
                         cursor: "pointer",
                       }}
                     >
-                      <Ban size={12} />
+                      <Ban size={16} />
                       {zh ? "终止" : "Cancel"}
                     </button>
                   )}
@@ -216,7 +214,7 @@ export function DelegationTab() {
                     fontSize: "var(--fs-xs)",
                     color: "var(--text-secondary, #888)",
                   }}>
-                    <Activity size={12} />
+                    <Activity size={16} />
                     <span>
                       {zh
                         ? `已调用工具 ${task.progress.toolCalls} 次 · 最近：${task.progress.lastTool || "(无)"}`
@@ -224,13 +222,12 @@ export function DelegationTab() {
                     </span>
                   </div>
                 )}
-                <div style={{
+                <div className="delegation-task" style={{
                   fontSize: "var(--fs-sm)",
                   color: "var(--text-secondary, #aaa)",
                   padding: "6px 8px",
                   background: "var(--bg-secondary)",
                   borderRadius: "var(--radius-xs)",
-                  borderLeft: `3px solid ${config.color}`,
                 }}>
                   {truncate(task.task, 200)}
                 </div>

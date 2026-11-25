@@ -128,9 +128,9 @@ export function ModelSelector({ model: modelProp, providerId: providerIdProp, mo
           opacity: locked ? 0.5 : 1,
         }}
       >
-        <Cpu size={14} />
+        <Cpu size={16} />
         <span>{currentModelName}</span>
-        <ChevronDown size={10} style={{ opacity: 0.5 }} />
+        <ChevronDown size={16} style={{ opacity: 0.5 }} />
       </button>
 
       {open && (
@@ -171,7 +171,7 @@ export function ModelSelector({ model: modelProp, providerId: providerIdProp, mo
               }}
             >
               <span style={{ fontSize: 'var(--fs-md)', display: 'flex', alignItems: 'center' }}>
-                {model === m.id && (!providerIdProp || !m.providerId || m.providerId === providerIdProp) ? <Check size={14} /> : <Cpu size={14} />}
+                {model === m.id && (!providerIdProp || !m.providerId || m.providerId === providerIdProp) ? <Check size={16} /> : <Cpu size={16} />}
               </span>
               <span className="model-option-name" style={{ fontSize: 'var(--fs-sm)' }} title={m.name}>{m.name}</span>
               {m.providerName && (

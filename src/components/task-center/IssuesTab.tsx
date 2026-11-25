@@ -112,7 +112,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             opacity: projectId ? 1 : 0.5,
           }}
         >
-          {creating ? <ActionIcons.close size={14} /> : <ActionIcons.add size={14} />}
+          {creating ? <ActionIcons.close size={16} /> : <ActionIcons.add size={16} />}
           {zh ? "新建 Issue" : "New Issue"}
         </button>
       </div>

@@ -30,8 +30,8 @@ export function TeamTab() {
       {/* 运行时团队活动（agent-teams） */}
       <section style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }} onClick={() => setShowRuntime((s) => !s)}>
-          {showRuntime ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <Boxes size={14} style={{ color: "var(--accent)" }} />
+          {showRuntime ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <Boxes size={16} style={{ color: "var(--accent)" }} />
           <strong style={{ fontSize: "var(--fs-md)" }}>{zh ? "运行时团队（agent-teams）" : "Running teams (agent-teams)"}</strong>
         </div>
         {showRuntime && (
@@ -45,7 +45,7 @@ export function TeamTab() {
       {/* 团队模板（原 Squad）管理 */}
       <section style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Users size={14} style={{ color: "var(--accent)" }} />
+          <Users size={16} style={{ color: "var(--accent)" }} />
           <strong style={{ fontSize: "var(--fs-md)" }}>{zh ? "团队模板（Squad → 实例化为运行时团队）" : "Team templates (Squad → instantiate)"}</strong>
         </div>
         <SquadsTab />

@@ -45,12 +45,12 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
           id: s.name,
           title: name,
           description: s.description,
-          icon: <Target size={14} />,
+          icon: <Target size={16} />,
           onSelect: () => onSelect({
             id: s.name,
             title: name,
             description: s.description,
-            icon: <Target size={14} />,
+            icon: <Target size={16} />,
             onSelect: () => {},
           }),
         });

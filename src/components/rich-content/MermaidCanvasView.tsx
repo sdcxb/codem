@@ -84,7 +84,7 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
   return (
     <ContentFrame
       title="Mermaid"
-      icon={<MermaidIcon size={14} />}
+      icon={<MermaidIcon size={16} />}
       fullscreenable
       onFullscreen={() => setFullscreen(true)}
       className="mermaid-canvas-view"

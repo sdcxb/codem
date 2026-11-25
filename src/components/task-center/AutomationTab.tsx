@@ -137,10 +137,10 @@ export function AutomationTab() {
           <div className="automation-trigger-main">
             <div className="automation-trigger-name">{t.name}</div>
             <div className="automation-trigger-meta">
-              {t.type === "file_watch" && <><Folder size={12} /> {t.message}</>}
-              {t.type === "timer" && <><Clock size={12} /> {t.message}</>}
-              {t.type === "cron" && <><Calendar size={12} /> {t.cronExpression || "—"} · {t.message}</>}
-              {t.type === "issue_status" && <><AlertTriangle size={12} /> {zh ? "状态" : "status"}={t.issueStatusFilter || "*"} · {t.message}</>}
+              {t.type === "file_watch" && <><Folder size={16} /> {t.message}</>}
+              {t.type === "timer" && <><Clock size={16} /> {t.message}</>}
+              {t.type === "cron" && <><Calendar size={16} /> {t.cronExpression || "—"} · {t.message}</>}
+              {t.type === "issue_status" && <><AlertTriangle size={16} /> {zh ? "状态" : "status"}={t.issueStatusFilter || "*"} · {t.message}</>}
             </div>
           </div>
           <button onClick={() => setEditing(t)} className="tc-btn tc-btn--sm">
@@ -160,7 +160,7 @@ export function AutomationTab() {
 
       <div className="automation-actions">
         <button onClick={handleAdd} className="tc-btn tc-btn--primary tc-btn--lg">
-          <Plus size={14} /> {zh ? "添加触发器" : "Add Trigger"}
+          <Plus size={16} /> {zh ? "添加触发器" : "Add Trigger"}
         </button>
 
         {triggers.length > 0 && (
@@ -175,7 +175,7 @@ export function AutomationTab() {
           >
             {enginesStopped ? (
               <>
-                <Play size={12} /> {zh ? "恢复运行" : "Resume"}
+                <Play size={16} /> {zh ? "恢复运行" : "Resume"}
               </>
             ) : zh ? "停止所有" : "Stop All"}
           </button>
@@ -186,7 +186,7 @@ export function AutomationTab() {
       {history.length > 0 && (
         <div>
           <div className="automation-history-title">
-            <History size={12} /> {zh ? "触发历史" : "Trigger History"} ({history.length})
+            <History size={16} /> {zh ? "触发历史" : "Trigger History"} ({history.length})
           </div>
           <div className="automation-history-list">
             {history.slice(0, 20).map((h, i) => (

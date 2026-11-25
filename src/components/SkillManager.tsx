@@ -665,7 +665,7 @@ return true;
           {/* Search + Upload */}
           <div className="skill-manager-toolbar">
             <div className="skill-search-box">
-              <SearchIcon size={14} className="skill-search-icon" />
+              <SearchIcon size={16} className="skill-search-icon" />
               <input
                 type="text"
                 placeholder="搜索技能"
@@ -710,7 +710,7 @@ return true;
           {installError && (
             <div className="skill-install-error">
               <span>{installError}</span>
-              <button onClick={() => setInstallError(null)} aria-label="关闭"><ActionIcons.close size={14} /></button>
+              <button onClick={() => setInstallError(null)} aria-label="关闭"><ActionIcons.close size={16} /></button>
             </div>
           )}
 
@@ -748,7 +748,7 @@ return true;
                   >
                     <div className="skill-item-header">
                       <div className="skill-item-name-row">
-                        <SourceIcon size={14} className="skill-item-source-icon" />
+                        <SourceIcon size={16} className="skill-item-source-icon" />
                         <span className="skill-item-name">{skill.displayName || skill.name}</span>
                         {skill.version && (
                           <Badge variant="muted">v{skill.version}</Badge>
@@ -889,7 +889,7 @@ return true;
                         listPublishableMarkets().then(setPublishMarkets);
                       }}
                     >
-                      <ActionIcons.upload size={14} aria-hidden />
+                      <ActionIcons.upload size={16} aria-hidden />
                       发布到市场
                     </button>
                     <button
@@ -906,9 +906,9 @@ return true;
                       disabled={deletingSkill === selectedSkill.name || confirmingDelete === selectedSkill.name}
                     >
                       {deletingSkill === selectedSkill.name ? (
-                        <LoadingIcon size={14} className="spin" />
+                        <LoadingIcon size={16} className="spin" />
                       ) : (
-                        <DeleteIcon size={14} />
+                        <DeleteIcon size={16} />
                       )}
                       {deletingSkill === selectedSkill.name ? "删除中…" : "删除技能"}
                     </button>
@@ -927,7 +927,7 @@ return true;
                         className="skill-detail-btn delete"
                         onClick={() => handleDelete(selectedSkill)}
                       >
-                        <DeleteIcon size={14} />
+                        <DeleteIcon size={16} />
                         确认删除
                       </button>
                       <button
@@ -967,7 +967,7 @@ return true;
           {/* Market Toolbar */}
           <div className="skill-manager-toolbar">
             <div className="skill-search-box">
-              <SearchIcon size={14} className="skill-search-icon" />
+              <SearchIcon size={16} className="skill-search-icon" />
               <input
                 type="text"
                 placeholder="搜索市场技能"
@@ -998,7 +998,7 @@ return true;
           {marketError && (
             <div className="skill-install-error">
               <span>{marketError}</span>
-              <button onClick={() => setMarketError(null)} aria-label="关闭"><ActionIcons.close size={14} /></button>
+              <button onClick={() => setMarketError(null)} aria-label="关闭"><ActionIcons.close size={16} /></button>
             </div>
           )}
 
@@ -1072,7 +1072,7 @@ return true;
                   </div>
                   {skill.stars !== undefined && skill.stars > 0 && (
                     <span className="market-skill-stars">
-                      <StarIcon size={12} />
+                      <StarIcon size={16} />
                       {skill.stars > 1000 ? `${(skill.stars / 1000).toFixed(1)}k` : skill.stars}
                     </span>
                   )}
@@ -1097,7 +1097,7 @@ return true;
                           }
                         }}
                       >
-                        <ExternalLinkIcon size={14} />
+                        <ExternalLinkIcon size={16} />
                       </button>
                     )}
                     {skill.installType === "builtin" ? (
@@ -1114,9 +1114,9 @@ return true;
                         }}
                       >
                         {installingSkillId === skill.id ? (
-                          <LoadingIcon size={14} className="spin" />
+                          <LoadingIcon size={16} className="spin" />
                         ) : (
-                          <DownloadIcon size={14} />
+                          <DownloadIcon size={16} />
                         )}
                         安装
                       </button>
@@ -1172,7 +1172,7 @@ return true;
                         rel="noopener noreferrer"
                         className="skill-detail-link"
                       >
-                        <ExternalLinkIcon size={14} />
+                        <ExternalLinkIcon size={16} />
                         {selectedMarketSkill.repoUrl}
                       </a>
                     </div>
@@ -1181,7 +1181,7 @@ return true;
                     <div className="skill-detail-section">
                       <label>Stars</label>
                       <span className="skill-detail-value">
-                        <StarIcon size={12} /> {selectedMarketSkill.stars}
+                        <StarIcon size={16} /> {selectedMarketSkill.stars}
                       </span>
                     </div>
                   )}
@@ -1203,9 +1203,9 @@ return true;
                     onClick={() => handleMarketInstall(selectedMarketSkill)}
                   >
                     {installingSkillId === selectedMarketSkill.id ? (
-                      <LoadingIcon size={14} className="spin" />
+                      <LoadingIcon size={16} className="spin" />
                     ) : (
-                      <DownloadIcon size={14} />
+                      <DownloadIcon size={16} />
                     )}
                     安装技能
                   </button>

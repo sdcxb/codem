@@ -92,7 +92,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
     <div className="issue-detail">
       {/* Back button */}
       <button onClick={onClose} className="issue-detail-back">
-        <ArrowLeft size={14} /> {zh ? "返回列表" : "Back to list"}
+        <ArrowLeft size={16} /> {zh ? "返回列表" : "Back to list"}
       </button>
 
       {/* Title + status */}
@@ -139,7 +139,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                 className={`issue-detail-chip${isActive ? " is-active" : ""}`}
                 style={isActive ? { color: cfg.color } : undefined}
               >
-                <Icon size={12} />
+                <Icon size={16} />
                 {zh ? cfg.labelZh : cfg.labelEn}
               </button>
             );
@@ -149,7 +149,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
             onClick={() => setShowSquadPicker(!showSquadPicker)}
             className={`issue-detail-chip issue-detail-chip--squad${currentIssue.squadId ? " is-assigned" : ""}`}
           >
-            <Users size={12} />
+            <Users size={16} />
             {currentIssue.squadId ? (zh ? "已分配 Squad" : "Squad assigned") : (zh ? "分配给 Squad" : "Assign to Squad")}
           </button>
         </div>
@@ -167,7 +167,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                   onClick={() => handleAssignSquad(sq.id)}
                   className="issue-detail-picker-item"
                 >
-                  <Users size={12} />
+                  <Users size={16} />
                   <span className="issue-detail-picker-name">{sq.name}</span>
                   <span className="issue-detail-picker-meta">{sq.members.length} {zh ? "成员" : "members"}</span>
                 </div>
@@ -224,7 +224,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           disabled={!commentText.trim()}
           className="issue-detail-send"
         >
-          <Send size={14} /> {zh ? "发送" : "Send"}
+          <Send size={16} /> {zh ? "发送" : "Send"}
         </button>
       </div>
     </div>

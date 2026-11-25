@@ -98,7 +98,7 @@ export function VoiceSettingsPanel() {
           : "Speech-to-text engine used when tapping the mic button. Web Speech API may be unavailable in WebView2 — switch to Cloud Whisper."}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <Mic size={14} style={{ color: "var(--text-muted)" }} />
+          <Mic size={16} style={{ color: "var(--text-muted)" }} />
           <select
             value={speechEngine}
             onChange={(e) => handleSpeechEngineChange(e.target.value as SpeechEngine)}
@@ -289,7 +289,7 @@ export function VoiceSettingsPanel() {
             opacity: isSupported ? 1 : 0.5,
           }}
         >
-          {isSpeaking ? <Square size={14} fill="currentColor" /> : <Play size={14} />}
+          {isSpeaking ? <Square size={16} fill="currentColor" /> : <Play size={16} />}
           {isSpeaking ? S.voice.stopReading[lang] : S.voice.testVoice[lang]}
         </button>
         <span className="hint-sm">

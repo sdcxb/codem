@@ -206,7 +206,7 @@
 }
 
 [data-ui="v2"] .sidebar-project.active .sidebar-project-icon {
-  color: var(--ui-accent);
+  color: var(--ui-text-secondary);
 }
 
 [data-ui="v2"] .sidebar-project-btn {
@@ -265,7 +265,7 @@
 }
 
 [data-ui="v2"] .sidebar-task-count {
-  color: var(--ui-accent);
+  color: var(--ui-text-muted);
 }
 
 [data-ui="v2"] .session-unread-badge,
@@ -362,7 +362,7 @@
   background: transparent;
   color: var(--ui-text);
   font-weight: 500;
-  border-bottom: 2px solid var(--ui-accent);
+  border-bottom: 2px solid var(--ui-line-strong);
 }
 
 [data-ui="v2"] .right-sidebar-tab.active {
@@ -446,12 +446,12 @@
 [data-ui="v2"] .agent-toggle.active {
   background: var(--ui-surface-active);
   border: 0;
-  color: var(--ui-accent);
+  color: var(--ui-text-secondary);
 }
 
 [data-ui="v2"] .agent-badge {
-  background: var(--ui-accent);
-  color: var(--ui-accent-ink);
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
   border-radius: var(--radius-full);
   font-weight: 500;
 }
@@ -473,7 +473,6 @@
 [data-ui="v2"] .model-badge {
   background: transparent;
   color: var(--ui-text-secondary);
-  border: 1px solid var(--ui-line);
   border-radius: var(--radius);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -526,7 +525,7 @@
 }
 
 [data-ui="v2"] .chat-header-action.active {
-  color: var(--ui-accent);
+  color: var(--ui-text-secondary);
   background: var(--ui-surface-active);
 }
 
@@ -548,7 +547,6 @@
 
 [data-ui="v2"] .user .message-content {
   background: var(--ui-surface-raised);
-  border: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
   box-shadow: none;
   padding: var(--space-3) var(--space-4);
@@ -572,7 +570,7 @@
 
 [data-ui="v2"] .tool-card {
   border: 1px solid var(--ui-line);
-  border-left: 2px solid var(--ui-line-strong);
+  border-left: 1px solid var(--ui-line);
   border-radius: var(--radius-md);
   background: var(--ui-surface);
 }
@@ -732,7 +730,6 @@
 [data-ui="v2"] .context-badge {
   height: 24px;
   background: var(--ui-surface-raised);
-  border: 1px solid var(--ui-line);
   color: var(--ui-text-secondary);
   border-radius: var(--radius-sm);
 }
@@ -752,7 +749,7 @@
 [data-ui="v2"] .quote-context-card {
   background: var(--ui-surface-raised);
   border: 1px solid var(--ui-line);
-  border-left: 2px solid var(--ui-accent);
+  border-left: 2px solid var(--ui-line-strong);
 }
 
 [data-ui="v2"] .quote-context-label {
@@ -1030,7 +1027,7 @@
 [data-ui="v2"] .toast-item {
   background: var(--ui-surface-raised);
   border: 1px solid var(--ui-line);
-  border-left: 2px solid var(--ui-accent);
+  border-left: 2px solid var(--ui-line-strong);
   border-radius: var(--radius-md);
   box-shadow: none;
 }
@@ -1047,7 +1044,6 @@
   width: 64px;
   height: 64px;
   background: var(--ui-surface-raised);
-  border: 1px solid var(--ui-line);
   border-radius: var(--radius-lg);
 }
 
@@ -1124,13 +1120,6 @@
   color: var(--ui-text);
 }
 
-[data-ui="v2"] .tc-tab.is-active,
-[data-ui="v2"] .tc-tab[aria-selected="true"] {
-  background: none;
-  color: var(--ui-text);
-  box-shadow: inset 0 -2px 0 var(--ui-accent);
-}
-
 /* 按钮：主操作 = 琥珀实心；其余 = 描边幽灵（不再每个都带色底）。 */
 [data-ui="v2"] .tc-btn,
 [data-ui="v2"] .tc-btn--sm {
@@ -1191,7 +1180,6 @@
 [data-ui="v2"] .squads-count-badge,
 [data-ui="v2"] .squads-member-leader-badge {
   background: none;
-  border: 1px solid var(--ui-line);
   border-radius: var(--radius-xs);
   color: var(--ui-text-muted);
   font-family: var(--font-mono);
@@ -1260,8 +1248,7 @@
 }
 
 [data-ui="v2"] .memory-item-scope {
-  background: none;
-  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
   border-radius: var(--radius-xs);
   color: var(--ui-text-muted);
   font-weight: 500;
@@ -1282,7 +1269,7 @@
 [data-ui="v2"] .mc-notice {
   background: var(--ui-surface-raised);
   border: 1px solid var(--ui-line);
-  border-left: 2px solid var(--ui-accent);
+  border-left: 2px solid var(--ui-line-strong);
   border-radius: var(--radius);
   color: var(--ui-text-secondary);
 }
@@ -1348,12 +1335,6 @@
 [data-ui="v2"] .settings-nav-item:is(:hover, :focus-visible) {
   background: var(--ui-surface-active);
   color: var(--ui-text);
-}
-
-[data-ui="v2"] .settings-nav-item.active {
-  background: var(--ui-surface-active);
-  color: var(--ui-text);
-  box-shadow: inset 2px 0 0 var(--ui-accent);
 }
 
 [data-ui="v2"] .settings-divider,
@@ -1445,7 +1426,7 @@
 }
 
 [data-ui="v2"] .wizard-step-dot.active {
-  background: var(--ui-accent);
+  background: var(--ui-text);
 }
 
 /* ========== 15. 设置子页规范化（Batch 4A：按钮/字号/对齐） ==========
@@ -1502,7 +1483,7 @@
 [data-ui="v2"] .settings-panel .usage-tab.active {
   background: var(--ui-surface-active);
   color: var(--ui-text);
-  box-shadow: inset 0 -2px 0 var(--ui-accent);
+  box-shadow: inset 0 -2px 0 var(--ui-text-secondary);
 }
 
 /* 设置页的所有按钮：统一 28px 高、8px 圆角、12px 字。
@@ -1942,7 +1923,7 @@
 [data-ui="v2"] .workbench-item.tool-completed::before { background: var(--ui-success); }
 [data-ui="v2"] .workbench-item.tool-error::before { background: var(--ui-danger); }
 [data-ui="v2"] .workbench-file,
-[data-ui="v2"] .workbench-activity-entry { min-height: 28px; align-items: center; padding: 0; border-bottom: 1px solid var(--ui-line-weak); font-size: var(--fs-2xs); }
+[data-ui="v2"] .workbench-activity-entry { min-height: 28px; align-items: center; padding: 0; font-size: var(--fs-2xs); }
 [data-ui="v2"] .workbench-file .file-path { font-family: var(--font-mono); }
 /* 脚注不再半透明（0.5 的透明度在暗色档几乎读不出来） */
 [data-ui="v2"] .workbench-disclaimer { padding: var(--space-2) 0 0; border-top: 1px solid var(--ui-line-weak); font-size: var(--fs-2xs); color: var(--ui-text-muted); opacity: 1; }
@@ -1967,7 +1948,7 @@
 [data-ui="v2"] .jobs-panel-btn:is(:hover, :focus-visible) { background: var(--ui-surface-active); border-color: var(--ui-line-strong); color: var(--ui-text); }
 [data-ui="v2"] .jobs-panel-btn.is-danger { color: var(--ui-danger); }
 [data-ui="v2"] .jobs-panel-notice { padding: var(--space-2) var(--space-3); background: var(--ui-surface-raised); border: 1px solid var(--ui-line); border-radius: var(--radius); color: var(--ui-text-secondary); font-size: var(--fs-sm); }
-[data-ui="v2"] .jobs-panel-row { min-height: 32px; padding: 0 var(--space-2); gap: var(--space-3); background: none; border: 0; border-bottom: 1px solid var(--ui-line-weak); border-radius: 0; font-size: var(--fs-sm); }
+[data-ui="v2"] .jobs-panel-row { min-height: 32px; padding: 0 var(--space-2); gap: var(--space-3); background: none; border: 0; border-radius: 0; font-size: var(--fs-sm); }
 [data-ui="v2"] .jobs-panel-status { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 64px; font-size: var(--fs-2xs); color: var(--ui-text-secondary); }
 [data-ui="v2"] .jobs-panel-status.is-running::before { background: var(--ui-info); }
 [data-ui="v2"] .jobs-panel-status.is-completed::before,
@@ -2121,15 +2102,15 @@
 }
 
 [data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary, .dsh-ext-btn--primary) {
-  background: var(--ui-accent);
-  border-color: var(--ui-accent);
-  color: var(--ui-accent-ink);
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
 }
 
 [data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary, .dsh-ext-btn--primary):is(:hover, :focus-visible):not(:disabled) {
-  background: var(--ui-accent-hover);
-  border-color: var(--ui-accent-hover);
-  color: var(--ui-accent-ink);
+  background: var(--ui-surface);
+  border-color: var(--ui-text-secondary);
+  color: var(--ui-text);
 }
 
 [data-ui="v2"] :is(.market-skill-install-btn, .mcp-catalog-btn.install, .ofm-btn.primary):disabled {
@@ -2202,7 +2183,7 @@
 }
 
 [data-ui="v2"] :is(.skill-tab-btn.active, .plugin-mgr-tab.is-active) {
-  border-bottom-color: var(--ui-accent);
+  border-bottom-color: var(--ui-text-secondary);
   color: var(--ui-text);
 }
 
@@ -2959,7 +2940,6 @@
   margin: var(--space-3) 0 var(--space-5);
   padding: var(--space-2) 0;
   border-top: 1px solid var(--ui-line);
-  border-bottom: 1px solid var(--ui-line);
 }
 [data-ui="v2"] .turn-evidence-head {
   display: flex;
@@ -3156,4 +3136,206 @@
 /* 设置内容底部留出 sticky action bar 的高度，最后一行可滚到 footer 上方 */
 [data-ui="v2"] .settings-content {
   padding-bottom: var(--space-14);
+}
+
+/* 分段筛选：选中态走中性面，不再每个 chip 一个金色焦点 */
+[data-ui="v2"] :is(.skill-filter-btn, .memory-filter-btn).active {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
+}
+
+/* 任务/活动卡：不再靠一圈边框分组，改用轻微抬升的底面 + 组间距 */
+[data-ui="v2"] .lo-card {
+  border-color: transparent;
+  background: var(--ui-surface-raised);
+  box-shadow: none;
+}
+[data-ui="v2"] .lo-card:is(:hover, :focus-visible) {
+  border-color: transparent;
+  background: var(--ui-surface-active);
+}
+
+/* 设置表单：行分隔改由间距承担，输入控件自己的边框保留 */
+[data-ui="v2"] .settings-content :is(.setting-group, .settings-row, .setting-row) {
+  border-bottom-color: transparent;
+}
+
+/* 图标类也进入 16/20 两档：小档不再渲染 10/12/14 */
+[data-ui="v2"] :is(.icon-2xs, .icon-xs, .icon-sm) {
+  width: 16px;
+  height: 16px;
+}
+[data-ui="v2"] .composer-badge-remove {
+  width: 20px;
+  height: 20px;
+}
+[data-ui="v2"] .sidebar-project-arrow {
+  width: 16px;
+}
+
+/* 任务中心：页签/页脚/行/卡的 v2 密度收口（TSX 只留语义 class） */
+[data-ui="v2"] .task-center-tabs {
+  border-bottom: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .task-center-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .task-center-tab.is-active {
+  color: var(--ui-text);
+  border-bottom-color: var(--ui-line-strong);
+}
+[data-ui="v2"] .task-center-tab:disabled {
+  color: var(--ui-text-muted);
+}
+[data-ui="v2"] .task-center-footer {
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .task-center-icon {
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .inbox-row {
+  border: 0;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+[data-ui="v2"] .inbox-row:hover {
+  background: var(--ui-surface-active) !important;
+}
+[data-ui="v2"] .inbox-unread-dot {
+  background: var(--ui-info);
+}
+[data-ui="v2"] .inbox-mark-all,
+[data-ui="v2"] .inbox-filter,
+[data-ui="v2"] .inbox-notice {
+  border: 0;
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .inbox-filter.is-active {
+  background: var(--ui-surface-active);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .issue-card {
+  border: 0;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+[data-ui="v2"] .issue-card.is-clickable:hover {
+  background: var(--ui-surface-active) !important;
+}
+[data-ui="v2"] .delegation-card,
+[data-ui="v2"] .delegation-task,
+[data-ui="v2"] .subagent-row {
+  border: 0;
+  background: var(--ui-surface-raised);
+}
+[data-ui="v2"] .delegation-card:hover,
+[data-ui="v2"] .subagent-row:hover {
+  background: var(--ui-surface-active);
+}
+[data-ui="v2"] .delegation-stat,
+[data-ui="v2"] .subagent-stat {
+  border: 0;
+}
+[data-ui="v2"] .delegation-cancel {
+  border: 0;
+  background: none;
+  color: var(--ui-text-muted);
+}
+[data-ui="v2"] .delegation-cancel:hover {
+  color: var(--ui-danger);
+}
+[data-ui="v2"] .agent-panel-team {
+  border: 0;
+  background: var(--ui-surface-raised) !important;
+}
+[data-ui="v2"] .agent-panel-team-head {
+  border: 0;
+}
+[data-ui="v2"] .agent-panel-link {
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .agent-panel-row {
+  border: 0;
+}
+[data-ui="v2"] .agent-panel-row:hover {
+  background: var(--ui-surface-active);
+}
+[data-ui="v2"] .agent-panel-detail {
+  border: 0;
+  background: var(--ui-surface);
+}
+[data-ui="v2"] .plugin-market-search-btn {
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+}
+[data-ui="v2"] .plugin-market-note {
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .plugin-source-list {
+  border-top: 1px solid var(--ui-line);
+}
+[data-ui="v2"] .plugin-source-row {
+  border-top: 0;
+}
+[data-ui="v2"] .plugin-source-row:hover {
+  background: var(--ui-surface-active);
+}
+[data-ui="v2"] .plugin-install-btn {
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .plugin-install-btn.is-enabled {
+  border-color: var(--ui-line);
+  background: var(--ui-surface-active);
+  color: var(--ui-text-secondary);
+}
+
+[data-ui="v2"] .subagent-badge {
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+  color: var(--ui-text-muted);
+}
+
+/* 任务卡里的「场景 / 全部 / 查看时间线」是导航链接，不再用 accent 强调 */
+[data-ui="v2"] :is(.lo-link-btn, .lo-card a) {
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] :is(.lo-link-btn, .lo-card a):is(:hover, :focus-visible) {
+  color: var(--ui-text);
+}
+[data-ui="v2"] .lo-card__count {
+  color: var(--ui-text-muted);
+}
+
+[data-ui="v2"] .ofm-compact-more {
+  color: var(--ui-text-secondary);
+}
+
+/* 设置子页里的段内主按钮降为次操作：整屏唯一实心主操作是「保存设置」 */
+[data-ui="v2"] .settings-panel :is(.sp-btn--primary):not(.save-btn) {
+  background: var(--ui-surface);
+  border-color: var(--ui-line-strong);
+  color: var(--ui-text);
+}
+[data-ui="v2"] .settings-panel :is(.sp-btn--primary):not(.save-btn):is(:hover, :focus-visible) {
+  background: var(--ui-surface-active);
+  border-color: var(--ui-text-secondary);
+  color: var(--ui-text);
+}
+
+/* 记忆：审批开关是状态而不是主操作；展开是导航链接，均走中性/状态色 */
+[data-ui="v2"] .memory-approval-toggle.on {
+  color: var(--ui-text);
+  background: var(--ui-surface-active);
+  border-color: var(--ui-line-strong);
+}
+[data-ui="v2"] .memory-item-expand {
+  color: var(--ui-text-secondary);
+}
+[data-ui="v2"] .memory-item-expand:is(:hover, :focus-visible) {
+  color: var(--ui-text);
 }

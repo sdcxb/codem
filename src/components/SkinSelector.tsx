@@ -140,9 +140,9 @@ function DreamConfigPanel() {
               <img src={dreamConfig.backgroundImage} alt="背景预览" />
             )}
             <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginLeft: 4 }}>
-              {dreamConfig.bgMediaType === 'video' ? <><Film size={10} className="icon-inline" /> {lang === 'zh' ? '视频' : 'Video'}</>
-               : dreamConfig.bgMediaType === 'gif' ? <><Film size={10} className="icon-inline" /> GIF</>
-               : <><ImageIcon size={10} className="icon-inline" /> {lang === 'zh' ? '图片' : 'Image'}</>}
+              {dreamConfig.bgMediaType === 'video' ? <><Film size={16} className="icon-inline" /> {lang === 'zh' ? '视频' : 'Video'}</>
+               : dreamConfig.bgMediaType === 'gif' ? <><Film size={16} className="icon-inline" /> GIF</>
+               : <><ImageIcon size={16} className="icon-inline" /> {lang === 'zh' ? '图片' : 'Image'}</>}
             </span>
             <button className="btn-clear-bg" onClick={handleClearBackground}>
               {lang === "zh" ? "清除" : "Clear"}
@@ -156,7 +156,7 @@ function DreamConfigPanel() {
               onChange={handleFileUpload}
               style={{ display: "none" }}
             />
-            <span>{uploading ? <><Clock size={12} />...</> : lang === "zh" ? <><Camera size={12} className="icon-inline" /> 点击上传图片/GIF/视频</> : <><Camera size={12} className="icon-inline" /> Click to upload</>}</span>
+            <span>{uploading ? <><Clock size={16} />...</> : lang === "zh" ? <><Camera size={16} className="icon-inline" /> 点击上传图片/GIF/视频</> : <><Camera size={16} className="icon-inline" /> Click to upload</>}</span>
           </label>
         )}
       </div>

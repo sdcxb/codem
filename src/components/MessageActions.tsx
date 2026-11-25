@@ -56,7 +56,7 @@ export const MessageActions = memo(function MessageActions({
         aria-label="复制"
         title="复制"
       >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? <Check size={16} /> : <Copy size={16} />}
       </button>
       {onFeedback && (
         <>
@@ -66,7 +66,7 @@ export const MessageActions = memo(function MessageActions({
             aria-label="赞"
             title="赞"
           >
-            <ThumbsUp size={14} />
+            <ThumbsUp size={16} />
           </button>
           <button
             className={`message-action-btn ${feedback === "down" ? "active" : ""}`}
@@ -74,7 +74,7 @@ export const MessageActions = memo(function MessageActions({
             aria-label="踩"
             title="踩"
           >
-            <ThumbsDown size={14} />
+            <ThumbsDown size={16} />
           </button>
         </>
       )}
@@ -85,7 +85,7 @@ export const MessageActions = memo(function MessageActions({
           aria-label="分支对话"
           title="分支对话"
         >
-          <GitBranch size={14} />
+          <GitBranch size={16} />
         </button>
       )}
       {onEdit && (
@@ -95,7 +95,7 @@ export const MessageActions = memo(function MessageActions({
           aria-label="编辑"
           title="编辑"
         >
-          <Pencil size={14} />
+          <Pencil size={16} />
         </button>
       )}
     </div>

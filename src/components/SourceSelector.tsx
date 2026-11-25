@@ -67,9 +67,9 @@ export const SourceSelector = memo(function SourceSelector({
 
 function getSourceIcon(type: string): React.ReactNode {
   const icons: Record<string, React.ReactNode> = {
-    notebook: <Notebook size={14} />,
-    file: <FileText size={14} />,
-    url: <Link2 size={14} />,
+    notebook: <Notebook size={16} />,
+    file: <FileText size={16} />,
+    url: <Link2 size={16} />,
   };
-  return icons[type] || <Paperclip size={14} />;
+  return icons[type] || <Paperclip size={16} />;
 }

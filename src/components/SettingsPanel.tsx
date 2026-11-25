@@ -1274,7 +1274,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
            */}
           <div className="settings-search-box settings-search-box--in-header">
             <div className="sp-search">
-              <SearchIcon size={14} className="sp-search-icon" />
+              <SearchIcon size={16} className="sp-search-icon" />
               <input
                 type="text"
                 placeholder={lang === "zh" ? "搜索设置" : "Search settings"}
@@ -1284,7 +1284,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               />
               {settingsSearch && <button
         aria-label={lang === "zh" ? "清空搜索" : "Clear search"}
-                  title={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
+                  title={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={16} /></button>}
             </div>
             {settingsSearch.trim() && (
               <div className="sp-search-status">
@@ -1307,7 +1307,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             {fullPage && (
               <div className="settings-side-head">
                 <button className="settings-back settings-back--with-label" onClick={onClose}>
-                  <ArrowLeft />
+                  <ArrowLeft className="icon-md" />
                   <span>{lang === "zh" ? "返回工作台" : "Back to workspace"}</span>
                 </button>
                 <h2>{settingsTitle}</h2>
@@ -1322,7 +1322,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   />
                   {settingsSearch && (
                     <button aria-label={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")}>
-                      <X />
+                      <X className="icon-md" />
                     </button>
                   )}
                 </div>
@@ -1448,7 +1448,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   aria-selected={selected}
                   onClick={() => setActiveTab(tab.id as any)}
                 >
-                  <Icon />
+                  <Icon className="icon-md" />
                   {lang === "zh" ? tab.zh : tab.en}
                 </button>
               );
@@ -1557,7 +1557,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
               {mimoAccount ? (
                 <div className="sp-card--secondary sp-card--between sp-card sp-text">
-                  <span className="sp-row--gap-tight sp-row"><CheckCircle size={14} className="sp-icon-success" /> 已登录</span>
+                  <span className="sp-row--gap-tight sp-row"><CheckCircle size={16} className="sp-icon-success" /> 已登录</span>
                   <button
                     onClick={handleLogout}
                     className="sp-btn sp-btn--sm"
@@ -1589,7 +1589,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 onClick={runLoginTest}
                 className="sp-btn sp-btn--sm sp-btn--block sp-btn--secondary"
               >
-                <span className="sp-row sp-row--gap-sm"><SearchIcon size={14} /> 运行登录测试</span>
+                <span className="sp-row sp-row--gap-sm"><SearchIcon size={16} /> 运行登录测试</span>
               </button>
 
               {testResult && (
@@ -1792,7 +1792,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   onClick={() => setShowModelProfiles(true)}
                   className="sp-btn sp-btn--secondary sp-btn--nowrap"
                 >
-                  {lang === "zh" ? <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> 配置方案</span> : <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> Profiles</span>}
+                  {lang === "zh" ? <span className="sp-row--gap-tight sp-row"><SettingsIcon size={16} /> 配置方案</span> : <span className="sp-row--gap-tight sp-row"><SettingsIcon size={16} /> Profiles</span>}
                 </button>
               </div>
             </div>
@@ -2314,7 +2314,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     title={lang === "zh" ? "删除此 Provider" : "Remove this provider"}
                     className="sp-btn sp-btn--icon"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={16} />
                   </button>
                 )}
               </div>
@@ -2333,7 +2333,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     onClick={() => toggleShowKey(provider.id)}
                     title={showKeys[provider.id] ? "隐藏" : "显示"}
                   >
-                    {showKeys[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
@@ -2486,7 +2486,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                           title={lang === "zh" ? "移除" : "Remove"}
                           className="sp-btn sp-btn--icon sp-btn--flush"
                         >
-                          <X size={12} />
+                          <X size={16} />
                         </button>
                       </span>
                     ))}
@@ -2537,7 +2537,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 onClick={() => setShowAddCustom(true)}
                 className="sp-btn sp-btn--dashed sp-btn--block"
               >
-                <Plus size={14} />
+                <Plus size={16} />
                 {lang === "zh" ? "添加自定义 Provider（通用 OpenAI 兼容协议）" : "Add Custom Provider (OpenAI-compatible)"}
               </button>
             ) : (
@@ -2684,7 +2684,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <>
           {/* F4: Multimodal Settings Entry */}
           <div className="setting-group">
-            <label><Palette size={14} className="icon-inline-gap" />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
+            <label><Palette size={16} className="icon-inline-gap" />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
             <div className="sp-note sp-hint--lead">
               {lang === "zh"
                 ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
@@ -2694,7 +2694,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               onClick={() => setShowMultimodal(!showMultimodal)}
               className={`sp-btn sp-btn--lg sp-btn--block sp-row--between ${showMultimodal ? "is-active" : ""}`}
             >
-              <span>{lang === "zh" ? <><Palette size={12} className="icon-inline" /> 多模态设置</> : <><Palette size={12} className="icon-inline" /> Multimodal Settings</>}</span>
+              <span>{lang === "zh" ? <><Palette size={16} className="icon-inline" /> 多模态设置</> : <><Palette size={16} className="icon-inline" /> Multimodal Settings</>}</span>
               <span className="hint-sm">{showMultimodal ? '▼' : '▶'}</span>
             </button>
           </div>
@@ -2809,15 +2809,15 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 {/* Advanced Settings with sub-tabs */}
 <div className="sp-row sp-row--gap-tight sp-row--wrap sp-row--lead">
   {[
-    { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={12} className="icon-inline" /> },
-    { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={12} className="icon-inline" /> },
-    { id: "retry", label: lang === "zh" ? "重试" : "Retry", icon: <RotateCcw size={12} className="icon-inline" /> },
-    { id: "prompt", label: lang === "zh" ? "提示词" : "Prompt", icon: <FileText size={12} className="icon-inline" /> },
-    { id: "settings", label: lang === "zh" ? "分层设置" : "Layered", icon: <Layers size={12} className="icon-inline" /> },
-    { id: "correction", label: lang === "zh" ? "纠偏模型" : "Correction", icon: <SearchIcon size={12} className="icon-inline" /> },
-    { id: "profiles", label: "Agent Profile", icon: <User size={12} className="icon-inline" /> },
-    { id: "transcript", label: lang === "zh" ? "缓存统计" : "Cache", icon: <MessageSquare size={12} className="icon-inline" /> },
-    { id: "recovery", label: lang === "zh" ? "恢复" : "Recovery", icon: <RotateCcw size={12} className="icon-inline" /> },
+    { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={16} className="icon-inline" /> },
+    { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={16} className="icon-inline" /> },
+    { id: "retry", label: lang === "zh" ? "重试" : "Retry", icon: <RotateCcw size={16} className="icon-inline" /> },
+    { id: "prompt", label: lang === "zh" ? "提示词" : "Prompt", icon: <FileText size={16} className="icon-inline" /> },
+    { id: "settings", label: lang === "zh" ? "分层设置" : "Layered", icon: <Layers size={16} className="icon-inline" /> },
+    { id: "correction", label: lang === "zh" ? "纠偏模型" : "Correction", icon: <SearchIcon size={16} className="icon-inline" /> },
+    { id: "profiles", label: "Agent Profile", icon: <User size={16} className="icon-inline" /> },
+    { id: "transcript", label: lang === "zh" ? "缓存统计" : "Cache", icon: <MessageSquare size={16} className="icon-inline" /> },
+    { id: "recovery", label: lang === "zh" ? "恢复" : "Recovery", icon: <RotateCcw size={16} className="icon-inline" /> },
   ].map(tab => (
     <button
       key={tab.id}
@@ -2863,7 +2863,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         }}
         className="sp-btn sp-btn--lg sp-btn--primary"
       >
-        {lang === "zh" ? <><Play size={12} className="icon-inline" /> 重新播放新手引导</> : <><Play size={12} className="icon-inline" /> Replay Onboarding Tour</>}
+        {lang === "zh" ? <><Play size={16} className="icon-inline" /> 重新播放新手引导</> : <><Play size={16} className="icon-inline" /> Replay Onboarding Tour</>}
       </button>
     </div>
 
@@ -3339,7 +3339,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
 
           {/* 提示 */}
           <div className="sp-callout">
-            <Lightbulb size={12} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
+            <Lightbulb size={16} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
           </div>
         </>
       )}
@@ -3439,7 +3439,7 @@ function PermissionRulesSection() {
                 title={zh ? "删除" : "Delete"}
                 aria-label={zh ? "删除" : "Delete"}
               >
-                <ActionIcons.delete size={14} />
+                <ActionIcons.delete size={16} />
               </button>
             </div>
           ))}
@@ -3715,7 +3715,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
             disabled={scanning || !currentProject?.path}
             className="sp-btn sp-btn--sm"
           >
-            {scanning ? <Clock size={12} className="icon-inline" /> : <RotateCcw size={12} className="icon-inline" />} {zh ? "扫描" : "Scan"}
+            {scanning ? <Clock size={16} className="icon-inline" /> : <RotateCcw size={16} className="icon-inline" />} {zh ? "扫描" : "Scan"}
           </button>
         </div>
         {!currentProject?.path && (
@@ -3730,12 +3730,12 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           <div className="sp-col sp-col--tight">
             {scanResults.map(wt => (
               <div key={wt.sessionId} className="sp-wt-row">
-                <span className="sp-mode-icon">{wt.hasUncommitted ? <AlertTriangle size={14} className="sp-icon-warning" /> : <GitBranchIcon size={14} className="sp-icon-success" />}</span>
+                <span className="sp-mode-icon">{wt.hasUncommitted ? <AlertTriangle size={16} className="sp-icon-warning" /> : <GitBranchIcon size={16} className="sp-icon-success" />}</span>
                 <div className="sp-flex-fill sp-min0">
                   <div className="sp-strong">{wt.sessionId}</div>
                   <div className="sp-mini sp-ellipsis sp-dim">{wt.path}</div>
                 </div>
-                <span className="sp-mini sp-row sp-row--gap-xs sp-dim"><GitBranchIcon size={10} /> {wt.branch}</span>
+                <span className="sp-mini sp-row sp-row--gap-xs sp-dim"><GitBranchIcon size={16} /> {wt.branch}</span>
                 {wt.hasUncommitted && (
                   <span className="sp-mini sp-icon-warning">
                     {zh ? "未提交" : "dirty"}

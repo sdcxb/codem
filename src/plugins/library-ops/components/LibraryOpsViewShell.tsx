@@ -114,19 +114,19 @@ export function LibraryOpsViewShell({
       <header className="lo-task__bar">
         <span className="lo-task__live" style={{ ["--lo-live-token" as string]: `var(${live.token})` }}>
           <span className="lo-task__live-dot" />
-          <LoIcon name={live.icon} size={12} />
+          <LoIcon name={live.icon} size={16} />
           {zh ? live.zh : live.en}
         </span>
         {snapshot && (
           <span className="lo-task__meta">
             <span>
-              <LoIcon name={ACTIVITY_META.working.icon} size={12} /> {snapshot.metrics.actorsWorking}
+              <LoIcon name={ACTIVITY_META.working.icon} size={16} /> {snapshot.metrics.actorsWorking}
             </span>
             <span>
-              <LoIcon name={ACTIVITY_META.idle.icon} size={12} /> {snapshot.metrics.actorsIdle}
+              <LoIcon name={ACTIVITY_META.idle.icon} size={16} /> {snapshot.metrics.actorsIdle}
             </span>
             <span>
-              <LoIcon name="wrench" size={12} /> {snapshot.metrics.toolCalls}
+              <LoIcon name="wrench" size={16} /> {snapshot.metrics.toolCalls}
             </span>
             {extraMeta}
           </span>
@@ -139,14 +139,14 @@ export function LibraryOpsViewShell({
           title={zh ? "立即刷新" : "Refresh now"}
           aria-label={zh ? "立即刷新" : "Refresh now"}
         >
-          <LoIcon name="refresh-cw" size={14} />
+          <LoIcon name="refresh-cw" size={16} />
         </button>
       </header>
 
       {error && (
         <div className="lo-task__error">
           <Pill token="--error">
-            <LoIcon name="triangle-alert" size={12} /> {zh ? "采样失败" : "Sample failed"}
+            <LoIcon name="triangle-alert" size={16} /> {zh ? "采样失败" : "Sample failed"}
           </Pill>
           <span>{error}</span>
         </div>
@@ -162,7 +162,7 @@ export function LibraryOpsViewShell({
               title={zh ? v.zh : v.en}
               aria-pressed={active === v.id}
             >
-              <LoIcon name={v.icon} size={14} />
+              <LoIcon name={v.icon} size={16} />
               <span className="lo-nav__label">{zh ? v.zh : v.en}</span>
             </button>
           ))}
@@ -173,7 +173,7 @@ export function LibraryOpsViewShell({
         {showFeed && (
           <aside className="lo-task__feed">
             <div className="lo-task__feed-title">
-              <LoIcon name="radio" size={12} /> {zh ? "实时事件" : "Live feed"}
+              <LoIcon name="radio" size={16} /> {zh ? "实时事件" : "Live feed"}
             </div>
             <div className="lo-task__feed-body">
               {snapshot ? (

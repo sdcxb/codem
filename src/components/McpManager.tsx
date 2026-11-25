@@ -265,7 +265,7 @@ export function McpManager({ onClose }: McpManagerProps) {
       {/* Actions */}
       <div className="mcp-manager-actions">
         <button className="mcp-action-btn marketplace-btn" onClick={() => setShowMarketplace(true)}>
-          <MarketIcons.store size={14} aria-hidden style={{ marginRight: 4 }} />
+          <MarketIcons.store size={16} aria-hidden style={{ marginRight: 4 }} />
           服务器目录
         </button>
         <button
@@ -274,15 +274,15 @@ export function McpManager({ onClose }: McpManagerProps) {
           disabled={connectingAll}
           aria-busy={connectingAll}
         >
-          <RefreshIcon size={14} />
+          <RefreshIcon size={16} />
           {connectingAll ? "全部连接中..." : "全部连接"}
         </button>
         <button className="mcp-action-btn" onClick={() => setShowAdd(true)}>
-          <AddIcon size={14} />
+          <AddIcon size={16} />
           添加服务器
         </button>
         <button className="mcp-action-btn" onClick={() => { setShowJsonImport(true); setJsonError(null); }}>
-          <JsonImportIcon size={14} />
+          <JsonImportIcon size={16} />
           JSON 导入
         </button>
       </div>
@@ -314,9 +314,9 @@ export function McpManager({ onClose }: McpManagerProps) {
               <div className="mcp-server-header">
                 <div className="mcp-server-info">
                   {status?.connected ? (
-                    <ConnectedIcon size={14} className="mcp-server-status-icon connected" />
+                    <ConnectedIcon size={16} className="mcp-server-status-icon connected" />
                   ) : (
-                    <ConnectIcon size={14} className="mcp-server-status-icon" />
+                    <ConnectIcon size={16} className="mcp-server-status-icon" />
                   )}
                   <span className="mcp-server-name">{server.name}</span>
                   <Badge variant="muted">{server.transport}</Badge>
@@ -357,7 +357,7 @@ export function McpManager({ onClose }: McpManagerProps) {
                     className="mcp-server-btn disconnect"
                     onClick={() => handleDisconnect(server.name)}
                   >
-                    <DisconnectIcon size={14} />
+                    <DisconnectIcon size={16} />
                     断开
                   </button>
                 ) : (
@@ -366,7 +366,7 @@ export function McpManager({ onClose }: McpManagerProps) {
                     onClick={() => handleConnect(server)}
                     disabled={connecting.has(server.name)}
                   >
-                    <ConnectIcon size={14} />
+                    <ConnectIcon size={16} />
                     {connecting.has(server.name) ? "连接中..." : "连接"}
                   </button>
                 )}
@@ -374,14 +374,14 @@ export function McpManager({ onClose }: McpManagerProps) {
                   className="mcp-server-btn edit"
                   onClick={() => handleEdit(server)}
                 >
-                  <EditIcon size={14} />
+                  <EditIcon size={16} />
                   编辑
                 </button>
                 <button
                   className="mcp-server-btn remove"
                   onClick={() => setDeleteTarget(server.name)}
                 >
-                  <DeleteIcon size={14} />
+                  <DeleteIcon size={16} />
                   删除
                 </button>
               </div>

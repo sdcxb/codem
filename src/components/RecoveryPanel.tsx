@@ -208,7 +208,7 @@ export function RecoveryPanel() {
                     className="recovery-item-delete"
                     aria-label={zh ? "删除会话" : "Delete session"}
                   >
-                    <ActionIcons.delete size={12} />
+                    <ActionIcons.delete size={16} />
                   </button>
                 </div>
               );
@@ -256,13 +256,13 @@ export function RecoveryPanel() {
       {/* Actions */}
       <div className="recovery-actions">
         <button onClick={handleForceSave} className="panel-btn">
-          <ActionIcons.save size={14} aria-hidden /> {zh ? "强制保存" : "Force Save"}
+          <ActionIcons.save size={16} aria-hidden /> {zh ? "强制保存" : "Force Save"}
         </button>
         <button onClick={handleExport} className="panel-btn">
-          <ActionIcons.download size={14} aria-hidden /> {zh ? "导出数据" : "Export Data"}
+          <ActionIcons.download size={16} aria-hidden /> {zh ? "导出数据" : "Export Data"}
         </button>
         <button onClick={handleClear} className="panel-btn panel-btn--danger">
-          <ActionIcons.delete size={14} aria-hidden /> {zh ? "清除所有" : "Clear All"}
+          <ActionIcons.delete size={16} aria-hidden /> {zh ? "清除所有" : "Clear All"}
         </button>
       </div>
 
@@ -274,7 +274,7 @@ export function RecoveryPanel() {
               {zh ? "导出数据" : "Export Data"}
             </span>
             <button onClick={() => navigator.clipboard?.writeText(exportData)} className="panel-btn panel-btn--sm">
-              <ActionIcons.copy size={14} aria-hidden /> {zh ? "复制" : "Copy"}
+              <ActionIcons.copy size={16} aria-hidden /> {zh ? "复制" : "Copy"}
             </button>
           </div>
           <pre className="recovery-export-pre">

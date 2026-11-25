@@ -222,7 +222,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
             {/* PPTX 导入入口 */}
             <div className="ppt-studio-import-row">
               <span className="ppt-studio-import-text">
-                <Upload size={14} aria-hidden /> 已有 PPTX 文件？直接导入编辑
+                <Upload size={16} aria-hidden /> 已有 PPTX 文件？直接导入编辑
               </span>
               <input
                 ref={fileInputRef}
@@ -330,7 +330,7 @@ function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGener
                 className="ppt-studio-checkbox"
               />
               <label htmlFor="enable-images" className="ppt-studio-option-label">
-                <ImageIcon size={14} aria-hidden /> 启用 AI 配图
+                <ImageIcon size={16} aria-hidden /> 启用 AI 配图
                 {!checkImageGen() && (
                   <span className="ppt-studio-option-hint">
                     (需在设置中配置生图模型)

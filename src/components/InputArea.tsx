@@ -58,9 +58,9 @@ import {
 
 // Map security mode emoji icons to Lucide components
 const securityIconMap: Record<string, JSX.Element> = {
-  "🛡️": <Shield size={14} />,
-  "⚡": <Zap size={14} />,
-  "🚀": <Rocket size={14} />,
+  "🛡️": <Shield size={16} />,
+  "⚡": <Zap size={16} />,
+  "🚀": <Rocket size={16} />,
 };
 
 /**
@@ -1498,13 +1498,13 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       {quoteContext && (
         <div className="quote-context-banner quote-context-card">
           <div className="quote-context-left">
-            <span className="quote-context-icon"><MessageSquare size={14} /></span>
+            <span className="quote-context-icon"><MessageSquare size={16} /></span>
             <div className="quote-context-body">
               <span className="quote-context-label">{zh ? "引用对话" : "Quoted message"}</span>
               <span className="quote-context-text">{quoteContext.length > 120 ? quoteContext.substring(0, 120) + "..." : quoteContext}</span>
             </div>
           </div>
-          <button aria-label="清除引用" title="清除引用" className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={14} /></button>
+          <button aria-label="清除引用" title="清除引用" className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={16} /></button>
         </div>
       )}
 
@@ -1565,7 +1565,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               const docState = docBadgeOf(doc);
               return (
                 <div key={att.id} className="pending-attachment" data-doc-status={doc?.status ?? "none"}>
-                  <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}</span>
+                  <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={16} /> : <FileText size={16} />}</span>
                   {att.type === "image" && att.content ? (
                     <img src={att.content} alt={att.name} className="pending-attachment-thumb" />
                   ) : null}
@@ -1579,7 +1579,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       {docState.label}
                     </span>
                   ) : null}
-                  <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
+                  <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={16} /></button>
                 </div>
               );
             })}
@@ -1745,7 +1745,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               <button ref={plusBtnRef} className={`mode-toggle-btn mode-toggle-btn--compact ${showPlusMenu ? "is-active" : ""}`} aria-haspopup="menu" aria-expanded={showPlusMenu} onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
               >
-                <Plus size={14} />
+                <Plus size={16} />
               </button>
               {showPlusMenu && plusMenuPos && createPortal(
                 <>
@@ -1762,11 +1762,11 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   >
                     <button className="more-action-item"
                       onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
-                      <Paperclip size={14} /> <span>{zh ? "上传文件" : "Upload file"}</span>
+                      <Paperclip size={16} /> <span>{zh ? "上传文件" : "Upload file"}</span>
                     </button>
                     <button className="more-action-item"
                       onClick={() => { setShowPlusMenu(false); setShowSkillPicker(true); }}>
-                      <Target size={14} /> <span>{zh ? "选择技能" : "Select skills"}</span>
+                      <Target size={16} /> <span>{zh ? "选择技能" : "Select skills"}</span>
                     </button>
                     <div className="menu-divider" />
                     {(() => {
@@ -1786,7 +1786,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                             textareaRef.current?.focus();
                           }}
                         >
-                          <ImageIcon size={14} /> <span>{zh ? "生成图片" : "Generate image"}</span>
+                          <ImageIcon size={16} /> <span>{zh ? "生成图片" : "Generate image"}</span>
                           {!imageGenConfig && <span className="input-popover-hint">{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                         <button
@@ -1802,7 +1802,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                             textareaRef.current?.focus();
                           }}
                         >
-                          <Volume2 size={14} /> <span>{zh ? "语音合成" : "Voice synthesis"}</span>
+                          <Volume2 size={16} /> <span>{zh ? "语音合成" : "Voice synthesis"}</span>
                           {!ttsConfig && <span className="input-popover-hint">{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                       </>);
@@ -1875,7 +1875,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                     onClick={() => onModeChange('plan')}
                     title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
                   >
-                    <Zap size={14} />
+                    <Zap size={16} />
                   </button>
                 )}
               </>
@@ -1896,7 +1896,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 }}
                 title={zh ? "知识来源选择器" : "Knowledge source selector"}
               >
-                <BookMarked size={14} />
+                <BookMarked size={16} />
               </button>
             )}
             {showSourceSelector && notebookId && !hideSourceSelector && (
@@ -1947,7 +1947,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                     : zh ? "搜索当前会话（会话内消息搜索）" : "Search current session"
                 }
               >
-                <Search size={14} />
+                <Search size={16} />
                 <span>{zh ? "搜索" : "Search"}</span>
               </button>
             )}
@@ -1964,7 +1964,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                     : zh ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"
                 }
               >
-                <MessageSquareText size={14} />
+                <MessageSquareText size={16} />
                 <span>{zh ? "临时会话" : "Side Session"}</span>
               </button>
             )}
@@ -1978,7 +1978,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
                   className="input-float-panel-close"
                 >
-                  <X size={14} />
+                  <X size={16} />
                 </button>
               </div>
             )}
@@ -2015,7 +2015,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 opacity: disabled ? 0.4 : (voiceEngine === "browser" && !voiceSupported ? 0.55 : 1),
               }}
             >
-              {micActive ? <SquareIcon size={14} fill="currentColor" /> : <Mic size={14} />}
+              {micActive ? <SquareIcon size={16} fill="currentColor" /> : <Mic size={16} />}
             </button>
 
             {/* Expand/collapse */}
@@ -2024,7 +2024,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               onClick={() => setExpanded(!expanded)}
               title={expanded ? S.sidebar.collapseInput[lang] : S.sidebar.expandInput[lang]}
             >
-              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
 
             {/* Send button group: send + up-arrow (wecode-aligned single-button state machine)
@@ -2036,7 +2036,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             */}
             <div className="input-send-group">
               {isStreaming && !input.trim() && pendingAttachments.length === 0 ? (
-                <button className="send-btn send-btn--split-left cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}><Square size={14} fill="currentColor" /></button>
+                <button className="send-btn send-btn--split-left cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}><Square size={16} fill="currentColor" /></button>
               ) : (
                 <button
                   className={`send-btn send-btn--split-left ${disabled ? "disabled" : ""}`}
@@ -2052,7 +2052,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 title={zh ? "快捷短语 / 草稿" : "Quick phrases / Drafts"}
                 className={`send-more-btn ${disabled ? "is-disabled" : showMoreActions ? "is-open" : ""}`}
               >
-                <ChevronUp size={10} />
+                <ChevronUp size={16} />
               </button>
               {showMoreActions && (
                 <>
@@ -2063,12 +2063,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   >
                     {onToggleQuickPhrase && (
                       <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }}>
-                        <ClipboardList size={14} /> <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
+                        <ClipboardList size={16} /> <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
                       </button>
                     )}
                     {onToggleDraftPicker && hasDrafts && (
                       <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }}>
-                        <StickyNote size={14} /> <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
+                        <StickyNote size={16} /> <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
                       </button>
                     )}
                   </div>
@@ -2090,7 +2090,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               disabled={runningOp !== null}
               title={`${op.name}: ${op.command}`}
             >
-              {runningOp === op.id ? <Clock size={12} /> : <Wrench size={12} />} {op.name}
+              {runningOp === op.id ? <Clock size={16} /> : <Wrench size={16} />} {op.name}
             </button>
           ))}
         </div>

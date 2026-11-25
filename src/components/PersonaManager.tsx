@@ -82,7 +82,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
           {zh ? "人设卡" : "Persona Cards"}
         </strong>
         <button className="mode-toggle-btn" onClick={startNew} title={zh ? "新建人设卡" : "New persona"}>
-          <Plus size={14} />
+          <Plus size={16} />
         </button>
       </div>
 
@@ -160,14 +160,14 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               }}
             >
               {activeId === c.id
-                ? <Star size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
-                : <Check size={14} style={{ opacity: 0, flexShrink: 0 }} />}
+                ? <Star size={16} style={{ color: "var(--accent)", flexShrink: 0 }} />
+                : <Check size={16} style={{ opacity: 0, flexShrink: 0 }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
                   {c.name}
                   {c.path && (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
-                      <FileText size={12} /> {c.path.split(/[\\/]/).pop()}
+                      <FileText size={16} /> {c.path.split(/[\\/]/).pop()}
                     </span>
                   )}
                 </div>
@@ -176,7 +176,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                 </div>
               </div>
               <button className="toolbar-btn" aria-label={zh ? "编辑" : "Edit"} onClick={() => startEdit(c)} title={zh ? "编辑" : "Edit"}>
-                <Pencil size={14} />
+                <Pencil size={16} />
               </button>
               <button
                 className="toolbar-btn"
@@ -184,10 +184,10 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                 onClick={() => handleActivate(c.id)}
                 title={activeId === c.id ? (zh ? "取消激活" : "Deactivate") : (zh ? "设为激活" : "Activate")}
               >
-                {activeId === c.id ? <X size={14} /> : <Check size={14} />}
+                {activeId === c.id ? <X size={16} /> : <Check size={16} />}
               </button>
               <button className="toolbar-btn" aria-label={zh ? "删除" : "Delete"} onClick={() => handleDelete(c.id)} title={zh ? "删除" : "Delete"}>
-                <Trash2 size={14} />
+                <Trash2 size={16} />
               </button>
             </div>
           ))}

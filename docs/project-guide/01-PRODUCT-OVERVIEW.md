@@ -126,7 +126,7 @@
 | 数据 | 40 张实表 + `session_fts` + `storage_audit`；43 索引；29 条迁移 ALTER |
 | 命令 | 118 个 `#[tauri::command]` 注解（以 `docs/project-guide/BASELINE.json` 实测为准） |
 | 插件装配 | `config/codem.base.yml` 170 条 + desktop 覆盖层 |
-| 测试 | 1010 文件 / 10476 用例（10458 通过、18 跳过、0 失败；2026-11-25 实测） |
+| 测试 | 1013 文件 / 10488 用例（10470 通过、18 跳过、0 失败；2026-11-25 实测） |
 | 工具链 | Node 24.19 / npm 11.17 / rustc 1.97.1 |
 
 **版本历程（只列结构性节点）**

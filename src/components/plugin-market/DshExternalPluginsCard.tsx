@@ -178,7 +178,7 @@ export function DshExternalPluginsCard({
         <span className="dsh-ext-meta">{zh ? "外部运行时" : "External runtime"}</span>
         <div className="dsh-ext-actions">
           <button className="dsh-ext-btn dsh-ext-btn--secondary" onClick={() => void check()} disabled={checking}>
-            {checking ? <StatusIcons.loading className="spin" /> : <ActionIcons.refresh />}
+            {checking ? <StatusIcons.loading className="icon-md spin" /> : <ActionIcons.refresh className="icon-md" />}
             {zh ? " 检查更新" : " Check updates"}
           </button>
         </div>

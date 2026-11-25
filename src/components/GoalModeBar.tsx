@@ -49,7 +49,7 @@ const STATUS_LABEL: Record<GoalView["status"], { zh: string; en: string }> = {
 
 function PhaseIcon({ status }: { status: string }) {
   const Icon = status === "done" ? CheckCircle2 : status === "active" ? RotateCw : status === "blocked" ? Ban : Clock;
-  return <Icon size={14} aria-hidden />;
+  return <Icon size={16} aria-hidden />;
 }
 
 /** 设置区（与目标面板放一起：用户改目标模式设置时正看着目标，不需要去设置面板翻） */
@@ -145,7 +145,7 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
     if (!planning) return null;
     return (
       <div data-testid="goal-planning-bar" style={{ padding: "4px 0", color: "var(--text-muted)", fontSize: "var(--fs-sm)", display: "flex", alignItems: "center", gap: 6 }}>
-        <Compass size={14} aria-hidden /> {zh ? "深规划中…（只读分析，不写工作区）" : "Deep planning… (read-only)"}
+        <Compass size={16} aria-hidden /> {zh ? "深规划中…（只读分析，不写工作区）" : "Deep planning… (read-only)"}
       </div>
     );
   }
@@ -347,7 +347,7 @@ export function GoalModeBar({ sessionId }: { sessionId: string | null | undefine
             <ul>
               {details.evidence.slice(-8).map((e) => (
                 <li key={e.id}>
-                  {e.passed ? <Check size={12} aria-hidden /> : <X size={12} aria-hidden />} {e.phaseKey}/{e.acceptanceId}：{e.summary}
+                  {e.passed ? <Check size={16} aria-hidden /> : <X size={16} aria-hidden />} {e.phaseKey}/{e.acceptanceId}：{e.summary}
                 </li>
               ))}
               {details.evidence.length === 0 ? <li>{zh ? "（暂无）" : "(none)"}</li> : null}

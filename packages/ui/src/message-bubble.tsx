@@ -92,7 +92,7 @@ function UserAvatar({ src }: { src: string }) {
       background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      <User size={14} style={{ color: "var(--text-muted)" }} />
+      <User size={16} style={{ color: "var(--text-muted)" }} />
     </div>
   );
 }
@@ -385,7 +385,7 @@ export const MessageBubble = memo(function MessageBubble({
                   e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
                 }}
               >
-                <BookOpen size={14} className="icon-inline" /> {src.sourceName}
+                <BookOpen size={16} className="icon-inline" /> {src.sourceName}
               </button>
             ))}
           </div>
@@ -402,7 +402,7 @@ export const MessageBubble = memo(function MessageBubble({
                 onClick={() => setShowFilesConfirm(true)}
               >
                 {/* 第 46 波：文案里的 emoji 换成与项目一致的线性图标 */}
-                <Trash2 size={14} className="icon-inline" />
+                <Trash2 size={16} className="icon-inline" />
                 <span>{strings.cleanFiles} ({message.generatedFiles.length})</span>
               </button>
             ) : (
@@ -442,7 +442,7 @@ export const MessageBubble = memo(function MessageBubble({
                 label: strings.editAndResend,
                 children: (
                   <button className="toolbar-btn" aria-label={strings.editAndResend} onClick={() => { setIsEditing(true); setIsEditingRewind(false); }}>
-                    <Pencil size={14} />
+                    <Pencil size={16} />
                   </button>
                 ),
               })
@@ -452,7 +452,7 @@ export const MessageBubble = memo(function MessageBubble({
                 label: strings.editAndRewind,
                 children: (
                   <button className="toolbar-btn" aria-label={strings.editAndRewind} onClick={() => { setIsEditing(true); setIsEditingRewind(true); }}>
-                    <Undo2 size={14} />
+                    <Undo2 size={16} />
                   </button>
                 ),
               })
@@ -468,7 +468,7 @@ export const MessageBubble = memo(function MessageBubble({
                     —— 真机走查里它们就是那三个 `label: ""` 的条目。
                   */
                   <button className="toolbar-btn" aria-label={strings.reEdit} onClick={() => onReEdit(rawContent)}>
-                    <PencilLine size={14} />
+                    <PencilLine size={16} />
                   </button>
                 ),
               })
@@ -481,7 +481,7 @@ export const MessageBubble = memo(function MessageBubble({
                   aria-label={copied ? strings.copied : strings.copyMessage}
                   onClick={handleCopyMessage}
                 >
-                  {copied ? <Check size={14} /> : <Clipboard size={14} />}
+                  {copied ? <Check size={16} /> : <Clipboard size={16} />}
                 </button>
               ),
             })}
@@ -495,7 +495,7 @@ export const MessageBubble = memo(function MessageBubble({
                     aria-label={pinned ? strings.unpinFromNav : strings.pinToNav}
                     onClick={() => onTogglePin(message.id)}
                   >
-                    {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                    {pinned ? <PinOff size={16} /> : <Pin size={16} />}
                   </button>
                 ),
               })
@@ -517,10 +517,10 @@ export const MessageBubble = memo(function MessageBubble({
                     style={platform.readAloud.isLoading(message.id) ? { opacity: 0.5 } : {}}
                   >
                     {platform.readAloud.isSpeaking(message.id)
-                      ? <StopIcon size={14} fill="currentColor" />
+                      ? <StopIcon size={16} fill="currentColor" />
                       : platform.readAloud.isLoading(message.id)
-                      ? <Clock size={14} />
-                      : <Volume2 size={14} />
+                      ? <Clock size={16} />
+                      : <Volume2 size={16} />
                     }
                   </button>
                 ),
@@ -531,7 +531,7 @@ export const MessageBubble = memo(function MessageBubble({
                 label: strings.expand,
                 children: (
                   <button className="toolbar-btn" aria-label={strings.expand} onClick={() => setContentCollapsed(false)}>
-                    <BookOpen size={14} />
+                    <BookOpen size={16} />
                   </button>
                 ),
               })
@@ -541,7 +541,7 @@ export const MessageBubble = memo(function MessageBubble({
                 label: strings.collapse,
                 children: (
                   <button className="toolbar-btn" aria-label={strings.collapse} onClick={() => setContentCollapsed(true)}>
-                    <BookX size={14} />
+                    <BookX size={16} />
                   </button>
                 ),
               })

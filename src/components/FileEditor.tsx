@@ -537,7 +537,7 @@ function FilePreviewBinary({ filePath, fileName }: { filePath: string; fileName:
       <div className="file-preview-office-name">{fileName}</div>
       <div className="file-preview-office-type">二进制文件</div>
       <div className="file-preview-office-hint">无法在内置编辑器中预览</div>
-      <button className="file-preview-office-btn" onClick={handleOpenExternal}><FolderOpen size={14} aria-hidden /> 用系统应用打开</button>
+      <button className="file-preview-office-btn" onClick={handleOpenExternal}><FolderOpen size={16} aria-hidden /> 用系统应用打开</button>
     </div>
   );
 }
@@ -902,7 +902,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
               disabled={!modified || saving || !canSave}
               title={canSave ? "Ctrl+S" : "内容尚未读取成功，禁止保存"}
             >
-              <Save size={14} />
+              <Save size={16} />
               {saving ? "保存中..." : "保存"}
             </button>
           )}
@@ -911,10 +911,10 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
             onClick={() => setFloating(true)}
             title="放大浏览"
           >
-            <Maximize2 size={14} />
+            <Maximize2 size={16} />
           </button>
           <button className="file-editor-btn close" onClick={onClose} title="关闭 (Esc)">
-            <ActionIcons.close size={14} />
+            <ActionIcons.close size={16} />
           </button>
         </div>
       </div>
@@ -966,15 +966,15 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
                     disabled={!modified || saving || !canSave}
                     title={canSave ? "Ctrl+S" : "内容尚未读取成功，禁止保存"}
                   >
-                    <Save size={14} />
+                    <Save size={16} />
                     {saving ? "保存中..." : "保存"}
                   </button>
                 )}
                 <button className="file-editor-btn" onClick={() => setFloating(false)} title="缩小返回">
-                  <Minimize2 size={14} />
+                  <Minimize2 size={16} />
                 </button>
                 <button className="file-editor-btn close" onClick={onClose} title="关闭">
-                  <ActionIcons.close size={14} />
+                  <ActionIcons.close size={16} />
                 </button>
               </div>
             </div>

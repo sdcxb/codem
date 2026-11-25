@@ -183,7 +183,7 @@ return createPortal(
                               flexShrink: 0,
                             }}
                           >
-                            {isSelected && <Check size={12} className="if-choice-check" />}
+                            {isSelected && <Check size={16} className="if-choice-check" />}
                           </div>
                           <span>{opt.label}</span>
                           {opt.recommended && (
@@ -200,7 +200,7 @@ return createPortal(
                                 marginLeft: "auto",
                               }}
                             >
-                              <Star size={10} className="if-recommend-star" />
+                              <Star size={16} className="if-recommend-star" />
                               推荐
                             </span>
                           )}

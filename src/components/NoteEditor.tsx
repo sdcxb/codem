@@ -414,7 +414,7 @@ export function NoteEditor({
                 }}
                 aria-label="移除标签"
               >
-                <ActionIcons.close size={12} />
+                <ActionIcons.close size={16} />
               </button>
             </span>
           ))}

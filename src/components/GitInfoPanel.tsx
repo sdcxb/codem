@@ -286,7 +286,7 @@ export function GitInfoPanel() {
         <GitBranchSelector refreshInterval={5000} onBranchChange={handleBranchChange} />
         {status && (status.isDirty ? (
           <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 15%, transparent)", padding: "1px 6px", borderRadius: "var(--radius)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <AlertTriangle size={12} aria-hidden /> {zh ? "未提交" : "dirty"}
+            <AlertTriangle size={16} aria-hidden /> {zh ? "未提交" : "dirty"}
           </span>
         ) : (
           <span style={{ fontSize: 'var(--fs-xs)', color: "var(--success)" }}>✓ {zh ? "干净" : "clean"}</span>
@@ -296,9 +296,9 @@ export function GitInfoPanel() {
       {/* Stats */}
       {status && status.isDirty && (
         <div className="git-stats-row">
-          <span className="git-stat-chip"><FilePlus size={12} aria-hidden /> {status.stagedCount} {zh ? "已暂存" : "staged"}</span>
-          <span className="git-stat-chip"><Pencil size={12} aria-hidden /> {status.unstagedCount} {zh ? "已修改" : "modified"}</span>
-          <span className="git-stat-chip"><FileQuestion size={12} aria-hidden /> {status.untrackedCount} {zh ? "未跟踪" : "untracked"}</span>
+          <span className="git-stat-chip"><FilePlus size={16} aria-hidden /> {status.stagedCount} {zh ? "已暂存" : "staged"}</span>
+          <span className="git-stat-chip"><Pencil size={16} aria-hidden /> {status.unstagedCount} {zh ? "已修改" : "modified"}</span>
+          <span className="git-stat-chip"><FileQuestion size={16} aria-hidden /> {status.untrackedCount} {zh ? "未跟踪" : "untracked"}</span>
           {(status.insertions > 0 || status.deletions > 0) && (
             <span>+{status.insertions}/-{status.deletions}</span>
           )}
@@ -343,7 +343,7 @@ export function GitInfoPanel() {
             cursor: "pointer",
           }}
         >
-          <ArrowUpFromLine size={14} aria-hidden />
+          <ArrowUpFromLine size={16} aria-hidden />
         </button>
         <button
           onClick={handlePull}
@@ -356,14 +356,14 @@ export function GitInfoPanel() {
             cursor: "pointer",
           }}
         >
-          <ArrowDownToLine size={14} aria-hidden />
+          <ArrowDownToLine size={16} aria-hidden />
         </button>
       </div>
 
       {currentSession?.worktreePath && (
         <div className="git-worktree-row">
           <div className="git-worktree-path">
-            <GitBranch size={12} aria-hidden /> {currentSession.worktreePath}
+            <GitBranch size={16} aria-hidden /> {currentSession.worktreePath}
           </div>
           <button
             onClick={() => handleMergeWorktree()}
@@ -455,7 +455,7 @@ export function GitInfoPanel() {
             onClick={() => setIsExpanded(!isExpanded)}
             className="git-commits-toggle"
           >
-            {isExpanded ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />} {zh ? "最近提交" : "Recent commits"} ({commits.length})
+            {isExpanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />} {zh ? "最近提交" : "Recent commits"} ({commits.length})
           </div>
           {isExpanded && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
@@ -483,7 +483,7 @@ export function GitInfoPanel() {
           alignSelf: "flex-start",
         }}
       >
-        {loading ? <Spinner size="sm" label="" /> : <RefreshCw size={12} aria-hidden />} {zh ? "刷新" : "Refresh"}
+        {loading ? <Spinner size="sm" label="" /> : <RefreshCw size={16} aria-hidden />} {zh ? "刷新" : "Refresh"}
       </button>
     </div>
   );

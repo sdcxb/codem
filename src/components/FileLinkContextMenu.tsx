@@ -68,15 +68,15 @@ export function FileLinkContextMenu() {
       }}
     >
       <button className="file-link-menu-item" onClick={() => handleAction("reveal")}>
-        <FolderOpen size={14} />
+        <FolderOpen size={16} />
         <span>在文件管理器中显示</span>
       </button>
       <button className="file-link-menu-item" onClick={() => handleAction("open")}>
-        <FileText size={14} />
+        <FileText size={16} />
         <span>打开文件</span>
       </button>
       <button className="file-link-menu-item" onClick={() => handleAction("copy")}>
-        <Copy size={14} />
+        <Copy size={16} />
         <span>复制路径</span>
       </button>
     </div>

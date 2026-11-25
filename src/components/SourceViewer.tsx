@@ -199,7 +199,7 @@ export function SourceViewer({
           alignItems: 'center',
           gap: '8px',
         }}>
-          <Search size={14} style={{ opacity: 0.5 }} />
+          <Search size={16} style={{ opacity: 0.5 }} />
           <input
             type="text"
             placeholder="搜索来源内容"

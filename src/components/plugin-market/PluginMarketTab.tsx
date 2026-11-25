@@ -160,7 +160,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
       {/* 工具栏：搜索 + 在线检索 */}
       <div className="skill-manager-toolbar">
         <div className="skill-search-box" style={{ flex: 1 }}>
-          <ActionIcons.search size={14} className="skill-search-icon" />
+          <ActionIcons.search size={16} className="skill-search-icon" />
           <input
             type="text"
             className="skill-search-input"
@@ -170,12 +170,12 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
           />
         </div>
         <button
-          className="save-btn"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-sm)', flexShrink: 0 }}
+          className="save-btn plugin-market-search-btn"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', color: 'var(--text-primary)', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-sm)', flexShrink: 0 }}
           onClick={handleOnlineSearch}
           disabled={searching}
         >
-          <CommonIcons.package size={14} />
+          <CommonIcons.package size={16} />
           {searching ? (zh ? '检索中...' : 'Searching...') : (zh ? '在线检索 npm' : 'Search npm')}
         </button>
       </div>
@@ -198,7 +198,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
           )
         })}
       </div>      {/* 兼容性说明 */}
-      <div style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, lineHeight: 1.5 }}>
+      <div className="plugin-market-note" style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0, lineHeight: 1.5 }}>
         {zh
           ? 'dsh 插件是 npm 包（依赖 Node 模块运行时）。Codem 桌面内无法直接加载任意 npm 包：<内置等价> 表示该能力已内置（安装=启用对应插件）；<可适配> 表示按 dsh 协议、无第三方依赖的插件可经 dsh-compat 桥接；其余标注暂不兼容。'
           : 'dsh plugins are npm packages (Node runtime). Codem cannot load arbitrary npm packages: "Bundled" means Codem already ships an equivalent (install = enable it); "Adaptable" means a dependency-free dsh-protocol plugin can run via the dsh-compat bridge; others are marked unsupported.'}
@@ -258,7 +258,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
                 {entry.dshDesc}
               </div>
               {entry.status === 'bundled' && entry.codemAnchor && (
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   → {entry.codemAnchor} {isEnabled ? `(${zh ? '已启用' : 'enabled'})` : `(${zh ? '未启用' : 'disabled'})`}
                 </div>
               )}
@@ -269,25 +269,25 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
                 {installable ? (
                   isLoading ? (
                     <button
-                      className="save-btn"
+                      className="save-btn plugin-install-btn"
                       disabled
-                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
+                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
                     >
                       {zh ? '启用中…' : 'Enabling…'}
                     </button>
                   ) : isEnabled && !canDisable ? (
                     <button
-                      className="save-btn"
+                      className="save-btn plugin-install-btn"
                       disabled
-                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
+                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
                       title={zh ? '核心内置插件，不可卸载' : 'Core built-in plugin, cannot be disabled'}
                     >
                       {zh ? '已启用（核心）' : 'Enabled (core)'}
                     </button>
                   ) : (
                     <button
-                      className="save-btn"
-                      style={{ flexShrink: 0, background: isEnabled ? 'var(--bg-tertiary)' : 'var(--accent)', color: isEnabled ? 'var(--text-primary)' : 'var(--text-on-accent)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-xs)' }}
+                      className={`save-btn plugin-install-btn${isEnabled ? ' is-enabled' : ''}`}
+                      style={{ flexShrink: 0, padding: '4px 12px', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-xs)' }}
                       onClick={() => handleInstallBundled(entry)}
                     >
                       {isEnabled ? (zh ? '禁用' : 'Disable') : (zh ? '安装并启用' : 'Install')}
@@ -309,13 +309,13 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
 
       {/* 在线检索结果（真实生态包：一律标注需移植） */}
       {online !== null && online.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--border-primary)', maxHeight: 180, overflowY: 'auto', flexShrink: 0 }}>
+        <div className="plugin-source-list" style={{ maxHeight: 180, overflowY: 'auto', flexShrink: 0 }}>
           <div style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
             {zh ? `npm 检索到 ${online.length} 个 dsh 生态包（仅元数据，均需移植/适配后运行）：` : `${online.length} npm packages found (metadata only — porting required):`}
           </div>
           {online.map(p => (
-            <div key={p.name} style={{ padding: '4px 12px', display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)', borderTop: '1px solid var(--border-primary)' }}>
-              <CommonIcons.info size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <div key={p.name} className="plugin-source-row" style={{ padding: '4px 12px', display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)' }}>
+              <CommonIcons.info size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>{p.name}</span>
               <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.description || '—'}</span>
             </div>

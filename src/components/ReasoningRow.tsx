@@ -151,11 +151,11 @@ export const ReasoningRow = memo(function ReasoningRow({
         aria-controls={bodyId}
       >
         {expanded
-          ? <ChevronDown size={12} className="reasoning-chev" aria-hidden />
-          : <ChevronRight size={12} className="reasoning-chev" aria-hidden />
+          ? <ChevronDown size={16} className="reasoning-chev" aria-hidden />
+          : <ChevronRight size={16} className="reasoning-chev" aria-hidden />
         }
         <Brain
-          size={14}
+          size={16}
           className={running ? 'reasoning-icon reasoning-icon-streaming' : 'reasoning-icon'}
           aria-hidden
         />

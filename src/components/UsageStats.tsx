@@ -148,7 +148,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Conversation Overview */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <span className="usage-viz-section-title"><UsageIcon size={14} /> 对话概览</span>
+                <span className="usage-viz-section-title"><UsageIcon size={16} /> 对话概览</span>
               </div>
               <ConversationOverview sessionId={currentSession?.id} showCostBar={true} />
             </div>
@@ -229,7 +229,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Token Activity Heatmap */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <Activity size={14} />
+                <Activity size={16} />
                 <span>Token 活跃度（近 28 天）</span>
               </div>
               <TokenActivityGrid records={vizRecords} days={VIZ_DAYS} />
@@ -238,7 +238,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Daily Usage Chart */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <UsageIcon size={14} />
+                <UsageIcon size={16} />
                 <span>每日用量趋势（近 7 天）</span>
               </div>
               <UsageChart records={vizRecords} days={7} />
@@ -296,7 +296,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   <span>{formatTime(record.timestamp)}</span>
                   <span>{record.inputTokens}→{record.outputTokens} tokens</span>
                   <span>{formatDuration(record.duration)}</span>
-                  {record.toolCalls > 0 && <span className="usage-record-tools"><Wrench size={12} /> {record.toolCalls}</span>}
+                  {record.toolCalls > 0 && <span className="usage-record-tools"><Wrench size={16} /> {record.toolCalls}</span>}
                 </div>
                 {record.error && (
                   <div className="usage-record-error">{record.error}</div>

@@ -387,13 +387,13 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
                 closeSession(s.id);
               }}
             >
-              <ActionIcons.close size={12} />
+              <ActionIcons.close size={16} />
             </button>
           </div>
         ))}
         {sessions.length < MAX_SESSIONS && (
           <button className="terminal-tab-new" onClick={() => createSession()} title="新建终端">
-            <Plus size={14} />
+            <Plus size={16} />
           </button>
         )}
         {/* Stop button — sends Ctrl+C to active PTY */}
@@ -405,7 +405,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
             }}
             title="停止当前进程 (Ctrl+Shift+C)"
           >
-            <Square size={12} />
+            <Square size={16} />
             <span>停止</span>
           </button>
         )}

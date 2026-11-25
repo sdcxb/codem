@@ -72,13 +72,13 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
           transition: 'all 0.15s ease',
         }}
       >
-        <ClipboardList size={12} />
+        <ClipboardList size={16} />
         {zh ? '计划' : 'Plan'}
         <span
           style={{ display: 'inline-flex', cursor: 'pointer' }}
           aria-hidden
         >
-          <X size={12} />
+          <X size={16} />
         </span>
       </button>
     </span>

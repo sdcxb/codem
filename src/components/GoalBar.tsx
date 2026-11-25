@@ -93,7 +93,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
         background: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-primary)',
       }}>
-        <Target size={14} style={{ color: 'var(--accent)' }} />
+        <Target size={16} style={{ color: 'var(--accent)' }} />
         <input
           type="text"
           value={draft}
@@ -120,7 +120,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           disabled={pending || draft.trim() === ''}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)' }}
         >
-          <Check size={14} />
+          <Check size={16} />
         </button>
         <button
           aria-label={zh ? "取消编辑" : "Cancel"}
@@ -129,7 +129,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           disabled={pending}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
         >
-          <X size={14} />
+          <X size={16} />
         </button>
       </div>
     )
@@ -151,7 +151,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
         fontSize: 'var(--fs-sm)',
       }}
     >
-      <Target size={14} style={{ color: 'var(--accent)' }} />
+      <Target size={16} style={{ color: 'var(--accent)' }} />
       <span style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 'var(--fs-sm)' }}>{phaseLabel}</span>
       <span style={{
         flex: 1,
@@ -170,7 +170,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
             title={zh ? '暂停' : 'Pause'}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
           >
-            <Pause size={12} />
+            <Pause size={16} />
           </button>
         )}
         {goal.phase === 'paused' && (
@@ -180,7 +180,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
             title={zh ? '恢复' : 'Resume'}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
           >
-            <Play size={12} />
+            <Play size={16} />
           </button>
         )}
         <button
@@ -189,7 +189,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           title={zh ? '编辑' : 'Edit'}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
         >
-          <Edit2 size={12} />
+          <Edit2 size={16} />
         </button>
         <button
           onClick={() => runAction(() => onClear?.())}
@@ -197,7 +197,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           title={zh ? '清除' : 'Clear'}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
         >
-          <Trash2 size={12} />
+          <Trash2 size={16} />
         </button>
       </div>
     </div>

@@ -9,7 +9,7 @@ import { ISSUE_STATUS_BY_KEY, issueStatusMeta } from "./issue-status-meta";
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: "var(--error)",
   high: "var(--warning)",
-  normal: "var(--accent)",
+  normal: "var(--text-secondary)",
   low: "var(--text-muted)",
 };
 
@@ -30,35 +30,20 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
   return (
     <div
       onClick={onClick}
+      className={`issue-card${onClick ? " is-clickable" : ""}`}
       style={{
         padding: compact ? "8px 10px" : "12px 14px",
         borderRadius: "var(--radius)",
         background: "var(--bg-tertiary)",
-        border: "1px solid var(--border-primary)",
         cursor: onClick ? "pointer" : "default",
         display: "flex",
         flexDirection: "column",
         gap: "6px",
-        transition: "border-color 0.2s",
-        borderLeft: `3px solid ${config.color}`,
-      }}
-      onMouseEnter={(e) => {
-        if (!onClick) return;
-        e.currentTarget.style.borderTopColor = "var(--accent)";
-        e.currentTarget.style.borderRightColor = "var(--accent)";
-        e.currentTarget.style.borderBottomColor = "var(--accent)";
-      }}
-      onMouseLeave={(e) => {
-        if (!onClick) return;
-        // 只改上/右/下边框，保留左侧 3px 状态色条（改 borderColor 会把它一起覆盖掉）
-        e.currentTarget.style.borderTopColor = "var(--border-primary)";
-        e.currentTarget.style.borderRightColor = "var(--border-primary)";
-        e.currentTarget.style.borderBottomColor = "var(--border-primary)";
       }}
     >
       {/* Header: status icon + title + priority */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>
-        <StatusIcon size={14} style={{ color: config.color, marginTop: 2, flexShrink: 0 }} />
+        <StatusIcon size={16} style={{ color: config.color, marginTop: 2, flexShrink: 0 }} />
         <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--text-primary)", flex: 1, lineHeight: 1.4 }}>
           {issue.title}
         </span>
@@ -74,7 +59,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
           <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{issue.id.substring(0, 16)}</span>
           {issue.assigneeId && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span style={{ color: "var(--accent)" }}>@</span>
+              <span>@</span>
               {issue.assigneeType}/{issue.assigneeId.substring(0, 12)}
             </span>
           )}

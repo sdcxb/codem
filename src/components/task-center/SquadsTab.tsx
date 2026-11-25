@@ -125,7 +125,7 @@ export function SquadsTab() {
             onClick={() => setEditing({ name: "", leaderAgentId: "", instructions: "" })}
             className="squads-new-btn"
           >
-            <Plus size={14} /> {zh ? "新建 Squad" : "New Squad"}
+            <Plus size={16} /> {zh ? "新建 Squad" : "New Squad"}
           </button>
         </div>
       </div>
@@ -157,7 +157,7 @@ export function SquadsTab() {
               className="squads-card-head"
               onClick={() => setSelectedSquad(selectedSquad === squad.id ? null : squad.id)}
             >
-              <Users size={14} />
+              <Users size={16} />
               <span className="squads-name">{squad.name}</span>
               <span className="squads-count-badge">
                 {squad.members.length} {zh ? "成员" : "members"}
@@ -173,7 +173,7 @@ export function SquadsTab() {
                     className="squads-icon-btn"
                     title={zh ? "恢复（取消归档）" : "Restore (unarchive)"}
                   >
-                    <ArchiveRestore size={14} />
+                    <ArchiveRestore size={16} />
                   </button>
                 ) : (
                   <button
@@ -181,11 +181,11 @@ export function SquadsTab() {
                     className="squads-icon-btn"
                     title={zh ? "归档（可在「显示已归档」里恢复）" : "Archive (restore via “Show archived”)"}
                   >
-                    <Archive size={14} />
+                    <Archive size={16} />
                   </button>
                 )}
                 <ChevronRight
-                  size={14}
+                  size={16}
                   className={`squads-chevron${selectedSquad === squad.id ? " is-open" : ""}`}
                 />
               </span>
@@ -193,7 +193,7 @@ export function SquadsTab() {
 
             {/* Leader info */}
             <div className="squads-leader">
-              <Crown size={12} />
+              <Crown size={16} />
               <span>{zh ? "Leader:" : "Leader:"}</span>
               <span className="squads-leader-name">{squad.leader?.name || squad.leaderAgentId}</span>
             </div>
@@ -214,7 +214,7 @@ export function SquadsTab() {
                 </div>
                 {squad.members.map((m) => (
                   <div key={m.id} className="squads-member">
-                    {m.memberType === "agent" ? <Bot size={12} /> : <User size={12} />}
+                    {m.memberType === "agent" ? <Bot size={16} /> : <User size={16} />}
                     <span className="squads-member-name">{m.memberName}</span>
                     {m.id !== squad.members[0]?.id && (
                       <span className="squads-member-role">{m.roleDescription}</span>
@@ -231,7 +231,7 @@ export function SquadsTab() {
                         onClick={() => handleRemoveMember(m.id, squad.id)}
                         className="squads-member-remove"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </div>

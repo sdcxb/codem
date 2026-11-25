@@ -947,8 +947,8 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                       setHoverMenuProjectId(project.id);
                     }}
                   >
-                    <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
-                    <span className="sidebar-project-icon">{project.pinned ? <Pin size={14} style={{ color: "var(--accent)" }} /> : <Folder size={14} />}</span>
+                    <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
+                    <span className="sidebar-project-icon">{project.pinned ? <Pin size={16} style={{ color: "var(--accent)" }} /> : <Folder size={16} />}</span>
                     <OverflowText className="sidebar-project-name">{project.name}</OverflowText>
                     <span className="sidebar-project-count">{projectSessions.length}</span>
                     <button
@@ -996,7 +996,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                           }
                         }}
                         title={S.sidebar.moreActions[lang]}
-                        ><MoreHorizontal size={14} /></button>
+                        ><MoreHorizontal size={16} /></button>
                       {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPos && createPortal(
                         <div
                           className="sidebar-project-more-menu popover-shell"
@@ -1041,11 +1041,11 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                             </button>
                           )}
                           <button onClick={(e) => { e.stopPropagation(); updateProject(project.id, { pinned: !project.pinned }); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            <Pin size={14} className="pm-menu-icon" />
+                            <Pin size={16} className="pm-menu-icon" />
                             <span>{project.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}</span>
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            <FolderOpen size={14} className="pm-menu-icon" />
+                            <FolderOpen size={16} className="pm-menu-icon" />
                             <span>{S.sidebar.fileBrowser[lang]}</span>
                           </button>
                           <button onClick={async (e) => {
@@ -1066,14 +1066,14 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                               }
                             }
                           }}>
-                            <Folder size={14} className="pm-menu-icon" />
+                            <Folder size={16} className="pm-menu-icon" />
                             <span>{S.sidebar.openInFileManager[lang]}</span>
                           </button>
                           <button
                             className="pm-menu-danger"
                             onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}
                           >
-                            <Trash2 size={14} className="pm-menu-icon" />
+                            <Trash2 size={16} className="pm-menu-icon" />
                             <span>{S.sidebar.removeProject[lang]}</span>
                           </button>
                         </div>)}
@@ -1191,17 +1191,17 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             style={{ top: sessionContextMenu.y, left: sessionContextMenu.x }}
           >
             <button onClick={() => { handleRenameSession(sessionContextMenu.session.id, sessionContextMenu.session.title); setSessionContextMenu(null); }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pencil size={14} /> {S.sidebar.renameSession[lang]}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pencil size={16} /> {S.sidebar.renameSession[lang]}</span>
             </button>
             <button onClick={() => { handleCopySessionId(sessionContextMenu.session.id); setSessionContextMenu(null); }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clipboard size={14} /> {S.sidebar.copySessionId[lang]}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clipboard size={16} /> {S.sidebar.copySessionId[lang]}</span>
             </button>
             <button onClick={() => { SessionStorage.togglePinned(sessionContextMenu.session.id); loadAllSessions(); setSessionContextMenu(null); }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pin size={14} /> {sessionContextMenu.session.pinned ? (lang === 'zh' ? '取消置顶' : 'Unpin') : (lang === 'zh' ? '置顶' : 'Pin')}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pin size={16} /> {sessionContextMenu.session.pinned ? (lang === 'zh' ? '取消置顶' : 'Unpin') : (lang === 'zh' ? '置顶' : 'Pin')}</span>
             </button>
             <div className="sidebar-context-menu-separator" />
             <button className="destructive" onClick={() => { setDeleteConfirm({ sessionId: sessionContextMenu.session.id, title: sessionContextMenu.session.title }); setSessionContextMenu(null); }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Trash2 size={14} /> {S.sidebar.deleteSession[lang]}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Trash2 size={16} /> {S.sidebar.deleteSession[lang]}</span>
             </button>
           </div>
         </>
@@ -1272,7 +1272,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
           >
-            <Puzzle size={14} />
+            <Puzzle size={16} />
             <span>{S.sidebar.pluginManager[lang]}</span>
           </button>
         )}
@@ -1370,7 +1370,7 @@ function SessionItem({
         return <span className="session-unread-badge" title={lang === 'zh' ? `${unread} 条新消息` : `${unread} new`}>{unread > 99 ? '99+' : unread}</span>;
       })()}
       {session.executionMode === "git_worktree" && (
-        <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={12} /></span>
+        <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={16} /></span>
       )}
       {/* Delegation badge: show 🔗 if session has active delegations */}
       {(() => {
@@ -1378,7 +1378,7 @@ function SessionItem({
           const orch = getDelegationOrchestrator();
           const hasActive = orch.getDelegationsByTarget(session.id).some(d => d.status === 'pending' || d.status === 'running')
             || orch.getDelegationsBySource(session.id).some(d => d.status === 'pending' || d.status === 'running');
-          return hasActive ? <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
+          return hasActive ? <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={16} /></span> : null;
         } catch { return null; }
       })()}
       <MessageSquare className="icon-sm sidebar-session-icon" />
@@ -1389,13 +1389,13 @@ function SessionItem({
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
-        >{session.pinned ? <Pin size={12} style={{ color: "var(--accent)" }} /> : <Pin size={12} />}</button>
+        >{session.pinned ? <Pin size={16} style={{ color: "var(--accent)" }} /> : <Pin size={16} />}</button>
         <button
           aria-label="删除该会话"
           title="删除该会话"
           className="sidebar-session-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        ><ActionIcons.close size={12} /></button>
+        ><ActionIcons.close size={16} /></button>
       </div>
     </div>
   );

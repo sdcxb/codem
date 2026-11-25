@@ -121,7 +121,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                   title={a.roleLabel}
                 >
                   <span className="lo-status__item-name" title={a.name}>
-                    <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
+                    <LoIcon name={KIND_META[a.kind].icon} size={16} /> {a.name}
                   </span>
                   <span className="lo-status__item-type">
                     {zh ? ACTIVITY_META[a.activity].zh : ACTIVITY_META[a.activity].en} · {formatAge(a.lastEventAt)}
@@ -338,7 +338,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             )}
             {snapshot.sources.failed.length > 0 && (
               <div className="lo-warn">
-                <Pill token="--warning"><LoIcon name="triangle-alert" size={12} /> {zh ? "采集失败" : "Failed"}</Pill>
+                <Pill token="--warning"><LoIcon name="triangle-alert" size={16} /> {zh ? "采集失败" : "Failed"}</Pill>
                 <span>{snapshot.sources.failed.join(", ")}</span>
               </div>
             )}

@@ -46,7 +46,7 @@ export const QuickAccessCards = memo(function QuickAccessCards({
   const renderCard = (agent: Agent) => (
     <div key={agent.id} className="quick-access-card">
       <button className="card-favorite" onClick={() => onToggleFavorite(agent.id)}>
-        {favoriteIds.has(agent.id) ? <Star size={14} fill="currentColor" /> : <Star size={14} />}
+        {favoriteIds.has(agent.id) ? <Star size={16} fill="currentColor" /> : <Star size={16} />}
       </button>
       <button className="card-body" onClick={() => onSelect(agent.id)}>
         <div className="card-icon">{agent.icon}</div>

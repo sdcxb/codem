@@ -2325,13 +2325,13 @@ export function MemoryManager({ onClose, sessionId, projectId, projects }: Memor
                   className="memory-edit-btn"
                   onClick={() => handleStartEdit(selectedEntry)}
                 >
-                  <EditIcon size={14} /> 编辑
+                  <EditIcon size={16} /> 编辑
                 </button>
                 <button
                   className="memory-delete-btn"
                   onClick={() => handleDelete(selectedEntry.id)}
                 >
-                  <DeleteIcon size={14} /> 删除
+                  <DeleteIcon size={16} /> 删除
                 </button>
               </div>
             </div>

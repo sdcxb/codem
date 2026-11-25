@@ -181,7 +181,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
           <Camera size={16} style={{ color: 'var(--accent)' }} />
           <span>文件快照</span>
         </div>
-        <button aria-label="关闭" title="关闭" className="snapshot-panel-close" onClick={onClose}><CloseIcon size={14} /></button>
+        <button aria-label="关闭" title="关闭" className="snapshot-panel-close" onClick={onClose}><CloseIcon size={16} /></button>
       </div>
 
       {toast && (
@@ -192,7 +192,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
 
       <div className="snapshot-panel-actions">
         <button className="snapshot-refresh-btn" onClick={loadSnapshots} disabled={loading}>
-          {loading ? <Clock size={12} /> : <RefreshCw size={12} />} 刷新
+          {loading ? <Clock size={16} /> : <RefreshCw size={16} />} 刷新
         </button>
       </div>
 
@@ -218,10 +218,10 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
               </div>
               <div className="snapshot-item-meta">
                 <span className="snapshot-item-files">
-                  <Folder size={12} className="icon-inline" /> {snapshot.files.length} 个文件
+                  <Folder size={16} className="icon-inline" /> {snapshot.files.length} 个文件
                 </span>
                 <span className="snapshot-item-arrow">
-                  {expandedId === snapshot.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {expandedId === snapshot.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
               </div>
             </div>
@@ -254,7 +254,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                             onClick={() => handleViewDiff(file.path, file.content, file.isNew || false)}
                             title="查看变更"
                           >
-                            <Search size={12} className="icon-inline" /> Diff
+                            <Search size={16} className="icon-inline" /> Diff
                           </button>
                         </li>
                       ))}
@@ -268,7 +268,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                     onClick={() => handleRestore(snapshot.id)}
                     disabled={restoring !== null}
                   >
-                    {restoring === snapshot.id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 回滚到此快照</>}
+                    {restoring === snapshot.id ? <><Clock size={16} /> 恢复中...</> : <><Undo size={16} /> 回滚到此快照</>}
                   </button>
                 </div>
               </div>

@@ -32,7 +32,7 @@ export function Card({
     <section className={`lo-card ${className}`} style={style}>
       {(title || actions) && (
         <header className="lo-card__head">
-          {icon && <LoIcon name={icon} size={14} className="lo-card__icon" />}
+          {icon && <LoIcon name={icon} size={16} className="lo-card__icon" />}
           {title && <span className="lo-card__title">{title}</span>}
           {actions && <span className="lo-card__actions">{actions}</span>}
         </header>
@@ -67,7 +67,7 @@ export function StatCard({
         {unit && <span className="lo-stat__unit">{unit}</span>}
         {trend !== undefined && trend !== 0 && (
           <span className={`lo-stat__trend${trend > 0 ? " is-up" : " is-down"}`}>
-            <LoIcon name={trend > 0 ? "trending-up" : "trending-down"} size={12} />
+            <LoIcon name={trend > 0 ? "trending-up" : "trending-down"} size={16} />
             {Math.abs(Math.round(trend))}
           </span>
         )}

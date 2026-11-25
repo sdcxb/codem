@@ -142,14 +142,15 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
 
       {/* 团队维度：当前会话的活动 agent-teams 团队 */}
       {teamSnap && (
-        <div style={{ margin: "0 10px 6px", border: "1px solid var(--border-primary, rgba(0,0,0,.1))", borderRadius: "var(--radius-md)", overflow: "hidden", background: "var(--bg-secondary, #232834)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
-            <span style={{ fontWeight: 700, fontSize: "var(--fs-sm)", display: "inline-flex", alignItems: "center", gap: 4 }}><Users size={14} /> {teamSnap.name}</span>
+        <div className="agent-panel-team" style={{ margin: "0 10px 6px", borderRadius: "var(--radius-md)", overflow: "hidden", background: "var(--bg-secondary, #232834)" }}>
+          <div className="agent-panel-team-head" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px" }}>
+            <span style={{ fontWeight: 700, fontSize: "var(--fs-sm)", display: "inline-flex", alignItems: "center", gap: 4 }}><Users size={16} /> {teamSnap.name}</span>
             <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
               {zh ? `成员 ${(teamSnap.members || []).length} · 任务 ${(teamSnap.tasks || []).length}` : `${(teamSnap.members || []).length} members · ${(teamSnap.tasks || []).length} tasks`}
             </span>
             <span
-              style={{ fontSize: "var(--fs-xs)", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+              className="agent-panel-link"
+              style={{ fontSize: "var(--fs-xs)", cursor: "pointer", textDecoration: "underline" }}
               onClick={() => {
                 try { window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: { tab: "teams" } })); } catch { /* noop */ }
               }}
@@ -171,11 +172,11 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
             return (
               <div key={m.id || m.name}>
                 <div
-                  className="agent-item"
+                  className={`agent-item agent-panel-row${expanded ? " is-expanded" : ""}`}
                   style={{
                     cursor: hasTask ? "pointer" : "default",
                     opacity: hasTask ? 1 : 0.55,
-                    padding: "7px 10px", borderBottom: expanded ? "none" : "1px solid var(--border-primary, rgba(0,0,0,.06))",
+                    padding: "7px 10px",
                   }}
                   onClick={() => { if (hasTask) setExpandedMember(expanded ? null : m.name); }}
                   title={hasTask
@@ -197,7 +198,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                   </div>
                 </div>
                 {expanded && task && (
-                  <div style={{ padding: "2px 10px 8px 24px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.06))", display: "grid", gap: 6 }}>
+                  <div className="agent-panel-detail" style={{ padding: "2px 10px 8px 24px", display: "grid", gap: 6 }}>
                     {/* 个体动态：最近活动 */}
                     {(task.activities || []).length === 0 ? (
                       <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
@@ -209,10 +210,10 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                       <div style={{ display: "grid", gap: 4 }}>
                         {(task.activities || []).slice(-3).reverse().map((act: any) => (
                           <div key={act.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
-                            <span style={{ display: "inline-flex", alignItems: "center" }}>{act.type === "tool" ? <Wrench size={12} /> : <MessageCircle size={12} />}</span>
+                            <span style={{ display: "inline-flex", alignItems: "center" }}>{act.type === "tool" ? <Wrench size={16} /> : <MessageCircle size={16} />}</span>
                             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.label}</span>
                             <span style={{ color: act.status === "done" ? "var(--success)" : "var(--warning)" }}>
-                              {act.status === "done" ? (<><Check size={12} /> {zh ? "完成" : "done"}</>) : (zh ? "进行中" : "running")}
+                              {act.status === "done" ? (<><Check size={16} /> {zh ? "完成" : "done"}</>) : (zh ? "进行中" : "running")}
                             </span>
                           </div>
                         ))}
@@ -266,14 +267,14 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                 const Icon = getAgentIcon(agent.agentId);
                 return (
                   <span className="agent-item-icon">
-                    <Icon size={14} />
+                    <Icon size={16} />
                   </span>
                 );
               })()}
               <span className="agent-item-name">{agent.name || agent.agentId}</span>
               {agent.persistent && <span className="agent-item-badge">持久</span>}
               <span className="agent-item-status">
-                {(() => { const StatusIcon = getStatusIcon(agent.status); return <StatusIcon size={12} className="icon-inline" />; })()} {getStatusLabel(agent.status)}
+                {(() => { const StatusIcon = getStatusIcon(agent.status); return <StatusIcon size={16} className="icon-inline" />; })()} {getStatusLabel(agent.status)}
               </span>
             </div>
             <div className="agent-item-prompt">{agent.prompt}</div>
@@ -281,7 +282,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
               <span>{formatTime(agent.createdAt)}</span>
               {agent.result && (
                 <span className="agent-item-files">
-                  <FileText size={12} className="icon-inline" /> {agent.result.filesTouched.length} 个文件
+                  <FileText size={16} className="icon-inline" /> {agent.result.filesTouched.length} 个文件
                 </span>
               )}
             </div>

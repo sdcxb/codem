@@ -63,7 +63,7 @@ export function FileTree(props: FileTreeProps): React.ReactElement {
   const search = props.onQueryChange ? (
     <div className="file-explorer-search">
       <div className="file-explorer-search-bar">
-        <Search size={14} className="file-explorer-search-icon" />
+        <Search size={16} className="file-explorer-search-icon" />
         <input
           type="text"
           value={props.query ?? ""}
@@ -77,7 +77,7 @@ export function FileTree(props: FileTreeProps): React.ReactElement {
             onClick={props.onRefresh}
             title={strings.refreshTitle}
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={16} />
           </button>
         ) : null}
       </div>
@@ -179,7 +179,7 @@ const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps): React.Re
         }}
         title={entry.path}
       >
-        <Icon size={14} className="file-entry-icon" />
+        <Icon size={16} className="file-entry-icon" />
         <span className="file-name">{entry.name}</span>
         {gitBadge ? <span className={"git-status-badge " + gitBadge.className}>{gitBadge.label}</span> : null}
         {typeof entry.size === "number" ? <span className="file-entry-size">{formatSize(entry.size)}</span> : null}

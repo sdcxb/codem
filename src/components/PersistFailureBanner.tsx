@@ -79,7 +79,7 @@ export function PersistFailureBanner() {
             aria-label={zh ? "关闭提示" : "Dismiss"}
             title={zh ? "关闭提示" : "Dismiss"}
           >
-            <X size={14} />
+            <X size={16} />
           </button>
         </div>
       ))}

@@ -99,7 +99,7 @@ export function NeedsYouPanel({ sessionId, onAnswer, onSkip }: NeedsYouPanelProp
                   className={"needs-you-option" + (selectedOption === opt.id ? " selected" : "")}
                   onClick={() => setSelectedOption(opt.id)}
                 >
-                  <ArrowRight size={12} />
+                  <ArrowRight size={16} />
                   {opt.label}
                 </button>
               ))}

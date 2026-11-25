@@ -176,13 +176,13 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
               onClick={() => setActiveTab(tab.id)}
               className={`panel-sidebar-tab ${active ? "active" : ""}`}
             >
-              <Icon size={14} />
+              <Icon size={16} />
               <span className="panel-sidebar-tab-label">{tab.label}</span>
             </button>
           );
         })}
         <button onClick={onClose} className="panel-sidebar-close" aria-label={zh ? "关闭" : "Close"}>
-          <ActionIcons.close size={14} />
+          <ActionIcons.close size={16} />
         </button>
       </div>
 

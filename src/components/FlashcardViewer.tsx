@@ -236,15 +236,15 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         </div>
         <div className="flashcard-toolbar">
           <button className="nb-studio-btn flashcard-tool-btn" onClick={handleStartReview} disabled={cards.length === 0}>
-            <RotateCw size={14} />
+            <RotateCw size={16} />
             {isZh ? `复习 (${dueCards.length})` : `Review (${dueCards.length} due)`}
           </button>
           <button className="nb-studio-btn flashcard-tool-btn" onClick={() => setMode('create')}>
-            <Plus size={14} />
+            <Plus size={16} />
             {isZh ? '新建' : 'New'}
           </button>
           <button className="nb-studio-btn flashcard-tool-btn" onClick={handleAIGenerate} disabled={generating}>
-            {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+            {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
             {isZh ? (noteId ? '从笔记生成' : 'AI 生成') : (noteId ? 'From Note' : 'AI Generate')}
           </button>
         </div>
@@ -266,7 +266,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                         <p className="flashcard-item-back">{card.back}</p>
                       </div>
                       <button aria-label="删除这张卡片" title="删除这张卡片" onClick={() => { deleteFlashcard(card.id); refresh(); }} className="flashcard-item-delete">
-                        <Trash2 size={12} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                     <div className="flashcard-item-meta">

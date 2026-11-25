@@ -24,7 +24,7 @@ export const TableScrollView = memo(function TableScrollView({
     <ContentFrame
       title={title || "表格"}
       badge={`${rows.length} 行 × ${headers.length} 列`}
-      icon={<TableIcon size={14} />}
+      icon={<TableIcon size={16} />}
       className="table-scroll-view"
     >
       <div className="table-scroll-container">

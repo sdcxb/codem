@@ -97,7 +97,7 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
     return (
       <div className="mention-autocomplete">
         <div className="mention-header">
-          <Search size={12} />
+          <Search size={16} />
           <span>{lang === "zh" ? "提及文件" : "Mention file"}</span>
         </div>
         <div className="empty-hint is-compact">
@@ -115,7 +115,7 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
   return (
     <div className="mention-autocomplete" ref={listRef}>
       <div className="mention-header">
-        <Search size={12} />
+        <Search size={16} />
         <span>{lang === "zh" ? `提及文件 (${filtered.length})` : `Mention file (${filtered.length})`}</span>
       </div>
       <ul className="mention-list">
@@ -150,9 +150,9 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
 
 function getMentionIcon(item: MentionItem) {
   if (item.icon) return item.icon;
-  if (item.type === "folder") return <Folder size={14} />;
+  if (item.type === "folder") return <Folder size={16} />;
   const ext = item.label.split(".").pop()?.toLowerCase() || "";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return <FileImage size={14} />;
-  if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "css", "html", "json", "md"].includes(ext)) return <FileCode size={14} />;
-  return <FileText size={14} />;
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return <FileImage size={16} />;
+  if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "css", "html", "json", "md"].includes(ext)) return <FileCode size={16} />;
+  return <FileText size={16} />;
 }

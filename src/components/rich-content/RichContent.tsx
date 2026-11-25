@@ -83,7 +83,7 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
           title="复制段落"
           aria-label="复制段落"
         >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? <Check size={16} /> : <Copy size={16} />}
         </button>
         <button
           className="paragraph-action-btn"
@@ -91,7 +91,7 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
           title="引用段落"
           aria-label="引用段落"
         >
-          <Quote size={12} />
+          <Quote size={16} />
         </button>
       </span>
     </div>

@@ -249,7 +249,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
           )}
           <div className="bootstrap-spacer" />
           {step === "done" ? (
-            <button className="bootstrap-btn primary" onClick={handleFinish}><Rocket size={14} aria-hidden /> 开始</button>
+            <button className="bootstrap-btn primary" onClick={handleFinish}><Rocket size={16} aria-hidden /> 开始</button>
           ) : (
             <button className="bootstrap-btn primary" onClick={handleNext}>继续 →</button>
           )}

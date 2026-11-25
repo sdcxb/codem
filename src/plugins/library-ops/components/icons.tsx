@@ -145,7 +145,7 @@ export interface LoIconProps {
 }
 
 /** 渲染一个语义化图标 */
-export function LoIcon({ name, size = 14, className, label, strokeWidth = 2 }: LoIconProps) {
+export function LoIcon({ name, size = 16, className, label, strokeWidth = 2 }: LoIconProps) {
   const Icon = LO_ICONS[name] ?? Library;
   return (
     <Icon

@@ -156,7 +156,7 @@ const effectiveWidth = sidebarWidth;
         title={zh ? "收起右侧栏" : "Collapse"}
         aria-label={zh ? "收起右侧栏" : "Collapse"}
       >
-        <ChevronRight size={14} />
+        <ChevronRight size={16} />
       </button>
 
       {/* Tab header */}
@@ -170,7 +170,7 @@ const effectiveWidth = sidebarWidth;
               className={`right-sidebar-tab ${active ? "active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              <Icon size={14} />
+              <Icon size={16} />
               <span>{tab.label}</span>
             </button>
           );
@@ -215,7 +215,7 @@ const effectiveWidth = sidebarWidth;
                   onClick={() => setEditingFile(null)}
                   title={zh ? "返回文件树" : "Back to file tree"}
                 >
-                  <ArrowLeft size={14} />
+                  <ArrowLeft size={16} />
                   <span>{zh ? "文件树" : "Files"}</span>
                 </button>
                 <div className="right-sidebar-preview-body">

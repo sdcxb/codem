@@ -297,7 +297,7 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
       const sidebar = readFile("components/Sidebar.tsx");
       // 菜单项必须是「图标 + 文字」，图标走 lucide
       for (const icon of ["Pin", "FolderOpen", "Folder", "Trash2"]) {
-        expect(sidebar, `Sidebar 的更多操作菜单应使用 ${icon} 图标`).toContain(`<${icon} size={14}`);
+        expect(sidebar, `Sidebar 的更多操作菜单应使用 ${icon} 图标`).toContain(`<${icon} size={16}`);
       }
       // 文案里不能再埋 emoji（原来图标就是靠 "📌 置顶项目" 这种文案塞进去的）
       const lang = readFile("core/i18n/lang.ts");
@@ -319,7 +319,7 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
 
     it("ICON-055: 必需工具标记用 lucide Lock，而不是 emoji", () => {
       const src = readFile("components/AgentManager.tsx");
-      expect(src).toContain('<Lock size={10} />');
+      expect(src).toContain('<Lock size={16} />');
       expect(src).not.toContain("🔒");
     });
   });

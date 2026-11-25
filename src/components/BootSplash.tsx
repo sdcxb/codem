@@ -123,7 +123,7 @@ export const BootSplash = memo(function BootSplash({
         {/* 加载状态 */}
         <div className="boot-splash-status">
           {!isReady && (
-            <LoaderCircle size={14} className="spinning boot-splash-spinner" />
+            <LoaderCircle size={16} className="spinning boot-splash-spinner" />
           )}
           <span className="boot-splash-phase">{phaseLabel}</span>
         </div>

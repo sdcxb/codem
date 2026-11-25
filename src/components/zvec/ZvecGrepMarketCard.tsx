@@ -150,7 +150,7 @@ export function ZvecGrepMarketCard() {
             onClick={() => setExpanded(!expanded)}
             title={zh ? "展开管理（索引/模型/卸载）" : "Manage (index/model/uninstall)"}
           >
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         </span>
       </div>

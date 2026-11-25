@@ -183,7 +183,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           onClick={handleNew}
           className="market-skill-link-btn agent-new-btn"
         >
-          <AddIcon size={12} /> {zh ? "新建" : "New"}
+          <AddIcon size={16} /> {zh ? "新建" : "New"}
         </button>
       </div>
 
@@ -210,7 +210,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
             >
               <div className="market-skill-card-header">
                 <span className="market-skill-icon">
-                  <AgentIcon size={14} style={{ color: agent.mode === "primary" ? "var(--accent)" : "var(--text-secondary)" }} />
+                  <AgentIcon size={16} style={{ color: agent.mode === "primary" ? "var(--accent)" : "var(--text-secondary)" }} />
                 </span>
                 <div className="market-skill-card-title">
                   <span className="market-skill-name">{agent.name || agent.id}</span>
@@ -416,7 +416,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                       {toolName}
                       {isRequired && (
                         <span className="agent-tool-lock" title={zh ? "必需工具（不可关闭）" : "Required tool"}>
-                          <Lock size={10} />
+                          <Lock size={16} />
                         </span>
                       )}
                     </span>
@@ -427,7 +427,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
             <div className="agent-tool-hint">
               {/* 第 46 波：说明文案里的锁形 emoji 也换成同一枚线性图标，
                   避免"图例用 emoji、标记用 svg"的错位 */}
-              <Lock size={10} className="icon-inline" />
+              <Lock size={16} className="icon-inline" />
               {zh ? " 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : " Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
             </div>
           </div>
@@ -470,7 +470,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                   <button aria-label="移除此权限" title="移除此权限" onClick={() => {
                     const perms = (editing.permissions || []).filter((_, idx) => idx !== i);
                     setEditing({ ...editing, permissions: perms });
-                  }} className="agent-perm-remove"><CloseIcon size={14} /></button>
+                  }} className="agent-perm-remove"><CloseIcon size={16} /></button>
                 </div>
               ))}
               <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} className="agent-add-rule-btn">+ {zh ? "添加规则" : "Add Rule"}</button>

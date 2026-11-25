@@ -9,7 +9,7 @@ interface AgentDetailProps {
 }
 
 /** 子智能体类型图标（第 46 波：此前返回 emoji 字符串 —— 与项目其它图标的线性风格不一致）。
- *  现在返回 lucide 组件，调用处统一 `<Icon size={14} />`。 */
+ *  现在返回 lucide 组件，调用处统一 `<Icon size={16} />`。 */
 function getAgentIcon(agentId: string) {
   switch (agentId) {
     case "build": return Wrench;
@@ -77,7 +77,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
             const Icon = getAgentIcon(task.agentId);
             return (
               <span className="agent-detail-icon">
-                <Icon size={14} />
+                <Icon size={16} />
               </span>
             );
           })()}

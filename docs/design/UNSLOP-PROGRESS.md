@@ -1666,7 +1666,15 @@ R3 允许 `line-clamp` 的有界折行（有界 ≠ 挤压）。
 - 设置：模型行独占宽度、「配置方案」左对齐为子行；底栏成为 sticky action bar（次操作左、保存右），内容底部留出 footer 高度。
 - 弹窗：插件/技能/记忆/任务标题、工具栏与列表统一 24px 水平留白，修掉文字贴边。
 - 任务/活动：空态不再画 0% 健康环/全零字段；团队空态给「打开团队 →」，任务活动空态给「查看时间线」；技术 footer 改成「同时最多 N 个 · 委派最多 M 层」。
-- 验证：全量 **1010 文件 / 10476 用例，10458 通过 / 18 skipped / 0 失败**；tsc 0；scan-ui 0/0；mutation artifact 重跑；coverage 门禁通过。
+- 验证：全量 **1013 文件 / 10488 用例，10470 通过 / 18 skipped / 0 失败**；tsc 0；scan-ui 0/0；mutation artifact 重跑；coverage 门禁通过。
+
+### 3Z 2026-11-25 · 第三轮硬收口（图标 / accent / 边框）
+
+- 图标：TSX 与 packages/ui 共 664+41 处字面量从 10/12/14 统一到 16；控件 24 → 20；24 只保留在 6 个插画/头像/空态文件；新增 `ui-icon-scale` 判据（禁止 10/12/14/18，24 只允许登记文件）。
+- accent：`unslop-v2.css` 从 30 处降到 15 处；任务/插件/设置/记忆的导航链接、审批开关、安装按钮、筛选 chip 改中性；每屏只剩主操作/当前选择/瞬态进度。
+- 边框：移除任务卡、消息气泡、model/context/scope badge、活动行、jobs 行、证据 rail 下线等逐项边框；任务中心/插件市场/AgentPanel 的内联 1px 边框全部改成语义 class；设置表单行不再逐行画线。
+- 新判据：`ui-accent-budget`（accent 总数 ≤15 + 禁止装饰 selectors）、`ui-border-density`（插件行/任务卡/记忆项/内联边框）、`ui-icon-scale`（16/20 + 24 allowlist）。
+- 验证：全量 **1013 文件 / 10488 用例，10470 通过 / 18 skipped / 0 失败**；tsc 0；scan-ui 0/0；coverage 门禁通过。
 
 ## 4. Batch 1A 的实现细节（留档）
 

@@ -49,7 +49,7 @@ export function StatusBanner({
       <div className="status-banner-text">{children}</div>
       {onRetry && (
         <button type="button" className="status-banner-retry" onClick={onRetry}>
-          <RefreshCw size={12} aria-hidden="true" />
+          <RefreshCw size={16} aria-hidden="true" />
           {retryLabel}
         </button>
       )}

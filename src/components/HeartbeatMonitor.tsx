@@ -216,7 +216,7 @@ export function HeartbeatMonitor() {
                 )}
                 <span style={{ color: "var(--text-muted)" }}>{zh ? "消息" : "msg"}: {s.data.messageCount}</span>
                 {s.data.errorCount > 0 && (
-                  <span style={{ color: "var(--error)", display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} aria-hidden /> {s.data.errorCount}</span>
+                  <span style={{ color: "var(--error)", display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={16} aria-hidden /> {s.data.errorCount}</span>
                 )}
                 <span style={{ color: STATUS_COLORS[s.status], fontWeight: 600 }}>{statusLabel(s.status)}</span>
               </div>
@@ -313,7 +313,7 @@ export function HeartbeatMonitor() {
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: "pointer",
           }}>
-            {saved ? <><CheckCircle2 size={14} aria-hidden /> {zh ? "已保存" : "Saved"}</> : (zh ? "保存配置" : "Save Config")}
+            {saved ? <><CheckCircle2 size={16} aria-hidden /> {zh ? "已保存" : "Saved"}</> : (zh ? "保存配置" : "Save Config")}
           </button>
           {stats.active > 0 && (
             <button onClick={handleStopAll} style={{

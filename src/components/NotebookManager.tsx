@@ -355,7 +355,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
               title={lang === 'zh' ? '编辑描述' : 'Edit description'}
             >
-              <Edit2 size={12} />
+              <Edit2 size={16} />
             </button>
           </div>
         )}
@@ -598,7 +598,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         </div>
         <div className="notebook-manager-toolbar">
           <div className="notebook-search-box">
-            <Search size={14} />
+            <Search size={16} />
             <input
               type="text"
               placeholder={lang === 'zh' ? '搜索笔记本...' : 'Search notebooks...'}
@@ -649,7 +649,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             return (
               <div key={group.id} className="notebook-group-section">
                 <div className="notebook-group-header" onClick={() => toggleGroup(group.id)}>
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   <Folder size={16} style={{ color: 'var(--accent)' }} />
                   <span className="notebook-group-name">{group.name}</span>
                   <span className="nb-count-badge">{groupNotebooks.length}</span>
@@ -658,7 +658,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                     onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
                     title={lang === 'zh' ? '删除分组' : 'Delete Group'}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={16} />
                   </button>
                 </div>
                 {isExpanded && groupNotebooks.length > 0 && (
@@ -820,7 +820,7 @@ function NotebookCard({
           title={isZh ? '直接对话' : 'Chat directly'}
           style={{ marginRight: '2px' }}
         >
-          <MessageSquare size={14} />
+          <MessageSquare size={16} />
         </button>
         <div style={{ position: 'relative' }}>
           <button
@@ -828,7 +828,7 @@ function NotebookCard({
             onClick={(e) => { e.stopPropagation(); setShowMoveMenu(!showMoveMenu); }}
             title={isZh ? '移动到分组' : 'Move to group'}
           >
-            <Folder size={14} />
+            <Folder size={16} />
           </button>
           {showMoveMenu && (
             <div className="nb-move-menu" onClick={(e) => e.stopPropagation()}>
@@ -865,7 +865,7 @@ function NotebookCard({
       )}
       <div className="notebook-card-stats">
         <Badge variant="muted">
-          <FileText size={12} />
+          <FileText size={16} />
           {nb.sourceCount}
         </Badge>
         <Badge variant="muted">
@@ -873,13 +873,13 @@ function NotebookCard({
         </Badge>
         {nb.summaryStatus === 'completed' && (
           <Badge variant="success">
-            <CheckCircle size={12} />
+            <CheckCircle size={16} />
             {isZh ? '已索引' : 'Indexed'}
           </Badge>
         )}
         {nb.summaryStatus === 'generating' && (
           <Badge variant="warning">
-            <Loader2 size={12} className="spin" />
+            <Loader2 size={16} className="spin" />
             {isZh ? '处理中' : 'Processing'}
           </Badge>
         )}
@@ -904,9 +904,9 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         <span className="notebook-source-name">{source.name}</span>
         <div className="notebook-source-meta">
           <Badge variant={source.status === 'indexed' ? 'success' : source.status === 'failed' ? 'danger' : 'muted'}>
-            {source.status === 'indexed' ? <CheckCircle size={12} /> :
-             source.status === 'failed' ? <AlertCircle size={12} /> :
-             <Loader2 size={12} className="spin" />}
+            {source.status === 'indexed' ? <CheckCircle size={16} /> :
+             source.status === 'failed' ? <AlertCircle size={16} /> :
+             <Loader2 size={16} className="spin" />}
             {source.status}
           </Badge>
           {source.chunkCount > 0 && (
@@ -918,7 +918,7 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         </div>
       </div>
       <button aria-label="删除该来源" title="删除该来源" className="notebook-source-delete" onClick={onDelete}>
-        <Trash2 size={14} />
+        <Trash2 size={16} />
       </button>
     </div>
   );

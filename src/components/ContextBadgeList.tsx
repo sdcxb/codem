@@ -41,9 +41,9 @@ export const ContextBadgeList = memo(function ContextBadgeList({
 
 function getContextIcon(type: string) {
   const icons: Record<string, JSX.Element> = {
-    notebook: <BookOpen size={12} />,
-    file: <FileText size={12} />,
-    url: <Link2 size={12} />,
+    notebook: <BookOpen size={16} />,
+    file: <FileText size={16} />,
+    url: <Link2 size={16} />,
   };
-  return icons[type] ?? <Paperclip size={12} />;
+  return icons[type] ?? <Paperclip size={16} />;
 }

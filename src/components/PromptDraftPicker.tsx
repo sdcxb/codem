@@ -39,7 +39,7 @@ export const PromptDraftPicker = memo(function PromptDraftPicker({
       <div className="prompt-draft-picker compare-mode">
         <div className="compare-header">
           <h3>{S.promptDraft.compareTitle[lang]}</h3>
-          <button className="draft-close" onClick={closeCompare} aria-label="关闭"><ActionIcons.close size={14} /></button>
+          <button className="draft-close" onClick={closeCompare} aria-label="关闭"><ActionIcons.close size={16} /></button>
         </div>
         <div className="compare-content">
           <div className="compare-side">
@@ -71,7 +71,7 @@ export const PromptDraftPicker = memo(function PromptDraftPicker({
     <div className="prompt-draft-picker">
       <div className="draft-header">
         <h3>{S.promptDraft.title[lang]}</h3>
-        <button className="draft-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={14} /></button>
+        <button className="draft-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={16} /></button>
       </div>
 
       <div className="draft-list">

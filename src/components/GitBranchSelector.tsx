@@ -194,7 +194,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
           disabled
           title="No repository"
         >
-          <GitBranch size={14} />
+          <GitBranch size={16} />
           {!compact && (
             <span className="git-branch-name">No Git</span>
           )}
@@ -212,16 +212,16 @@ export const GitBranchSelector = memo(function GitBranchSelector({
         disabled={loading}
       >
         {loading ? (
-          <LoaderCircle size={14} className="spinning" />
+          <LoaderCircle size={16} className="spinning" />
         ) : isDirty ? (
-          <CircleDot size={14} />
+          <CircleDot size={16} />
         ) : (
-          <GitBranch size={14} />
+          <GitBranch size={16} />
         )}
         {!compact && (
           <>
             <span className="git-branch-name">{currentBranch || "—"}</span>
-            <ChevronDown size={10} />
+            <ChevronDown size={16} />
           </>
         )}
       </button>
@@ -230,7 +230,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
         <div className="git-branch-dropdown">
           {error && (
             <div className="git-branch-error">
-              <AlertCircle size={12} />
+              <AlertCircle size={16} />
               <span>{error}</span>
             </div>
           )}
@@ -253,7 +253,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
                 onClick={handleCreateBranch}
                 disabled={!newBranchName.trim() || loading}
               >
-                <Check size={12} />
+                <Check size={16} />
               </button>
             </div>
           ) : (
@@ -267,9 +267,9 @@ export const GitBranchSelector = memo(function GitBranchSelector({
                     disabled={b.current}
                   >
                     {b.current ? (
-                      <Check size={12} />
+                      <Check size={16} />
                     ) : (
-                      <GitBranch size={12} />
+                      <GitBranch size={16} />
                     )}
                     <span>{b.name}</span>
                   </button>
@@ -279,7 +279,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
                 className="git-branch-new-btn"
                 onClick={() => setShowCreateInput(true)}
               >
-                <Plus size={12} />
+                <Plus size={16} />
                 <span>新建分支</span>
               </button>
             </>

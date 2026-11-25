@@ -117,7 +117,7 @@ function TerminalBlock({ model }) {
     <div className="tool-card terminal-block">
       {/* Prompt 行 */}
       <div className="tool-card-head">
-        <TerminalIcon size={12} className="tool-card-head-icon" />
+        <TerminalIcon size={16} className="tool-card-head-icon" />
         <span className="hint-sm">
           {model.cwd ? model.cwd.split(/[\\/]/).pop() + '$' : '$'}
         </span>
@@ -126,7 +126,7 @@ function TerminalBlock({ model }) {
         </code>
         {model.running ? (
           <span className="tool-card-status tool-card-status--running">
-            <LoaderCircle size={10} className="tool-pill-icon-spin icon-inline" /> running
+            <LoaderCircle size={16} className="tool-pill-icon-spin icon-inline" /> running
           </span>
         ) : model.exitCode !== undefined && model.exitCode !== 0 ? (
           <span className="tool-card-status tool-card-status--error">
@@ -204,7 +204,7 @@ function ReadBlockCard({ path, content }: { path: string; content: string }) {
   return (
     <div className="tool-card tool-card--scroll read-block">
       <div className="tool-card-head">
-        <FileText size={12} /> {path}
+        <FileText size={16} /> {path}
       </div>
       <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
         {lines.map((line, i) => (
@@ -279,7 +279,7 @@ function SearchBlockCard({ model }: { model: { kind: 'matches' | 'paths'; files?
           {model.kind === 'matches' && model.files?.map((file, fi) => (
             <div key={fi} className="tool-card-row">
           <div className="tool-card-head tool-card-head--accent">
-            <FolderSearch size={12} /> {file.path}
+            <FolderSearch size={16} /> {file.path}
             <span className="tool-card-count">
               · {file.matches.length} match{file.matches.length > 1 ? 'es' : ''}
             </span>
@@ -357,7 +357,7 @@ function WebSearchResultCard({ output }: { output: string }) {
   return (
     <div className="tool-pill-detail-section">
       <div className="websearch-head">
-        <Globe size={12} className="websearch-icon" />
+        <Globe size={16} className="websearch-icon" />
         <span className="tool-pill-detail-label tool-pill-detail-label--flush">
           {query ? `Search: "${query}"` : 'Web Search'}
         </span>
@@ -372,7 +372,7 @@ function WebSearchResultCard({ output }: { output: string }) {
               {result.url ? (
                 <a href={result.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="websearch-title websearch-title--link">
                   {result.title || result.url}
-                  <ExternalLink size={10} className="icon-shrink-none" />
+                  <ExternalLink size={16} className="icon-shrink-none" />
                 </a>
               ) : (
                 <span className="websearch-title">
@@ -486,7 +486,7 @@ export const ToolCallCard = memo(function ToolCallCard({
       {metadataFilePaths && (
         <div className="tool-io-card tool-io-card--stacked">
           <div className="tool-io-section">
-            <span className="tool-io-label tool-io-label--icon"><Files size={10} /></span>
+            <span className="tool-io-label tool-io-label--icon"><Files size={16} /></span>
             <div className="tool-io-paths">
               {metadataFilePaths.map((p, i) => (
                 <a

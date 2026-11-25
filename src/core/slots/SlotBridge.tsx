@@ -393,7 +393,7 @@ function DegradedBanner({ slotName }: { slotName: string }) {
         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}
         aria-label="关闭"
       >
-        <ActionIcons.close size={14} />
+        <ActionIcons.close size={16} />
       </button>
     </div>
   )

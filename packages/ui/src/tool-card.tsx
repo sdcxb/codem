@@ -107,13 +107,13 @@ export function toolRowTitle(toolName: string, variant: ToolRowVariant): string 
 
 /** 变体前导图标 — 对标 DSH VARIANT_ICONS */
 const VARIANT_ICONS: Record<ToolRowVariant, ReactNode> = {
-  search: <Search size={14} />,
-  read: <FileText size={14} />,
-  bash: <TerminalIcon size={14} />,
-  write: <FileEdit size={14} />,
-  edit: <FileEdit size={14} />,
-  code: <Code2 size={14} />,
-  others: <Sparkles size={14} />,
+  search: <Search size={16} />,
+  read: <FileText size={16} />,
+  bash: <TerminalIcon size={16} />,
+  write: <FileEdit size={16} />,
+  edit: <FileEdit size={16} />,
+  code: <Code2 size={16} />,
+  others: <Sparkles size={16} />,
 };
 
 // ====== 摘要推导 — 对标 DSH deriveSummary ======
@@ -285,8 +285,8 @@ export const ToolCardView = memo(function ToolCardView({
   // 前导图标：运行/错误时替换为状态指示
   function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
     switch (state) {
-      case "error": return <XCircle size={10} className="tool-pill-icon-error" />;
-      case "stopped": return <XCircle size={10} className="tool-pill-icon-warning" />;
+      case "error": return <XCircle size={16} className="tool-pill-icon-error" />;
+      case "stopped": return <XCircle size={16} className="tool-pill-icon-warning" />;
       default: return icon;
     }
   }
@@ -307,7 +307,7 @@ export const ToolCardView = memo(function ToolCardView({
         {/* 前导图标 + 状态 */}
         <div className="tool-pill-icon-frame">
           {isRunning ? (
-            <LoaderCircle size={10} className="tool-pill-icon-spin" />
+            <LoaderCircle size={16} className="tool-pill-icon-spin" />
           ) : (
             leadingFor(rowState, <span className="tool-pill-icon">{Icon}</span>)
           )}
@@ -335,8 +335,8 @@ export const ToolCardView = memo(function ToolCardView({
 
         {/* 展开/折叠指示器 */}
         {expandable && (
-          expanded ? <ChevronDown size={12} className="tool-pill-chevron" />
-                   : <ChevronRight size={12} className="tool-pill-chevron" />
+          expanded ? <ChevronDown size={16} className="tool-pill-chevron" />
+                   : <ChevronRight size={16} className="tool-pill-chevron" />
         )}
       </div>
 

@@ -60,7 +60,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
   return (
     <div className="audio-player">
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Volume2 size={24} style={{ color: "var(--accent)" }} />
+        <Volume2 size={20} style={{ color: "var(--accent)" }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 'var(--fs-base)' }}>{fileName || "Audio"}</div>
           <div className="hint-sm">{formatTime(duration)}</div>
@@ -115,7 +115,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
 
       {/* Volume control */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Volume2 size={14} style={{ color: "var(--text-muted)" }} />
+        <Volume2 size={16} style={{ color: "var(--text-muted)" }} />
         <input
           type="range"
           min={0}

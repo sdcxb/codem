@@ -45,10 +45,10 @@ function isLive(job: JobView): boolean {
 /** 获取状态图标 */
 function StatusIcon({ status }: { status: JobStatus }) {
   switch (status) {
-    case 'running': return <LoaderCircle size={12} className="spin" />
-    case 'completed': return <CheckCircle2 size={12} style={{ color: 'var(--success)' }} />
-    case 'failed': return <XCircle size={12} style={{ color: 'var(--error)' }} />
-    case 'cancelled': return <XCircle size={12} style={{ color: 'var(--warning)' }} />
+    case 'running': return <LoaderCircle size={16} className="spin" />
+    case 'completed': return <CheckCircle2 size={16} style={{ color: 'var(--success)' }} />
+    case 'failed': return <XCircle size={16} style={{ color: 'var(--error)' }} />
+    case 'cancelled': return <XCircle size={16} style={{ color: 'var(--warning)' }} />
     default: return null
   }
 }
@@ -148,10 +148,10 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
         }}
       >
         {liveCount > 0 && (
-          <LoaderCircle size={12} className="spin" />
+          <LoaderCircle size={16} className="spin" />
         )}
         <span>{countLabel}</span>
-        <ChevronDown size={10} style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        <ChevronDown size={16} style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
       </button>
 
       {open && (
@@ -208,7 +208,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
                     {job.label}
                   </span>
                   <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Clock size={10} />
+                    <Clock size={16} />
                     {duration}
                   </span>
                 </li>

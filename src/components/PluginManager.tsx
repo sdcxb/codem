@@ -147,10 +147,10 @@ type PluginFilterKey = 'all' | 'core' | 'capability' | 'interface'
 /** 分类配置（支持 i18n） */
 function getCategoryConfig(zh: boolean) {
   return [
-    { key: 'all' as PluginFilterKey,        label: zh ? '全部' : 'All',        icon: <CommonIcons.info size={14} /> },
-    { key: 'core' as PluginFilterKey,       label: zh ? '核心' : 'Core',       icon: <PanelIcons.plugins size={14} /> },
-    { key: 'capability' as PluginFilterKey, label: zh ? '能力' : 'Capability', icon: <PanelIcons.tools size={14} /> },
-    { key: 'interface' as PluginFilterKey,  label: zh ? '界面' : 'Interface',  icon: <PanelIcons.agent size={14} /> },
+    { key: 'all' as PluginFilterKey,        label: zh ? '全部' : 'All',        icon: <CommonIcons.info size={16} /> },
+    { key: 'core' as PluginFilterKey,       label: zh ? '核心' : 'Core',       icon: <PanelIcons.plugins size={16} /> },
+    { key: 'capability' as PluginFilterKey, label: zh ? '能力' : 'Capability', icon: <PanelIcons.tools size={16} /> },
+    { key: 'interface' as PluginFilterKey,  label: zh ? '界面' : 'Interface',  icon: <PanelIcons.agent size={16} /> },
   ]
 }
 
@@ -333,7 +333,7 @@ function CascadeConfirmDialog({
             <div className="plugin-mgr-dialog-list">
               {cascade.affected.filter(a => a.name !== request.targetPlugin).map(item => (
                 <div key={item.name} className="plugin-mgr-dialog-item">
-                  <StatusIcons.danger size={12} className="plugin-mgr-dep-warn" />
+                  <StatusIcons.danger size={16} className="plugin-mgr-dep-warn" />
                   <span className="plugin-mgr-dialog-item-name">{item.name}</span>
                   <span className="hint-sm">— {item.reason}</span>
                 </div>
@@ -394,7 +394,7 @@ function PluginDetailDialog({
             {isCore && <Badge variant="info">{zh ? '核心' : 'Core'}</Badge>}
           </div>
           <button className="plugin-detail-close" onClick={onClose} aria-label={zh ? '关闭详情' : 'Close details'}>
-            <ActionIcons.close />
+            <ActionIcons.close className="icon-md" />
           </button>
         </div>
         <p className="plugin-detail-desc">{plugin.description || (zh ? '暂无描述' : 'No description')}</p>
@@ -847,7 +847,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       {/* Search */}
       <div className="skill-manager-toolbar">
         <div className="skill-search-box">
-          <ActionIcons.search size={14} className="skill-search-icon" />
+          <ActionIcons.search size={16} className="skill-search-icon" />
           <input
             type="text"
             placeholder={zh ? '搜索插件' : 'Search plugins'}
@@ -989,7 +989,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
             <div className="plugin-detail-head">
               <strong>{zh ? 'Our Free Model · 详情' : 'Our Free Model · Details'}</strong>
               <button className="plugin-detail-close" onClick={() => setFreeModelDetail(false)} aria-label={zh ? '关闭详情' : 'Close details'}>
-                <ActionIcons.close />
+                <ActionIcons.close className="icon-md" />
               </button>
             </div>
             <FreeModelPluginCard />

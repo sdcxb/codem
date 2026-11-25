@@ -72,17 +72,17 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
     <div className="agent-teams-panel">
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
-        <GitBranch size={14} style={{ color: "var(--accent)" }} />
+        <GitBranch size={16} style={{ color: "var(--accent)" }} />
         <strong style={{ flex: 1 }}>{snap.name}</strong>
         <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{snap.id.slice(0, 10)}</span>
-        <button className="toolbar-btn" aria-label={zh ? "关闭" : "Close"} onClick={onClose}><X size={14} /></button>
+        <button className="toolbar-btn" aria-label={zh ? "关闭" : "Close"} onClick={onClose}><X size={16} /></button>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "grid", gap: 12, alignContent: "start" }}>
         {/* Members */}
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: "var(--text-secondary)", fontWeight: 600 }}>
-            <Users size={14} /> {zh ? "成员" : "Members"} ({snap.members.length})
+            <Users size={16} /> {zh ? "成员" : "Members"} ({snap.members.length})
           </div>
           {snap.members.length === 0 ? (
             <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "暂无成员 — 请助手添加成员" : "No members yet"}</div>
@@ -106,7 +106,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
         {/* Tasks */}
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: "var(--text-secondary)", fontWeight: 600 }}>
-            <ListChecks size={14} /> {zh ? "任务" : "Tasks"} ({snap.tasks.length})
+            <ListChecks size={16} /> {zh ? "任务" : "Tasks"} ({snap.tasks.length})
           </div>
           {snap.tasks.length === 0 ? (
             <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "暂无任务" : "No tasks yet"}</div>

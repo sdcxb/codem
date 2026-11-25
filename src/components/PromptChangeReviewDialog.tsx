@@ -130,7 +130,7 @@ onClick={(e) => e.stopPropagation()}
                         fontWeight: 500,
                       }}
                     >
-                      <ActionIcons.confirm size={12} style={{ display: "inline", marginRight: "4px" }} />
+                      <ActionIcons.confirm size={16} style={{ display: "inline", marginRight: "4px" }} />
                       应用
                     </button>
                     <button
@@ -149,7 +149,7 @@ onClick={(e) => e.stopPropagation()}
                         fontWeight: 500,
                       }}
                     >
-                      <ActionIcons.close size={12} style={{ display: "inline", marginRight: "4px" }} />
+                      <ActionIcons.close size={16} style={{ display: "inline", marginRight: "4px" }} />
                       跳过
                     </button>
                   </div>

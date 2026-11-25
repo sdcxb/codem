@@ -230,7 +230,7 @@ export function LayeredSettingsPanel() {
       {mgr && (
         <div className="layered-card">
           <div className="layered-card-title">
-            <ShieldCheck size={14} aria-hidden /> {zh ? "策略限制" : "Policy Restrictions"}
+            <ShieldCheck size={16} aria-hidden /> {zh ? "策略限制" : "Policy Restrictions"}
           </div>
           {/*
             D-7：策略来源是 DB 的 `codem-policy` 键（不是磁盘文件，也没有默认内容）。
@@ -275,11 +275,11 @@ export function LayeredSettingsPanel() {
       {/* Export */}
       <div className="layered-actions">
         <button onClick={handleExport} className="panel-btn">
-          <FolderUp size={14} aria-hidden /> {zh ? "导出所有设置" : "Export All Settings"}
+          <FolderUp size={16} aria-hidden /> {zh ? "导出所有设置" : "Export All Settings"}
         </button>
         {showExport && (
           <button onClick={() => { navigator.clipboard?.writeText(exportData); }} className="panel-btn">
-            <Copy size={14} aria-hidden /> {zh ? "复制到剪贴板" : "Copy to Clipboard"}
+            <Copy size={16} aria-hidden /> {zh ? "复制到剪贴板" : "Copy to Clipboard"}
           </button>
         )}
       </div>

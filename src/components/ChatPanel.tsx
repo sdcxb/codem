@@ -914,7 +914,7 @@ setStepTooltipLocked(false);
     {
       id: "history",
       label: lang === "zh" ? "完整历史" : "Full history",
-      icon: <History size={14} />,
+      icon: <History size={16} />,
       active: historyMode === "full",
       disabled: !activeSessionId,
       onSelect: () => setHistoryMode((m) => (m === "full" ? "model" : "full")),
@@ -922,7 +922,7 @@ setStepTooltipLocked(false);
     {
       id: "reasoning",
       label: lang === "zh" ? "思考过程" : "Reasoning",
-      icon: <Brain size={14} />,
+      icon: <Brain size={16} />,
       active: showReasoning,
       onSelect: () => setShowReasoning(!showReasoning),
     },
@@ -936,7 +936,7 @@ setStepTooltipLocked(false);
           : lang === "zh"
             ? "智能体与团队"
             : "Agents & Teams",
-      icon: <Bot size={14} />,
+      icon: <Bot size={16} />,
       active: showAgentPanel,
       onSelect: () => {
         setShowAgentPanel(!showAgentPanel);
@@ -949,7 +949,7 @@ setStepTooltipLocked(false);
     {
       id: "snapshot",
       label: lang === "zh" ? "文件快照" : "File snapshots",
-      icon: <Camera size={14} />,
+      icon: <Camera size={16} />,
       active: showSnapshotPanel,
       onSelect: () => {
         setShowSnapshotPanel(!showSnapshotPanel);
@@ -962,7 +962,7 @@ setStepTooltipLocked(false);
     {
       id: "context",
       label: lang === "zh" ? "上下文" : "Context",
-      icon: <BarChart3 size={14} />,
+      icon: <BarChart3 size={16} />,
       active: showContextMonitor,
       onSelect: () => {
         setShowContextMonitor(!showContextMonitor);
@@ -975,7 +975,7 @@ setStepTooltipLocked(false);
     {
       id: "trajectory",
       label: lang === "zh" ? "执行轨迹" : "Trajectory",
-      icon: <Activity size={14} />,
+      icon: <Activity size={16} />,
       active: showTrajectoryPanel,
       onSelect: () => {
         setShowTrajectoryPanel(!showTrajectoryPanel);
@@ -988,7 +988,7 @@ setStepTooltipLocked(false);
     {
       id: "sidePanel",
       label: lang === "zh" ? "侧边面板" : "Side panel",
-      icon: <LayoutGrid size={14} />,
+      icon: <LayoutGrid size={16} />,
       active: showRightSidebar,
       onSelect: () => setShowRightSidebar(!showRightSidebar),
     },
@@ -1019,7 +1019,7 @@ setStepTooltipLocked(false);
             title={currentSession?.title || "Codem"}
           >
             <span className="chat-title">{currentSession?.title || "Codem"}</span>
-            <ChevronDown size={12} className="icon-dim" />
+            <ChevronDown size={16} className="icon-dim" />
           </button>
           {showTitleDropdown && (
             <>
@@ -1079,7 +1079,7 @@ setStepTooltipLocked(false);
             见 styles.css 顶部 D-3 与 tools/ui-audit/scan-ui.mjs 的 press-transform-hosts-layer。 */}
         <div className="model-selector press-layer-host" role="button" tabIndex={0} aria-haspopup="listbox" aria-expanded={showModelPicker} onClick={() => setShowModelPicker(!showModelPicker)}>
           <span className="model-badge">{models.find(m => m.id === model)?.name || model}</span>
-          <span className="model-arrow"><ChevronDown size={10} /></span>
+          <span className="model-arrow"><ChevronDown size={16} /></span>
           {showModelPicker && (
             <div className="model-picker" onClick={(e) => e.stopPropagation()}>
               {/* 第 218 波（用户实报）：已知不可用的免费模型**不列出来**
@@ -1118,7 +1118,7 @@ setStepTooltipLocked(false);
                           {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
                         </span>
                       ) : null}
-                      {model === m.id && (!providerId || !m.providerId || m.providerId === providerId) && <Check size={14} className="model-option-check" aria-label={lang === "zh" ? "当前模型" : "Current model"} />}
+                      {model === m.id && (!providerId || !m.providerId || m.providerId === providerId) && <Check size={16} className="model-option-check" aria-label={lang === "zh" ? "当前模型" : "Current model"} />}
                     </div>
                   ))}
                 </div>
@@ -1218,7 +1218,7 @@ setStepTooltipLocked(false);
           <div className="modal-overlay" style={{ zIndex: "var(--z-modal)" }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
             <div className="modal-panel chat-search-panel" role="dialog" aria-modal="true" aria-label="搜索会话">
             <div className="chat-search-row">
-              <Search size={14} className="chat-search-icon" />
+              <Search size={16} className="chat-search-icon" />
               <input
                 type="text"
                 autoFocus
@@ -1705,7 +1705,7 @@ canEdit={editable}
 {isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
                 <span className={`task-complete-badge${turnHasUnverifiedNudge ? " is-warning" : ""}`}>
-                  {turnHasUnverifiedNudge ? <AlertTriangle className="icon-sm" /> : <Check size={14} />}
+                  {turnHasUnverifiedNudge ? <AlertTriangle className="icon-sm" /> : <Check size={16} />}
                   {turnHasUnverifiedNudge
                     ? (lang === "zh" ? "待验证" : "Needs verification")
                     : (lang === "zh" ? "任务完成" : "Done")}
@@ -1716,7 +1716,7 @@ canEdit={editable}
                       <button
           aria-label={S.bubble.fork[lang]}
                         title={S.bubble.fork[lang]} className="qa-turn-btn" onClick={() => onFork(modelIdx)}>
-                        <GitFork size={14} />
+                        <GitFork size={16} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
@@ -1728,7 +1728,7 @@ canEdit={editable}
                       <button
           aria-label={S.bubble.regenerate[lang]}
                         title={S.bubble.regenerate[lang]} className="qa-turn-btn" onClick={() => onRegenerate(modelIdx)}>
-                        <RotateCcw size={14} />
+                        <RotateCcw size={16} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
@@ -2010,7 +2010,7 @@ canEdit={editable}
                     }}
                     title={lang === "zh" ? "立刻引导（马上注入当前对话）" : "Guide now (inject immediately)"}
                   >
-                    <Zap size={12} />
+                    <Zap size={16} />
                     {lang === "zh" ? "立刻引导" : "Guide"}
                   </button>
                   <button
@@ -2023,7 +2023,7 @@ canEdit={editable}
                     }}
                     title={lang === "zh" ? "编辑" : "Edit"}
                   >
-                    <Pencil size={12} />
+                    <Pencil size={16} />
                     {lang === "zh" ? "编辑" : "Edit"}
                   </button>
                   <button
@@ -2033,7 +2033,7 @@ canEdit={editable}
                     title={lang === "zh" ? "取消" : "Cancel"}
                     aria-label={lang === "zh" ? "取消引导" : "Cancel guidance"}
                   >
-                    <X size={14} />
+                    <X size={16} />
                   </button>
                 </div>
               )}

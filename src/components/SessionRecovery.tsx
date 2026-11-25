@@ -137,7 +137,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
           <span className="session-recovery-icon"><RotateCcw size={16} /></span>
           <span>会话恢复</span>
         </div>
-        <button aria-label="关闭" title="关闭" className="session-recovery-close" onClick={onClose}><CloseIcon size={14} /></button>
+        <button aria-label="关闭" title="关闭" className="session-recovery-close" onClick={onClose}><CloseIcon size={16} /></button>
       </div>
 
       {summary && (
@@ -241,7 +241,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
                   {selectedSession.messages.slice(-5).map((msg: any, i: number) => (
                     <div key={i} className={`session-preview-msg ${msg.role}`}>
                       <span className="session-preview-role">
-                        {msg.role === "user" ? <User size={12} /> : msg.role === "assistant" ? <Bot size={12} /> : <SettingsIcon size={12} />}
+                        {msg.role === "user" ? <User size={16} /> : msg.role === "assistant" ? <Bot size={16} /> : <SettingsIcon size={16} />}
                       </span>
                       <span className="session-preview-content">
                         {typeof msg.content === "string"
@@ -261,13 +261,13 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
                 onClick={() => handleRecover(selectedSession)}
                 disabled={recovering === selectedSession.id}
               >
-                {recovering === selectedSession.id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 恢复此会话</>}
+                {recovering === selectedSession.id ? <><Clock size={16} /> 恢复中...</> : <><Undo size={16} /> 恢复此会话</>}
               </button>
               <button
                 className="session-delete-btn"
                 onClick={() => handleDelete(selectedSession.id)}
               >
-                <Trash2 size={12} /> 删除
+                <Trash2 size={16} /> 删除
               </button>
             </div>
           </div>

@@ -278,7 +278,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               opacity: currentPage <= 1 ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
-            <ChevronLeft size={14} />
+            <ChevronLeft size={16} />
           </button>
           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #555)', minWidth: '40px', textAlign: 'center' }}>
             {currentPage} / {numPages}
@@ -294,7 +294,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               opacity: currentPage >= numPages ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
-            <ChevronRight size={14} />
+            <ChevronRight size={16} />
           </button>
           <div style={{ width: '1px', height: '16px', background: 'var(--border-primary)' }} />
           <button
@@ -303,7 +303,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             onClick={() => setScale(Math.max(0.5, scale - 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
-            <ZoomOut size={14} />
+            <ZoomOut size={16} />
           </button>
           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #555)', minWidth: '36px', textAlign: 'center' }}>
             {Math.round(scale * 100)}%
@@ -314,11 +314,11 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             onClick={() => setScale(Math.min(3, scale + 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
-            <ZoomIn size={14} />
+            <ZoomIn size={16} />
           </button>
           <div style={{ flex: 1 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Search size={12} style={{ opacity: 0.4 }} />
+            <Search size={16} style={{ opacity: 0.4 }} />
             <input
               type="text"
               placeholder={isZh ? '搜索...' : 'Search...'}

@@ -49,11 +49,11 @@ export const ErrorCard = memo(function ErrorCard({
         {code && <span className="error-card-code">{code}</span>}
         <div className="error-card-actions">
           <button className="error-card-action-btn" onClick={handleCopy} title="Copy">
-            <Copy size={12} />
+            <Copy size={16} />
           </button>
           {retryable && onRetry && (
             <button className="error-card-action-btn retry" onClick={onRetry} title="Retry">
-              <RotateCcw size={12} />
+              <RotateCcw size={16} />
             </button>
           )}
           {details && (
@@ -62,7 +62,7 @@ export const ErrorCard = memo(function ErrorCard({
               onClick={() => setExpanded(!expanded)}
               title="Details"
             >
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </button>
           )}
         </div>

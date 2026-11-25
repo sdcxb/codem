@@ -25,10 +25,10 @@ interface ToolInfo {
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  builtin: { label: "内置工具", icon: <Wrench size={14} />, color: "var(--info)" },
-  mcp: { label: "MCP 工具", icon: <Plug size={14} />, color: "var(--accent)" },
-  skill: { label: "技能工具", icon: <Target size={14} />, color: "var(--success)" },
-  delegation: { label: "委派工具", icon: <Link2 size={14} />, color: "var(--warning)" },
+  builtin: { label: "内置工具", icon: <Wrench size={16} />, color: "var(--info)" },
+  mcp: { label: "MCP 工具", icon: <Plug size={16} />, color: "var(--accent)" },
+  skill: { label: "技能工具", icon: <Target size={16} />, color: "var(--success)" },
+  delegation: { label: "委派工具", icon: <Link2 size={16} />, color: "var(--warning)" },
 };
 
 // 内置工具 ID 列表
@@ -133,7 +133,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           className="usage-stats-close"
           aria-label="关闭工具管理 / Close tool manager"
           onClick={onClose}
-        ><CloseIcon size={14} /></button>
+        ><CloseIcon size={16} /></button>
       </div>
 
       {/* 搜索框 */}
@@ -266,7 +266,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                     minWidth: "24px", minHeight: "24px",
                   }}
                 >
-                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
               </div>
 
@@ -325,7 +325,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       </div>
 
       <div style={{ padding: "8px 16px", fontSize: 'var(--fs-sm)', color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
-        <Lightbulb size={12} className="icon-inline-gap" />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
+        <Lightbulb size={16} className="icon-inline-gap" />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
       </div>
     </div>
   );

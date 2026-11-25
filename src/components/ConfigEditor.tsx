@@ -197,7 +197,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                   /* 第 47 轮补：切到 app/project 时清掉子目录选择，避免 currentLevel 回退到某条子目录 */
                   onClick={() => { setActiveLevel(lvl); setActiveSubfolder(null); }}
                 >
-                  {lvl === "app" ? <Home size={14} /> : <FolderClosed size={14} />}
+                  {lvl === "app" ? <Home size={16} /> : <FolderClosed size={16} />}
                   {lvl === "app" ? "全局" : "项目"}
                   {!exists && " (未初始化)"}
                 </button>
@@ -210,7 +210,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 className={`config-level-btn ${activeIdentity === levelIdentity(l) ? "active" : ""}`}
                 onClick={() => { setActiveLevel("subfolder"); setActiveSubfolder(l.basePath); }}
               >
-                <FolderOpen size={14} />
+                <FolderOpen size={16} />
                 {l.basePath.split("\\").pop()}
               </button>
             ))}
@@ -226,7 +226,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                   className={`config-tab ${activeTab === tab ? "active" : ""}`}
                   onClick={() => setActiveTab(tab)}
                 >
-                  <TabIcon size={14} />
+                  <TabIcon size={16} />
                   <span className="config-tab-label">{TAB_LABELS[tab]}</span>
                 </button>
               );
@@ -243,7 +243,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                   <div key={lvl.level} className="structure-level">
                     <div className="structure-header">
                       <span className="structure-icon">
-                        {lvl.level === "app" ? <Home size={14} /> : lvl.level === "project" ? <FolderClosed size={14} /> : <FolderOpen size={14} />}
+                        {lvl.level === "app" ? <Home size={16} /> : lvl.level === "project" ? <FolderClosed size={16} /> : <FolderOpen size={16} />}
                       </span>
                       <span className="structure-name">
                         {lvl.level === "app" ? "全局配置" : lvl.level === "project" ? "项目配置" : lvl.basePath.split("\\").pop()}
@@ -253,7 +253,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                     <div className="structure-files">
                       {Object.entries(lvl.exists).map(([file, exists]) => (
                         <span key={file} className={`structure-file ${exists ? "exists" : "missing"}`}>
-                          {exists ? <Check size={12} className="icon-inline" /> : <Square size={12} className="icon-inline" />} {file}
+                          {exists ? <Check size={16} className="icon-inline" /> : <Square size={16} className="icon-inline" />} {file}
                         </span>
                       ))}
                     </div>
@@ -262,10 +262,10 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 <div className="config-init-section">
                   <h4>初始化配置目录</h4>
                   <button className="config-init-btn" onClick={() => handleInitLevel("app")}>
-                    <Home size={14} /> 初始化全局配置 (.codem-app/)
+                    <Home size={16} /> 初始化全局配置 (.codem-app/)
                   </button>
                   <button className="config-init-btn" onClick={() => handleInitLevel("project")}>
-                    <FolderClosed size={14} /> 初始化项目配置 (.codem/)
+                    <FolderClosed size={16} /> 初始化项目配置 (.codem/)
                   </button>
                 </div>
               </div>
@@ -331,9 +331,9 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
 
           {/* Footer */}
           <div className="config-footer">
-            {saved && <span className="config-saved"><Check size={12} className="icon-inline" /> 已保存</span>}
+            {saved && <span className="config-saved"><Check size={16} className="icon-inline" /> 已保存</span>}
             {activeTab !== "structure" && (
-              <button className="config-save-btn" onClick={handleSave}><ActionIcons.save size={14} /> 保存</button>
+              <button className="config-save-btn" onClick={handleSave}><ActionIcons.save size={16} /> 保存</button>
             )}
           </div>
         </div>

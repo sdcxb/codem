@@ -17,9 +17,9 @@ import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project"
 import { useDomainReady } from "../../hooks/use-domain-ready";
 
 const CATEGORY_CONFIG: Record<InboxCategory, { Icon: typeof InboxIcon; color: string }> = {
-  issue: { Icon: ClipboardList, color: "var(--accent)" },
-  squad: { Icon: Users, color: "var(--accent)" },
-  delegation: { Icon: Link2, color: "var(--accent)" },
+  issue: { Icon: ClipboardList, color: "var(--text-secondary)" },
+  squad: { Icon: Users, color: "var(--text-secondary)" },
+  delegation: { Icon: Link2, color: "var(--text-secondary)" },
   automation: { Icon: Clock, color: "var(--warning)" },
   system: { Icon: AlertTriangle, color: "var(--error)" },
   agent: { Icon: Bot, color: "var(--success)" },
@@ -186,7 +186,7 @@ export function InboxTab() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <InboxIcon size={16} style={{ color: "var(--accent)" }} />
+          <InboxIcon size={16} />
           <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
             {zh ? "收件箱" : "Inbox"}
           </span>
@@ -202,14 +202,14 @@ export function InboxTab() {
         {unreadCount > 0 && (
           <button
             onClick={handleMarkAllRead}
+            className="inbox-mark-all"
             style={{
               display: "flex", alignItems: "center", gap: 4,
               padding: "4px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
-              border: "1px solid var(--border-primary)", background: "none",
               color: "var(--text-secondary)", cursor: "pointer",
             }}
           >
-            <CheckCheck size={14} /> {zh ? "全部已读" : "Mark all read"}
+            <CheckCheck size={16} /> {zh ? "全部已读" : "Mark all read"}
           </button>
         )}
         {/* 「显示已归档」：归档原来不可逆且看不见，这个开关是唯一的找回入口 */}
@@ -231,9 +231,10 @@ export function InboxTab() {
         <div
           role="status"
           onClick={() => setNotice(null)}
+          className="inbox-notice"
           style={{
             marginBottom: "12px", padding: "6px 10px", borderRadius: "var(--radius-xs)",
-            border: "1px solid var(--border-primary)", color: "var(--text-secondary)",
+            color: "var(--text-secondary)",
             fontSize: "var(--fs-sm)", cursor: "pointer",
           }}
         >
@@ -247,11 +248,9 @@ export function InboxTab() {
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
+            className={`inbox-filter${filter === f.value ? " is-active" : ""}`}
             style={{
               padding: "4px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
-              border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
-              background: filter === f.value ? "var(--accent)22" : "none",
-              color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",
               cursor: "pointer",
             }}
           >
@@ -284,23 +283,19 @@ export function InboxTab() {
               <div
                 key={item.id}
                 onClick={() => handleClick(item)}
+                className="inbox-row"
                 style={{
                   display: "flex", alignItems: "flex-start", gap: "10px",
                   padding: "10px 12px", borderRadius: "var(--radius-sm)",
                   background: item.read ? "var(--bg-tertiary)" : "var(--bg-secondary)",
-                  // 不用 border 简写：与 borderLeft 混用会在重渲染时互相覆盖（React 警告）
-                  borderTop: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
-                  borderRight: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
-                  borderBottom: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
-                  borderLeft: `3px solid ${catConfig.color}`,
                   cursor: "pointer", fontSize: "var(--fs-sm)",
                 }}
               >
-                <CatIcon size={14} style={{ color: catConfig.color, marginTop: 2, flexShrink: 0 }} />
+                <CatIcon size={16} style={{ color: catConfig.color, marginTop: 2, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     {!item.read && (
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
+                      <span className="inbox-unread-dot" style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0 }} />
                     )}
                     <span style={{
                       fontWeight: item.read ? 400 : 600,
@@ -323,7 +318,7 @@ export function InboxTab() {
                   )}
                 </div>
                 {inboxTarget(item) && (
-                  <ChevronRight size={12} style={{ color: "var(--text-muted)", flexShrink: 0, alignSelf: "center" }} />
+                  <ChevronRight size={16} style={{ color: "var(--text-muted)", flexShrink: 0, alignSelf: "center" }} />
                 )}
                 {item.archived ? (
                   // 已归档的条目只给"恢复" —— 归档是唯一的移除入口，误点必须能撤销
@@ -332,7 +327,7 @@ export function InboxTab() {
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, ...ICON_HIT }}
                     title={zh ? "恢复（取消归档）" : "Restore (unarchive)"}
                   >
-                    <ArchiveRestore size={12} />
+                    <ArchiveRestore size={16} />
                   </button>
                 ) : (
                   <button
@@ -340,7 +335,7 @@ export function InboxTab() {
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, ...ICON_HIT }}
                     title={zh ? "归档（可在「显示已归档」里恢复）" : "Archive (restore via “Show archived”)"}
                   >
-                    <Archive size={12} />
+                    <Archive size={16} />
                   </button>
                 )}
               </div>

@@ -131,7 +131,7 @@ export const ConversationOverview = memo(function ConversationOverview({
             }}
           >
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <Clock size={12} />
+              <Clock size={16} />
               {formatDuration(stats.durationMs)}
             </span>
             <span style={{ color: isCostWarning ? "var(--error)" : "var(--text-muted)" }}>
@@ -160,7 +160,7 @@ export const ConversationOverview = memo(function ConversationOverview({
             color: "var(--text-muted)",
           }}
         >
-          <Clock size={12} />
+          <Clock size={16} />
           {formatDuration(stats.durationMs)}
         </div>
       )}
@@ -188,7 +188,7 @@ export const ConversationOverview = memo(function ConversationOverview({
                 <div key={idx} className="conversation-overview-round-item" title={preview}>
                   <span className="conversation-overview-round-num">#{idx + 1}</span>
                   <span className="conversation-overview-round-preview">{preview}{preview.length >= 40 ? "..." : ""}</span>
-                  {toolCount > 0 && <span className="conversation-overview-round-tools icon-inline">{toolCount} <Wrench size={10} /></span>}
+                  {toolCount > 0 && <span className="conversation-overview-round-tools icon-inline">{toolCount} <Wrench size={16} /></span>}
                 </div>
               );
             })}

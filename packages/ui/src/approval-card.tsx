@@ -267,7 +267,7 @@ export const ApprovalCard = memo(function ApprovalCard({
             onClick={() => setExpanded((value) => !value)}
             aria-label={expanded ? text.collapse : text.expand}
           >
-            <ChevronDown size={14} className={expanded ? "" : "rotated"} />
+            <ChevronDown size={16} className={expanded ? "" : "rotated"} />
           </button>
           <ShieldAlert size={16} className="decision-tray-icon approval" />
           <div className="decision-tray-title-area">
@@ -311,7 +311,7 @@ export const ApprovalCard = memo(function ApprovalCard({
                 disabled={busy}
                 onClick={() => onResolve(request.id, { kind: "allow" })}
               >
-                <Check size={14} />
+                <Check size={16} />
                 <span>{text.approve}</span>
               </button>
               {capabilities.alwaysAllow ? (
@@ -320,12 +320,12 @@ export const ApprovalCard = memo(function ApprovalCard({
                   disabled={busy}
                   onClick={() => onResolve(request.id, { kind: "always-allow" })}
                 >
-                  <Check size={14} />
+                  <Check size={16} />
                   <span>{text.alwaysAllow}</span>
                 </button>
               ) : null}
               <button className="decision-tray-btn reject" disabled={busy} onClick={reject}>
-                <X size={14} />
+                <X size={16} />
                 <span>{rejectArmed ? text.confirmReject : text.reject}</span>
               </button>
             </div>
@@ -413,14 +413,14 @@ export const ApprovalCard = memo(function ApprovalCard({
                 style={{ ...PLAN_BUTTON_STYLE, background: "var(--error)", color: "var(--text-on-accent)", border: "none" }}
                 disabled={busy}
               >
-                <X size={14} />
+                <X size={16} />
                 {text.planConfirmReject}
               </button>
             </>
           ) : (
             <>
               <button onClick={() => setFeedbackShown(true)} style={PLAN_BUTTON_STYLE} disabled={busy}>
-                <X size={14} />
+                <X size={16} />
                 {text.planReject}
               </button>
               <button
@@ -428,7 +428,7 @@ export const ApprovalCard = memo(function ApprovalCard({
                 style={{ ...PLAN_BUTTON_STYLE, background: "var(--success)", color: "var(--text-on-accent)", border: "none" }}
                 disabled={busy}
               >
-                <Check size={14} />
+                <Check size={16} />
                 {text.planApprove}
               </button>
             </>

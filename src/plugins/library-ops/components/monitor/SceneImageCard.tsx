@@ -181,7 +181,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
 
       {(error || notice) && (
         <div className={`lo-scene-msg${error ? " is-error" : " is-ok"}`}>
-          {error ? <><LoIcon name="triangle-alert" size={12} /> {error}</> : <><LoIcon name="check-circle" size={12} /> {notice}</>}
+          {error ? <><LoIcon name="triangle-alert" size={16} /> {error}</> : <><LoIcon name="check-circle" size={16} /> {notice}</>}
         </div>
       )}
       {!persistAvailable && (
@@ -193,7 +193,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
       )}
       {aspectWarning && (
           <p className="lo-note">
-            <LoIcon name="triangle-alert" size={12} /> {aspectWarning}
+            <LoIcon name="triangle-alert" size={16} /> {aspectWarning}
           </p>
         )}
 
@@ -285,7 +285,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
               disabled={aligning}
               title={zh ? "按画面结构自动缩放到与内置房间布局最贴合的位置（上传后也会自动跑一次）" : "Auto-fit the image to the built-in room layout (also runs on upload)"}
             >
-              <LoIcon name="sparkles" size={12} />{" "}
+              <LoIcon name="sparkles" size={16} />{" "}
               {aligning ? (zh ? "正在对位…" : "Aligning…") : zh ? "自动对位" : "Auto align"}
             </button>
             <button

@@ -130,14 +130,14 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
         onPointerDown={handlePointerDown}
         style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: dragging ? "grabbing" : "grab", userSelect: "none", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}
       >
-        <MessageSquareText size={14} style={{ color: "var(--accent)" }} />
+        <MessageSquareText size={16} style={{ color: "var(--accent)" }} />
         <strong style={{ fontSize: 'var(--fs-sm)', flex: 1 }}>{zh ? "临时会话" : "Side Session"}</strong>
         <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-          <Sparkles size={12} />
+          <Sparkles size={16} />
           {zh ? "不污染主会话" : "won't touch main chat"}
         </span>
         <button className="toolbar-btn" aria-label={zh ? "关闭" : "Close"} onClick={onClose} title={zh ? "关闭" : "Close"}>
-          <X size={14} />
+          <X size={16} />
         </button>
       </div>
 
@@ -157,7 +157,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
             </div>
             <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", background: "var(--bg-secondary, #232834)", padding: "8px 10px", borderRadius: "var(--radius-md)", maxWidth: "94%", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {t.streaming && !t.answer ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><LoaderCircle size={12} className="spin" /> {zh ? "思考中…" : "thinking…"}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><LoaderCircle size={16} className="spin" /> {zh ? "思考中…" : "thinking…"}</span>
               ) : t.answer || (zh ? "(空回复)" : "(empty)")}
               {t.error && (
                 <div style={{ color: "var(--error, #e5484d)", marginTop: 6, fontSize: 'var(--fs-xs)' }}>{t.error}</div>
@@ -187,7 +187,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
           title={zh ? "发送" : "Send"}
           style={{ opacity: busy || !question.trim() ? 0.5 : 1 }}
         >
-          {busy ? <LoaderCircle size={14} className="spin" /> : <Send size={14} />}
+          {busy ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
         </button>
       </div>
     </div>

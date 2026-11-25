@@ -51,7 +51,7 @@ export const SettingsNav = memo(function SettingsNav({
                 className={`settings-nav-item ${activeId === item.id ? "active" : ""}`}
                 onClick={() => onSelect(item.id)}
               >
-                {Icon && <Icon size={14} />}
+                {Icon && <Icon size={16} />}
                 <span>{item.label}</span>
               </button>
             );
