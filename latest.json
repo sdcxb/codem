@@ -1,15 +1,15 @@
 {
-  "version": "1.18.19",
-  "notes": "梦幻皮肤透明度与毛玻璃重新生效",
-  "pub_date": "2026-11-25T10:36:41Z",
+  "version": "1.18.20",
+  "notes": "Hub 品牌色、高对比、减少透明度和紧凑密度在 v2 下重新生效",
+  "pub_date": "2026-11-26T01:35:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lRMVBGWFp5TU5TR25EZ25lOFVBNnFFbDlZUHJTQ3RuYUZ4VTdoRk96Z1FuYm1HNk5wZ3JUb3lneGp4M1pSV3N5eklGaWlsZTNzN0tDaWxRQWl6cndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAyOTU0CWZpbGU6Q29kZW1fMS4xOC4xOV94NjQtc2V0dXAuZXhlCk40c1BVYmVzZkVWSFdsQUNFQktOc1I1UXBpZDYvU2tPWDFaZWpQUVZRQzF4NGVML1VPY083SGtSOWJFa2lWems2bk90MkVmdHdxYkNObWQ3ajFCckRBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.19/Codem_1.18.19_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RhV2lhZDRjTDYyS0VMNnVVRFlrZFpQN2NpUXF6WGpiY2ZOT0c1eWZYSmRUdmdqWEw1RHZHN1hocDkzK0l4d2t3ZU5nVEl4M3JoRXFYZUdacnNMQ2c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjU2OTAwCWZpbGU6Q29kZW1fMS4xOC4yMF94NjQtc2V0dXAuZXhlCjl6Q0xrK1VXNUQ5UVY5ZHV6Ymd6RnRacDc3aHl2dzJWZUtIU205NjhEdmljejExTWd3T1BGcDg2M0xDOFVqV3M5VnV5c0FGcnBCL2tNOGF4aEczeEJnPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.20/Codem_1.18.20_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lRMVBGWFp5TU5TR25EZ25lOFVBNnFFbDlZUHJTQ3RuYUZ4VTdoRk96Z1FuYm1HNk5wZ3JUb3lneGp4M1pSV3N5eklGaWlsZTNzN0tDaWxRQWl6cndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjAyOTU0CWZpbGU6Q29kZW1fMS4xOC4xOV94NjQtc2V0dXAuZXhlCk40c1BVYmVzZkVWSFdsQUNFQktOc1I1UXBpZDYvU2tPWDFaZWpQUVZRQzF4NGVML1VPY083SGtSOWJFa2lWems2bk90MkVmdHdxYkNObWQ3ajFCckRBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.19/Codem_1.18.19_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RhV2lhZDRjTDYyS0VMNnVVRFlrZFpQN2NpUXF6WGpiY2ZOT0c1eWZYSmRUdmdqWEw1RHZHN1hocDkzK0l4d2t3ZU5nVEl4M3JoRXFYZUdacnNMQ2c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjU2OTAwCWZpbGU6Q29kZW1fMS4xOC4yMF94NjQtc2V0dXAuZXhlCjl6Q0xrK1VXNUQ5UVY5ZHV6Ymd6RnRacDc3aHl2dzJWZUtIU205NjhEdmljejExTWd3T1BGcDg2M0xDOFVqV3M5VnV5c0FGcnBCL2tNOGF4aEczeEJnPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.18.20/Codem_1.18.20_x64-setup.exe"
     }
   }
 }

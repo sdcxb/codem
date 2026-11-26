@@ -3422,3 +3422,66 @@
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.2) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.2) !important;
 }
+
+/* 系统偏好：减少透明度 / 更强对比时，梦幻皮肤也不能再开玻璃。
+   v2 的玻璃是后加载的，必须在同一媒体条件下显式反制，否则会盖掉 skin-dream.css 的降级。 */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  [data-ui="v2"][data-skin="dream"] :is(
+    .titlebar,
+    .sidebar,
+    .right-sidebar,
+    .panel-right,
+    .input-card-container,
+    .search-dialog,
+    .settings-panel,
+    .plugin-mgr,
+    .skill-manager,
+    .memory-manager,
+    .task-center-panel,
+    .modal-editor,
+    .project-manager,
+    .config-editor,
+    .confirm-dialog,
+    .app-menu-surface
+  ),
+  [data-ui="v2"][data-skin="dream"] :is(
+    .settings-panel,
+    .plugin-mgr,
+    .skill-manager,
+    .memory-manager,
+    .task-center-panel
+  ) :is(.settings-section, .setting-group, .card, .lo-card, .tc-card, .mode-btn, .tool-card, [class*="card"], [class*="Card"]) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* 紧凑密度 × v2：v2 的固定 28/32px 控件之前完全不读 --control-*，
+ * 结果设置里的「界面密度」对 v2 无效。这里让常用控件回到控制高度令牌。 */
+[data-ui="v2"][data-density="compact"] :is(
+  .sp-btn,
+  .tc-btn,
+  .save-btn,
+  .settings-footer-action,
+  .settings-subnav-pill,
+  .settings-back,
+  .app-menu-trigger,
+  .titlebar-btn,
+  .skill-filter-btn,
+  .plugin-mgr-tab,
+  .tc-tab,
+  .settings-model-profiles .sp-btn
+) {
+  height: var(--control-xs) !important;
+  min-height: var(--control-xs) !important;
+  padding-inline: var(--space-2);
+}
+[data-ui="v2"][data-density="compact"] :is(
+  .sidebar-nav-item,
+  .sidebar-session,
+  .settings-sidebar-item,
+  .right-sidebar-tab
+) {
+  height: calc(var(--control-xs) + 2px) !important;
+  min-height: calc(var(--control-xs) + 2px) !important;
+}

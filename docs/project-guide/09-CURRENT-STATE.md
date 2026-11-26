@@ -1,6 +1,6 @@
 # 09 · 当前状态、未完成项与风险（2026-11-04 快照）
 
-> 基线：`master` @ 代码提交见 `git log -1`（v1.18.19 已发布）｜ **1.18.19**（2026-11-25 发布，GitHub `Latest`；上一稳定版 1.18.18）
+> 基线：`master` @ 代码提交见 `git log -1`（v1.18.20 已发布）｜ **1.18.20**（2026-11-26 发布，GitHub `Latest`；上一稳定版 1.18.19）
 >
 > 1.18.0 包含：长任务目标模式（阶段契约 + 证据验收 + 重启/压缩恢复）+ Flutter 原生 Android 客户端预览 +
 > Tailscale Serve 零配对码 + 远程新建项目/会话 + 交互式命令 stdin 修复；Funnel/公网仍保留配对码。
@@ -14,25 +14,25 @@
 
 | 项 | 值 | 核对方式 |
 |---|---|---|
-| 版本 | **1.18.19**（2026-11-25 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
-| 发布 | GitHub `Codem v1.18.19` = **Latest**（2026-11-25） | `gh release list --limit 1` |
-| 更新清单 | `latest.json` = 1.18.19（发布时上传并远端校验） | 根目录文件 |
-| HEAD | 以 `git log -1` 为准（v1.18.19 已发布） | `git rev-parse --short HEAD` |
-| 分支 | `master`；v1.18.19 已提交并推送 | `git status -sb` |
-| 本地 tag | 最新为 **v1.18.19** | `git tag --sort=-creatordate \| Select-Object -First 5` |
+| 版本 | **1.18.20**（2026-11-26 发布） | `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` |
+| 发布 | GitHub `Codem v1.18.20` = **Latest**（2026-11-26） | `gh release list --limit 1` |
+| 更新清单 | `latest.json` = 1.18.20（发布时上传并远端校验） | 根目录文件 |
+| HEAD | 以 `git log -1` 为准（v1.18.20 已发布） | `git rev-parse --short HEAD` |
+| 分支 | `master`；v1.18.20 已提交并推送 | `git status -sb` |
+| 本地 tag | 最新为 **v1.18.20** | `git tag --sort=-creatordate \| Select-Object -First 5` |
 
 > **不要用本地 tag 判断发布状态**：以 `gh release list` 与 `latest.json` 为准。
 
 ---
 
-## 2. 工作区状态（v1.18.19 已提交）
+## 2. 工作区状态（v1.18.20 已提交）
 
 ```text
 ## master...origin/master
-# v1.18.19 已提交并推送；仅 .codem/ 运行时文件未跟踪
+# v1.18.20 已提交并推送；仅 .codem/ 运行时文件未跟踪
 ```
 
-- v1.18.14 的 Context OS / 分层记忆 / 团队记忆 / 文档与 Goal / 多设备同步改动已提交并推送；v1.18.19 在其上修复梦幻皮肤透明度/毛玻璃与 v2 令牌的兼容。
+- v1.18.14 的 Context OS / 分层记忆 / 团队记忆 / 文档与 Goal / 多设备同步改动已提交并推送；v1.18.20 在其上修复 Hub/高对比/减少透明度与 v2 令牌的兼容。
 - `art/`、`prototype/`、`docs/ref-analysis/` 等未跟踪内容不属于本次发布，未提交。
 - `docs/` 总计约 309 MB，根级 173 份 `.md` + 本套文档；混有大量历史稿与游戏美术。
 
@@ -43,23 +43,23 @@
 | 检查 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | **0 错误** |
-| `npx vitest run` | **1015 文件 / 10495 用例（10477 通过、18 跳过、0 失败；2026-11-25 实测）** |
+| `npx vitest run` | **1016 文件 / 10499 用例（10481 通过、18 跳过、0 失败；2026-11-25 实测）** |
 | `cargo test` | 261 passed / 6 ignored / 0 failed（Tauri）；codem-db 全绿 |
 | `cargo check` | exit 0（**0 error**） |
 | `flutter analyze` / `flutter test` | 0 issue / **10 passed** |
-| `npm run audit:docs` | 通过（version=1.18.19） |
+| `npm run audit:docs` | 通过（version=1.18.20） |
 | 已知失败 | **0** |
 
 ### 3.1 本轮没有已知失败
 
-- 全量 1015 文件 / 10495 用例（10477 通过、18 跳过、0 失败；2026-11-25 实测）；`tsc` 0；
+- 全量 1016 文件 / 10499 用例（10481 通过、18 跳过、0 失败；2026-11-25 实测）；`tsc` 0；
   Rust 261 通过 / 6 ignored；codem-db 全绿。
 - 历史：2026-10-26 曾有两条**未跟踪文档**导致的失败（BOM / 缺历史横幅），随未跟踪内容清理而消失，不是产品代码修复。
 - 纪律不变：新文档 UTF-8 **无 BOM**；新增 `*PLAN*` / `*GAP*` / `*TODO*` 文件要么加「历史文档（不再维护）」横幅，要么改名。
 
 ### 3.2 测试规模为什么与文档不一致
 
-- 当前以 `npx vitest run` 为准：**1015 文件 / 10495 用例（10477 通过、18 跳过、0 失败；2026-11-25 实测）**。
+- 当前以 `npx vitest run` 为准：**1016 文件 / 10499 用例（10481 通过、18 跳过、0 失败；2026-11-25 实测）**。
 - 历史：1.16.334 为 839/9147；1.17.0 为 865/9449；1.18.0 为 874/9527；1.18.13 为 965/10183；1.18.14 为 966/10186；1.18.15 为 999/10427；1.18.16 为 999/10425；本轮 UI 清理后为 1007/10455
 - 计时敏感用例（如 `concurrency-three-sessions`）在全量并行满载时偶发超时；**先单跑确认**，不要改产品代码。
 - 旧文档里的“699/8344”“722/8446”等数字是 1.16.3xx 时代，不要抄。

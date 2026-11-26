@@ -271,3 +271,16 @@
   --composer-bg: var(--ui-surface);
   --titlebar-bg: var(--ui-bg);
 }
+
+/* ========== 高对比 × v2：v2 把 --text-* / --border-* 桥接成 --ui-*，
+ * styles.css 里的 html[data-contrast="high"] 因特异性较低被桥接层盖掉。
+ * 这里直接提升 v2 自身的文字/线条，保持高对比档真的“文字更黑、边框更实”。 */
+:root[data-ui="v2"][data-contrast="high"],
+:root[data-ui="v2"][data-contrast="high"][data-theme] {
+  --ui-text-secondary: color-mix(in srgb, var(--ui-text) 90%, transparent);
+  --ui-text-muted: color-mix(in srgb, var(--ui-text) 80%, transparent);
+  --ui-text-dim: color-mix(in srgb, var(--ui-text) 68%, transparent);
+  --ui-line: color-mix(in srgb, var(--ui-text) 26%, transparent);
+  --ui-line-strong: color-mix(in srgb, var(--ui-text) 48%, transparent);
+  --focus-ring-color: var(--ui-accent);
+}

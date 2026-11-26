@@ -19,6 +19,10 @@
   --hub-text-main: #e0e0e0;
   --hub-text-muted: #888888;
   --hub-text-success: #4ade80;
+  --hub-status-success: #4ade80;
+  --hub-status-warning: #d29922;
+  --hub-status-danger: #f85149;
+  --hub-status-info: #58a6ff;
   --hub-border-color: #2a2a2a;
 
   /* 覆盖默认皮肤的 CSS 变量，让所有组件（模态框、按钮、输入框等）自动使用 Hub 配色 */
@@ -990,4 +994,31 @@
 [data-skin="hub"] .message-content p:is(:hover, :focus-visible),
 [data-skin="hub"] .markdown-body p:is(:hover, :focus-visible) {
   background: transparent !important;
+}
+
+/* ========== Hub × unslop v2：保留橙色的品牌强调，而不是被 v2 的琥珀覆盖 ==========
+ * v2 把 --accent 等桥接令牌重新指向 --ui-*，而 --ui-* 是全局中性琥珀；
+ * Hub 只覆盖了 --accent，所以 v2 下橙色会变成琥珀。这里把 v2 语义令牌直接接回 Hub 色板。
+ */
+:root[data-ui="v2"][data-skin="hub"] {
+  --ui-bg: var(--hub-bg-base, #0a0a0a);
+  --ui-sidebar: var(--hub-bg-panel, #121212);
+  --ui-surface: var(--hub-bg-card, #1c1c1e);
+  --ui-surface-raised: var(--hub-c13, #222222);
+  --ui-surface-active: var(--hub-bg-hover, #2a2a2a);
+  --ui-line: var(--hub-border-color, #2a2a2a);
+  --ui-line-strong: color-mix(in srgb, var(--hub-border-color, #2a2a2a) 65%, var(--hub-text-main, #e0e0e0) 35%);
+  --ui-text: var(--hub-text-main, #e0e0e0);
+  --ui-text-secondary: color-mix(in srgb, var(--hub-text-main, #e0e0e0) 59%, var(--hub-bg-base, #0a0a0a));
+  --ui-text-muted: color-mix(in srgb, var(--hub-text-main, #e0e0e0) 43%, var(--hub-bg-base, #0a0a0a));
+  --ui-text-dim: color-mix(in srgb, var(--hub-text-main, #e0e0e0) 30%, var(--hub-bg-base, #0a0a0a));
+  --ui-accent: var(--hub-color-primary, #ff6b00);
+  --ui-accent-hover: var(--hub-color-primary-hover, #e56000);
+  --ui-accent-ink: var(--hub-c6, #ffffff);
+  --ui-success: var(--hub-status-success);
+  --ui-warning: var(--hub-status-warning);
+  --ui-danger: var(--hub-status-danger);
+  --ui-info: var(--hub-status-info);
+  --ui-on-status: var(--hub-c11, #000000);
+  --ui-backdrop: var(--hub-c9, rgba(0, 0, 0, 0.7));
 }
