@@ -32,7 +32,15 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(path.resolve(ROOT, file), 'utf8'));
 }
 function sha256(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, file))).digest('hex');
+  /*
+   * 页面哈希按 **LF 归一化后的文本** 计算，不按检出的原始字节。
+   *
+   * 为什么：Windows 的 `core.autocrlf` 会把同一份已提交页面检成 CRLF，而 Linux/CI 是 LF。
+   * 如果直接哈希原始字节，同一 commit 在两种检出下会得到两个 hash：工作区门禁绿、干净
+   * worktree/CI 却红——这不是页面变了，而是行尾变了。页面冻结要守的是内容，不是检出格式。
+   */
+  const text = fs.readFileSync(path.resolve(ROOT, file), 'utf8').replace(/\r\n?/g, '\n');
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 }
 function exists(rel) {
   try { return fs.existsSync(path.resolve(ROOT, rel)); } catch { return false; }
