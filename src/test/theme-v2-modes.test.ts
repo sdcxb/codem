@@ -16,14 +16,14 @@ describe("v2 × 皮肤/模式矩阵", () => {
     expect(block).toContain("--ui-danger: var(--hub-status-danger");
   });
 
-  it("默认亮色是暖中性纸面、墨色主操作与黄铜标记，且没有紫色 chrome", () => {
+  it("默认亮色是中性纸面、琥珀主操作与文字 accent，且没有紫色 chrome", () => {
     const tokens = fs.readFileSync("src/core/theme/unslop-tokens.css", "utf8");
     const light = tokens.match(/:root\[data-ui="v2"\]\[data-theme="light"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    expect(light).toContain("--ui-bg: #f2efe7");
-    expect(light).toContain("--ui-surface: #fffdf8");
-    expect(light).toContain("--ui-accent: #9a6a23");
-    expect(light).toContain("--ui-accent-text: #714a16");
-    expect(light).toContain("--ui-primary: #1f1f1c");
+    expect(light).toContain("--ui-bg: #f4f4f2");
+    expect(light).toContain("--ui-surface: #ffffff");
+    expect(light).toContain("--ui-accent: #b7791f");
+    expect(light).toContain("--ui-accent-text: #6d5423");
+    expect(light).toContain("--ui-primary: #b7791f");
     expect(light, "unslop：默认亮色不允许紫色 chrome").not.toMatch(/#6555e0|#7c6cf0|#6c5ce7/i);
   });
 

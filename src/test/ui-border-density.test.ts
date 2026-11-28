@@ -20,9 +20,9 @@ describe("v2 边框/卡片密度", () => {
     expect(clean).toMatch(/\.settings-content[^{}]*\.setting-group[^{}]*\{[^}]*border-bottom-color:\s*transparent/);
   });
 
-  it("聊天用户气泡、任务活动行、证据 rail 不再逐条描边", () => {
+  it("聊天用户气泡用白色内容面 + 一条发丝边框，任务活动行/证据 rail 不逐条描边", () => {
     expect(clean).toMatch(/\.user \.message-content\s*\{[^}]*background:\s*var\(--ui-surface-raised\)/);
-    expect(clean).not.toMatch(/\.user \.message-content\s*\{[^}]*border:\s*1px/);
+    expect(clean).toMatch(/\[data-theme="light"\] \.user \.message-content\s*\{[^}]*background:\s*var\(--ui-surface\)[^}]*border:\s*1px solid var\(--ui-line\)/);
     expect(clean).not.toMatch(/\.workbench-activity-entry\s*\{[^}]*border-bottom/);
     expect(clean).not.toMatch(/\.jobs-panel-row\s*\{[^}]*border-bottom/);
     expect(clean).toMatch(/\.turn-evidence-rail\s*\{[^}]*border-top:\s*1px/);

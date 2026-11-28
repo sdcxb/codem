@@ -1249,6 +1249,16 @@ backdrop-filter: none !important;
   --ui-accent: var(--dream-accent, #e88c9a);
   --ui-accent-hover: var(--dream-accent, #e88c9a);
   --ui-accent-ink: var(--dream-c7, #ffffff);
+  --ui-accent-text: var(--dream-accent, #e88c9a);
+  --ui-accent-text-hover: var(--dream-accent, #e88c9a);
   --ui-backdrop: var(--dream-c30, rgba(0, 0, 0, 0.35));
   --ui-on-status: var(--dream-c7, #ffffff);
+}
+
+/* 链接使用「文字 accent」，与主按钮的填充 accent 分开；同时让这两个皮肤令牌有真实消费方。 */
+[data-skin="dream"] .message-content a {
+  color: var(--ui-accent-text);
+}
+[data-skin="dream"] .message-content a:hover {
+  color: var(--ui-accent-text-hover);
 }

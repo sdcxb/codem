@@ -1015,10 +1015,19 @@
   --ui-accent: var(--hub-color-primary, #ff6b00);
   --ui-accent-hover: var(--hub-color-primary-hover, #e56000);
   --ui-accent-ink: var(--hub-c6, #ffffff);
+  --ui-accent-text: var(--hub-color-primary, #ff6b00);
+  --ui-accent-text-hover: var(--hub-color-primary-hover, #e56000);
   --ui-success: var(--hub-status-success);
   --ui-warning: var(--hub-status-warning);
   --ui-danger: var(--hub-status-danger);
   --ui-info: var(--hub-status-info);
   --ui-on-status: var(--hub-c11, #000000);
   --ui-backdrop: var(--hub-c9, rgba(0, 0, 0, 0.7));
+}
+
+[data-skin="hub"] .message-content a {
+  color: var(--ui-accent-text);
+}
+[data-skin="hub"] .message-content a:hover {
+  color: var(--ui-accent-text-hover);
 }

@@ -66,11 +66,10 @@
   --ui-accent-ink: #17130c;
   --ui-accent-text: #d2ad66;
   --ui-accent-text-hover: #e0bd78;
-
-  /* 主操作：纸白填充。暗色档不能把亮色墨色按钮直接搬过来。 */
-  --ui-primary: #e9e6df;
-  --ui-primary-hover: #f3efe6;
+  --ui-primary: #c6a15b;
+  --ui-primary-hover: #d2ad66;
   --ui-primary-ink: #17130c;
+
 
   /* ---- 语义色：只表意，不做装饰 ---- */
   --ui-success: #78b892;
@@ -86,37 +85,33 @@
   --ui-backdrop-strong: rgba(0, 0, 0, 0.72);
 }
 
-/* ========== 亮色 v2.5 ========== */
-/* 暖中性纸面 + 墨色主操作 + 黄铜标记。设计稿借“暖纸/白纸面/明确焦点”，不借紫色 SaaS：
-   - `--ui-primary` 只给真正的主操作（发送/确认），亮色是墨色、暗色是纸白；
-   - `--ui-accent` 降为黄铜标记：当前项、一个关键数字、focus；
-   - `--ui-accent-text` 仍是可读的文字黄铜，不能拿填充色当文字色。 */
+/* ========== 亮色 ========== */
+/* 中性纸面：默认亮色不继承 Dream 的暖纸。填充 accent 与文字 accent 拆开：
+   主按钮用亮琥珀 + 深墨字，链接/标签/选中态文字用深琥珀。 */
 :root[data-ui="v2"][data-theme="light"] {
-  --ui-bg: #f2efe7;
-  --ui-sidebar: #f7f3ea;
-  --ui-surface: #fffdf8;
-  --ui-surface-raised: #f9f5ec;
-  --ui-surface-active: #ece6da;
+  --ui-bg: #f4f4f2;
+  --ui-sidebar: #efefed;
+  --ui-surface: #ffffff;
+  --ui-surface-raised: #f8f8f6;
+  --ui-surface-active: #e9e9e7;
 
-  --ui-line: rgba(35, 31, 26, 0.12);
-  --ui-line-strong: rgba(35, 31, 26, 0.22);
+  --ui-line: rgba(20, 20, 20, 0.11);
+  --ui-line-strong: rgba(20, 20, 20, 0.20);
 
-  --ui-text: #1b1b18;
-  --ui-text-secondary: #5d584e;
-  --ui-text-muted: #696356;
-  --ui-text-dim: #928b7d;
+  --ui-text: #1b1b1a;
+  --ui-text-secondary: #5b5d58;
+  --ui-text-muted: #63655f;
+  --ui-text-dim: #8f8f89;
 
-  --ui-accent: #9a6a23;
-  --ui-accent-hover: #ad7a2b;
-  --ui-accent-ink: #fffdf8;
-  --ui-accent-text: #714a16;
-  --ui-accent-text-hover: #5d3d12;
-
-  /* 主操作：墨色。它承担“唯一强动作”，黄铜不再负责整颗按钮的面积。 */
-  --ui-primary: #1f1f1c;
-  --ui-primary-hover: #32322d;
-  --ui-primary-ink: #fffdf8;
-  --text-on-accent: #fffdf8;
+  --ui-accent: #b7791f;
+  --ui-accent-hover: #c08a2e;
+  --ui-accent-ink: #1b1b1a;
+  --ui-accent-text: #6d5423;
+  --ui-accent-text-hover: #5d4720;
+  --ui-primary: #b7791f;
+  --ui-primary-hover: #c08a2e;
+  --ui-primary-ink: #1b1b1a;
+  --text-on-accent: #fffdf9;
 
   --ui-success: #246345;
   --ui-danger: #963732;
@@ -195,8 +190,8 @@
   --accent: var(--ui-accent-text);
   --accent-hover: var(--ui-accent-text-hover);
   --accent-strong: var(--ui-accent-text);
-  --accent-fill: var(--ui-accent);
-  --accent-fill-hover: var(--ui-accent-hover);
+  --accent-fill: var(--ui-primary);
+  --accent-fill-hover: var(--ui-primary-hover);
   --accent-muted: color-mix(in srgb, var(--accent-fill) 15%, transparent);
   --accent-selected: color-mix(in srgb, var(--accent-fill) 12%, transparent);
   --accent-surface: color-mix(in srgb, var(--accent-fill) 8%, transparent);

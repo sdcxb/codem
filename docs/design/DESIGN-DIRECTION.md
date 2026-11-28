@@ -60,34 +60,34 @@
 - 禁止彩色渐变/glow；surface 深度用中性 step + hairline。
 - 数据可视化、用户内容、PPT 主题、代码高亮不受此限制。
 
-## 颜色（亮色 v2.5）
+## 颜色（亮色）
 
 ```css
---ui-bg: #f2efe7;
---ui-sidebar: #f7f3ea;
---ui-surface: #fffdf8;
---ui-surface-raised: #f9f5ec;
---ui-surface-active: #ece6da;
---ui-line: rgba(35, 31, 26, .12);
---ui-line-strong: rgba(35, 31, 26, .22);
---ui-text: #1b1b18;
---ui-text-secondary: #5d584e;
---ui-text-muted: #696356;
---ui-text-dim: #928b7d;
---ui-accent: #9a6a23;          /* 黄铜标记：当前项/一个关键数字/focus，不做整颗按钮 */
---ui-accent-hover: #ad7a2b;
---ui-accent-ink: #fffdf8;
---ui-accent-text: #714a16;     /* 文字/图标/链接 */
---ui-accent-text-hover: #5d3d12;
---ui-primary: #1f1f1c;         /* 墨色主操作：发送/确认 */
---ui-primary-hover: #32322d;
---ui-primary-ink: #fffdf8;
+--ui-bg: #f4f4f2;
+--ui-sidebar: #efefed;
+--ui-surface: #ffffff;
+--ui-surface-raised: #f8f8f6;
+--ui-surface-active: #e9e9e7;
+--ui-line: rgba(20, 20, 20, .11);
+--ui-line-strong: rgba(20, 20, 20, .20);
+--ui-text: #1b1b1a;
+--ui-text-secondary: #5b5d58;
+--ui-text-muted: #63655f;
+--ui-text-dim: #8f8f89;
+--ui-accent: #b7791f;          /* 琥珀标记：当前项/focus/淡底 */
+--ui-accent-hover: #c08a2e;
+--ui-accent-ink: #1b1b1a;
+--ui-accent-text: #6d5423;     /* 文字/图标/链接 */
+--ui-accent-text-hover: #5d4720;
+--ui-primary: #b7791f;         /* 主操作填充：发送/保存/确认 */
+--ui-primary-hover: #c08a2e;
+--ui-primary-ink: #1b1b1a;
 --ui-success: #246345;
 --ui-danger: #963732;
 --ui-info: #3a5b7c;
 ```
 
-执行时用对比度测试校准；正文 ≥ 4.5:1。默认亮色使用**暖中性纸面**，不继承 Dream 的背景图与暖色装饰；这是 v2.5 对 v2 中性纸面的修正，不是回到 v1 的紫色 SaaS。
+执行时用对比度测试校准；正文 ≥ 4.5:1。默认亮色使用中性纸面，不继承 Dream 的暖纸；暖纸只属于 Dream 皮肤。`--ui-primary` 与 `--ui-accent` 的填充值相同，但语义不同：前者只给真正的主操作，后者只做当前项/标记。
 
 ## 字体
 

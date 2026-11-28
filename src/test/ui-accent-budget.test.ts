@@ -23,8 +23,8 @@ describe("v2 accent 预算", () => {
     for (const pattern of forbidden) expect(clean, pattern.source).not.toMatch(pattern);
   });
 
-  it("主操作/当前选择仍保留 accent", () => {
-    expect(clean).toMatch(/\.send-btn\s*\{[^}]*var\(--ui-accent\)/);
-    expect(clean).toMatch(/\.settings-panel[^{}]*\.save-btn[^{}]*\{[^}]*var\(--ui-accent\)/);
+  it("主操作/当前选择仍保留品牌色（主操作可走填充令牌）", () => {
+    expect(clean).toMatch(/\.send-btn\s*\{[^}]*var\(--ui-(?:primary|accent)\)/);
+    expect(clean).toMatch(/\.settings-panel[^{}]*\.save-btn[^{}]*\{[^}]*var\(--ui-(?:primary|accent)\)/);
   });
 });

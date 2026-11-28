@@ -186,24 +186,26 @@ describe("v2 调色板：对比度", () => {
       expect(failures, failures.join("\n")).toEqual([]);
     });
 
-    it(`${theme}：accent 作为文字在表面与自身 8%/15% 淡底上都过线，accent-ink 过线`, () => {
-      const accent = colorOf(theme, "--ui-accent");
+    it(`${theme}：accent 文字在表面与填充色 8%/15% 淡底上都过线，accent-ink 在填充色上过线`, () => {
+      /* 2026-11-28：accent 拆成「填充色」与「文字色」。
+         文字色负责可读性；填充色负责主按钮的金色面积。淡底由填充色生成，
+         但落在上面的字仍用文字色 —— 这两件事不能再用同一个 token 检查。 */
+      const textAccent = colorOf(theme, "--ui-accent-text");
+      const fillAccent = colorOf(theme, "--ui-accent");
       const ink = colorOf(theme, "--ui-accent-ink");
       const failures: string[] = [];
       for (const key of SURFACE_KEYS) {
         const surface = colorOf(theme, key);
-        const onSurface = contrastOfRgba(accent, surface);
-        if (onSurface < 4.5) failures.push(`accent on ${key} = ${onSurface.toFixed(2)}`);
-        /* 只测真实存在的两档淡底：`--accent-surface` = 8%、`--accent-muted` / `--accent-surface-strong` = 15%。
-           20% 在这个产品里没有对应令牌，测它等于给一个不存在的场景设门槛。 */
+        const onSurface = contrastOfRgba(textAccent, surface);
+        if (onSurface < 4.5) failures.push(`accent-text on ${key} = ${onSurface.toFixed(2)}`);
         for (const alpha of [0.08, 0.15]) {
-          const tint = compositeOver({ ...accent, a: alpha }, surface);
-          const onTint = contrastOfRgba(accent, tint);
-          if (onTint < 4.5) failures.push(`accent on ${key}+${Math.round(alpha * 100)}% = ${onTint.toFixed(2)}`);
+          const tint = compositeOver({ ...fillAccent, a: alpha }, surface);
+          const onTint = contrastOfRgba(textAccent, tint);
+          if (onTint < 4.5) failures.push(`accent-text on ${key}+fill ${Math.round(alpha * 100)}% = ${onTint.toFixed(2)}`);
         }
       }
-      const inkRatio = contrastOfRgba(ink, accent);
-      if (inkRatio < 4.5) failures.push(`accent-ink on accent = ${inkRatio.toFixed(2)}`);
+      const inkRatio = contrastOfRgba(ink, fillAccent);
+      if (inkRatio < 4.5) failures.push(`accent-ink on accent-fill = ${inkRatio.toFixed(2)}`);
       expect(failures, failures.join("\n")).toEqual([]);
     });
 
