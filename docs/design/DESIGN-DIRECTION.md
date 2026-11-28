@@ -44,6 +44,8 @@
 --ui-accent: #c6a15b;
 --ui-accent-hover: #d2ad66;
 --ui-accent-ink: #17130c;
+--ui-accent-text: #d2ad66;
+--ui-accent-text-hover: #e0bd78;
 --ui-success: #78b892;
 --ui-danger: #d47c74;
 --ui-info: #8aa6c8;
@@ -52,32 +54,40 @@
 规则：
 
 - accent 使用面积 < 5%；不做大面积背景、用户气泡、普通卡片。
+- accent 拆成两枚令牌：`--ui-accent` 只负责实心填充（主按钮/进度），`--ui-accent-text` 负责文字、图标与链接；浅底上的文字必须用后者。
 - 绿色/红色只表意；不做装饰。
 - 图表用独立 series 色，不抢 UI accent。
 - 禁止彩色渐变/glow；surface 深度用中性 step + hairline。
 - 数据可视化、用户内容、PPT 主题、代码高亮不受此限制。
 
-## 颜色（亮色）
+## 颜色（亮色 v2.5）
 
 ```css
---ui-bg: #f7f5f0;
---ui-sidebar: #f2efe8;
---ui-surface: #fffdf9;
---ui-surface-raised: #efece5;
---ui-surface-active: #e8e3da;
---ui-line: rgba(29, 27, 23, .10);
---ui-line-strong: rgba(29, 27, 23, .18);
---ui-text: #1d1b17;
---ui-text-secondary: #565a54;
---ui-text-muted: #73776f;
---ui-accent: #8a6a2f;
---ui-accent-ink: #fffdf9;
---ui-success: #2e7d57;
---ui-danger: #b3413b;
---ui-info: #3f6387;
+--ui-bg: #f2efe7;
+--ui-sidebar: #f7f3ea;
+--ui-surface: #fffdf8;
+--ui-surface-raised: #f9f5ec;
+--ui-surface-active: #ece6da;
+--ui-line: rgba(35, 31, 26, .12);
+--ui-line-strong: rgba(35, 31, 26, .22);
+--ui-text: #1b1b18;
+--ui-text-secondary: #5d584e;
+--ui-text-muted: #696356;
+--ui-text-dim: #928b7d;
+--ui-accent: #9a6a23;          /* 黄铜标记：当前项/一个关键数字/focus，不做整颗按钮 */
+--ui-accent-hover: #ad7a2b;
+--ui-accent-ink: #fffdf8;
+--ui-accent-text: #714a16;     /* 文字/图标/链接 */
+--ui-accent-text-hover: #5d3d12;
+--ui-primary: #1f1f1c;         /* 墨色主操作：发送/确认 */
+--ui-primary-hover: #32322d;
+--ui-primary-ink: #fffdf8;
+--ui-success: #246345;
+--ui-danger: #963732;
+--ui-info: #3a5b7c;
 ```
 
-执行时用对比度测试校准；正文 ≥ 4.5:1。
+执行时用对比度测试校准；正文 ≥ 4.5:1。默认亮色使用**暖中性纸面**，不继承 Dream 的背景图与暖色装饰；这是 v2.5 对 v2 中性纸面的修正，不是回到 v1 的紫色 SaaS。
 
 ## 字体
 

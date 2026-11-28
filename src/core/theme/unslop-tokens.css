@@ -64,6 +64,13 @@
   --ui-accent: #c6a15b;
   --ui-accent-hover: #d2ad66;
   --ui-accent-ink: #17130c;
+  --ui-accent-text: #d2ad66;
+  --ui-accent-text-hover: #e0bd78;
+
+  /* 主操作：纸白填充。暗色档不能把亮色墨色按钮直接搬过来。 */
+  --ui-primary: #e9e6df;
+  --ui-primary-hover: #f3efe6;
+  --ui-primary-ink: #17130c;
 
   /* ---- 语义色：只表意，不做装饰 ---- */
   --ui-success: #78b892;
@@ -79,27 +86,37 @@
   --ui-backdrop-strong: rgba(0, 0, 0, 0.72);
 }
 
-/* ========== 亮色 ========== */
-/* 暖纸表面。accent 压到 #6d5423：方向稿的 #8a6a2f 在自身 20% 淡底上只有 4.36，
-   而 accent 文字最常出现的位置恰好就是那种淡底 chip（判据 LIGHT-UI-3 同一条理由）。 */
+/* ========== 亮色 v2.5 ========== */
+/* 暖中性纸面 + 墨色主操作 + 黄铜标记。设计稿借“暖纸/白纸面/明确焦点”，不借紫色 SaaS：
+   - `--ui-primary` 只给真正的主操作（发送/确认），亮色是墨色、暗色是纸白；
+   - `--ui-accent` 降为黄铜标记：当前项、一个关键数字、focus；
+   - `--ui-accent-text` 仍是可读的文字黄铜，不能拿填充色当文字色。 */
 :root[data-ui="v2"][data-theme="light"] {
-  --ui-bg: #f7f5f0;
-  --ui-sidebar: #f2efe8;
-  --ui-surface: #fffdf9;
-  --ui-surface-raised: #efece5;
-  --ui-surface-active: #e8e3da;
+  --ui-bg: #f2efe7;
+  --ui-sidebar: #f7f3ea;
+  --ui-surface: #fffdf8;
+  --ui-surface-raised: #f9f5ec;
+  --ui-surface-active: #ece6da;
 
-  --ui-line: rgba(29, 27, 23, 0.10);
-  --ui-line-strong: rgba(29, 27, 23, 0.18);
+  --ui-line: rgba(35, 31, 26, 0.12);
+  --ui-line-strong: rgba(35, 31, 26, 0.22);
 
-  --ui-text: #1d1b17;
-  --ui-text-secondary: #565a54;
-  --ui-text-muted: #63665f;
-  --ui-text-dim: #8b8d86;
+  --ui-text: #1b1b18;
+  --ui-text-secondary: #5d584e;
+  --ui-text-muted: #696356;
+  --ui-text-dim: #928b7d;
 
-  --ui-accent: #6d5423;
-  --ui-accent-hover: #5d4720;
-  --ui-accent-ink: #fffdf9;
+  --ui-accent: #9a6a23;
+  --ui-accent-hover: #ad7a2b;
+  --ui-accent-ink: #fffdf8;
+  --ui-accent-text: #714a16;
+  --ui-accent-text-hover: #5d3d12;
+
+  /* 主操作：墨色。它承担“唯一强动作”，黄铜不再负责整颗按钮的面积。 */
+  --ui-primary: #1f1f1c;
+  --ui-primary-hover: #32322d;
+  --ui-primary-ink: #fffdf8;
+  --text-on-accent: #fffdf8;
 
   --ui-success: #246345;
   --ui-danger: #963732;
@@ -174,15 +191,19 @@
   --separator-fade: var(--ui-line-strong);
 
   /* ---- accent ---- */
-  --accent: var(--ui-accent);
-  --accent-hover: var(--ui-accent-hover);
-  --accent-strong: var(--ui-accent);
-  --accent-muted: color-mix(in srgb, var(--ui-accent) 15%, transparent);
-  --accent-selected: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+  /* 文字/填充拆分：--accent 永远可当文字色用；--accent-fill 只用于实心主操作。 */
+  --accent: var(--ui-accent-text);
+  --accent-hover: var(--ui-accent-text-hover);
+  --accent-strong: var(--ui-accent-text);
+  --accent-fill: var(--ui-accent);
+  --accent-fill-hover: var(--ui-accent-hover);
+  --accent-muted: color-mix(in srgb, var(--accent-fill) 15%, transparent);
+  --accent-selected: color-mix(in srgb, var(--accent-fill) 12%, transparent);
+  --accent-surface: color-mix(in srgb, var(--accent-fill) 8%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-fill) 35%, transparent);
   --accent-soft: var(--ui-accent-soft);
   --text-on-accent: var(--ui-accent-ink);
-  /* 焦点环跟随 accent（原来派生自 --accent，这里重写只为让"焦点环 = 琥珀"这件事显式可见） */
-  --focus-ring-color: color-mix(in srgb, var(--ui-accent) 75%, transparent);
+  --focus-ring-color: color-mix(in srgb, var(--ui-accent-text) 75%, transparent);
 
   /* ---- 字体（Batch 1B）----
      `--font-ui-default` 是「默认字体」档的落点；手选字体仍写行内 `--font-ui`，优先级更高，
@@ -282,5 +303,5 @@
   --ui-text-dim: color-mix(in srgb, var(--ui-text) 68%, transparent);
   --ui-line: color-mix(in srgb, var(--ui-text) 26%, transparent);
   --ui-line-strong: color-mix(in srgb, var(--ui-text) 48%, transparent);
-  --focus-ring-color: var(--ui-accent);
+  --focus-ring-color: var(--ui-accent-text);
 }

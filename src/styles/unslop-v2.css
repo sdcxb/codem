@@ -60,17 +60,32 @@
   background-color: var(--ui-bg);
 }
 
-[data-ui="v2"] .main-area,
-[data-ui="v2"] .panel-right,
-[data-ui="v2"] .panel-content,
-[data-ui="v2"] .chat-panel {
+/*
+ * v2.5：恢复三层纸面，而不是整屏一张灰纸。
+ * - 外壳/主区：--ui-bg（暖灰）
+ * - 聊天/内容：--ui-surface（纸白）
+ * - 右栏/面板：--ui-surface-raised（浅纸）
+ * 只换面，不加重阴影；层次靠明度和一条发丝线。
+ */
+[data-ui="v2"] .main-area {
   background: var(--ui-bg);
 }
 
-/* 标题栏：40px、中性面、发丝线。不再用模糊玻璃。 */
+[data-ui="v2"] .panel-right,
+[data-ui="v2"] .panel-content,
+[data-ui="v2"] .right-sidebar {
+  background: var(--ui-surface-raised);
+}
+
+[data-ui="v2"] .chat-panel,
+[data-ui="v2"] .messages-container {
+  background: var(--ui-surface);
+}
+
+/* 标题栏：44px、浅纸面、发丝线；给品牌和菜单一点呼吸。 */
 [data-ui="v2"] .titlebar {
-  height: 40px;
-  background: var(--ui-bg);
+  height: 44px;
+  background: var(--ui-surface-raised);
   border-bottom: 1px solid var(--ui-line);
   backdrop-filter: none;
   box-shadow: none;
@@ -341,7 +356,7 @@
 /* ========== 3. 右栏与面板侧栏 ========== */
 
 [data-ui="v2"] .right-sidebar {
-  background: var(--ui-sidebar);
+  background: var(--ui-surface-raised);
   border-left: 1px solid var(--ui-line);
   backdrop-filter: none;
 }
@@ -394,15 +409,16 @@
 /* ========== 4. 聊天头 ========== */
 
 [data-ui="v2"] .chat-header {
-  height: 40px;
-  padding: 0 var(--space-3);
-  background: var(--ui-bg);
+  height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--ui-surface);
   border-bottom: 1px solid var(--ui-line);
 }
 
 [data-ui="v2"] .chat-title {
-  font-size: var(--fs-md);
-  font-weight: 500;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 [data-ui="v2"] .chat-title-dropdown-btn {
@@ -542,7 +558,26 @@
 /* ========== 5. 消息与气泡 ========== */
 
 [data-ui="v2"] .message-content {
-  line-height: 1.62;
+  color: var(--ui-text);
+  font-size: var(--fs-md);
+  line-height: 1.68;
+}
+
+/* v2.5：聊天正文需要自己的标题层，不然只剩工具卡 + 小字。
+   只改消息内容里的标题，不动设置/任务页的 section title。 */
+[data-ui="v2"] .message-content :is(h1, h2, h3) {
+  margin: 1.1em 0 0.45em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ui-text);
+}
+
+[data-ui="v2"] .message-content h1 { font-size: var(--fs-2xl); }
+[data-ui="v2"] .message-content h2 { font-size: var(--fs-xl); }
+[data-ui="v2"] .message-content h3 { font-size: var(--fs-lg); }
+
+[data-ui="v2"] .message-content p {
+  margin: 0.55em 0;
 }
 
 [data-ui="v2"] .user .message-content {
@@ -657,6 +692,7 @@
   border: 1px solid var(--ui-line);
   background: var(--ui-surface);
   padding: var(--space-1) var(--space-3) var(--space-2);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text) 4%, transparent);
 }
 
 [data-ui="v2"] .input-area.input-card-container:has(.message-input:focus-visible),
@@ -683,16 +719,16 @@
 }
 
 [data-ui="v2"] .send-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius);
-  background: var(--ui-accent);
-  color: var(--ui-accent-ink);
+  background: var(--ui-primary);
+  color: var(--ui-primary-ink);
   box-shadow: none;
 }
 
 [data-ui="v2"] .send-btn:hover:not(.disabled) {
-  background: var(--ui-accent-hover);
+  background: var(--ui-primary-hover);
   box-shadow: none;
 }
 
@@ -1796,8 +1832,8 @@
 }
 
 [data-ui="v2"] .send-btn {
-  height: 32px !important;
-  min-width: 32px;
+  height: 36px !important;
+  min-width: 36px;
   border-radius: var(--radius) !important;
   font-size: var(--fs-md) !important;
 }
@@ -3484,4 +3520,47 @@
 ) {
   height: calc(var(--control-xs) + 2px) !important;
   min-height: calc(var(--control-xs) + 2px) !important;
+}
+
+/* 主对话用户气泡：暗色保留原 surface-raised；亮色改用白色内容面 + 一条发丝边框。 */
+[data-ui="v2"][data-theme="light"] .user .message-content {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+}
+
+/* 历史主操作类（v2 尚未逐条迁移的页面）：墨色填充 + 纸白字。
+   v2.5 起“主操作”不再由黄铜大面积承担；黄铜只做标记/当前项。 */
+[data-ui="v2"] :is(
+  .primary-btn,
+  .btn-primary,
+  .panel-btn--primary,
+  .mp-profile-btn.is-active,
+  .mp-btn--wide,
+  .petm-btn--install,
+  .wx-btn--primary,
+  .kg-retry-btn,
+  .kg-edit-btn--primary,
+  .ppt-studio-btn--primary,
+  .lo-primary-btn
+) {
+  background: var(--ui-primary);
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-ink);
+}
+[data-ui="v2"] :is(
+  .primary-btn,
+  .btn-primary,
+  .panel-btn--primary,
+  .mp-profile-btn.is-active,
+  .mp-btn--wide,
+  .petm-btn--install,
+  .wx-btn--primary,
+  .kg-retry-btn,
+  .kg-edit-btn--primary,
+  .ppt-studio-btn--primary,
+  .lo-primary-btn
+):is(:hover, :focus-visible):not(:disabled) {
+  background: var(--ui-primary-hover);
+  border-color: var(--ui-primary-hover);
+  color: var(--ui-primary-ink);
 }

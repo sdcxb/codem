@@ -10,16 +10,28 @@ describe("v2 × 皮肤/模式矩阵", () => {
   it("Hub 在 v2 下保留橙色品牌与自己的表面色", () => {
     const block = hub.match(/:root\[data-ui="v2"\]\[data-skin="hub"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
     expect(block).toContain("--ui-accent: var(--hub-color-primary");
+    expect(block).toContain("--ui-accent-text: var(--hub-color-primary");
     expect(block).toContain("--ui-surface: var(--hub-bg-card");
     expect(block).toContain("--ui-text: var(--hub-text-main");
     expect(block).toContain("--ui-danger: var(--hub-status-danger");
+  });
+
+  it("默认亮色是暖中性纸面、墨色主操作与黄铜标记，且没有紫色 chrome", () => {
+    const tokens = fs.readFileSync("src/core/theme/unslop-tokens.css", "utf8");
+    const light = tokens.match(/:root\[data-ui="v2"\]\[data-theme="light"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    expect(light).toContain("--ui-bg: #f2efe7");
+    expect(light).toContain("--ui-surface: #fffdf8");
+    expect(light).toContain("--ui-accent: #9a6a23");
+    expect(light).toContain("--ui-accent-text: #714a16");
+    expect(light).toContain("--ui-primary: #1f1f1c");
+    expect(light, "unslop：默认亮色不允许紫色 chrome").not.toMatch(/#6555e0|#7c6cf0|#6c5ce7/i);
   });
 
   it("高对比在 v2 下直接改 ui 文本/线条，而不是被桥接层盖掉", () => {
     const block = tokens.match(/:root\[data-ui="v2"\]\[data-contrast="high"\][\s\S]*?\}/)?.[0] ?? "";
     expect(block).toContain("--ui-text-secondary");
     expect(block).toContain("--ui-line:");
-    expect(block).toContain("--focus-ring-color: var(--ui-accent)");
+    expect(block).toContain("--focus-ring-color: var(--ui-accent-text)");
   });
 
   it("紧凑密度会改 v2 控件高度，而不是只改旧控件令牌", () => {
